@@ -61,6 +61,9 @@ import type {
   A2AEndpointConnection,
   A2AMessage,
   A2ANormalizedMessage,
+  A2ANormalizedPushConfig,
+  A2ARemoteAuthMaterial,
+  A2ARemoteConnection,
   A2ATaskState,
   AgentExecutionSnapshot,
   AgentRuntime,
@@ -72,6 +75,7 @@ import type {
   CredentialScope,
   CreateAgentInput,
   CreateA2AEndpointInput,
+  CreateA2ARemoteInput,
   CreateEvalDatasetInput,
   CreateEvalDatasetVersionInput,
   CreateEvalExperimentInput,
@@ -124,6 +128,7 @@ import type {
   UpdateProcessInput,
   UpdateMcpServerInput,
   UpdateA2AEndpointInput,
+  UpdateA2ARemoteInput,
   WorkerArtifactInput,
   WorkerCapabilities,
   WorkerExecutionMetrics,
@@ -1363,6 +1368,86 @@ export class AgatStore {
         UNIQUE(endpoint_id, client_message_id)
       );
 
+      CREATE TABLE IF NOT EXISTS a2a_push_configs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES a2a_tasks(id) ON DELETE CASCADE,
+        endpoint_id TEXT NOT NULL REFERENCES a2a_endpoints(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        callback_blob TEXT NOT NULL,
+        callback_origin TEXT NOT NULL,
+        auth_scheme TEXT,
+        auth_suffix TEXT NOT NULL DEFAULT '',
+        last_state TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(task_id, id)
+      );
+
+      CREATE TABLE IF NOT EXISTS a2a_push_deliveries (
+        id TEXT PRIMARY KEY,
+        config_id TEXT NOT NULL REFERENCES a2a_push_configs(id) ON DELETE CASCADE,
+        task_id TEXT NOT NULL REFERENCES a2a_tasks(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        event_kind TEXT NOT NULL,
+        task_state TEXT NOT NULL,
+        payload_blob TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        delivered_at TEXT,
+        UNIQUE(config_id, event_kind, task_state)
+      );
+
+      CREATE TABLE IF NOT EXISTS a2a_remotes (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        agent_card_url TEXT NOT NULL,
+        interface_url TEXT NOT NULL,
+        protocol_version TEXT NOT NULL DEFAULT '1.0',
+        tenant TEXT,
+        skill_id TEXT NOT NULL,
+        skill_name TEXT NOT NULL,
+        input_modes_json TEXT NOT NULL DEFAULT '["text/plain"]',
+        output_modes_json TEXT NOT NULL DEFAULT '["text/plain"]',
+        capabilities_json TEXT NOT NULL DEFAULT '{}',
+        card_sha256 TEXT NOT NULL,
+        auth_mode TEXT NOT NULL,
+        auth_blob TEXT NOT NULL,
+        auth_suffix TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        allow_file_artifacts INTEGER NOT NULL DEFAULT 0,
+        max_response_bytes INTEGER NOT NULL DEFAULT 1048576,
+        created_by TEXT NOT NULL DEFAULT 'system',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(project_id, agent_card_url, skill_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS a2a_outbound_tasks (
+        id TEXT PRIMARY KEY,
+        remote_id TEXT NOT NULL REFERENCES a2a_remotes(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        remote_task_id TEXT,
+        context_id TEXT NOT NULL,
+        client_message_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        request_sha256 TEXT NOT NULL,
+        request_blob TEXT NOT NULL,
+        response_blob TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        actor_subject TEXT NOT NULL,
+        actor_display TEXT NOT NULL,
+        delegated INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(remote_id, client_message_id)
+      );
+
       CREATE TABLE IF NOT EXISTS model_benchmarks (
         node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
         model TEXT NOT NULL,
@@ -1606,6 +1691,11 @@ export class AgatStore {
       CREATE INDEX IF NOT EXISTS idx_a2a_tasks_endpoint_updated ON a2a_tasks(endpoint_id, updated_at DESC, id DESC);
       CREATE INDEX IF NOT EXISTS idx_a2a_tasks_project_updated ON a2a_tasks(project_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_a2a_tasks_context ON a2a_tasks(endpoint_id, context_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_a2a_push_configs_task ON a2a_push_configs(task_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_a2a_push_deliveries_due ON a2a_push_deliveries(status, next_attempt_at);
+      CREATE INDEX IF NOT EXISTS idx_a2a_remotes_project ON a2a_remotes(project_id, enabled, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_a2a_outbound_project ON a2a_outbound_tasks(project_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_a2a_outbound_remote ON a2a_outbound_tasks(remote_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_model_benchmarks_model ON model_benchmarks(model, last_observed_at DESC);
       CREATE INDEX IF NOT EXISTS idx_knowledge_collections_project ON knowledge_collections(project_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_knowledge_documents_collection ON knowledge_documents(collection_id, created_at DESC);
@@ -1783,6 +1873,26 @@ export class AgatStore {
     if (!mcpCallColumns.some((column) => column.name === "preview_diff_json")) {
       this.db.exec("ALTER TABLE mcp_tool_calls ADD COLUMN preview_diff_json TEXT NOT NULL DEFAULT '[]';");
     }
+    const a2aEndpointColumns = this.db.prepare("PRAGMA table_info(a2a_endpoints)").all() as Row[];
+    if (!a2aEndpointColumns.some((column) => column.name === "output_modes_json")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN output_modes_json TEXT NOT NULL DEFAULT '[\"text/plain\"]';");
+    }
+    if (!a2aEndpointColumns.some((column) => column.name === "streaming_enabled")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN streaming_enabled INTEGER NOT NULL DEFAULT 0;");
+    }
+    if (!a2aEndpointColumns.some((column) => column.name === "push_notifications_enabled")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN push_notifications_enabled INTEGER NOT NULL DEFAULT 0;");
+    }
+    if (!a2aEndpointColumns.some((column) => column.name === "file_artifacts_enabled")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN file_artifacts_enabled INTEGER NOT NULL DEFAULT 0;");
+    }
+    if (!a2aEndpointColumns.some((column) => column.name === "max_file_bytes")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN max_file_bytes INTEGER NOT NULL DEFAULT 512000;");
+    }
+    if (!a2aEndpointColumns.some((column) => column.name === "max_files")) {
+      this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN max_files INTEGER NOT NULL DEFAULT 4;");
+    }
+    this.db.exec("UPDATE a2a_push_deliveries SET status = 'pending' WHERE status = 'delivering';");
     const processInstanceColumns = this.db.prepare("PRAGMA table_info(process_instances)").all() as Row[];
     if (!processInstanceColumns.some((column) => column.name === "runtime")) {
       this.db.exec("ALTER TABLE process_instances ADD COLUMN runtime TEXT NOT NULL DEFAULT 'database';");
@@ -1856,7 +1966,7 @@ export class AgatStore {
       this.db.prepare("UPDATE stages SET process_token_id = ? WHERE run_id = (SELECT run_id FROM process_instances WHERE id = ?) AND process_token_id IS NULL")
         .run(tokenId, String(instance.id));
     }
-    this.db.exec("PRAGMA user_version = 16;");
+    this.db.exec("PRAGMA user_version = 17;");
   }
 
   private seedAgents(): void {
@@ -3355,12 +3465,18 @@ export class AgatStore {
       tags: parseJson<string[]>(row.tags_json, []),
       examples: parseJson<string[]>(row.examples_json, []),
       inputModes: parseJson<A2AEndpointConnection["inputModes"]>(row.input_modes_json, ["text/plain"]),
+      outputModes: parseJson<string[]>(row.output_modes_json, ["text/plain"]),
       knowledgeCollectionIds: normalizeKnowledgeCollectionIds(parseJson<unknown>(row.knowledge_collection_ids_json, [])),
       approvalRequired: Number(row.approval_required) === 1,
+      streamingEnabled: Number(row.streaming_enabled) === 1,
+      pushNotificationsEnabled: Number(row.push_notifications_enabled) === 1,
+      fileArtifactsEnabled: Number(row.file_artifacts_enabled) === 1,
       enabled: Number(row.enabled) === 1,
       priority: Number(row.priority),
       maxInputCharacters: Number(row.max_input_characters),
       maxActiveTasks: Number(row.max_active_tasks),
+      maxFileBytes: Number(row.max_file_bytes),
+      maxFiles: Number(row.max_files),
       tokenSuffix: String(row.token_suffix),
       tokenRotatedAt: String(row.token_rotated_at),
       createdAt: String(row.created_at),
@@ -3441,12 +3557,18 @@ export class AgatStore {
       tags: ["agat", "local-agent"],
       examples: [],
       inputModes: ["text/plain"],
+      outputModes: ["text/plain"],
       knowledgeCollectionIds: [],
       approvalRequired: false,
+      streamingEnabled: true,
+      pushNotificationsEnabled: false,
+      fileArtifactsEnabled: false,
       enabled: true,
       priority: 50,
       maxInputCharacters: 20_000,
       maxActiveTasks: 10,
+      maxFileBytes: 512_000,
+      maxFiles: 4,
       tokenSuffix: "",
       tokenRotatedAt: "",
       createdAt: "",
@@ -3462,10 +3584,12 @@ export class AgatStore {
         INSERT INTO a2a_endpoints(
           id, project_id, agent_id, name, description, version, skill_id,
           skill_name, skill_description, tags_json, examples_json, input_modes_json,
-          knowledge_collection_ids_json, approval_required, enabled, priority,
-          max_input_characters, max_active_tasks, token_hash, token_suffix,
+          output_modes_json, knowledge_collection_ids_json, approval_required,
+          streaming_enabled, push_notifications_enabled, file_artifacts_enabled,
+          enabled, priority, max_input_characters, max_active_tasks, max_file_bytes,
+          max_files, token_hash, token_suffix,
           token_rotated_at, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         project,
@@ -3479,12 +3603,18 @@ export class AgatStore {
         JSON.stringify(normalized.tags),
         JSON.stringify(normalized.examples),
         JSON.stringify(normalized.inputModes),
+        JSON.stringify(normalized.outputModes),
         JSON.stringify(collectionIds),
         normalized.approvalRequired ? 1 : 0,
+        normalized.streamingEnabled ? 1 : 0,
+        normalized.pushNotificationsEnabled ? 1 : 0,
+        normalized.fileArtifactsEnabled ? 1 : 0,
         normalized.enabled ? 1 : 0,
         normalized.priority,
         normalized.maxInputCharacters,
         normalized.maxActiveTasks,
+        normalized.maxFileBytes,
+        normalized.maxFiles,
         hashToken(accessToken),
         accessToken.slice(-6),
         timestamp,
@@ -3504,6 +3634,12 @@ export class AgatStore {
       agentId: normalized.agentId,
       protocolVersion: A2A_PROTOCOL_VERSION,
       inputModes: normalized.inputModes,
+      outputModes: normalized.outputModes,
+      capabilities: {
+        streaming: normalized.streamingEnabled,
+        pushNotifications: normalized.pushNotificationsEnabled,
+        fileArtifacts: normalized.fileArtifactsEnabled,
+      },
       knowledgeCollectionIds: collectionIds,
       actor: actor.slice(0, 200),
     });
@@ -3533,8 +3669,10 @@ export class AgatStore {
         UPDATE a2a_endpoints SET
           name = ?, description = ?, version = ?, skill_id = ?, skill_name = ?,
           skill_description = ?, tags_json = ?, examples_json = ?, input_modes_json = ?,
-          knowledge_collection_ids_json = ?, approval_required = ?, enabled = ?, priority = ?,
-          max_input_characters = ?, max_active_tasks = ?, updated_at = ?
+          output_modes_json = ?, knowledge_collection_ids_json = ?, approval_required = ?,
+          streaming_enabled = ?, push_notifications_enabled = ?, file_artifacts_enabled = ?,
+          enabled = ?, priority = ?, max_input_characters = ?, max_active_tasks = ?,
+          max_file_bytes = ?, max_files = ?, updated_at = ?
         WHERE id = ? AND project_id = ?
       `).run(
         normalized.name,
@@ -3546,12 +3684,18 @@ export class AgatStore {
         JSON.stringify(normalized.tags),
         JSON.stringify(normalized.examples),
         JSON.stringify(normalized.inputModes),
+        JSON.stringify(normalized.outputModes),
         JSON.stringify(collectionIds),
         normalized.approvalRequired ? 1 : 0,
+        normalized.streamingEnabled ? 1 : 0,
+        normalized.pushNotificationsEnabled ? 1 : 0,
+        normalized.fileArtifactsEnabled ? 1 : 0,
         normalized.enabled ? 1 : 0,
         normalized.priority,
         normalized.maxInputCharacters,
         normalized.maxActiveTasks,
+        normalized.maxFileBytes,
+        normalized.maxFiles,
         timestamp,
         id,
         project,
@@ -3646,6 +3790,27 @@ export class AgatStore {
       resultDestination: "history",
       knowledgeCollectionIds: endpoint.knowledgeCollectionIds,
     }, endpoint.projectId, traceparent);
+    if (request.files.length) {
+      const run = this.db.prepare("SELECT id, artifact_path FROM runs WHERE id = ?").get(created.id) as Row;
+      try {
+        for (const file of request.files) {
+          const storageName = `${randomUUID().slice(0, 8)}-${safeArtifactName(file.filename)}`;
+          this.persistArtifact(
+            { id: null, run_id: created.id, artifact_path: run.artifact_path ?? "" },
+            file.filename,
+            "a2a_input",
+            file.mediaType,
+            file.bytes,
+            path.posix.join("a2a-input", storageName),
+          );
+        }
+      } catch (error) {
+        const failedAt = nowIso();
+        this.db.prepare("UPDATE runs SET status = 'failed', completed_at = ?, updated_at = ? WHERE id = ?")
+          .run(failedAt, failedAt, created.id);
+        throw error;
+      }
+    }
     const taskId = randomUUID();
     const timestamp = nowIso();
     this.db.prepare(`
@@ -3677,6 +3842,7 @@ export class AgatStore {
       protocolVersion: A2A_PROTOCOL_VERSION,
       externalTraceparent: traceparent,
       inputModes: request.message.parts.map((part) => part.mediaType ?? "unknown"),
+      fileCount: request.files.length,
     });
     return this.getA2ATask(endpoint.id, taskId, request.historyLength, true)!;
   }
@@ -3684,6 +3850,7 @@ export class AgatStore {
   private a2aTaskRow(endpointId: string, taskId: string): Row | null {
     const row = this.db.prepare(`
       SELECT t.*, e.name AS endpoint_name, r.status AS run_status,
+        e.output_modes_json, e.file_artifacts_enabled, e.max_file_bytes, e.max_files,
         r.trace_id, r.root_span_id, r.updated_at AS run_updated_at,
         r.completed_at AS run_completed_at,
         (SELECT output FROM stages WHERE run_id = r.id ORDER BY position DESC LIMIT 1) AS final_output
@@ -3743,16 +3910,48 @@ export class AgatStore {
       const artifacts: Array<Record<string, unknown>> = [];
       if (state === "TASK_STATE_COMPLETED") {
         const output = typeof row.final_output === "string" ? row.final_output : "";
-        artifacts.push({
-          artifactId: `${taskId}-result`,
-          name: "result.txt",
-          description: "Финальный результат опубликованного агента АГАТ",
-          parts: [{ text: output, mediaType: "text/plain" }],
-          metadata: {
-            sha256: sha256Text(output),
-            bytes: Buffer.byteLength(output),
-          },
-        });
+        const outputModes = parseJson<string[]>(row.output_modes_json, ["text/plain"]);
+        if (outputModes.includes("text/plain")) {
+          artifacts.push({
+            artifactId: `${taskId}-result`,
+            name: "result.txt",
+            description: "Финальный результат опубликованного агента АГАТ",
+            parts: [{ text: output, mediaType: "text/plain" }],
+            metadata: {
+              sha256: sha256Text(output),
+              bytes: Buffer.byteLength(output),
+            },
+          });
+        }
+        if (Number(row.file_artifacts_enabled) === 1) {
+          const maxFiles = Math.max(1, Math.min(8, Number(row.max_files)));
+          const maxFileBytes = Math.max(1_024, Math.min(2_000_000, Number(row.max_file_bytes)));
+          const candidates = this.db.prepare(`
+            SELECT * FROM artifacts
+            WHERE run_id = ? AND kind = 'agent_artifact'
+            ORDER BY created_at ASC, name ASC LIMIT ?
+          `).all(String(row.run_id), maxFiles) as Row[];
+          for (const candidate of candidates) {
+            const mediaType = String(candidate.media_type).split(";", 1)[0]!.trim().toLowerCase();
+            if (!outputModes.includes(mediaType) || Number(candidate.size_bytes) > maxFileBytes) continue;
+            const download = this.getArtifactDownload(String(candidate.id), String(row.project_id));
+            if (!download) continue;
+            const bytes = fs.readFileSync(download.filePath);
+            const part = mediaType.startsWith("text/")
+              ? { text: bytes.toString("utf8"), filename: String(candidate.name), mediaType }
+              : { raw: bytes.toString("base64"), filename: String(candidate.name), mediaType };
+            artifacts.push({
+              artifactId: String(candidate.id),
+              name: String(candidate.name),
+              description: "Bounded agent artifact АГАТ",
+              parts: [part],
+              metadata: {
+                sha256: String(candidate.sha256),
+                bytes: Number(candidate.size_bytes),
+              },
+            });
+          }
+        }
       }
       result.artifacts = artifacts;
     }
@@ -3888,14 +4087,620 @@ export class AgatStore {
     }));
   }
 
+  private a2aPushConfigDto(row: Row): Record<string, unknown> {
+    const config = decryptJson(row.callback_blob, this.credentialsKey) as A2ANormalizedPushConfig;
+    return {
+      id: row.id,
+      taskId: row.task_id,
+      url: config.url,
+      ...(config.token ? { token: config.token } : {}),
+      ...(config.authentication ? {
+        authentication: {
+          scheme: config.authentication.scheme,
+          credentialsSuffix: row.auth_suffix,
+        },
+      } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  createA2APushConfig(
+    endpointId: string,
+    taskId: string,
+    config: A2ANormalizedPushConfig,
+  ): Record<string, unknown> {
+    const task = this.db.prepare(`
+      SELECT t.project_id, t.run_id, e.push_notifications_enabled
+      FROM a2a_tasks t JOIN a2a_endpoints e ON e.id = t.endpoint_id
+      WHERE t.id = ? AND t.endpoint_id = ?
+    `).get(taskId, endpointId) as Row | undefined;
+    if (!task) throw new Error("A2A task не найден");
+    if (Number(task.push_notifications_enabled) !== 1) throw new Error("Push notifications выключены policy endpoint");
+    const timestamp = nowIso();
+    const origin = new URL(config.url).origin;
+    const authSuffix = config.authentication?.credentials.slice(-6) ?? "";
+    try {
+      this.db.prepare(`
+        INSERT INTO a2a_push_configs(
+          id, task_id, endpoint_id, project_id, callback_blob, callback_origin,
+          auth_scheme, auth_suffix, last_state, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+      `).run(
+        config.id,
+        taskId,
+        endpointId,
+        String(task.project_id),
+        encryptJson(config, this.credentialsKey),
+        origin,
+        config.authentication?.scheme ?? null,
+        authSuffix,
+        timestamp,
+        timestamp,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        const existing = this.db.prepare("SELECT * FROM a2a_push_configs WHERE id = ? AND task_id = ?")
+          .get(config.id, taskId) as Row | undefined;
+        if (existing) return this.a2aPushConfigDto(existing);
+      }
+      throw error;
+    }
+    this.addEvent(String(task.run_id), null, null, "info", "a2a.push.configured", "Настроен A2A push callback", {
+      endpointId,
+      taskId,
+      configId: config.id,
+      callbackOrigin: origin,
+      authScheme: config.authentication?.scheme ?? null,
+    });
+    const row = this.db.prepare("SELECT * FROM a2a_push_configs WHERE id = ?").get(config.id) as Row;
+    return this.a2aPushConfigDto(row);
+  }
+
+  getA2APushConfig(endpointId: string, taskId: string, configId: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM a2a_push_configs WHERE endpoint_id = ? AND task_id = ? AND id = ?
+    `).get(endpointId, taskId, configId) as Row | undefined;
+    return row ? this.a2aPushConfigDto(row) : null;
+  }
+
+  listA2APushConfigs(endpointId: string, taskId: string): Record<string, unknown> {
+    const exists = this.db.prepare("SELECT id FROM a2a_tasks WHERE endpoint_id = ? AND id = ?")
+      .get(endpointId, taskId);
+    if (!exists) throw new Error("A2A task не найден");
+    const configs = (this.db.prepare(`
+      SELECT * FROM a2a_push_configs WHERE endpoint_id = ? AND task_id = ? ORDER BY created_at, id
+    `).all(endpointId, taskId) as Row[]).map((row) => this.a2aPushConfigDto(row));
+    return { configs, nextPageToken: "" };
+  }
+
+  deleteA2APushConfig(endpointId: string, taskId: string, configId: string): boolean {
+    const row = this.db.prepare(`
+      SELECT pc.*, t.run_id FROM a2a_push_configs pc
+      JOIN a2a_tasks t ON t.id = pc.task_id
+      WHERE pc.endpoint_id = ? AND pc.task_id = ? AND pc.id = ?
+    `).get(endpointId, taskId, configId) as Row | undefined;
+    if (!row) return false;
+    this.db.prepare("DELETE FROM a2a_push_configs WHERE id = ?").run(configId);
+    this.addEvent(String(row.run_id), null, null, "info", "a2a.push.deleted", "Удалён A2A push callback", {
+      endpointId,
+      taskId,
+      configId,
+      callbackOrigin: row.callback_origin,
+    });
+    return true;
+  }
+
+  private collectA2APushUpdates(): void {
+    const configs = this.db.prepare(`
+      SELECT pc.*, t.context_id, t.run_id, r.status AS run_status, r.updated_at AS run_updated_at
+      FROM a2a_push_configs pc
+      JOIN a2a_tasks t ON t.id = pc.task_id
+      JOIN runs r ON r.id = t.run_id
+      JOIN a2a_endpoints e ON e.id = pc.endpoint_id
+      WHERE pc.last_state <> r.status AND e.enabled = 1 AND e.push_notifications_enabled = 1
+      ORDER BY r.updated_at, pc.created_at
+    `).all() as Row[];
+    const insert = this.db.prepare(`
+      INSERT OR IGNORE INTO a2a_push_deliveries(
+        id, config_id, task_id, project_id, event_kind, task_state,
+        payload_blob, status, attempts, next_attempt_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'status', ?, ?, 'pending', 0, ?, ?, ?)
+    `);
+    const updateConfig = this.db.prepare("UPDATE a2a_push_configs SET last_state = ?, updated_at = ? WHERE id = ?");
+    for (const config of configs) {
+      const taskState = runStatusToA2AState(String(config.run_status));
+      const timestamp = nowIso();
+      const task = this.getA2ATask(String(config.endpoint_id), String(config.task_id), 0, false);
+      const status = task && typeof task.status === "object" && task.status
+        ? task.status as Record<string, unknown>
+        : { state: taskState, timestamp: config.run_updated_at };
+      const payload = {
+        statusUpdate: {
+          taskId: String(config.task_id),
+          contextId: String(config.context_id),
+          status,
+        },
+      };
+      insert.run(
+        randomUUID(),
+        String(config.id),
+        String(config.task_id),
+        String(config.project_id),
+        taskState,
+        encryptJson(payload, this.credentialsKey),
+        timestamp,
+        timestamp,
+        timestamp,
+      );
+      updateConfig.run(String(config.run_status), timestamp, String(config.id));
+    }
+  }
+
+  claimA2APushDeliveries(limit = 10): Array<{
+    deliveryId: string;
+    taskId: string;
+    url: string;
+    authorization: string | null;
+    payload: Record<string, unknown>;
+    attempts: number;
+  }> {
+    this.collectA2APushUpdates();
+    const timestamp = nowIso();
+    const rows = this.db.prepare(`
+      SELECT d.*, pc.callback_blob FROM a2a_push_deliveries d
+      JOIN a2a_push_configs pc ON pc.id = d.config_id
+      JOIN a2a_endpoints e ON e.id = pc.endpoint_id
+      WHERE d.status = 'pending' AND d.next_attempt_at <= ?
+        AND e.enabled = 1 AND e.push_notifications_enabled = 1
+      ORDER BY d.next_attempt_at, d.created_at LIMIT ?
+    `).all(timestamp, Math.max(1, Math.min(50, Math.trunc(limit)))) as Row[];
+    const claim = this.db.prepare(`
+      UPDATE a2a_push_deliveries SET status = 'delivering', updated_at = ?
+      WHERE id = ? AND status = 'pending'
+    `);
+    const result: Array<{
+      deliveryId: string;
+      taskId: string;
+      url: string;
+      authorization: string | null;
+      payload: Record<string, unknown>;
+      attempts: number;
+    }> = [];
+    for (const row of rows) {
+      if (Number(claim.run(timestamp, String(row.id)).changes) !== 1) continue;
+      const config = decryptJson(row.callback_blob, this.credentialsKey) as A2ANormalizedPushConfig;
+      result.push({
+        deliveryId: String(row.id),
+        taskId: String(row.task_id),
+        url: config.url,
+        authorization: config.authentication ? `${config.authentication.scheme} ${config.authentication.credentials}` : null,
+        payload: decryptJson(row.payload_blob, this.credentialsKey) as Record<string, unknown>,
+        attempts: Number(row.attempts),
+      });
+    }
+    return result;
+  }
+
+  completeA2APushDelivery(deliveryId: string, error: string | null): void {
+    const row = this.db.prepare(`
+      SELECT d.*, t.run_id FROM a2a_push_deliveries d
+      JOIN a2a_tasks t ON t.id = d.task_id WHERE d.id = ? AND d.status = 'delivering'
+    `).get(deliveryId) as Row | undefined;
+    if (!row) return;
+    const timestamp = nowIso();
+    if (!error) {
+      this.db.prepare(`
+        UPDATE a2a_push_deliveries SET status = 'delivered', delivered_at = ?, updated_at = ? WHERE id = ?
+      `).run(timestamp, timestamp, deliveryId);
+      this.addEvent(String(row.run_id), null, null, "info", "a2a.push.delivered", "A2A push update доставлен", {
+        deliveryId,
+        taskId: row.task_id,
+        taskState: row.task_state,
+      });
+      return;
+    }
+    const attempts = Number(row.attempts) + 1;
+    const terminal = attempts >= 5;
+    const nextAttemptAt = new Date(Date.now() + Math.min(300, 2 ** attempts) * 1_000).toISOString();
+    this.db.prepare(`
+      UPDATE a2a_push_deliveries SET status = ?, attempts = ?, next_attempt_at = ?,
+        last_error = ?, updated_at = ? WHERE id = ?
+    `).run(terminal ? "failed" : "pending", attempts, nextAttemptAt, error.slice(0, 1_000), timestamp, deliveryId);
+    if (terminal) {
+      this.addEvent(String(row.run_id), null, null, "error", "a2a.push.failed", "A2A push update не доставлен после retries", {
+        deliveryId,
+        taskId: row.task_id,
+        attempts,
+      });
+    }
+  }
+
+  private a2aRemoteConnection(row: Row): A2ARemoteConnection {
+    const capabilities = parseJson<A2ARemoteConnection["capabilities"]>(row.capabilities_json, {
+      streaming: false,
+      pushNotifications: false,
+    });
+    const authMode = String(row.auth_mode) as A2ARemoteConnection["authMode"];
+    let tokenEndpointOrigin: string | null = null;
+    if (authMode === "oauth2_token_exchange") {
+      const auth = decryptJson(row.auth_blob, this.credentialsKey) as A2ARemoteAuthMaterial;
+      if (typeof auth.tokenUrl === "string") {
+        try {
+          tokenEndpointOrigin = new URL(auth.tokenUrl).origin;
+        } catch {
+          tokenEndpointOrigin = null;
+        }
+      }
+    }
+    return {
+      id: String(row.id),
+      projectId: String(row.project_id),
+      name: String(row.name),
+      description: String(row.description),
+      agentCardUrl: String(row.agent_card_url),
+      interfaceUrl: String(row.interface_url),
+      protocolVersion: String(row.protocol_version),
+      tenant: typeof row.tenant === "string" && row.tenant ? row.tenant : null,
+      skillId: String(row.skill_id),
+      skillName: String(row.skill_name),
+      inputModes: parseJson<string[]>(row.input_modes_json, ["text/plain"]),
+      outputModes: parseJson<string[]>(row.output_modes_json, ["text/plain"]),
+      capabilities,
+      authMode,
+      authSuffix: String(row.auth_suffix),
+      tokenEndpointOrigin,
+      enabled: Number(row.enabled) === 1,
+      allowFileArtifacts: Number(row.allow_file_artifacts) === 1,
+      maxResponseBytes: Number(row.max_response_bytes),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private normalizeA2ARemoteAuth(input: CreateA2ARemoteInput["auth"]): A2ARemoteAuthMaterial {
+    if (!input || !["none", "bearer", "oauth2_token_exchange"].includes(input.mode)) {
+      throw new Error("Неизвестный auth mode outbound A2A peer");
+    }
+    if (input.mode === "none") return { mode: "none" };
+    if (input.mode === "bearer") {
+      const bearerToken = requiredAgentText(input.bearerToken, "Bearer token outbound A2A peer", 8_000);
+      if (/[\r\n]/.test(bearerToken)) throw new Error("Bearer token содержит управляющие символы");
+      return { mode: "bearer", bearerToken };
+    }
+    const tokenUrl = requiredAgentText(input.tokenUrl, "OAuth token URL", 2_048);
+    let parsed: URL;
+    try {
+      parsed = new URL(tokenUrl);
+    } catch {
+      throw new Error("OAuth token URL должен быть абсолютным HTTP(S) URL");
+    }
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["127.0.0.1", "::1", "[::1]", "localhost"].includes(parsed.hostname))) {
+      throw new Error("OAuth token URL требует HTTPS; HTTP разрешён только для loopback");
+    }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("OAuth token URL не должен содержать credentials, query или fragment");
+    const scopes = Array.isArray(input.scopes)
+      ? [...new Set(input.scopes.map((scope) => requiredAgentText(scope, "OAuth scope", 200)))]
+      : [];
+    if (scopes.length > 32 || scopes.some((scope) => /\s/.test(scope))) throw new Error("OAuth scopes содержат недопустимое значение");
+    return {
+      mode: "oauth2_token_exchange",
+      tokenUrl: parsed.toString(),
+      audience: input.audience ? requiredAgentText(input.audience, "OAuth audience", 500) : undefined,
+      scopes,
+      clientId: requiredAgentText(input.clientId, "OAuth client ID", 500),
+      clientSecret: requiredAgentText(input.clientSecret, "OAuth client secret", 8_000),
+    };
+  }
+
+  getA2ARemoteConnection(id: string, projectId?: string, enabledOnly = false): A2ARemoteConnection | null {
+    const conditions = ["id = ?"];
+    const params: SqlScalar[] = [id];
+    if (projectId !== undefined) {
+      conditions.push("project_id = ?");
+      params.push(normalizeProjectId(projectId));
+    }
+    if (enabledOnly) conditions.push("enabled = 1");
+    const row = this.db.prepare(`SELECT * FROM a2a_remotes WHERE ${conditions.join(" AND ")}`)
+      .get(...params) as Row | undefined;
+    return row ? this.a2aRemoteConnection(row) : null;
+  }
+
+  getA2ARemoteAuth(id: string, projectId: string): A2ARemoteAuthMaterial | null {
+    const row = this.db.prepare("SELECT auth_blob FROM a2a_remotes WHERE id = ? AND project_id = ?")
+      .get(id, normalizeProjectId(projectId)) as Row | undefined;
+    return row ? decryptJson(row.auth_blob, this.credentialsKey) as A2ARemoteAuthMaterial : null;
+  }
+
+  listA2ARemotes(projectId = "default"): Array<Record<string, unknown>> {
+    const project = normalizeProjectId(projectId);
+    return (this.db.prepare(`
+      SELECT r.*,
+        (SELECT COUNT(*) FROM a2a_outbound_tasks t WHERE t.remote_id = r.id) AS total_tasks,
+        (SELECT MAX(t.updated_at) FROM a2a_outbound_tasks t WHERE t.remote_id = r.id) AS last_task_at
+      FROM a2a_remotes r WHERE r.project_id = ? ORDER BY r.updated_at DESC, r.name COLLATE NOCASE
+    `).all(project) as Row[]).map((row) => ({
+      ...this.a2aRemoteConnection(row),
+      totalTasks: Number(row.total_tasks),
+      lastTaskAt: typeof row.last_task_at === "string" ? row.last_task_at : null,
+    }));
+  }
+
+  createA2ARemote(
+    input: CreateA2ARemoteInput,
+    discovered: {
+      name: string;
+      description: string;
+      agentCardUrl: string;
+      interfaceUrl: string;
+      protocolVersion: string;
+      tenant: string | null;
+      skillId: string;
+      skillName: string;
+      inputModes: string[];
+      outputModes: string[];
+      capabilities: A2ARemoteConnection["capabilities"];
+      cardSha256: string;
+    },
+    projectId = "default",
+    actor = "system",
+  ): Record<string, unknown> {
+    const project = this.requireProject(projectId);
+    const auth = this.normalizeA2ARemoteAuth(input.auth);
+    const id = randomUUID();
+    const timestamp = nowIso();
+    const name = input.name ? requiredAgentText(input.name, "Название outbound A2A peer", 120) : discovered.name;
+    const authSecret = auth.mode === "bearer" ? auth.bearerToken! : auth.mode === "oauth2_token_exchange" ? auth.clientSecret! : "";
+    try {
+      this.db.prepare(`
+        INSERT INTO a2a_remotes(
+          id, project_id, name, description, agent_card_url, interface_url,
+          protocol_version, tenant, skill_id, skill_name, input_modes_json,
+          output_modes_json, capabilities_json, card_sha256, auth_mode, auth_blob,
+          auth_suffix, enabled, allow_file_artifacts, max_response_bytes,
+          created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        project,
+        name,
+        discovered.description,
+        discovered.agentCardUrl,
+        discovered.interfaceUrl,
+        discovered.protocolVersion,
+        discovered.tenant,
+        discovered.skillId,
+        discovered.skillName,
+        JSON.stringify(discovered.inputModes),
+        JSON.stringify(discovered.outputModes),
+        JSON.stringify(discovered.capabilities),
+        discovered.cardSha256,
+        auth.mode,
+        encryptJson(auth, this.credentialsKey),
+        authSecret.slice(-6),
+        input.enabled === false ? 0 : 1,
+        input.allowFileArtifacts === true ? 1 : 0,
+        Math.max(65_536, Math.min(4_194_304, Math.trunc(input.maxResponseBytes ?? 1_048_576))),
+        actor.slice(0, 200),
+        timestamp,
+        timestamp,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        throw new Error("Outbound A2A peer с этим Agent Card и skill уже существует в проекте");
+      }
+      throw error;
+    }
+    this.addEvent(null, null, null, "info", "a2a.remote.created", `Добавлен outbound A2A peer «${name}»`, {
+      projectId: project,
+      remoteId: id,
+      agentCardOrigin: new URL(discovered.agentCardUrl).origin,
+      interfaceOrigin: new URL(discovered.interfaceUrl).origin,
+      skillId: discovered.skillId,
+      authMode: auth.mode,
+      tokenEndpointOrigin: auth.mode === "oauth2_token_exchange" ? new URL(auth.tokenUrl!).origin : null,
+      oauthAudience: auth.mode === "oauth2_token_exchange" ? auth.audience ?? null : null,
+      oauthScopes: auth.mode === "oauth2_token_exchange" ? auth.scopes ?? [] : [],
+      actor: actor.slice(0, 200),
+    });
+    return this.listA2ARemotes(project).find((remote) => remote.id === id)!;
+  }
+
+  updateA2ARemote(
+    id: string,
+    input: UpdateA2ARemoteInput,
+    projectId = "default",
+    actor = "system",
+  ): Record<string, unknown> | null {
+    const project = this.requireProject(projectId);
+    const current = this.getA2ARemoteConnection(id, project);
+    if (!current) return null;
+    const currentAuth = this.getA2ARemoteAuth(id, project)!;
+    const auth = input.auth ? this.normalizeA2ARemoteAuth(input.auth) : currentAuth;
+    const authSecret = auth.mode === "bearer" ? auth.bearerToken! : auth.mode === "oauth2_token_exchange" ? auth.clientSecret! : "";
+    const timestamp = nowIso();
+    this.db.prepare(`
+      UPDATE a2a_remotes SET name = ?, auth_mode = ?, auth_blob = ?, auth_suffix = ?,
+        enabled = ?, allow_file_artifacts = ?, max_response_bytes = ?, updated_at = ?
+      WHERE id = ? AND project_id = ?
+    `).run(
+      input.name ? requiredAgentText(input.name, "Название outbound A2A peer", 120) : current.name,
+      auth.mode,
+      encryptJson(auth, this.credentialsKey),
+      authSecret.slice(-6),
+      (input.enabled ?? current.enabled) ? 1 : 0,
+      (input.allowFileArtifacts ?? current.allowFileArtifacts) ? 1 : 0,
+      Math.max(65_536, Math.min(4_194_304, Math.trunc(input.maxResponseBytes ?? current.maxResponseBytes))),
+      timestamp,
+      id,
+      project,
+    );
+    this.addEvent(null, null, null, "info", "a2a.remote.updated", `Обновлён outbound A2A peer «${current.name}»`, {
+      projectId: project,
+      remoteId: id,
+      authMode: auth.mode,
+      tokenEndpointOrigin: auth.mode === "oauth2_token_exchange" ? new URL(auth.tokenUrl!).origin : null,
+      oauthAudience: auth.mode === "oauth2_token_exchange" ? auth.audience ?? null : null,
+      oauthScopes: auth.mode === "oauth2_token_exchange" ? auth.scopes ?? [] : [],
+      actor: actor.slice(0, 200),
+    });
+    return this.listA2ARemotes(project).find((remote) => remote.id === id) ?? null;
+  }
+
+  deleteA2ARemote(id: string, projectId = "default", actor = "system"): boolean {
+    const project = this.requireProject(projectId);
+    const remote = this.getA2ARemoteConnection(id, project);
+    if (!remote) return false;
+    this.db.prepare("DELETE FROM a2a_remotes WHERE id = ? AND project_id = ?").run(id, project);
+    this.addEvent(null, null, null, "warn", "a2a.remote.deleted", `Удалён outbound A2A peer «${remote.name}»`, {
+      projectId: project,
+      remoteId: id,
+      actor: actor.slice(0, 200),
+    });
+    return true;
+  }
+
+  recordA2AOutboundTask(
+    remote: A2ARemoteConnection,
+    request: Record<string, unknown>,
+    response: Record<string, unknown>,
+    actor: { subject: string; display: string },
+    delegated: boolean,
+  ): Record<string, unknown> {
+    const message = request.message && typeof request.message === "object" && !Array.isArray(request.message)
+      ? request.message as Record<string, unknown>
+      : {};
+    const messageId = typeof message.messageId === "string" ? message.messageId : "";
+    if (!messageId) throw new Error("Outbound A2A messageId обязателен");
+    const task = response.task && typeof response.task === "object" && !Array.isArray(response.task)
+      ? response.task as Record<string, unknown>
+      : null;
+    const status = task?.status && typeof task.status === "object" && !Array.isArray(task.status)
+      ? task.status as Record<string, unknown>
+      : {};
+    const state = typeof status.state === "string" ? status.state : task ? "TASK_STATE_UNSPECIFIED" : "TASK_STATE_COMPLETED";
+    const remoteTaskId = task && typeof task.id === "string" ? task.id : null;
+    const contextId = task && typeof task.contextId === "string"
+      ? task.contextId
+      : typeof message.contextId === "string" ? message.contextId : randomUUID();
+    const requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const existing = this.db.prepare("SELECT * FROM a2a_outbound_tasks WHERE remote_id = ? AND client_message_id = ?")
+      .get(remote.id, messageId) as Row | undefined;
+    if (existing) {
+      if (existing.request_sha256 !== requestSha256) throw new Error("Outbound A2A messageId уже использован с другим содержимым");
+      return this.a2aOutboundTaskDto(existing);
+    }
+    const id = randomUUID();
+    const timestamp = nowIso();
+    const traceId = randomUUID().replaceAll("-", "");
+    this.db.prepare(`
+      INSERT INTO a2a_outbound_tasks(
+        id, remote_id, project_id, remote_task_id, context_id, client_message_id,
+        state, request_sha256, request_blob, response_blob, trace_id,
+        actor_subject, actor_display, delegated, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      remote.id,
+      remote.projectId,
+      remoteTaskId,
+      contextId,
+      messageId,
+      state,
+      requestSha256,
+      encryptJson(request, this.credentialsKey),
+      encryptJson(response, this.credentialsKey),
+      traceId,
+      actor.subject.slice(0, 500),
+      actor.display.slice(0, 200),
+      delegated ? 1 : 0,
+      timestamp,
+      timestamp,
+    );
+    this.addEvent(null, null, null, "info", "a2a.outbound.recorded", `Outbound task отправлен peer «${remote.name}»`, {
+      projectId: remote.projectId,
+      remoteId: remote.id,
+      outboundTaskId: id,
+      remoteTaskId,
+      state,
+      delegated,
+      actor: actor.display.slice(0, 200),
+    });
+    const row = this.db.prepare("SELECT * FROM a2a_outbound_tasks WHERE id = ?").get(id) as Row;
+    return this.a2aOutboundTaskDto(row);
+  }
+
+  updateA2AOutboundTask(
+    remoteId: string,
+    remoteTaskId: string,
+    response: Record<string, unknown>,
+    projectId: string,
+  ): Record<string, unknown> | null {
+    const project = normalizeProjectId(projectId);
+    const row = this.db.prepare(`
+      SELECT * FROM a2a_outbound_tasks WHERE remote_id = ? AND remote_task_id = ? AND project_id = ?
+    `).get(remoteId, remoteTaskId, project) as Row | undefined;
+    if (!row) return null;
+    const status = response.status && typeof response.status === "object" && !Array.isArray(response.status)
+      ? response.status as Record<string, unknown>
+      : {};
+    const state = typeof status.state === "string" ? status.state : String(row.state);
+    const timestamp = nowIso();
+    this.db.prepare("UPDATE a2a_outbound_tasks SET state = ?, response_blob = ?, updated_at = ? WHERE id = ?")
+      .run(state, encryptJson(response, this.credentialsKey), timestamp, String(row.id));
+    const updated = this.db.prepare("SELECT * FROM a2a_outbound_tasks WHERE id = ?").get(String(row.id)) as Row;
+    return this.a2aOutboundTaskDto(updated);
+  }
+
+  private a2aOutboundTaskDto(row: Row): Record<string, unknown> {
+    return {
+      id: row.id,
+      remoteId: row.remote_id,
+      remoteTaskId: row.remote_task_id,
+      contextId: row.context_id,
+      clientMessageId: row.client_message_id,
+      state: row.state,
+      traceId: row.trace_id,
+      delegated: Number(row.delegated) === 1,
+      actor: row.actor_display,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  getA2AOutboundTask(id: string, projectId = "default"): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT t.*, r.name AS remote_name FROM a2a_outbound_tasks t
+      JOIN a2a_remotes r ON r.id = t.remote_id
+      WHERE t.id = ? AND t.project_id = ?
+    `).get(id, normalizeProjectId(projectId)) as Row | undefined;
+    return row ? { ...this.a2aOutboundTaskDto(row), remoteName: row.remote_name } : null;
+  }
+
+  listRecentA2AOutboundTasks(projectId = "default", limit = 100): Array<Record<string, unknown>> {
+    const project = normalizeProjectId(projectId);
+    return (this.db.prepare(`
+      SELECT t.*, r.name AS remote_name FROM a2a_outbound_tasks t
+      JOIN a2a_remotes r ON r.id = t.remote_id
+      WHERE t.project_id = ? ORDER BY t.updated_at DESC LIMIT ?
+    `).all(project, Math.max(1, Math.min(500, Math.trunc(limit)))) as Row[]).map((row) => ({
+      ...this.a2aOutboundTaskDto(row),
+      remoteName: row.remote_name,
+    }));
+  }
+
   getA2ASnapshot(projectId = "default"): Record<string, unknown> {
     const endpoints = this.listA2AEndpoints(projectId);
     const tasks = this.listRecentA2ATasks(projectId, 100);
+    const remotes = this.listA2ARemotes(projectId);
+    const outboundTasks = this.listRecentA2AOutboundTasks(projectId, 100);
     return {
       protocolVersion: A2A_PROTOCOL_VERSION,
       adapterVersion: A2A_ADAPTER_VERSION,
       endpoints,
       tasks,
+      remotes,
+      outboundTasks,
       counts: {
         endpoints: endpoints.length,
         enabledEndpoints: endpoints.filter((endpoint) => endpoint.enabled === true).length,
@@ -3903,6 +4708,9 @@ export class AgatStore {
         activeTasks: tasks.filter((task) => ["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING", "TASK_STATE_AUTH_REQUIRED"].includes(String(task.state))).length,
         completedTasks: tasks.filter((task) => task.state === "TASK_STATE_COMPLETED").length,
         failedTasks: tasks.filter((task) => task.state === "TASK_STATE_FAILED").length,
+        remotes: remotes.length,
+        enabledRemotes: remotes.filter((remote) => remote.enabled === true).length,
+        outboundTasks: outboundTasks.length,
       },
     };
   }
@@ -7874,9 +8682,16 @@ export class AgatStore {
       const benchmarkModel = metrics.model ?? routing?.selectedModel ?? null;
       if (benchmarkModel) this.recordModelBenchmark(nodeId, benchmarkModel, metrics, timestamp);
       let storedArtifacts = 0;
-      if (normalizeResultDestination(stage.result_destination) === "artifacts") {
+      const artifactDestination = normalizeResultDestination(stage.result_destination) === "artifacts";
+      const a2aFileOutput = Boolean(this.db.prepare(`
+        SELECT t.id FROM a2a_tasks t JOIN a2a_endpoints e ON e.id = t.endpoint_id
+        WHERE t.run_id = ? AND e.file_artifacts_enabled = 1 LIMIT 1
+      `).get(String(stage.run_id)));
+      if (artifactDestination) {
         this.persistStageOutputArtifact(stage, output);
         storedArtifacts += 1;
+      }
+      if (artifactDestination || a2aFileOutput) {
         storedArtifacts += this.persistWorkerArtifacts(stage, workerArtifacts);
       }
       this.addEvent(String(stage.run_id), String(stage.id), nodeId, "info", "stage.completed", "Этап завершён", {
@@ -10637,15 +11452,31 @@ export class AgatStore {
     if (!Array.isArray(artifacts)) throw new Error("artifacts должен быть массивом");
     if (artifacts.length > 8) throw new Error("За один этап можно сохранить не более 8 артефактов");
     let totalBytes = 0;
+    const decoded: Buffer[] = [];
     for (const artifact of artifacts) {
       if (!artifact || typeof artifact !== "object" || typeof artifact.content !== "string") {
         throw new Error("Содержимое артефакта должно быть строкой");
       }
-      totalBytes += Buffer.byteLength(artifact.content, "utf8");
+      if (artifact.encoding !== undefined && artifact.encoding !== "utf8" && artifact.encoding !== "base64") {
+        throw new Error("encoding артефакта должен быть utf8 или base64");
+      }
+      let bytes: Buffer;
+      if (artifact.encoding === "base64") {
+        if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(artifact.content)) {
+          throw new Error("Binary artifact должен содержать canonical base64");
+        }
+        bytes = Buffer.from(artifact.content, "base64");
+        if (bytes.toString("base64") !== artifact.content) throw new Error("Binary artifact повреждён");
+      } else {
+        bytes = Buffer.from(artifact.content, "utf8");
+      }
+      decoded.push(bytes);
+      totalBytes += bytes.byteLength;
     }
     if (totalBytes > 800_000) throw new Error("Суммарный размер артефактов этапа превышает 800000 байт");
 
-    for (const artifact of artifacts) {
+    for (let index = 0; index < artifacts.length; index += 1) {
+      const artifact = artifacts[index]!;
       const name = safeArtifactName(artifact.name);
       const mediaType = typeof artifact.mediaType === "string"
         && /^[\w.+-]+\/[\w.+-]+(?:;\s*charset=[\w-]+)?$/i.test(artifact.mediaType)
@@ -10657,7 +11488,7 @@ export class AgatStore {
         name,
         "agent_artifact",
         mediaType,
-        artifact.content,
+        decoded[index]!,
         path.posix.join("artifacts", storageName),
       );
     }
@@ -10669,7 +11500,7 @@ export class AgatStore {
     name: string,
     kind: string,
     mediaType: string,
-    content: string,
+    content: string | Buffer,
     pathWithinRun: string,
   ): void {
     const artifactId = randomUUID();
@@ -10704,7 +11535,7 @@ export class AgatStore {
     const rootPrefix = `${path.resolve(this.artifactsDir)}${path.sep}`;
     if (!path.resolve(filePath).startsWith(rootPrefix)) throw new Error("Путь артефакта вышел за пределы хранилища");
     const temporaryPath = path.join(directory, `.${filename}.${artifactId}.tmp`);
-    const buffer = Buffer.from(content, "utf8");
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
     try {
       fs.writeFileSync(temporaryPath, buffer, { flag: "wx", mode: 0o600 });
       fs.linkSync(temporaryPath, filePath);
@@ -10725,7 +11556,7 @@ export class AgatStore {
         .run(
           artifactId,
           String(stage.run_id),
-          String(stage.id),
+          stage.id === null || stage.id === undefined ? null : String(stage.id),
           name,
           kind,
           mediaType,
@@ -10734,7 +11565,14 @@ export class AgatStore {
           sha256,
           createdAt,
         );
-      this.addEvent(String(stage.run_id), String(stage.id), null, "info", "artifact.created", `Сохранён артефакт «${name}»`, {
+      this.addEvent(
+        String(stage.run_id),
+        stage.id === null || stage.id === undefined ? null : String(stage.id),
+        null,
+        "info",
+        "artifact.created",
+        `Сохранён артефакт «${name}»`,
+        {
         kind: "artifact",
         artifactId,
         artifactKind: kind,
@@ -10743,7 +11581,8 @@ export class AgatStore {
         relativePath,
         sizeBytes: buffer.byteLength,
         sha256,
-      });
+        },
+      );
     } catch (error) {
       const status = fs.lstatSync(filePath);
       if (status.isFile() && !status.isSymbolicLink()) fs.rmSync(filePath);

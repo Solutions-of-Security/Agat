@@ -6148,6 +6148,7 @@ p {
 /* A2A boundary adapter */
 .a2a-page { gap: 14px; padding-bottom: 28px; }
 .a2a-page__title { align-items: center; }
+.a2a-page__actions { display: flex; align-items: center; gap: 8px; }
 .a2a-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -6189,6 +6190,20 @@ p {
 .a2a-endpoint > footer span { color: var(--muted); font-size: 7px; white-space: nowrap; }
 .a2a-endpoint > footer button { display: flex; align-items: center; gap: 5px; color: var(--muted-strong); font-size: 7px; }
 .a2a-endpoint > footer button:hover { color: var(--lime); }
+.a2a-remotes { margin: 0 12px; border: 1px solid var(--line); background: var(--surface); }
+.a2a-remotes > header { display: flex; min-height: 60px; align-items: center; justify-content: space-between; gap: 15px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.a2a-remotes > header span { color: var(--cyan); font-family: var(--mono); font-size: 6px; letter-spacing: .08em; text-transform: uppercase; }
+.a2a-remotes > header h2 { margin-top: 5px; font-size: 13px; }
+.a2a-remotes > header small { color: var(--muted); font-size: 7px; }
+.a2a-remote-list { display: grid; }
+.a2a-remote-list article { display: grid; grid-template-columns: 42px minmax(180px, 1fr) auto auto; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+.a2a-remote-list article:last-child { border-bottom: 0; }
+.a2a-remote-list article.is-disabled { opacity: .62; }
+.a2a-remote-list article > div:nth-child(2) { min-width: 0; }
+.a2a-remote-list strong { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 10px; }
+.a2a-remote-list strong code { color: var(--cyan); font-size: 7px; font-weight: 500; }
+.a2a-remote-list small,
+.a2a-remote-list p { display: block; margin-top: 5px; overflow: hidden; color: var(--muted); font-family: var(--mono); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .a2a-tasks { margin: 0 12px 18px; border: 1px solid var(--line); background: var(--surface); }
 .a2a-tasks > header { display: flex; min-height: 60px; align-items: center; justify-content: space-between; gap: 15px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
 .a2a-tasks > header span { color: var(--cyan); font-family: var(--mono); font-size: 6px; letter-spacing: .08em; text-transform: uppercase; }
@@ -6215,6 +6230,11 @@ p {
 .a2a-editor { width: min(820px, 100%); }
 .a2a-editor textarea,
 .a2a-secret textarea { width: 100%; resize: vertical; border: 1px solid var(--line); color: var(--text); background: var(--bg-deep); font-family: var(--mono); font-size: 8px; line-height: 1.5; }
+.a2a-remote-editor { width: min(760px, 100%); }
+.a2a-invoke { width: min(720px, 100%); }
+.a2a-form-note { display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border: 1px solid rgb(88 213 200 / 24%); color: var(--muted-strong); background: rgb(88 213 200 / 4%); font-size: 7px; line-height: 1.5; }
+.a2a-form-note svg { flex: 0 0 auto; color: var(--cyan); }
+.a2a-invoke-result textarea { min-height: 190px; color: var(--cyan); }
 .a2a-policy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
 .a2a-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .a2a-checks > label,
@@ -6248,11 +6268,13 @@ p {
 
 @media (max-width: 720px) {
   .a2a-page__title { align-items: stretch; flex-direction: column; }
-  .a2a-page__title .button { justify-content: center; }
+  .a2a-page__title .button { flex: 1; justify-content: center; }
+  .a2a-page__actions { width: 100%; }
   .a2a-summary,
   .a2a-banner,
   .a2a-page__error,
   .a2a-endpoints,
+  .a2a-remotes,
   .a2a-tasks { margin-right: 0; margin-left: 0; border-right: 0; border-left: 0; }
   .a2a-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .a2a-summary > div:nth-child(2) { border-right: 0; }
@@ -6271,6 +6293,9 @@ p {
   .a2a-endpoint__meta > div:nth-last-child(-n + 2) { border-bottom: 0; }
   .a2a-endpoint > footer { grid-template-columns: 1fr auto; }
   .a2a-endpoint > footer span { grid-column: 1 / -1; grid-row: 2; }
+  .a2a-remote-list article { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .a2a-remote-list .a2a-live { grid-column: 2; }
+  .a2a-remote-list .a2a-endpoint__actions { grid-column: 3; grid-row: 1 / 3; }
   .a2a-task-list article { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
   .a2a-task-list time { grid-column: 1; }
   .a2a-task-list article > div { grid-column: 1; grid-row: 2; }

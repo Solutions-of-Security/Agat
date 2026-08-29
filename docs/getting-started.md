@@ -63,6 +63,10 @@ AGAT_SEARCH_SECRET=<ещё 64 hex символа>
 AGAT_SEED_DEMO=false
 AGAT_A2A_ENABLED=true
 AGAT_A2A_PUBLIC_BASE_URL=http://127.0.0.1:8787
+AGAT_A2A_OUTBOUND_ENABLED=true
+AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND=false
+AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS=15
+AGAT_A2A_MAX_RESPONSE_BYTES=1048576
 ```
 
 Сгенерировать значения:
@@ -209,16 +213,21 @@ Worker ожидает operator approval до `AGAT_MCP_APPROVAL_TIMEOUT_SECONDS=
 
 1. Задайте точный внешний origin в `AGAT_A2A_PUBLIC_BASE_URL`. Для сетевого hostname разрешён только HTTPS.
 2. Откройте раздел **A2A** и создайте endpoint для одного агента.
-3. Выберите доступные этому endpoint knowledge collections, input modes, approval и task limits.
+3. Выберите доступные этому endpoint knowledge collections, input/output MIME modes, SSE/push/files, approval и task limits.
 4. Сохраните показанный один раз bearer token в secret manager и передайте доверенному A2A client.
-5. Сначала проверьте Agent Card, затем отправьте `message:send` с `returnImmediately: true` и poll task.
+5. Сначала проверьте Agent Card, затем `message:send` + polling и отдельно opt-in streaming/push/file boundaries.
+6. Для outbound нажмите **Outbound peer**, задайте HTTPS Agent Card, skill и transport auth; начните с peer без side effects. Delegated OAuth token exchange настраивает только `admin`, предварительно проверив показанный token endpoint origin.
 
 ```dotenv
 AGAT_A2A_ENABLED=true
 AGAT_A2A_PUBLIC_BASE_URL=https://agat.internal.example
+AGAT_A2A_OUTBOUND_ENABLED=true
+AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND=false
+AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS=15
+AGAT_A2A_MAX_RESPONSE_BYTES=1048576
 ```
 
-Endpoint token не заменяет OIDC/dashboard token и не даёт доступа к `/api/v1`. Примеры `curl`, protocol headers, lifecycle и ограничения приведены в [руководстве A2A adapter](./a2a-adapter.md).
+Endpoint token не заменяет OIDC/dashboard token и не даёт доступа к `/api/v1`. Delegated peer требует OIDC: local-admin mode не имеет user token для RFC 8693, а его token endpoint получает dashboard bearer как `subject_token` и потому является admin-approved trust boundary. Production не должен включать loopback outbound. Примеры, protocol lifecycle, SSRF/secret policy и ограничения приведены в [руководстве A2A interoperability](./a2a-adapter.md).
 
 ## Смартфоны
 

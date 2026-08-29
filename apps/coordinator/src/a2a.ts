@@ -4,8 +4,11 @@ import type {
   A2AEndpointConnection,
   A2AInputMode,
   A2AMessage,
+  A2ANormalizedFile,
   A2ANormalizedMessage,
+  A2ANormalizedPushConfig,
   A2APart,
+  A2ARemoteConnection,
   A2ASendMessageRequest,
   A2ATaskState,
   CreateA2AEndpointInput,
@@ -13,10 +16,23 @@ import type {
 
 export const A2A_PROTOCOL_VERSION = "1.0";
 export const A2A_MEDIA_TYPE = "application/a2a+json";
-export const A2A_ADAPTER_VERSION = "1.0.0";
+export const A2A_ADAPTER_VERSION = "1.1.0";
 export const A2A_SUPPORTED_OUTPUT_MODES = ["text/plain"] as const;
 
-const INPUT_MODES = new Set<A2AInputMode>(["text/plain", "application/json"]);
+const INLINE_MODES = new Set<A2AInputMode>(["text/plain", "application/json"]);
+const MEDIA_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+const A2A_TASK_STATES = new Set<A2ATaskState>([
+  "TASK_STATE_UNSPECIFIED",
+  "TASK_STATE_SUBMITTED",
+  "TASK_STATE_WORKING",
+  "TASK_STATE_COMPLETED",
+  "TASK_STATE_FAILED",
+  "TASK_STATE_CANCELED",
+  "TASK_STATE_INPUT_REQUIRED",
+  "TASK_STATE_REJECTED",
+  "TASK_STATE_AUTH_REQUIRED",
+]);
 const TERMINAL_OR_INTERRUPTED_STATES = new Set<A2ATaskState>([
   "TASK_STATE_COMPLETED",
   "TASK_STATE_FAILED",
@@ -25,6 +41,11 @@ const TERMINAL_OR_INTERRUPTED_STATES = new Set<A2ATaskState>([
   "TASK_STATE_INPUT_REQUIRED",
   "TASK_STATE_AUTH_REQUIRED",
 ]);
+
+type A2AOutboundValidationRemote = Pick<
+  A2ARemoteConnection,
+  "allowFileArtifacts" | "inputModes" | "outputModes"
+>;
 
 export class A2AProtocolError extends Error {
   constructor(
@@ -94,14 +115,20 @@ export function normalizeA2AEndpointInput(
     | "tags"
     | "examples"
     | "inputModes"
+    | "outputModes"
     | "knowledgeCollectionIds"
     | "approvalRequired"
+    | "streamingEnabled"
+    | "pushNotificationsEnabled"
+    | "fileArtifactsEnabled"
     | "enabled"
     | "priority"
     | "maxInputCharacters"
     | "maxActiveTasks"
+    | "maxFileBytes"
+    | "maxFiles"
   >,
-): Omit<CreateA2AEndpointInput, "tags" | "examples" | "inputModes" | "knowledgeCollectionIds"> & {
+): Omit<CreateA2AEndpointInput, "tags" | "examples" | "inputModes" | "outputModes" | "knowledgeCollectionIds"> & {
   agentId: string;
   name: string;
   description: string;
@@ -112,12 +139,18 @@ export function normalizeA2AEndpointInput(
   tags: string[];
   examples: string[];
   inputModes: A2AInputMode[];
+  outputModes: string[];
   knowledgeCollectionIds: string[];
   approvalRequired: boolean;
+  streamingEnabled: boolean;
+  pushNotificationsEnabled: boolean;
+  fileArtifactsEnabled: boolean;
   enabled: boolean;
   priority: number;
   maxInputCharacters: number;
   maxActiveTasks: number;
+  maxFileBytes: number;
+  maxFiles: number;
 } {
   const agentId = requiredText(input.agentId ?? defaults.agentId, "Агент A2A endpoint", 100);
   const name = optionalText(input.name, defaults.name || defaults.agentName, "Название A2A endpoint", 120);
@@ -146,12 +179,21 @@ export function normalizeA2AEndpointInput(
   const tags = normalizedStringArray(input.tags, defaults.tags.length ? defaults.tags : ["agat", "local-agent"], "A2A tags", 16, 64);
   if (tags.length === 0) throw new Error("Нужен хотя бы один A2A tag");
   const examples = normalizedStringArray(input.examples, defaults.examples, "A2A examples", 8, 500);
-  const rawModes = input.inputModes === undefined ? defaults.inputModes : input.inputModes;
-  if (!Array.isArray(rawModes) || rawModes.length === 0) throw new Error("Нужен хотя бы один входной media type");
-  const inputModes = [...new Set(rawModes.map((mode) => {
-    if (!INPUT_MODES.has(mode)) throw new Error(`A2A input mode ${String(mode)} не поддерживается`);
-    return mode;
-  }))];
+  const fileArtifactsEnabled = input.fileArtifactsEnabled ?? defaults.fileArtifactsEnabled;
+  const normalizeModes = (value: unknown, fallback: string[], field: string): string[] => {
+    const source = value === undefined ? fallback : value;
+    if (!Array.isArray(source) || source.length === 0 || source.length > 16) {
+      throw new Error(`${field} должен содержать 1..16 media types`);
+    }
+    const modes = source.map((mode) => requiredText(mode, field, 255).toLowerCase());
+    if (modes.some((mode) => !MEDIA_TYPE.test(mode))) throw new Error(`${field} содержит некорректный media type`);
+    if (!fileArtifactsEnabled && modes.some((mode) => !INLINE_MODES.has(mode))) {
+      throw new Error(`${field}: file media types требуют включённые file artifacts`);
+    }
+    return [...new Set(modes)];
+  };
+  const inputModes = normalizeModes(input.inputModes, defaults.inputModes, "A2A inputModes");
+  const outputModes = normalizeModes(input.outputModes, defaults.outputModes, "A2A outputModes");
   const knowledgeCollectionIds = normalizedStringArray(
     input.knowledgeCollectionIds,
     defaults.knowledgeCollectionIds,
@@ -170,12 +212,18 @@ export function normalizeA2AEndpointInput(
     tags,
     examples,
     inputModes,
+    outputModes,
     knowledgeCollectionIds,
     approvalRequired: input.approvalRequired ?? defaults.approvalRequired,
+    streamingEnabled: input.streamingEnabled ?? defaults.streamingEnabled,
+    pushNotificationsEnabled: input.pushNotificationsEnabled ?? defaults.pushNotificationsEnabled,
+    fileArtifactsEnabled,
     enabled: input.enabled ?? defaults.enabled,
     priority: boundedInteger(input.priority, 0, 100, defaults.priority),
     maxInputCharacters: boundedInteger(input.maxInputCharacters, 1_000, 100_000, defaults.maxInputCharacters),
     maxActiveTasks: boundedInteger(input.maxActiveTasks, 1, 100, defaults.maxActiveTasks),
+    maxFileBytes: boundedInteger(input.maxFileBytes, 1_024, 2_000_000, defaults.maxFileBytes),
+    maxFiles: boundedInteger(input.maxFiles, 1, 8, defaults.maxFiles),
   };
 }
 
@@ -274,7 +322,33 @@ function canonicalJson(value: unknown): string {
   return `{${entries.map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`).join(",")}}`;
 }
 
-function normalizePart(part: unknown, index: number, allowedModes: Set<A2AInputMode>): { part: A2APart; input: string } {
+function normalizedFilename(value: unknown, index: number): string {
+  const filename = requestText(value, `message.parts[${index}].filename`, 180).trim();
+  if (filename === "." || filename === ".." || /[\\/\0\r\n]/.test(filename)) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `message.parts[${index}].filename небезопасен`);
+  }
+  return filename;
+}
+
+function decodeBase64File(value: unknown, index: number, maxFileBytes: number): Buffer {
+  if (typeof value !== "string" || !value || value.length > Math.ceil(maxFileBytes / 3) * 4 + 4) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `message.parts[${index}].raw превышает лимит`);
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `message.parts[${index}].raw должен быть canonical base64`);
+  }
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length === 0 || bytes.length > maxFileBytes || bytes.toString("base64") !== value) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `message.parts[${index}].raw превышает лимит или повреждён`);
+  }
+  return bytes;
+}
+
+function normalizePart(
+  part: unknown,
+  index: number,
+  endpoint: Pick<A2AEndpointConnection, "inputModes" | "fileArtifactsEnabled" | "maxFileBytes">,
+): { part: A2APart; input: string; file: A2ANormalizedFile | null } {
   if (!part || typeof part !== "object" || Array.isArray(part)) {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `message.parts[${index}] должен быть объектом`);
   }
@@ -296,15 +370,16 @@ function normalizePart(part: unknown, index: number, allowedModes: Set<A2AInputM
     );
   }
   const kind = kinds[0]!;
-  if (kind === "raw" || kind === "url") {
+  if (kind === "url") {
     throw new A2AProtocolError(
       400,
       "INVALID_ARGUMENT",
       "CONTENT_TYPE_NOT_SUPPORTED",
-      "A2A boundary АГАТ принимает только inline text и JSON data; file/raw/url parts запрещены",
+      "A2A boundary АГАТ не скачивает URL file parts; передайте bounded inline raw",
       { part: String(index), kind },
     );
   }
+  const allowedModes = new Set(endpoint.inputModes);
   if (kind === "text") {
     if (!allowedModes.has("text/plain")) {
       throw new A2AProtocolError(400, "INVALID_ARGUMENT", "CONTENT_TYPE_NOT_SUPPORTED", "Этот endpoint не принимает text/plain");
@@ -313,7 +388,24 @@ function normalizePart(part: unknown, index: number, allowedModes: Set<A2AInputM
       throw new A2AProtocolError(400, "INVALID_ARGUMENT", "CONTENT_TYPE_NOT_SUPPORTED", `Media type ${candidate.mediaType} не поддерживается`);
     }
     const text = requestText(candidate.text, `message.parts[${index}].text`, 100_000);
-    return { part: { text, mediaType: "text/plain" }, input: text };
+    return { part: { text, mediaType: "text/plain" }, input: text, file: null };
+  }
+  if (kind === "raw") {
+    if (!endpoint.fileArtifactsEnabled) {
+      throw new A2AProtocolError(400, "FAILED_PRECONDITION", "CONTENT_TYPE_NOT_SUPPORTED", "File artifacts выключены policy endpoint");
+    }
+    const mediaType = requestText(candidate.mediaType, `message.parts[${index}].mediaType`, 255).trim().toLowerCase();
+    if (!MEDIA_TYPE.test(mediaType) || !allowedModes.has(mediaType) || INLINE_MODES.has(mediaType)) {
+      throw new A2AProtocolError(400, "INVALID_ARGUMENT", "CONTENT_TYPE_NOT_SUPPORTED", `Media type ${mediaType} не разрешён endpoint`);
+    }
+    const filename = normalizedFilename(candidate.filename, index);
+    const bytes = decodeBase64File(candidate.raw, index, endpoint.maxFileBytes ?? 512_000);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    return {
+      part: { raw: bytes.toString("base64"), filename, mediaType },
+      input: `[A2A file artifact: ${filename}; mediaType=${mediaType}; bytes=${bytes.length}; sha256=${sha256}]`,
+      file: { filename, mediaType, bytes, sha256 },
+    };
   }
   if (!allowedModes.has("application/json")) {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "CONTENT_TYPE_NOT_SUPPORTED", "Этот endpoint не принимает application/json");
@@ -333,12 +425,67 @@ function normalizePart(part: unknown, index: number, allowedModes: Set<A2AInputM
   return {
     part: { data: candidate.data, mediaType: "application/json" },
     input: `[application/json]\n${serialized}`,
+    file: null,
   };
+}
+
+export function normalizeA2APushNotificationConfig(
+  value: unknown,
+  fallbackId?: string,
+  expectedTaskId?: string,
+): A2ANormalizedPushConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "taskPushNotificationConfig должен быть объектом");
+  }
+  const config = value as Record<string, unknown>;
+  if (config.taskId !== undefined && config.taskId !== "") {
+    const configuredTaskId = requestText(config.taskId, "taskPushNotificationConfig.taskId", 200).trim();
+    if (!expectedTaskId || configuredTaskId !== expectedTaskId) {
+      throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "taskPushNotificationConfig.taskId не совпадает с task route");
+    }
+  }
+  const id = config.id === undefined || config.id === ""
+    ? fallbackId ?? randomUUID()
+    : requestText(config.id, "taskPushNotificationConfig.id", 200).trim();
+  const rawUrl = requestText(config.url, "taskPushNotificationConfig.url", 2_048).trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "Push callback URL должен быть абсолютным URL");
+  }
+  if (parsed.username || parsed.password || parsed.hash
+    || (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)))) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "Push callback требует HTTPS; HTTP разрешён только для loopback");
+  }
+  const token = config.token === undefined ? "" : requestText(config.token, "taskPushNotificationConfig.token", 1_024);
+  let authentication: A2ANormalizedPushConfig["authentication"] = null;
+  if (config.authentication !== undefined) {
+    validateOptionalObject(config.authentication, "taskPushNotificationConfig.authentication");
+    const auth = config.authentication as Record<string, unknown>;
+    if (typeof auth.scheme !== "string" || auth.scheme.toLowerCase() !== "bearer") {
+      throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "Push authentication поддерживает только Bearer");
+    }
+    const credentials = requestText(auth.credentials, "taskPushNotificationConfig.authentication.credentials", 8_000);
+    if (/[\r\n]/.test(credentials)) {
+      throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "Push credentials содержат управляющие символы");
+    }
+    authentication = { scheme: "Bearer", credentials };
+  }
+  return { id, url: parsed.toString(), token, authentication };
 }
 
 export function normalizeA2ASendMessageRequest(
   input: unknown,
-  endpoint: Pick<A2AEndpointConnection, "inputModes" | "maxInputCharacters">,
+  endpoint: Pick<A2AEndpointConnection,
+    | "inputModes"
+    | "outputModes"
+    | "maxInputCharacters"
+    | "fileArtifactsEnabled"
+    | "maxFileBytes"
+    | "maxFiles"
+    | "pushNotificationsEnabled"
+  >,
 ): A2ANormalizedMessage {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_REQUEST", "SendMessageRequest должен быть JSON-объектом");
@@ -368,7 +515,7 @@ export function normalizeA2ASendMessageRequest(
   if (!Array.isArray(request.message.parts) || request.message.parts.length < 1 || request.message.parts.length > 32) {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", "message.parts должен содержать 1..32 parts");
   }
-  if (request.configuration?.taskPushNotificationConfig !== undefined) {
+  if (request.configuration?.taskPushNotificationConfig !== undefined && endpoint.pushNotificationsEnabled !== true) {
     throw new A2AProtocolError(
       400,
       "FAILED_PRECONDITION",
@@ -382,21 +529,27 @@ export function normalizeA2ASendMessageRequest(
     16,
     200,
   );
+  const outputModes = endpoint.outputModes ?? ["text/plain"];
   if (acceptedModes.length > 0) {
-    if (acceptedModes.length > 0 && !acceptedModes.includes("text/plain")) {
+    const unsupported = acceptedModes.find((mode) => !outputModes.includes(mode.toLowerCase()));
+    if (unsupported) {
       throw new A2AProtocolError(
         400,
         "INVALID_ARGUMENT",
         "CONTENT_TYPE_NOT_SUPPORTED",
-        "Endpoint возвращает только text/plain artifacts",
+        `Endpoint не возвращает ${unsupported}`,
       );
     }
   }
   if (request.configuration?.returnImmediately !== undefined && typeof request.configuration.returnImmediately !== "boolean") {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_PARAMETER", "returnImmediately должен быть boolean");
   }
-  const allowedModes = new Set(endpoint.inputModes);
-  const normalizedParts = request.message.parts.map((part, index) => normalizePart(part, index, allowedModes));
+  const normalizedParts = request.message.parts.map((part, index) => normalizePart(part, index, endpoint));
+  const files = normalizedParts.flatMap((part) => part.file ? [part.file] : []);
+  const maxFiles = endpoint.maxFiles ?? 4;
+  if (files.length > maxFiles) {
+    throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", `Endpoint принимает не более ${maxFiles} files`);
+  }
   const flattenedInput = normalizedParts.map((part) => part.input).join("\n\n");
   if (!flattenedInput.trim()) {
     throw new A2AProtocolError(400, "INVALID_ARGUMENT", "INVALID_MESSAGE", "Сообщение не содержит входных данных");
@@ -431,7 +584,17 @@ export function normalizeA2ASendMessageRequest(
   const requestSha256 = createHash("sha256").update(canonicalJson({
     message,
     acceptedOutputModes: acceptedModes,
+    taskPushNotificationConfig: request.configuration?.taskPushNotificationConfig,
   })).digest("hex");
+  const pushNotificationConfig = request.configuration?.taskPushNotificationConfig === undefined
+    ? null
+    : normalizeA2APushNotificationConfig(
+      request.configuration.taskPushNotificationConfig,
+      `push-${createHash("sha256").update(canonicalJson({
+        messageId,
+        config: request.configuration.taskPushNotificationConfig,
+      })).digest("hex").slice(0, 32)}`,
+    );
   return {
     message,
     input: flattenedInput,
@@ -439,6 +602,8 @@ export function normalizeA2ASendMessageRequest(
     historyLength: requestInteger(request.configuration?.historyLength, "historyLength", 0, 100, 1),
     returnImmediately: request.configuration?.returnImmediately ?? false,
     requestSha256,
+    files,
+    pushNotificationConfig,
   };
 }
 
@@ -458,8 +623,8 @@ export function buildA2AAgentCard(endpoint: A2AEndpointConnection, publicBaseUrl
     },
     version: endpoint.version,
     capabilities: {
-      streaming: false,
-      pushNotifications: false,
+      streaming: endpoint.streamingEnabled,
+      pushNotifications: endpoint.pushNotificationsEnabled,
       extendedAgentCard: false,
     },
     securitySchemes: {
@@ -473,7 +638,7 @@ export function buildA2AAgentCard(endpoint: A2AEndpointConnection, publicBaseUrl
     },
     securityRequirements: [{ schemes: { agatBearer: { list: [] } } }],
     defaultInputModes: endpoint.inputModes,
-    defaultOutputModes: [...A2A_SUPPORTED_OUTPUT_MODES],
+    defaultOutputModes: endpoint.outputModes,
     skills: [{
       id: endpoint.skillId,
       name: endpoint.skillName,
@@ -481,9 +646,170 @@ export function buildA2AAgentCard(endpoint: A2AEndpointConnection, publicBaseUrl
       tags: endpoint.tags,
       ...(endpoint.examples.length ? { examples: endpoint.examples } : {}),
       inputModes: endpoint.inputModes,
-      outputModes: [...A2A_SUPPORTED_OUTPUT_MODES],
+      outputModes: endpoint.outputModes,
     }],
   };
+}
+
+function validateOutboundParts(
+  value: unknown,
+  remote: A2AOutboundValidationRemote,
+  field: string,
+  allowedModes = remote.outputModes,
+): void {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field} должен содержать 1..32 parts`);
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const rawPart = value[index];
+    if (!rawPart || typeof rawPart !== "object" || Array.isArray(rawPart)) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}] некорректен`);
+    }
+    const part = rawPart as A2APart;
+    const kinds = (["text", "raw", "url", "data"] as const).filter((kind) => Object.hasOwn(part, kind));
+    if (kinds.length !== 1) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}] нарушает Part oneof`);
+    }
+    const kind = kinds[0]!;
+    const mediaType = typeof part.mediaType === "string"
+      ? part.mediaType.toLowerCase()
+      : kind === "text" ? "text/plain" : kind === "data" ? "application/json" : "";
+    if (mediaType && !MEDIA_TYPE.test(mediaType)) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].mediaType некорректен`);
+    }
+    if (mediaType && !allowedModes.includes(mediaType)) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "CONTENT_TYPE_NOT_SUPPORTED", `Peer вернул незаявленный media type ${mediaType}`);
+    }
+    if (kind === "text") {
+      if (typeof part.text !== "string" || part.text.length > 1_000_000) {
+        throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].text некорректен`);
+      }
+      continue;
+    }
+    if (kind === "data") {
+      let serialized = "";
+      try { serialized = JSON.stringify(part.data); } catch { /* handled below */ }
+      if (!serialized || serialized.length > 1_000_000) {
+        throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].data некорректен`);
+      }
+      continue;
+    }
+    if (!remote.allowFileArtifacts) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "CONTENT_TYPE_NOT_SUPPORTED", "Peer вернул file artifact, выключенный policy");
+    }
+    if (!mediaType || !MEDIA_TYPE.test(mediaType)) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].mediaType обязателен для file`);
+    }
+    normalizedFilename(part.filename, index);
+    if (kind === "raw") {
+      decodeBase64File(part.raw, index, 2_000_000);
+      continue;
+    }
+    if (typeof part.url !== "string" || part.url.length > 2_048) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].url некорректен`);
+    }
+    let url: URL;
+    try { url = new URL(part.url); } catch {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].url не является абсолютным URL`);
+    }
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}[${index}].url должен быть HTTPS без credentials и fragment`);
+    }
+  }
+}
+
+function validateOutboundMessage(
+  value: unknown,
+  remote: A2AOutboundValidationRemote,
+  field: string,
+  serverMessage: boolean,
+): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field} некорректен`);
+  }
+  const message = value as Record<string, unknown>;
+  if (typeof message.messageId !== "string" || !message.messageId || message.messageId.length > 200) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}.messageId обязателен`);
+  }
+  const allowedRoles = serverMessage ? ["ROLE_AGENT"] : ["ROLE_USER", "ROLE_AGENT"];
+  if (typeof message.role !== "string" || !allowedRoles.includes(message.role)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}.role некорректен`);
+  }
+  if (serverMessage && (typeof message.contextId !== "string" || !message.contextId || message.contextId.length > 200)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}.contextId обязателен для server message`);
+  }
+  for (const key of ["contextId", "taskId"] as const) {
+    if (message[key] !== undefined && (typeof message[key] !== "string" || !message[key] || message[key].length > 200)) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `${field}.${key} некорректен`);
+    }
+  }
+  validateOutboundParts(
+    message.parts,
+    remote,
+    `${field}.parts`,
+    message.role === "ROLE_USER" ? remote.inputModes : remote.outputModes,
+  );
+}
+
+export function validateA2AOutboundResponse(
+  response: Record<string, unknown>,
+  remote: A2AOutboundValidationRemote,
+): void {
+  const payloads = (["task", "message"] as const).filter((key) => Object.hasOwn(response, key));
+  if (payloads.length !== 1) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "SendMessageResponse должен содержать ровно task или message");
+  }
+  const payload = response[payloads[0]!];
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound A2A payload некорректен");
+  }
+  const record = payload as Record<string, unknown>;
+  if (payloads[0] === "message") {
+    validateOutboundMessage(record, remote, "message", true);
+    return;
+  }
+  if (typeof record.id !== "string" || !record.id || record.id.length > 200) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task не содержит корректный id");
+  }
+  if (record.contextId !== undefined
+    && (typeof record.contextId !== "string" || !record.contextId || record.contextId.length > 200)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task содержит некорректный contextId");
+  }
+  const status = record.status && typeof record.status === "object" && !Array.isArray(record.status)
+    ? record.status as Record<string, unknown>
+    : null;
+  if (!status || typeof status.state !== "string" || !A2A_TASK_STATES.has(status.state as A2ATaskState)) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task не содержит status.state");
+  }
+  if (status.timestamp !== undefined
+    && (typeof status.timestamp !== "string" || !status.timestamp || Number.isNaN(Date.parse(status.timestamp)))) {
+    throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task содержит некорректный status.timestamp");
+  }
+  if (status.message !== undefined) validateOutboundMessage(status.message, remote, "task.status.message", true);
+  if (record.artifacts !== undefined) {
+    if (!Array.isArray(record.artifacts) || record.artifacts.length > 16) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task artifacts некорректны");
+    }
+    const artifactIds = new Set<string>();
+    record.artifacts.forEach((artifact, index) => {
+      if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+        throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `task.artifacts[${index}] некорректен`);
+      }
+      const artifactRecord = artifact as Record<string, unknown>;
+      if (typeof artifactRecord.artifactId !== "string" || !artifactRecord.artifactId || artifactRecord.artifactId.length > 200
+        || artifactIds.has(artifactRecord.artifactId)) {
+        throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", `task.artifacts[${index}].artifactId некорректен`);
+      }
+      artifactIds.add(artifactRecord.artifactId);
+      validateOutboundParts(artifactRecord.parts, remote, `task.artifacts[${index}].parts`);
+    });
+  }
+  if (record.history !== undefined) {
+    if (!Array.isArray(record.history) || record.history.length > 1_000) {
+      throw new A2AProtocolError(502, "DATA_LOSS", "INVALID_RESPONSE", "Outbound Task history некорректна");
+    }
+    record.history.forEach((message, index) => validateOutboundMessage(message, remote, `task.history[${index}]`, false));
+  }
 }
 
 export function runStatusToA2AState(status: string): A2ATaskState {

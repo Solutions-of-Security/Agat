@@ -139,7 +139,7 @@ describe("MCP gateway and risk policy", () => {
       preview_diff_json: "[]",
     });
     const version = migrated.db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(version.user_version, 16);
+    assert.equal(version.user_version, 17);
   });
 
   it("rejects endpoint secrets and transport-owned credential headers", async () => {

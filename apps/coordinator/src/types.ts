@@ -509,6 +509,7 @@ export interface WorkerArtifactInput {
   name: string;
   mediaType?: string;
   content: string;
+  encoding?: "utf8" | "base64";
 }
 
 export type CredentialType = "http_header" | "api_key";
@@ -682,7 +683,8 @@ export interface McpToolCallResponse {
   approvers?: string[];
 }
 
-export type A2AInputMode = "text/plain" | "application/json";
+export type A2AInputMode = string;
+export type A2ARemoteAuthMode = "none" | "bearer" | "oauth2_token_exchange";
 export type A2ATaskState =
   | "TASK_STATE_UNSPECIFIED"
   | "TASK_STATE_SUBMITTED"
@@ -705,12 +707,18 @@ export interface CreateA2AEndpointInput {
   tags?: string[];
   examples?: string[];
   inputModes?: A2AInputMode[];
+  outputModes?: string[];
   knowledgeCollectionIds?: string[];
   approvalRequired?: boolean;
+  streamingEnabled?: boolean;
+  pushNotificationsEnabled?: boolean;
+  fileArtifactsEnabled?: boolean;
   enabled?: boolean;
   priority?: number;
   maxInputCharacters?: number;
   maxActiveTasks?: number;
+  maxFileBytes?: number;
+  maxFiles?: number;
 }
 
 export interface UpdateA2AEndpointInput extends Partial<CreateA2AEndpointInput> {}
@@ -723,6 +731,19 @@ export interface A2APart {
   filename?: string;
   mediaType?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface A2APushAuthentication {
+  scheme: string;
+  credentials?: string;
+}
+
+export interface A2ATaskPushNotificationConfig {
+  id?: string;
+  taskId?: string;
+  url: string;
+  token?: string;
+  authentication?: A2APushAuthentication;
 }
 
 export interface A2AMessage {
@@ -743,7 +764,7 @@ export interface A2ASendMessageRequest {
     acceptedOutputModes?: string[];
     historyLength?: number;
     returnImmediately?: boolean;
-    taskPushNotificationConfig?: unknown;
+    taskPushNotificationConfig?: A2ATaskPushNotificationConfig;
   };
   metadata?: Record<string, unknown>;
 }
@@ -763,12 +784,18 @@ export interface A2AEndpointConnection {
   tags: string[];
   examples: string[];
   inputModes: A2AInputMode[];
+  outputModes: string[];
   knowledgeCollectionIds: string[];
   approvalRequired: boolean;
+  streamingEnabled: boolean;
+  pushNotificationsEnabled: boolean;
+  fileArtifactsEnabled: boolean;
   enabled: boolean;
   priority: number;
   maxInputCharacters: number;
   maxActiveTasks: number;
+  maxFileBytes: number;
+  maxFiles: number;
   tokenSuffix: string;
   tokenRotatedAt: string;
   createdAt: string;
@@ -782,6 +809,90 @@ export interface A2ANormalizedMessage {
   historyLength: number;
   returnImmediately: boolean;
   requestSha256: string;
+  files: A2ANormalizedFile[];
+  pushNotificationConfig: A2ANormalizedPushConfig | null;
+}
+
+export interface A2ANormalizedFile {
+  filename: string;
+  mediaType: string;
+  bytes: Buffer;
+  sha256: string;
+}
+
+export interface A2ANormalizedPushConfig {
+  id: string;
+  url: string;
+  token: string;
+  authentication: {
+    scheme: "Bearer";
+    credentials: string;
+  } | null;
+}
+
+export interface CreateA2ARemoteInput {
+  agentCardUrl: string;
+  name?: string;
+  skillId?: string;
+  enabled?: boolean;
+  allowFileArtifacts?: boolean;
+  maxResponseBytes?: number;
+  auth: {
+    mode: A2ARemoteAuthMode;
+    bearerToken?: string;
+    tokenUrl?: string;
+    audience?: string;
+    scopes?: string[];
+    clientId?: string;
+    clientSecret?: string;
+  };
+}
+
+export interface UpdateA2ARemoteInput extends Partial<Omit<CreateA2ARemoteInput, "agentCardUrl">> {
+  auth?: CreateA2ARemoteInput["auth"];
+}
+
+export interface A2ARemoteConnection {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  agentCardUrl: string;
+  interfaceUrl: string;
+  protocolVersion: string;
+  tenant: string | null;
+  skillId: string;
+  skillName: string;
+  inputModes: string[];
+  outputModes: string[];
+  capabilities: {
+    streaming: boolean;
+    pushNotifications: boolean;
+  };
+  authMode: A2ARemoteAuthMode;
+  authSuffix: string;
+  tokenEndpointOrigin: string | null;
+  enabled: boolean;
+  allowFileArtifacts: boolean;
+  maxResponseBytes: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface A2ARemoteAuthMaterial {
+  mode: A2ARemoteAuthMode;
+  bearerToken?: string;
+  tokenUrl?: string;
+  audience?: string;
+  scopes?: string[];
+  clientId?: string;
+  clientSecret?: string;
+}
+
+export interface A2AOutboundInvocationInput {
+  message: A2AMessage;
+  configuration?: A2ASendMessageRequest["configuration"];
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateProjectInput {

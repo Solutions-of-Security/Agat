@@ -1302,7 +1302,8 @@ export interface ProcessWebhookSecret extends ProcessWebhook {
   token: string;
 }
 
-export type A2AInputMode = "text/plain" | "application/json";
+export type A2AInputMode = string;
+export type A2ARemoteAuthMode = "none" | "bearer" | "oauth2_token_exchange";
 
 export type A2ATaskState =
   | "TASK_STATE_UNSPECIFIED"
@@ -1330,12 +1331,18 @@ export interface A2AEndpoint {
   tags: string[];
   examples: string[];
   inputModes: A2AInputMode[];
+  outputModes: string[];
   knowledgeCollectionIds: string[];
   approvalRequired: boolean;
+  streamingEnabled: boolean;
+  pushNotificationsEnabled: boolean;
+  fileArtifactsEnabled: boolean;
   enabled: boolean;
   priority: number;
   maxInputCharacters: number;
   maxActiveTasks: number;
+  maxFileBytes: number;
+  maxFiles: number;
   tokenSuffix: string;
   tokenRotatedAt: string;
   createdAt: string;
@@ -1366,11 +1373,15 @@ export interface A2ATaskSummary {
 
 export interface A2ASnapshot {
   enabled: boolean;
+  outboundEnabled: boolean;
+  loopbackOutboundAllowed: boolean;
   publicBaseUrl: string;
   protocolVersion: string;
   adapterVersion: string;
   endpoints: A2AEndpoint[];
   tasks: A2ATaskSummary[];
+  remotes: A2ARemote[];
+  outboundTasks: A2AOutboundTaskSummary[];
   counts: {
     endpoints: number;
     enabledEndpoints: number;
@@ -1378,6 +1389,9 @@ export interface A2ASnapshot {
     activeTasks: number;
     completedTasks: number;
     failedTasks: number;
+    remotes: number;
+    enabledRemotes: number;
+    outboundTasks: number;
   };
 }
 
@@ -1392,17 +1406,112 @@ export interface SaveA2AEndpointRequest {
   tags?: string[];
   examples?: string[];
   inputModes?: A2AInputMode[];
+  outputModes?: string[];
   knowledgeCollectionIds?: string[];
   approvalRequired?: boolean;
+  streamingEnabled?: boolean;
+  pushNotificationsEnabled?: boolean;
+  fileArtifactsEnabled?: boolean;
   enabled?: boolean;
   priority?: number;
   maxInputCharacters?: number;
   maxActiveTasks?: number;
+  maxFileBytes?: number;
+  maxFiles?: number;
 }
 
 export interface A2AEndpointSecret {
   endpoint: A2AEndpoint;
   accessToken: string;
+}
+
+export interface A2ARemote {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  agentCardUrl: string;
+  interfaceUrl: string;
+  protocolVersion: string;
+  tenant: string | null;
+  skillId: string;
+  skillName: string;
+  inputModes: string[];
+  outputModes: string[];
+  capabilities: {
+    streaming: boolean;
+    pushNotifications: boolean;
+  };
+  authMode: A2ARemoteAuthMode;
+  authSuffix: string;
+  tokenEndpointOrigin: string | null;
+  enabled: boolean;
+  allowFileArtifacts: boolean;
+  maxResponseBytes: number;
+  totalTasks: number;
+  lastTaskAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface A2AOutboundTaskSummary {
+  id: string;
+  remoteId: string;
+  remoteName: string;
+  remoteTaskId: string | null;
+  contextId: string;
+  clientMessageId: string;
+  state: A2ATaskState;
+  traceId: string;
+  delegated: boolean;
+  actor: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveA2ARemoteRequest {
+  agentCardUrl: string;
+  name?: string;
+  skillId?: string;
+  enabled?: boolean;
+  allowFileArtifacts?: boolean;
+  maxResponseBytes?: number;
+  auth: {
+    mode: A2ARemoteAuthMode;
+    bearerToken?: string;
+    tokenUrl?: string;
+    audience?: string;
+    scopes?: string[];
+    clientId?: string;
+    clientSecret?: string;
+  };
+}
+
+export interface UpdateA2ARemoteRequest {
+  name?: string;
+  enabled?: boolean;
+  allowFileArtifacts?: boolean;
+  maxResponseBytes?: number;
+  auth?: SaveA2ARemoteRequest["auth"];
+}
+
+export interface InvokeA2ARemoteRequest {
+  message: {
+    messageId: string;
+    contextId?: string;
+    role: "ROLE_USER";
+    parts: Array<{ text: string; mediaType: "text/plain" }>;
+  };
+  configuration: {
+    acceptedOutputModes: string[];
+    historyLength: number;
+    returnImmediately: boolean;
+  };
+}
+
+export interface A2AOutboundInvocationResponse {
+  outboundTask: A2AOutboundTaskSummary;
+  response: Record<string, unknown>;
 }
 
 export type ViewId = "overview" | "agents" | "runs" | "processes" | "knowledge" | "evals" | "tools" | "a2a" | "nodes" | "models";

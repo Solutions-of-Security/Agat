@@ -163,13 +163,13 @@ class WorkerTelemetry:
                 {
                     "service.name": service_name
                     or os.getenv("OTEL_SERVICE_NAME", "agat-worker"),
-                    "service.version": "1.3.0",
+                    "service.version": "1.4.0",
                 }
             )
         )
         self._provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(self._provider)
-        self._tracer = trace.get_tracer("io.agat.worker", "1.3.0")
+        self._tracer = trace.get_tracer("io.agat.worker", "1.4.0")
         self._propagator = TraceContextTextMapPropagator()
         self._span_kind = SpanKind
         self._status_code = (Status, StatusCode)

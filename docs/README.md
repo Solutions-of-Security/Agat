@@ -1,6 +1,6 @@
 # АГАТ
 
-АГАТ 1.3 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
+АГАТ 1.4 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
 
 MVP уже включает:
 
@@ -37,7 +37,7 @@ MVP уже включает:
 - benchmark-aware Model Router: Ollama capabilities, RAM/VRAM/energy profiles, пассивный EWMA throughput, SLA policy, explainable selection и retry fallback.
 - Local RAG: project collections, pull-based локальные embeddings, source provenance, working memory с TTL, явно сохраняемая episodic memory, удаление и JSON export.
 - Golden eval: immutable datasets и prompt versions, batch runs, deterministic checks, human rubric, локальный model judge, knowledge-drift detection и promotion gate для prompt/model.
-- A2A 1.0 inbound adapter: минимальный Agent Card, project-scoped hashed bearer, `Send/Get/List/Cancel Task`, scheduler/approval/RAG mapping, W3C trace correlation и закрытый text/JSON boundary.
+- A2A 1.0 interoperability: inbound/outbound HTTP+JSON, project endpoint bearer, Agent Card discovery, RFC 8693 delegation, SSE, durable push outbox, bounded files, SSRF-safe transport и redacted audit mirrors.
 - Production Temporal runtime: TLS/auth fail-closed profiles, immutable versioned worker builds, canary rollout, history replay в CI, acknowledged Updates и interval Schedules через parent→child workflows.
 - Process Builder 1.2: deterministic parallel fork/join, cron/calendar и idempotent webhooks, внешний signal, version-pinned subprocess/templates, structural diff, safe/live instance replay, BPMN 2.0 integration и reverse-order compensation.
 
@@ -99,7 +99,7 @@ python3 workers/agat_worker.py
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
-- [A2A adapter](./a2a-adapter.md)
+- [A2A interoperability 1.4](./a2a-adapter.md)
 - [Журнал выполнения и артефакты](./execution-traces-and-artifacts.md)
 - [OpenTelemetry, execution manifest, replay и eval](./observability-replay-evals.md)
 - [Создание и настройка агентов](./agents.md)
@@ -135,4 +135,4 @@ PYTHONPATH=workers python3 -m unittest discover -s workers -p 'test_*.py'
 
 Обычный `npm test` не требует запущенной модели. `npm run test:ollama-rag` — отдельный реальный интеграционный тест через локальные Ollama, coordinator и Python-worker; его prerequisites и гарантии описаны в разделе [Local RAG](./local-rag-and-memory.md#реальный-ollama-e2e).
 
-Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/input/task/trace boundaries и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop и MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries.
+Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/task/trace boundaries, SSE lifecycle, push/outbox, bounded files, outbound discovery/RFC 8693/SSRF и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop и MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries.

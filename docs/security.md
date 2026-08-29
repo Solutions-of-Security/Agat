@@ -27,8 +27,9 @@
 - MCP credentials ограничиваются namespace/tool/risk/catalog/expiry, а глобальный persisted emergency deny повторно проверяется непосредственно перед upstream side effect;
 - повтор MCP-вызова дедуплицируется по `lease_id + client_call_id`; retry stage блокируется после потенциального non-read side effect;
 - A2A task API аутентифицируется отдельным project-scoped endpoint bearer до поиска task; token показывается один раз, а в SQLite хранится только SHA-256 hash;
-- публичный A2A Agent Card минимален и не содержит system prompt, memory, model pin, tools или credentials; вход ограничен inline text/JSON, а выход — финальным text artifact;
-- A2A `messageId` дедуплицирует запрос внутри endpoint, лимиты размера/активных tasks применяются до dispatch, а входное message шифруется `AGAT_CREDENTIALS_KEY`;
+- публичный A2A Agent Card минимален и не содержит system prompt, memory, model pin, tools или credentials; text/JSON/files, SSE и push доступны только по явной endpoint policy;
+- A2A `messageId` дедуплицирует запрос внутри endpoint, лимиты размера/files/активных tasks применяются до dispatch, а protocol messages, push и peer credentials шифруются `AGAT_CREDENTIALS_KEY`;
+- outbound A2A использует exact 1.0 discovery, HTTPS без redirects, DNS/IP pinning и deny private/link-local/mapped ranges; delegated OIDC token обменивается по RFC 8693 только в памяти вызова;
 - model/hardware profiles считаются worker telemetry, нормализуются и ограничиваются coordinator; они влияют на scheduling, но не дают worker новых полномочий или доступ к чужому project data;
 - knowledge collections/documents/memory изолированы по project; worker search ограничен collections snapshot активного stage lease, а vectors проходят лимит размерности и finite-number validation;
 - RAG snippets и memory маркируются как недоверенный контекст, source/chunk provenance и hashes сохраняются в audit, а embedding запроса — только как SHA-256 и размерность;
@@ -82,6 +83,9 @@
 - [ ] Дежурная смена умеет включить emergency deny, проверить `executingCalls`, остановить side effect во внешней системе и снять switch только с новой причиной.
 - [ ] Для каждого A2A endpoint проверены владелец внешнего клиента, агент, публичное описание, knowledge collections, approval/limits; token передан через secret channel и имеет rotation procedure.
 - [ ] `AGAT_A2A_PUBLIC_BASE_URL` совпадает с реальным HTTPS origin; Agent Card URL не публикуется как доказательство авторизации.
+- [ ] Для каждого outbound A2A peer проверены TLS identity, Agent Card/skill hash, auth mode, минимальные OAuth audience/scopes, response/file limits и владелец внешней системы.
+- [ ] Push callback использует уникальный Bearer, идемпотентно обрабатывает дубликаты и не указывает на private/link-local service; production не включает loopback policy.
+- [ ] Дежурная смена умеет независимо отключить `AGAT_A2A_OUTBOUND_ENABLED` либо весь inbound/push adapter через `AGAT_A2A_ENABLED`.
 - [ ] Если оператор вручную включил LangSmith/сторонний tracing, настроены egress, redaction, retention и договорные основания передачи данных.
 - [ ] Backup SQLite регулярно проверяется восстановлением.
 - [ ] `agat-coordinator` RoleBinding не расширен за пределы локального namespace и Deployments.
@@ -135,13 +139,17 @@ Promotion сверяет project, prompt/version, model, bound agent и PASS gat
 
 ## A2A boundary
 
-Agent Card доступен без bearer token и должен считаться публичным metadata-документом. UUID endpoint уменьшает случайное обнаружение, но не является контролем доступа. Все `Send/Get/List/Cancel Task` требуют отдельный endpoint token; coordinator проверяет его одновременно с `enabled=1` до чтения task, поэтому token одного endpoint или проекта не раскрывает существование task другого.
+Agent Card доступен без bearer token и должен считаться публичным metadata-документом. UUID endpoint уменьшает случайное обнаружение, но не является контролем доступа. Все task, streaming и push-config operations требуют отдельный endpoint token; coordinator проверяет его одновременно с `enabled=1` до чтения task, поэтому token одного endpoint или проекта не раскрывает существование task другого.
 
-Token не возвращается list API, не сохраняется в браузере после закрытия one-time окна и при rotation немедленно инвалидирует старый hash. Это долгоживущий opaque secret: production-владелец обязан задать retention/rotation и защищённый канал выдачи. OAuth delegation, mTLS и short-lived credentials в 0.9 ещё не реализованы.
+Token не возвращается list API, не сохраняется в браузере после закрытия one-time окна и при rotation немедленно инвалидирует старый hash. Это долгоживущий opaque secret: production-владелец обязан задать retention/rotation и защищённый канал выдачи.
 
-Adapter принимает только inline `text/plain` и явно включённый `application/json`; `raw`, URL/file parts, push callback и продолжение произвольной task запрещены. Выбранные knowledge collections принадлежат конфигурации endpoint и не управляются внешним request. Внешний ответ содержит только финальный text artifact и trace metadata — внутренние stage outputs, MCP calls, memory и files остаются за dashboard RBAC.
+Adapter принимает inline `text/plain`, явно включённый `application/json` и opt-in file MIME modes. File input — только bounded canonical base64 `raw`; URL parts не скачиваются. Bytes сохраняются в Artifact Store, а в model input попадают filename/MIME/size/SHA-256. Output публикует только разрешённые bounded agent artifacts. Выбранные knowledge collections принадлежат конфигурации endpoint и не управляются внешним request.
 
-Вход A2A становится обычным run input, поэтому сохраняется в полном execution trace проекта. Зашифрованная копия исходного A2A message нужна для protocol history; обе формы имеют чувствительность пользовательского prompt. Входной `traceparent` валидируется, но trace ID не является секретом и не даёт доступ к `/api/v1/runs`. Подробности: [A2A adapter](./a2a-adapter.md).
+Push callback URL проходит SSRF-safe transport check; HTTPS обязателен вне явно включённого loopback dev mode. Callback Bearer и opaque token хранятся encrypted, audit содержит только origin/scheme/suffix, retries ограничены. Отключение endpoint/push capability останавливает новые и ожидающие deliveries.
+
+Outbound peer создаётся `admin/designer` после bounded Agent Card discovery, но доверие к RFC 8693 token endpoint может создать или заменить только `admin`: этот endpoint получает точный user OIDC access token как `subject_token`. Designer сохраняет управление `none`/static bearer peers и может выключить delegated peer без замены его auth. Одобренный `tokenEndpointOrigin` виден read roles и audit; client secret, исходный и exchanged tokens не возвращаются. Transport запрещает redirects и credentials в URL, проверяет все DNS answers и pin-ит разрешённый адрес на соединение. Dashboard/audit показывают redacted task mirror, но encrypted request/response имеют чувствительность внешнего prompt и результата.
+
+Вход A2A становится обычным run input и сохраняется в execution trace проекта. Зашифрованная копия исходного message нужна для protocol history; обе формы имеют чувствительность пользовательского prompt. Входной `traceparent` валидируется, но trace ID не является секретом и не даёт доступ к `/api/v1/runs`. Подробности: [A2A interoperability](./a2a-adapter.md).
 
 ## MCP и tools
 

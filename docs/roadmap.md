@@ -19,7 +19,7 @@
 - W3C/OTLP agent traces, immutable execution manifest и безопасный agent-only replay;
 - A/B comparison по completion, latency и token budget без ложного quality score.
 - project-scoped Local RAG с локальными embeddings, provenance, TTL working memory и явно сохраняемой episodic memory.
-- inbound A2A 1.0 HTTP+JSON adapter с Agent Card, bearer boundary, task lifecycle и trace correlation.
+- A2A 1.0 HTTP+JSON interoperability: inbound/outbound, delegated OAuth, SSE/push, bounded files и trace correlation.
 - production Temporal transport, replay gate, Worker Deployment Versioning, interval Schedules, Updates и parent→child workflows.
 
 ## Реализовано в 0.3
@@ -196,17 +196,29 @@ Project-scoped adapter подключает внешние agent platforms бе�
 
 Подробности: [LangGraph specialist teams 1.3](./langgraph-specialist-teams.md) и [Runtime агентов](./agent-runtimes.md).
 
-## Следующий релиз
+## Реализовано в 1.4
 
 ### Расширенная A2A interoperability
 
-После появления подтверждённого интеграционного спроса inbound adapter можно расширить outbound client, delegated authorization, streaming/push и file artifacts. Это отдельный этап: базовый A2A 1.0 boundary уже реализован и не заменяет внутреннюю очередь. Источник: [актуальная официальная спецификация A2A](https://a2a-protocol.org/latest/specification/).
+- project-scoped outbound peers с bounded Agent Card discovery и exact HTTP+JSON 1.0 negotiation;
+- outbound `message:send`, task polling/cancel, encrypted request/response и redacted task mirrors;
+- transport auth `none`, static Bearer и delegated RFC 8693 token exchange без persistence user/peer access tokens;
+- inbound `message:stream` и task subscription через ordered SSE;
+- persistent push configs, encrypted Bearer credentials, durable retry outbox и idempotent deletion;
+- opt-in bounded inline raw file input и agent file output по явным MIME modes;
+- SSRF-safe DNS/IP pinning без redirects, private/link-local/mapped range deny и production HTTPS;
+- отдельные inbound/outbound kill switches, project RBAC/audit и responsive peer/invoke UI;
+- SQLite migration v17 и A2A adapter 1.1.0.
 
-## После стабилизации
+Подробности: [A2A interoperability 1.4](./a2a-adapter.md). Источник контракта: [официальная спецификация A2A](https://a2a-protocol.org/latest/specification/).
+
+## Следующий релиз
 
 ### Изолированное выполнение tools
 
 WASM/WASI для узких tools, rootless container или microVM для code execution, read-only filesystem по умолчанию, сетевой egress allowlist и ephemeral credentials от secret broker.
+
+## После стабилизации
 
 ### Native edge worker
 
@@ -239,6 +251,7 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.1 | Risk-tier approvals + emergency deny | Единая policy-as-code boundary, four-eyes, scoped secrets и kill switch |
 | P1 | Готово в 1.2 | Расширение process builder | Fork/join, triggers, subprocess, diff/replay, BPMN и compensation поверх durable runtime |
 | P1 | Готово в 1.3 | LangGraph specialist teams | Supervisor/handoff внутри bounded agent stage без переноса durable orchestration |
-| P2 | Следующий шаг | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и files только при подтверждённом спросе |
+| P2 | Готово в 1.4 | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и bounded files поверх существующей очереди |
+| P1 | Следующий шаг | Изолированное выполнение tools | Сужает blast radius code/tool execution через WASM/rootless/microVM и egress policy |
 | P2 | Запланировано | Native mobile worker | Дороже PWA и полезен только для узких edge-сценариев |
 | P3 | Запланировано | HA control plane | После подтверждения нагрузки и multi-team требований |

@@ -15,7 +15,7 @@ import type { NodeTracerProvider, SpanExporter } from "@opentelemetry/sdk-trace-
 const require = createRequire(import.meta.url);
 
 const INSTRUMENTATION_NAME = "io.agat.coordinator";
-const INSTRUMENTATION_VERSION = "1.3.0";
+const INSTRUMENTATION_VERSION = "1.4.0";
 
 export interface TelemetryOptions {
   enabled: boolean;

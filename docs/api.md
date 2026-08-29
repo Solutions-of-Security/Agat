@@ -353,7 +353,7 @@ Content-Type: application/json
 Worker запрашивает lease с собственной версией:
 
 ```json
-{ "workerVersion": "1.3.0" }
+{ "workerVersion": "1.4.0" }
 ```
 
 Lease содержит run input, immutable agent snapshot, ordered `agent.specialists` для team, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator. Team целиком исполняется на одном lease/worker; specialist prompts и models берутся только из pinned snapshots.
@@ -682,7 +682,7 @@ POST /api/v1/leases/:leaseId/mcp/tool-calls/:callId/cancel
 
 Полный контракт и policy model: [MCP gateway и risk policy](./mcp-gateway.md).
 
-## A2A adapter
+## A2A interoperability
 
 Dashboard registry использует обычную авторизацию `/api/v1`, project header и RBAC:
 
@@ -690,7 +690,7 @@ Dashboard registry использует обычную авторизацию `/
 GET /api/v1/a2a
 ```
 
-Возвращает `enabled`, `publicBaseUrl`, protocol/adapter versions, counts, endpoints с `agentCardUrl/interfaceUrl` и последние 100 task summaries. Полный endpoint token не возвращается.
+Возвращает inbound/outbound switches, protocol/adapter versions, counts, endpoints с `agentCardUrl/interfaceUrl`, outbound peers без secrets и последние 100 inbound/outbound task summaries. Полные endpoint/peer/push credentials не возвращаются.
 
 ```http
 POST /api/v1/a2a/endpoints
@@ -705,12 +705,18 @@ Content-Type: application/json
   "skillName": "Fact verification",
   "skillDescription": "Возвращает проверенный текст",
   "tags": ["research", "local"],
-  "inputModes": ["text/plain"],
+  "inputModes": ["text/plain", "application/pdf"],
+  "outputModes": ["text/plain", "application/pdf"],
   "knowledgeCollectionIds": [],
   "approvalRequired": false,
+  "streamingEnabled": true,
+  "pushNotificationsEnabled": true,
+  "fileArtifactsEnabled": true,
   "priority": 50,
   "maxInputCharacters": 20000,
   "maxActiveTasks": 10,
+  "maxFileBytes": 512000,
+  "maxFiles": 4,
   "enabled": true
 }
 ```
@@ -725,21 +731,70 @@ POST   /api/v1/a2a/endpoints/:endpointId/token/rotate
 
 Создание, изменение, rotation и удаление требуют `admin/designer`. Привязку существующего endpoint к другому агенту менять нельзя. Удаление запрещено при активных tasks; rotation возвращает новый one-time token и сразу отзывает старый.
 
+Outbound peer создаётся через bounded Agent Card discovery:
+
+```http
+POST /api/v1/a2a/remotes
+Content-Type: application/json
+
+{
+  "agentCardUrl": "https://peer.example/.well-known/agent-card.json",
+  "skillId": "research",
+  "name": "External research",
+  "enabled": true,
+  "allowFileArtifacts": false,
+  "maxResponseBytes": 1048576,
+  "auth": {
+    "mode": "oauth2_token_exchange",
+    "tokenUrl": "https://idp.example/oauth/token",
+    "audience": "https://peer.example",
+    "scopes": ["a2a.invoke"],
+    "clientId": "agat",
+    "clientSecret": "SECRET"
+  }
+}
+```
+
+`auth.mode` принимает `none`, `bearer` или `oauth2_token_exchange`. Credentials шифруются; response содержит mode/suffix и для delegated OAuth только одобренный `tokenEndpointOrigin`. Управление peer `none`/static bearer требует `admin/designer`, а создание или замена `oauth2_token_exchange` — только `admin` (token endpoint получает текущий dashboard bearer как `subject_token`):
+
+```http
+PATCH  /api/v1/a2a/remotes/:remoteId
+DELETE /api/v1/a2a/remotes/:remoteId
+```
+
+Outbound invoke разрешён `admin/designer/operator`, polling — всем read roles, cancel — mutating roles:
+
+```http
+POST /api/v1/a2a/remotes/:remoteId/message:send
+GET  /api/v1/a2a/remotes/:remoteId/outbound-tasks/:outboundTaskId
+POST /api/v1/a2a/remotes/:remoteId/outbound-tasks/:outboundTaskId:cancel
+```
+
+При delegated mode OIDC bearer текущего пользователя используется как RFC 8693 `subject_token` только в памяти вызова. Legacy local-admin invoke такого peer получает `403`.
+
 Внешний A2A interface не использует dashboard/OIDC token. Для всех task operations обязательны отдельный endpoint bearer и `A2A-Version: 1.0`; для `POST` также нужен `Content-Type: application/a2a+json`:
 
 ```http
 GET  /a2a/v1/endpoints/:endpointId/agent-card.json
 POST /a2a/v1/endpoints/:endpointId/message:send
+POST /a2a/v1/endpoints/:endpointId/message:stream
 GET  /a2a/v1/endpoints/:endpointId/tasks/:taskId?historyLength=1
 GET  /a2a/v1/endpoints/:endpointId/tasks?pageSize=50&includeArtifacts=false
 POST /a2a/v1/endpoints/:endpointId/tasks/:taskId:cancel
+POST /a2a/v1/endpoints/:endpointId/tasks/:taskId:subscribe
+POST /a2a/v1/endpoints/:endpointId/tasks/:taskId/pushNotificationConfigs
+GET  /a2a/v1/endpoints/:endpointId/tasks/:taskId/pushNotificationConfigs
+GET  /a2a/v1/endpoints/:endpointId/tasks/:taskId/pushNotificationConfigs/:configId
+DELETE /a2a/v1/endpoints/:endpointId/tasks/:taskId/pushNotificationConfigs/:configId
 ```
 
-`GET /tasks` принимает `contextId`, `status`, `pageSize=1..100`, opaque `pageToken`, `historyLength=0..100`, ISO `statusTimestampAfter` и `includeArtifacts=true|false`. Send возвращает `SendMessageResponse` wrapper `{ task }`; Get/Cancel — `Task` без обёртки; List — `tasks`, `nextPageToken`, `pageSize`, `totalSize`.
+`GET /tasks` принимает `contextId`, `status`, `pageSize=1..100`, opaque `pageToken`, `historyLength=0..100`, ISO `statusTimestampAfter` и `includeArtifacts=true|false`. Send возвращает `SendMessageResponse` wrapper `{ task }`; Get/Cancel — `Task` без обёртки; List — `tasks`, `nextPageToken`, `pageSize`, `totalSize`. Streaming/subscription возвращают SSE, где каждый `data:` — один normative `StreamResponse`.
 
-Protocol errors используют media type `application/a2a+json` и `google.rpc.ErrorInfo`-подобные `reason/metadata`. Missing/wrong bearer получает `401` и `WWW-Authenticate`; неподдерживаемая версия, streaming, subscription или push возвращают явную A2A error, а не fallback dashboard JSON.
+Push config содержит `id`, optional matching `taskId`, HTTPS `url`, optional opaque `token` и optional Bearer authentication. В ответе auth credential заменяется suffix. Delete идемпотентен. Inline file part использует canonical base64 `raw`, безопасный `filename` и явно разрешённый `mediaType`; inbound URL file не скачивается.
 
-Полный wire example, state mapping и boundary policy: [A2A adapter](./a2a-adapter.md).
+Protocol errors используют media type `application/a2a+json` и `google.rpc.ErrorInfo`-подобные `reason/metadata`. Missing/wrong bearer получает `401` и `WWW-Authenticate`; неподдерживаемые version/capability/MIME получают явную A2A error, а не fallback dashboard JSON. Версию можно передать header либо query-параметром `A2A-Version=1.0`.
+
+Полный wire example, state mapping, transport и secret boundary: [A2A interoperability](./a2a-adapter.md).
 
 ## Internal API
 

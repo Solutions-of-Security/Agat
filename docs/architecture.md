@@ -42,6 +42,8 @@ flowchart LR
     PHONE["Смартфон · PWA-пульт"] -->|"HTTPS"| GW
     EXT["Внешняя agent platform"] -->|"A2A 1.0 · Agent Card + bearer"| GW
     GW -->|"/a2a/v1 · boundary adapter"| C
+    C -->|"A2A 1.0 · pinned HTTPS / delegated OAuth"| PEER["Внешний A2A peer"]
+    C -->|"push · durable outbox"| EXT
 ```
 
 Coordinator хранит состояние очереди, но не подключается к model endpoint узла. Воркеры сами регистрируются, отправляют heartbeat и запрашивают следующий lease. Поэтому ноутбук или домашняя GPU-машина могут находиться за NAT.
@@ -53,7 +55,7 @@ Coordinator хранит состояние очереди, но не подкл
 Расположен в `apps/coordinator`; доменное состояние хранится через встроенный `node:sqlite`, а Temporal client запускает durable Workflow, отправляет подтверждаемые Updates и управляет interval/cron/calendar Schedules.
 
 - HTTP API и статическая раздача собранной React-панели;
-- project-scoped таблицы `agents`, `runs`, `stages`, `events`, `artifacts`, `credentials`, `processes`, `process_versions`, `process_instances`, `process_tokens`, `process_join_arrivals`, `process_signal_waits`, `process_subprocess_links`, `process_compensations`, `process_webhooks`, `process_webhook_receipts`, `mcp_servers`, `mcp_tool_policies`, `mcp_tool_calls`, `mcp_tool_call_approvals`, `mcp_policy_versions`, `knowledge_collections`, `knowledge_documents`, `knowledge_chunks`, `knowledge_embedding_jobs`, `knowledge_retrievals`, `memory_entries`, `prompt_registry`, `prompt_versions`, `eval_datasets`, `eval_dataset_versions`, `eval_examples`, `eval_experiments`, `eval_experiment_items`, `eval_reviews`, `a2a_endpoints`, `a2a_tasks`; fleet state и глобальный MCP kill switch хранятся в `nodes`, `model_benchmarks` и `settings`;
+- project-scoped таблицы `agents`, `runs`, `stages`, `events`, `artifacts`, `credentials`, `processes`, `process_versions`, `process_instances`, `process_tokens`, `process_join_arrivals`, `process_signal_waits`, `process_subprocess_links`, `process_compensations`, `process_webhooks`, `process_webhook_receipts`, `mcp_servers`, `mcp_tool_policies`, `mcp_tool_calls`, `mcp_tool_call_approvals`, `mcp_policy_versions`, `knowledge_collections`, `knowledge_documents`, `knowledge_chunks`, `knowledge_embedding_jobs`, `knowledge_retrievals`, `memory_entries`, `prompt_registry`, `prompt_versions`, `eval_datasets`, `eval_dataset_versions`, `eval_examples`, `eval_experiments`, `eval_experiment_items`, `eval_reviews`, `a2a_endpoints`, `a2a_tasks`, `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`; fleet state и глобальный MCP kill switch хранятся в `nodes`, `model_benchmarks` и `settings`;
 - атомарная выдача работы через `BEGIN IMMEDIATE`;
 - TTL lease и повторная постановка этапа при потере воркера;
 - максимум три попытки этапа;
@@ -71,7 +73,7 @@ Coordinator хранит состояние очереди, но не подкл
 - pull-safe Model Router: hardware/model profiles, пассивный EWMA throughput/energy, глобальное ранжирование свободных узлов, SLA filters, explainable trace и fallback между попытками.
 - Local RAG control plane: chunking, pull-based embedding jobs, collection snapshot запуска, cosine retrieval, provenance audit, TTL cleanup, каскадное удаление и export.
 - Golden eval control plane: immutable prompt/dataset versions, batch candidate runs через обычный scheduler, append-only human/model-judge audit, knowledge fingerprint и matching promotion gate.
-- inbound A2A boundary: публичный минимальный Agent Card, отдельная bearer-аутентификация endpoint, idempotent task lifecycle, одноагентный scheduler run и W3C trace parent без раскрытия prompt/tools/memory.
+- A2A interoperability boundary: inbound endpoint bearer/task/SSE/push/files и outbound Agent Card discovery/send/poll/cancel с encrypted credentials, delegated RFC 8693, SSRF-safe pinned transport и redacted audit без раскрытия prompt/tools/memory.
 - hardened Temporal boundary: TLS/API key или mTLS production transport, Worker Deployment Versioning, replay fixtures и scheduled parent→child workflows.
 
 SQLite предполагает один активный экземпляр coordinator. Temporal делает процесс durable при рестартах, но сам по себе не превращает SQLite state store в HA: незавершённый PostgreSQL driver fail-closed, а проект перехода описан в [PostgreSQL state-store design](./postgresql-state-store-design.md).
@@ -121,9 +123,9 @@ React + Vite в `apps/web`.
 
 ### A2A boundary
 
-Внешний `message:send` не создаёт новый execution engine. Adapter аутентифицирует endpoint token, нормализует разрешённые inline parts, фиксирует idempotency record и создаёт обычный run с одним агентом и выбранными knowledge collections. Scheduler, approvals, worker leases, Local RAG и trace после этого работают без специальной A2A-ветки.
+Внешний `message:send` не создаёт новый execution engine. Adapter аутентифицирует endpoint token, нормализует разрешённые inline parts, сохраняет bounded files, фиксирует idempotency record и создаёт обычный run с одним агентом и выбранными knowledge collections. Scheduler, approvals, worker leases, Local RAG и trace после этого работают без специальной A2A-ветки. SSE читает тот же task state, а push outbox доставляет его transitions независимо от worker.
 
-Agent Card намеренно отделён от authenticated task API и содержит только минимальную capability metadata. Внешнее состояние выводится из статуса run; финальный stage output преобразуется в единственный `text/plain` artifact. Входной W3C `traceparent` становится родителем run span. Полный контракт и ограничения: [A2A adapter](./a2a-adapter.md).
+Outbound client также не становится orchestrator: он фиксирует peer из bounded Agent Card, применяет project RBAC и transport credential, отправляет task и хранит redacted mirror для polling/cancel. DNS/IP pinning и запрет redirects не позволяют Agent Card, OAuth token endpoint или push callback расширить сетевой boundary. Входной W3C `traceparent` становится родителем run span; delegated user token живёт только во время RFC 8693 exchange. Полный контракт и ограничения: [A2A interoperability](./a2a-adapter.md).
 
 ### Каталог агентов
 

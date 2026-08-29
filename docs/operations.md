@@ -11,6 +11,14 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
+## Rollout 1.4 A2A interoperability
+
+Coordinator мигрирует SQLite schema `16 → 17`: добавляет endpoint capabilities/file limits и таблицы `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`. Перед rollout сделайте согласованный backup SQLite/WAL, Artifact Store и `AGAT_CREDENTIALS_KEY`.
+
+Обновите coordinator и dashboard вместе. Existing endpoints сохраняются и получают fail-closed defaults для новых push/files capabilities; streaming у существующих записей не включается автоматически. Затем обновите workers до `1.4.0`, чтобы версия fleet/telemetry и optional base64 artifact encoding совпадали с control plane.
+
+До регистрации production peers задайте `AGAT_A2A_PUBLIC_BASE_URL`, `AGAT_A2A_OUTBOUND_ENABLED`, timeout/response limit и оставьте `AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND=false`. Для Docker Compose обязательно передайте отдельный `AGAT_CREDENTIALS_KEY`; не полагайтесь на admin token как encryption fallback. Delegated OAuth peer регистрирует только `admin` после проверки показанного token endpoint origin. Smoke test выполняйте сначала на peer без side effects: discovery, `message:send`, polling/cancel, затем отдельно SSE и callback с уникальным Bearer. Rollback binary после записи schema v17 не поддерживается без восстановления backup.
+
 ## Rollout 1.3 specialist teams
 
 Coordinator мигрирует SQLite schema `15 → 16` и добавляет к node capabilities `agent_runtime_profiles_json`. Сначала обновите coordinator, затем workers; legacy worker безопасно считается совместимым только с `tool_loop_v1` и не получает `specialist_team_v1`. Перед созданием production team убедитесь, что карточка узла показывает профиль и все модели supervisor/specialists.
@@ -48,7 +56,7 @@ Artifact metadata находится в SQLite, а содержимое — в `
 
 Knowledge collections, исходные chunks, embedding vectors, memory и retrieval provenance целиком находятся в SQLite. Отдельного vector volume нет. JSON export удобен для переноса содержимого и audit, но не заменяет backup: vectors в export не включаются и воспроизводятся повторной локальной индексацией.
 
-A2A endpoint registry, token hashes и task mapping также находятся в SQLite; исходные protocol messages зашифрованы `AGAT_CREDENTIALS_KEY`. После восстановления сохраните тот же encryption key, иначе history нельзя расшифровать. Полные endpoint tokens из hash восстановить невозможно: если client secret утрачен или backup откатил rotation, выполните новую rotation в панели.
+A2A endpoint/peer registry, token hashes, task mappings, encrypted outbound request/response и push outbox находятся в SQLite; input/output files — в Artifact Store. Protocol messages, peer auth и callback credentials зашифрованы `AGAT_CREDENTIALS_KEY`. После восстановления сохраните тот же encryption key, иначе history, peer auth и pending deliveries нельзя расшифровать. Полные endpoint tokens из hash восстановить невозможно: если client secret утрачен или backup откатил rotation, выполните новую rotation в панели.
 
 Минимальный безопасный сценарий для небольшого локального контура:
 
@@ -88,7 +96,7 @@ Workflow конкретного instance открывается по ссылк�
 
 Если start webhook вернул `503` после создания receipt, повторите тот же запрос с тем же Bearer token и `Idempotency-Key`: coordinator повторно использует тот же instance и идемпотентно запускает его в Temporal. Не генерируйте новый key при transport retry одного source event.
 
-A2A task является обычным run, поэтому потеря worker обрабатывается тем же lease TTL. Внешний клиент продолжает polling той же task ID; повторный `message:send` с тем же `messageId` и payload не создаёт второй run.
+A2A task является обычным run, поэтому потеря worker обрабатывается тем же lease TTL. Внешний клиент продолжает polling/subscription той же task ID; повторный `message:send` с тем же `messageId` и payload не создаёт второй run. Push outbox остаётся durable и может повторить delivery после рестарта, поэтому receiver обязан дедуплицировать по task/state.
 
 Для LangGraph повторяется весь внутренний graph attempt: per-node checkpoints намеренно не сохраняются отдельно от stage. Для team это означает повтор supervisor и всех завершённых handoffs. Web-tools read-only; MCP side effects проходят существующие policy/approval/idempotency checks, а неизвестный исход блокирует автоматический retry stage.
 
@@ -182,7 +190,7 @@ kubectl logs -n agat deployment/agat-temporal-worker --tail=100
 
 Switch хранится в SQLite и сохраняется после рестарта coordinator. Если панель недоступна, используйте тот же authenticated API через Gateway; не редактируйте таблицу `settings` вручную, иначе будет потерян actor/reason audit.
 
-Для A2A сначала откройте раздел **A2A** и проверьте `enabled`, Agent Card URL, token suffix/rotation time, active-task limit и связанный внутренний run. Затем проверьте protocol boundary:
+Для inbound A2A сначала откройте раздел **A2A** и проверьте `enabled`, Agent Card URL, capabilities, MIME/file limits, token suffix/rotation time, active-task limit и связанный внутренний run. Затем проверьте protocol boundary:
 
 ```bash
 curl -i 'http://127.0.0.1:8787/a2a/v1/endpoints/ENDPOINT_ID/agent-card.json'
@@ -192,7 +200,11 @@ curl -i \
   'http://127.0.0.1:8787/a2a/v1/endpoints/ENDPOINT_ID/tasks?pageSize=1'
 ```
 
-`401` означает wrong/rotated token; `VERSION_NOT_SUPPORTED` — отсутствующий или не `1.0` заголовок; `CONTENT_TYPE_NOT_SUPPORTED` для POST — не `application/a2a+json`; `TASK_LIMIT_REACHED` — достигнут endpoint limit. `AUTH_REQUIRED` не является сбоем: оператор должен принять решение в обычной карточке run, после чего тот же task продолжит lifecycle. Подробности: [A2A adapter](./a2a-adapter.md).
+`401` означает wrong/rotated token; `VERSION_NOT_SUPPORTED` — отсутствующий или не `1.0` header/query; `CONTENT_TYPE_NOT_SUPPORTED` — неверный media type или MIME вне endpoint policy; `TASK_LIMIT_REACHED` — достигнут endpoint limit. `AUTH_REQUIRED` не является сбоем: оператор должен принять решение в обычной карточке run, после чего тот же task продолжит lifecycle.
+
+Для push проверьте callback origin/auth suffix, endpoint capability и audit events `a2a.push.configured/delivered/failed`. `failed` после пяти попыток автоматически не возобновляется; исправьте receiver и создайте новый config. Для немедленной containment выключите endpoint/push capability или весь `AGAT_A2A_ENABLED`.
+
+Для outbound peer проверьте exact interface/skill из Agent Card, auth mode/suffix, `tokenEndpointOrigin`, `AGAT_A2A_OUTBOUND_ENABLED` и task mirror. Ошибка private/link-local range, redirect или HTTP вне loopback является ожидаемым boundary deny. Delegated peer требует реальную OIDC session; legacy local admin не имеет subject token. Token endpoint получает dashboard bearer как `subject_token`, поэтому любое изменение этого trust выполняет только `admin` и оставляет origin в audit. При инциденте сначала выставьте `AGAT_A2A_OUTBOUND_ENABLED=false`, затем отзовите static/OAuth client credential у peer и перезапустите coordinator. Подробности: [A2A interoperability](./a2a-adapter.md).
 
 Для Local RAG сначала проверьте карточку collection: точное имя `embeddingModel`, число `embeddingWorkers`, `pendingJobs` и ошибку документа. Затем проверьте установленную модель и endpoint:
 

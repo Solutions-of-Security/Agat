@@ -42,7 +42,7 @@ export function Sidebar({ activeView, health, onNavigate }: SidebarProps) {
       <div className="sidebar__footer">
         <div className="health-line"><span className={`status-dot status-dot--${health.status}`} />{health.label}</div>
         <p>АГАТ · локальный контур</p>
-        <span className="version">v1.3.0</span>
+        <span className="version">v1.4.0</span>
       </div>
     </aside>
   );

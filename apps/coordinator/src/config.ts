@@ -94,6 +94,10 @@ export interface CoordinatorConfig {
   mcpApprovalTtlSeconds: number;
   a2aEnabled: boolean;
   a2aPublicBaseUrl: string;
+  a2aOutboundEnabled: boolean;
+  a2aAllowLoopbackOutbound: boolean;
+  a2aOutboundTimeoutSeconds: number;
+  a2aMaxResponseBytes: number;
 }
 
 export function loadConfig(): CoordinatorConfig {
@@ -151,7 +155,7 @@ export function loadConfig(): CoordinatorConfig {
       .filter(Boolean),
     localWorkerLauncherEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_LAUNCHER, false),
     localWorkerNamespace: process.env.AGAT_LOCAL_WORKER_NAMESPACE ?? "agat",
-    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.3.0",
+    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.4.0",
     localWorkerConfigMap: process.env.AGAT_LOCAL_WORKER_CONFIG_MAP ?? "agat-worker-config",
     localWorkerSecret: process.env.AGAT_LOCAL_WORKER_SECRET ?? "agat-secrets",
     localWorkerModelBaseUrl: process.env.AGAT_LOCAL_MODEL_BASE_URL ?? "http://host.docker.internal:11434/v1",
@@ -169,6 +173,10 @@ export function loadConfig(): CoordinatorConfig {
     mcpApprovalTtlSeconds: Math.max(30, Math.min(86_400, integerFromEnv(process.env.AGAT_MCP_APPROVAL_TTL_SECONDS, 600))),
     a2aEnabled: booleanFromEnv(process.env.AGAT_A2A_ENABLED, true),
     a2aPublicBaseUrl: (process.env.AGAT_A2A_PUBLIC_BASE_URL ?? `http://127.0.0.1:${port}`).replace(/\/+$/, ""),
+    a2aOutboundEnabled: booleanFromEnv(process.env.AGAT_A2A_OUTBOUND_ENABLED, true),
+    a2aAllowLoopbackOutbound: booleanFromEnv(process.env.AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND, false),
+    a2aOutboundTimeoutSeconds: Math.max(1, Math.min(120, integerFromEnv(process.env.AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS, 15))),
+    a2aMaxResponseBytes: Math.max(65_536, Math.min(4_194_304, integerFromEnv(process.env.AGAT_A2A_MAX_RESPONSE_BYTES, 1_048_576))),
   };
 }
 

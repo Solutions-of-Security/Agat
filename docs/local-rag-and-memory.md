@@ -186,4 +186,4 @@ SQLite backup уже включает knowledge store. Делайте согла
 - SQLite рассчитан на один coordinator; PostgreSQL/pgvector нужен вместе с HA-этапом;
 - automatic memory extraction намеренно отсутствует.
 
-Golden datasets, human rubric, model judge и prompt registry реализованы в 0.8: knowledge fingerprint блокирует запуск или promotion при drift. В 0.9 A2A endpoint закрепил разрешённые collections как boundary, а в 1.0 production durable runtime получил replay/versioning gate. Следующий рекомендуемый этап — risk-tier approvals и централизованный emergency deny.
+Golden datasets, human rubric, model judge и prompt registry реализованы в 0.8: knowledge fingerprint блокирует запуск или promotion при drift. В 0.9 A2A endpoint закрепил разрешённые collections как boundary, в 1.0 production durable runtime получил replay/versioning gate, а релизы 1.1–1.4 добавили MCP policy, process/team runtime и расширенную A2A interoperability без ослабления project-scoped RAG.

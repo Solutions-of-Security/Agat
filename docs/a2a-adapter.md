@@ -1,67 +1,72 @@
-# A2A adapter
+# A2A interoperability
 
-АГАТ 0.9 публикует выбранного локального агента как project-scoped A2A endpoint. Adapter является внешней границей над существующими scheduler, workers, approvals, Local RAG и trace: он не заменяет внутреннюю очередь и не переносит durable orchestration из Temporal.
+АГАТ 1.4 расширяет project-scoped A2A boundary из релиза 0.9: coordinator остаётся A2A server для опубликованных локальных агентов и становится управляемым A2A client для внешних peers. Внутренняя очередь, approvals, Local RAG, worker leases и durable orchestration не переносятся во внешний протокол.
 
-Реализация следует протоколу **A2A 1.0** и binding **HTTP+JSON**. Заголовок интерфейса — `A2A-Version: 1.0`; media type — `application/a2a+json`. Актуальные первичные источники: [официальная спецификация A2A](https://a2a-protocol.org/latest/specification/), [normative protobuf](https://github.com/a2aproject/A2A/blob/main/specification/a2a.proto) и [релизы A2A](https://github.com/a2aproject/A2A/releases).
+Реализация следует **A2A 1.0**, binding **HTTP+JSON**, и публикует adapter version **1.1.0**. Основные источники: [официальная спецификация A2A](https://a2a-protocol.org/latest/specification/), [normative protobuf](https://github.com/a2aproject/A2A/blob/main/specification/a2a.proto) и [релизы A2A](https://github.com/a2aproject/A2A/releases).
 
-## Архитектурная граница
+## Контур
 
 ```mermaid
 flowchart LR
-    Client["Внешняя agent platform"] -->|"Agent Card · public URL"| GW["Kong / HTTPS"]
-    Client -->|"A2A 1.0 · endpoint bearer"| GW
-    GW --> Adapter["Coordinator · A2A boundary"]
-    Adapter --> Registry[("a2a_endpoints / a2a_tasks")]
-    Adapter --> Scheduler["Обычный scheduler"]
+    Client["Внешний A2A client"] -->|"Agent Card · endpoint bearer"| Inbound["Inbound A2A boundary"]
+    Inbound --> Scheduler["Scheduler / approvals / Local RAG"]
     Scheduler --> Worker["Outbound-only local worker"]
     Worker --> Model["Local model"]
-    Scheduler --> Approval["Operator approval"]
-    Scheduler --> Trace["Run trace / OTel"]
+    Inbound -->|"SSE или push outbox"| Client
+
+    UI["Dashboard · OIDC/RBAC"] --> Outbound["Outbound A2A client"]
+    Outbound -->|"Agent Card discovery"| Peer["External A2A peer"]
+    Outbound -->|"none / bearer / RFC 8693"| Peer
+
+    Inbound --> DB[("SQLite · encrypted protocol state")]
+    Outbound --> DB
 ```
 
-Один endpoint связывает:
+Обе стороны используют существующий project scope и audit trace. Внешний peer никогда не получает worker token, MCP credential, system prompt, memory или прямой доступ к model endpoint.
 
-- один агент проекта;
-- один A2A skill ID;
-- разрешённые input modes `text/plain` и/или `application/json`;
-- набор knowledge collection snapshots;
-- priority, approval policy, максимальный размер входа и лимит активных tasks;
-- отдельный bearer token, который не является dashboard, OIDC, enrollment или worker token.
+## Версия и wire contract
 
-Для одного агента допускается один endpoint в проекте. Один и тот же built-in агент можно публиковать независимо в разных проектах.
+- protocol version: `1.0`;
+- media type: `application/a2a+json`;
+- streaming media type: `text/event-stream`;
+- version передаётся заголовком `A2A-Version: 1.0` либо query-параметром `A2A-Version=1.0`;
+- отсутствующая версия трактуется как legacy `0.3` и отклоняется без silent downgrade;
+- ошибки имеют `google.rpc.Status`-подобную форму с `google.rpc.ErrorInfo`, `reason` и bounded metadata.
 
-## Discovery и интерфейс
+## Inbound endpoints
 
-Прямой Agent Card доступен без bearer token:
+Публичный Agent Card доступен без bearer:
 
 ```http
 GET /a2a/v1/endpoints/:endpointId/agent-card.json
 ```
 
-Card содержит только публичное имя/описание, interface URL, версию, capabilities, security scheme, input/output modes и skill. System prompt, model pin, memory, MCP catalog, credentials, internal agent ID и raw artifacts туда не входят.
+Card содержит только публичные metadata, HTTP+JSON 1.0 interface, security scheme, skill, разрешённые media types и реально включённые capabilities. System prompt, model pin, memory, MCP catalog, credentials и internal artifacts не публикуются.
 
-Аутентифицированный interface имеет базовый URL:
-
-```text
-https://agat.example/a2a/v1/endpoints/:endpointId
-```
-
-Реализованы операции:
+Все task operations требуют отдельный endpoint bearer:
 
 | Метод и путь | Назначение |
 |---|---|
-| `POST /message:send` | Создать новую task; follow-up существующей task пока не поддержан |
-| `GET /tasks/:taskId` | Получить task с входной history и финальным artifact |
-| `GET /tasks` | Фильтры, cursor pagination и опциональные history/artifacts |
+| `POST /message:send` | Создать task; вернуть сразу или дождаться terminal/interrupted state |
+| `POST /message:stream` | Создать task и вернуть ordered SSE `StreamResponse` events |
+| `GET /tasks/:taskId` | Получить task, history и artifacts |
+| `GET /tasks` | Фильтры, cursor pagination, history и опциональные artifacts |
 | `POST /tasks/:taskId:cancel` | Отменить queued/running/approval task |
+| `POST /tasks/:taskId:subscribe` | Подписаться на нетерминальную task через SSE |
+| `POST /tasks/:taskId/pushNotificationConfigs` | Создать push callback |
+| `GET /tasks/:taskId/pushNotificationConfigs` | Перечислить callbacks |
+| `GET /tasks/:taskId/pushNotificationConfigs/:configId` | Получить callback без полного auth secret |
+| `DELETE /tasks/:taskId/pushNotificationConfigs/:configId` | Идемпотентно удалить callback |
 
-`message:send` возвращает normative `SendMessageResponse` (`{"task": ...}`), а Get/Cancel — сам `Task` без дополнительной обёртки. `message:stream`, task subscription, push notification configs и extended Agent Card возвращают явную protocol error. Card объявляет эти capabilities как `false`.
+`extendedAgentCard` и продолжение существующей task через `message.taskId` не реализованы и возвращают явную protocol error.
 
-## Task lifecycle
+Каждый endpoint фиксирует одного project agent, skill ID, knowledge collections, input/output media types, priority, approval policy, active-task limit и отдельные switches для SSE, push и files. Изменить привязанный агент нельзя: для новой границы создаётся новый endpoint.
 
-Каждая принятая A2A task создаёт обычный run ровно с одним выбранным агентом. Поэтому она использует тот же capability-aware scheduling, Local RAG, approval, retry, trace и worker isolation, что запуск из панели.
+## Lifecycle и idempotency
 
-| Внутренний run | Внешний A2A state |
+Inbound task создаёт обычный одноагентный run:
+
+| Внутренний run | A2A state |
 |---|---|
 | `queued` | `TASK_STATE_SUBMITTED` |
 | `running` | `TASK_STATE_WORKING` |
@@ -70,43 +75,82 @@ https://agat.example/a2a/v1/endpoints/:endpointId
 | `failed` | `TASK_STATE_FAILED` |
 | `cancelled` | `TASK_STATE_CANCELED` |
 
-`returnImmediately: true` немедленно возвращает принятую task. При `false` coordinator держит HTTP response до terminal/interrupted state; reverse proxy должен иметь достаточный read timeout. Рекомендуемый интеграционный режим — `true` с polling.
+`messageId` является idempotency key внутри endpoint. Повтор с тем же нормализованным запросом возвращает исходную task; другой payload с тем же ID получает `MESSAGE_ID_CONFLICT`. `contextId` группирует независимые tasks, но не открывает mutable conversation state.
 
-Финальный ответ публикуется как один `text/plain` artifact. Внешний клиент не получает stage outputs, model/tool arguments, memory, локальные файлы или agent artifacts.
+Корректный W3C `traceparent` становится remote parent run span. Task metadata возвращает protocol/adapter versions, trace ID и root traceparent. Произвольный или некорректный trace header отклоняется.
 
-`message.messageId` является idempotency key внутри endpoint. Повтор с тем же нормализованным содержимым возвращает исходную task; повтор с другим содержимым получает `MESSAGE_ID_CONFLICT`. `contextId` группирует независимые tasks, но не открывает mutable conversation state.
+## Streaming
 
-## Trace correlation
+`message:stream` и `tasks/:id:subscribe` сначала отправляют полный текущий `Task`, затем изменения состояния. При completion artifacts отправляются как `artifactUpdate`, после них — terminal `statusUpdate`; SSE закрывается на terminal/interrupted state. Сервер посылает heartbeat comment каждые 15 секунд и не связывает lifecycle task с жизнью одного HTTP stream.
 
-Корректный входной W3C `traceparent` становится remote parent внутреннего run span. Даже при выключенном OTLP exporter внутренний run сохраняет тот же trace ID. Task metadata возвращает:
+Capabilities включаются отдельно на каждом endpoint. При выключенном `streamingEnabled` обе операции fail closed с `UNSUPPORTED_OPERATION`.
 
-- protocol и adapter versions;
-- внутренний trace ID;
-- traceparent корневого run span.
+## Push notifications
 
-Некорректный `traceparent` отклоняется как `INVALID_PARAMETER`; adapter не сохраняет и не отражает произвольное значение заголовка.
+Push включается отдельно на endpoint и поддерживает embedded `taskPushNotificationConfig` в `message:send`/`message:stream`, а также CRUD после создания task.
 
-## Security policy
+- callback URL проходит тот же SSRF-safe transport validator, что outbound peers;
+- HTTPS обязателен; loopback HTTP разрешается только отдельной локальной policy;
+- auth credentials поддерживают `Bearer`, шифруются AES-256-GCM и не возвращаются целиком;
+- durable outbox сохраняет ordered status transitions;
+- callback получает normative `StreamResponse` с `statusUpdate` и `A2A-Version: 1.0`;
+- не-2xx, timeout и transport errors повторяются с exponential backoff, максимум пять попыток;
+- callback и ожидающие deliveries удаляются каскадно и перестают отправляться после отключения endpoint/push capability;
+- `AGAT_A2A_ENABLED=false` централизованно останавливает inbound routes и push pump.
 
-- Agent Card имеет unguessable UUID path, но считается публичным discovery-документом и не должен содержать секреты.
-- Все task operations требуют `Authorization: Bearer <endpoint-token>` до поиска task в базе.
-- Token показывается целиком только при создании/rotation; в SQLite хранится SHA-256 hash и последние шесть символов для оператора.
-- Входное message хранится AES-256-GCM с `AGAT_CREDENTIALS_KEY`; обычный run input остаётся частью project-scoped execution trace и имеет соответствующую классификацию данных.
-- `raw` и `url` parts запрещены. Adapter не скачивает переданный клиентом файл и не открывает произвольный URL.
-- `application/json` принимается только как inline `data` part и сериализуется в ограниченный run input.
-- Endpoint ограничивает размер input и число одновременно активных tasks; Kong дополнительно применяет body/rate limits.
-- Knowledge выбирается оператором при публикации endpoint. Внешний клиент не может подменить collection IDs.
-- Cancel аннулирует run и отзывает lease; уже начатый внешний MCP side effect не маркируется ложно отменённым: его поздний result остаётся в audit, но не возобновляет отменённую task.
-- Удаление endpoint запрещено при активных tasks. Оно удаляет A2A registry/task mapping, но не удаляет уже созданные внутренние runs и audit events.
-- Для публичного hostname `AGAT_A2A_PUBLIC_BASE_URL` обязан использовать HTTPS. HTTP разрешён только для loopback discovery URL.
+SQLite восстанавливает записи `delivering` как `pending` после рестарта, поэтому webhook receiver обязан обрабатывать возможные дубликаты идемпотентно.
 
-Token следует передавать клиенту через secret manager или другой защищённый канал. Не помещайте его в URL, query, Agent Card, logs или frontend configuration.
+## File artifacts
 
-## Управление в панели и dashboard API
+Files всегда opt-in и ограничены policy endpoint:
 
-Раздел **A2A** показывает endpoints, их Agent Card URL, token suffix/rotation time, policies и последние 100 tasks с переходом к внутреннему run.
+- inbound принимает только `Part.raw` в canonical base64 с обязательными безопасными `filename` и `mediaType`;
+- `inputModes` должен явно разрешать MIME type;
+- лимиты: `1..8` файлов, `1 KiB..2 MB` на файл и общий HTTP body limit;
+- bytes сохраняются в project Artifact Store как `a2a_input`; в run input попадает только имя, MIME, размер и SHA-256;
+- `Part.url` inbound не скачивается и отклоняется, чтобы не создавать SSRF/file-fetch boundary;
+- completed task публикует только agent artifacts, MIME которых объявлен в `outputModes` и укладывается в endpoint limits;
+- binary output сериализуется как `raw` base64, текстовый file output — как `text` part.
 
-Чтение разрешено ролям `admin/designer/operator/viewer/auditor`; создание, изменение, rotation и удаление — `admin/designer`:
+Outbound validator принимает только заявленные peer output modes. Inline raw ограничен 2 MB; HTTPS URL artifact может быть отражён в protocol response, но coordinator его не разыменовывает и не скачивает.
+
+## Outbound peers
+
+Dashboard регистрирует peer по Agent Card URL. Discovery:
+
+1. скачивает bounded JSON без redirects;
+2. выбирает только `HTTP+JSON` с exact protocol version `1.0`;
+3. проверяет interface URL тем же SSRF policy, валидирует идентификаторы и MIME types Card, затем фиксирует SHA-256, optional tenant, skill, modes и capabilities;
+4. сохраняет credentials зашифрованно и возвращает только auth mode/suffix;
+5. не делает автоматический downgrade и не исполняет данные из Card как code.
+
+Outbound client реализует `message:send`, polling `GET /tasks/:id` и `POST /tasks/:id:cancel`. Если выбранный `AgentInterface` объявляет `tenant`, HTTP+JSON client использует нормативный `/{tenant}/...` binding и принудительно наследует это значение в request body для POST — dashboard payload не может его подменить. Response проверяется на `Task | Message` oneof, известный task state, обязательные message/artifact IDs, bounded parts/artifacts и заявленные MIME types. В SQLite сохраняются encrypted request/response для последующего polling, а dashboard snapshot и audit содержат только redacted task mirror, hashes/correlation и actor.
+
+### Transport boundary
+
+- production URL требует HTTPS;
+- redirects запрещены;
+- hostname разрешается перед запросом, все DNS answers проверяются, выбранный адрес pin-ится на TCP connection;
+- loopback, RFC1918, link-local, carrier-grade NAT, benchmark, documentation, multicast, reserved, unique-local и IPv4-mapped IPv6 ranges блокируются;
+- loopback HTTP доступен только при `AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND=true` для локальных тестов;
+- timeout и total response bytes ограничены server policy и более строгим peer limit;
+- interface, token endpoint и callback проверяются независимо.
+
+## Delegated authorization
+
+Peer выбирает один transport auth mode:
+
+| Mode | Поведение |
+|---|---|
+| `none` | Запрос без `Authorization` |
+| `bearer` | Статический encrypted peer token |
+| `oauth2_token_exchange` | RFC 8693 exchange текущего OIDC user access token на peer token |
+
+Для token exchange coordinator отправляет `subject_token`, стандартные token type URNs, optional `audience`/`scope` и client authentication через Basic. Полученный bearer существует только в памяти одного вызова и не записывается в SQLite, audit, task mirror или logs. Client ID/secret и token endpoint сохраняются в encrypted peer credential. Создать или заменить delegated OAuth trust может только `admin`: token endpoint получает исходный dashboard bearer как `subject_token`, поэтому его origin является отдельной доверенной границей. Одобренный origin возвращается в redacted peer snapshot как `tokenEndpointOrigin` и записывается в audit вместе с audience/scopes, но без client secret или токенов.
+
+Это deployment policy АГАТ поверх transport-level A2A authentication: сам A2A не предписывает RFC 8693. Legacy local-admin session не имеет реального user subject token и поэтому delegated invoke получает `403`.
+
+## Dashboard API и RBAC
 
 ```http
 GET    /api/v1/a2a
@@ -114,88 +158,101 @@ POST   /api/v1/a2a/endpoints
 PATCH  /api/v1/a2a/endpoints/:endpointId
 DELETE /api/v1/a2a/endpoints/:endpointId
 POST   /api/v1/a2a/endpoints/:endpointId/token/rotate
+
+POST   /api/v1/a2a/remotes
+PATCH  /api/v1/a2a/remotes/:remoteId
+DELETE /api/v1/a2a/remotes/:remoteId
+POST   /api/v1/a2a/remotes/:remoteId/message:send
+GET    /api/v1/a2a/remotes/:remoteId/outbound-tasks/:outboundTaskId
+POST   /api/v1/a2a/remotes/:remoteId/outbound-tasks/:outboundTaskId:cancel
 ```
 
-Dashboard API использует обычные OIDC/project headers. Никогда не используйте endpoint bearer token для `/api/v1`.
+- чтение: `admin/designer/operator/viewer/auditor`;
+- endpoint configuration, token rotation и peer `none`/static bearer: `admin/designer`;
+- создание или замена peer auth `oauth2_token_exchange`: только `admin`; designer может выключить peer или изменить его несекретные параметры без замены auth;
+- outbound invoke: `admin/designer/operator`;
+- outbound polling: все read roles;
+- outbound cancel: `admin/designer/operator`;
+- все выборки и mutations project-scoped.
+
+Endpoint bearer используется только на `/a2a/v1`; он не заменяет OIDC/dashboard token и не даёт доступ к `/api/v1`.
 
 ## Конфигурация
 
 ```dotenv
 AGAT_A2A_ENABLED=true
 AGAT_A2A_PUBLIC_BASE_URL=https://agat.internal.example
+AGAT_A2A_OUTBOUND_ENABLED=true
+AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND=false
+AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS=15
+AGAT_A2A_MAX_RESPONSE_BYTES=1048576
 ```
 
-`AGAT_A2A_PUBLIC_BASE_URL` должен быть абсолютным HTTP(S) URL без credentials, query и fragment. Он используется в Agent Card и UI; это не bind address. Локальное значение по умолчанию — `http://127.0.0.1:<AGAT_PORT>`.
+`AGAT_A2A_OUTBOUND_ENABLED=false` — централизованный outbound kill switch: блокирует discovery, send, poll и cancel, не выключая опубликованные inbound endpoints. `AGAT_A2A_ENABLED=false` выключает публичный inbound adapter и push delivery. Existing registry/secrets остаются в encrypted storage и становятся доступны после осознанного повторного включения.
 
-После изменения public URL перезапустите coordinator и обновите сохранённый Agent Card в клиенте. Endpoint ID и token при этом не меняются.
+`AGAT_A2A_PUBLIC_BASE_URL` используется только в Agent Card/UI и должен быть абсолютным URL без credentials, query и fragment. Для сетевого hostname разрешён только HTTPS.
 
-## Пример клиента
+## Короткие примеры
 
-Получить Agent Card:
-
-```bash
-curl -fsS \
-  'https://agat.internal.example/a2a/v1/endpoints/ENDPOINT_ID/agent-card.json'
-```
-
-Создать task с немедленным ответом:
+Streaming request:
 
 ```bash
-curl -fsS \
+curl -N -fsS \
   -X POST \
   -H 'Authorization: Bearer ENDPOINT_TOKEN' \
   -H 'A2A-Version: 1.0' \
   -H 'Content-Type: application/a2a+json' \
-  -H 'traceparent: 00-11111111111111111111111111111111-2222222222222222-01' \
   --data '{
     "message": {
-      "messageId": "crm-case-42-v1",
-      "contextId": "crm-case-42",
+      "messageId": "case-42-v1",
       "role": "ROLE_USER",
-      "parts": [{"text": "Проверь факты и верни краткий вывод", "mediaType": "text/plain"}]
+      "parts": [{"text": "Проверь факты", "mediaType": "text/plain"}]
     },
-    "configuration": {
-      "acceptedOutputModes": ["text/plain"],
-      "historyLength": 1,
-      "returnImmediately": true
-    }
+    "configuration": {"acceptedOutputModes": ["text/plain"]}
   }' \
-  'https://agat.internal.example/a2a/v1/endpoints/ENDPOINT_ID/message:send'
+  'https://agat.internal.example/a2a/v1/endpoints/ENDPOINT_ID/message:stream'
 ```
 
-Poll и cancel:
+Inline file part:
 
-```bash
-curl -fsS \
-  -H 'Authorization: Bearer ENDPOINT_TOKEN' \
-  -H 'A2A-Version: 1.0' \
-  'https://agat.internal.example/a2a/v1/endpoints/ENDPOINT_ID/tasks/TASK_ID?historyLength=1'
+```json
+{
+  "raw": "JVBERi0xLjQK...",
+  "filename": "source.pdf",
+  "mediaType": "application/pdf"
+}
+```
 
-curl -fsS \
-  -X POST \
-  -H 'Authorization: Bearer ENDPOINT_TOKEN' \
-  -H 'A2A-Version: 1.0' \
-  -H 'Content-Type: application/a2a+json' \
-  --data '{}' \
-  'https://agat.internal.example/a2a/v1/endpoints/ENDPOINT_ID/tasks/TASK_ID:cancel'
+Push config:
+
+```json
+{
+  "id": "case-42-callback",
+  "taskId": "TASK_ID",
+  "url": "https://client.example/a2a/events",
+  "authentication": {
+    "scheme": "Bearer",
+    "credentials": "single-purpose-callback-secret"
+  }
+}
 ```
 
 ## Проверка
 
 ```bash
-npm run typecheck --workspace @agat/coordinator
-npm run typecheck --workspace @agat/web
-node --import tsx --test apps/coordinator/test/a2a.test.ts
+npm run typecheck
+node --import tsx --test apps/coordinator/test/a2a.test.ts apps/coordinator/test/a2a-interoperability.test.ts
 npm run build
 ```
 
-Тесты проверяют Agent Card redaction, input boundary, token hashing/rotation, project isolation, message idempotency, scheduler mapping, W3C trace inheritance, approval/cancel/cursors и настоящий HTTP+JSON contract.
+Тесты покрывают Agent Card redaction, endpoint token/project isolation, task idempotency, scheduler/approval/cancel, query/header versioning, полный SSE lifecycle, capability deny для push, encrypted push outbox и реальную callback delivery, bounded file input/output, encrypted outbound credentials, SSRF включая IPv4-mapped IPv6, tenant binding, discovery/invoke, RFC 8693 exchange, malformed peer responses и redacted task mirrors.
 
-## Осознанные границы 0.9
+## Осознанные границы 1.4
 
-- Реализован только inbound adapter; АГАТ пока не вызывает внешних A2A agents как client.
-- Нет streaming, push notifications, subscription и extended Agent Card.
-- Нет file/url artifacts и multi-modal output.
-- Нет продолжения существующей task через `message.taskId`; новый запрос создаёт новую task.
-- SQLite сохраняет модель одного активного coordinator. Горизонтальное масштабирование adapter требует общего PostgreSQL state store и distributed limits.
-- Endpoint bearer — долгоживущий opaque secret с ручной rotation; short-lived OAuth/mTLS и delegated authorization относятся к расширенной A2A interoperability.
+- outbound client использует send + poll/cancel; consumption внешнего SSE и регистрация outbound push callback пока не реализованы;
+- inbound multi-turn через `message.taskId` не реализован;
+- поддерживается HTTP+JSON 1.0, но не JSON-RPC/gRPC bindings;
+- push authentication на inbound callback ограничена Bearer;
+- HTTPS URL artifacts от peer валидируются, но не скачиваются;
+- Agent Card signature не проверяется: доверие задаётся оператором и TLS identity;
+- SQLite сохраняет модель одного активного coordinator; HA требует общего PostgreSQL state store и distributed outbox/limits.

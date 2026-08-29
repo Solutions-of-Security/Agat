@@ -39,15 +39,27 @@ import {
   buildA2AAgentCard,
   isA2ASettledState,
   normalizeA2APublicBaseUrl,
+  normalizeA2APushNotificationConfig,
   normalizeA2ASendMessageRequest,
+  validateA2AOutboundResponse,
   validateA2AContentType,
   validateA2AProtocolVersion,
 } from "./a2a.js";
+import {
+  A2ATransportError,
+  discoverA2ARemote,
+  invokeA2ARemote,
+  sendA2APush,
+  validateA2AOutboundTarget,
+  type A2AOutboundPolicy,
+} from "./a2a-transport.js";
 import type {
   A2AEndpointConnection,
   A2ASendMessageRequest,
   A2ATaskState,
+  A2AOutboundInvocationInput,
   CreateA2AEndpointInput,
+  CreateA2ARemoteInput,
   CreateAgentInput,
   CreateCredentialInput,
   CreateEvalDatasetInput,
@@ -80,6 +92,7 @@ import type {
   UpdateProcessInput,
   UpdateMcpServerInput,
   UpdateA2AEndpointInput,
+  UpdateA2ARemoteInput,
   WorkerCapabilities,
   WorkerArtifactInput,
   WorkerExecutionMetrics,
@@ -88,6 +101,7 @@ import type {
 } from "./types.js";
 
 const JSON_LIMIT_BYTES = 1_048_576;
+const A2A_JSON_LIMIT_BYTES = 24_000_000;
 const KNOWLEDGE_JSON_LIMIT_BYTES = 8_388_608;
 const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -187,7 +201,7 @@ async function readText(request: IncomingMessage, limitBytes = JSON_LIMIT_BYTES)
 
 async function readA2AJson(request: IncomingMessage): Promise<unknown> {
   try {
-    return await readJson<unknown>(request);
+    return await readJson<unknown>(request, A2A_JSON_LIMIT_BYTES);
   } catch (error) {
     if (error instanceof HttpError) {
       throw new A2AProtocolError(
@@ -379,6 +393,74 @@ async function waitForA2ATask(
   return task;
 }
 
+function a2aSseEvent(response: ServerResponse, payload: Record<string, unknown>): void {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+async function streamA2ATask(
+  request: IncomingMessage,
+  response: ServerResponse,
+  store: AgatStore,
+  endpointId: string,
+  taskId: string,
+  initialTask: Record<string, unknown>,
+): Promise<void> {
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no",
+    "a2a-version": A2A_PROTOCOL_VERSION,
+  });
+  let closed = false;
+  response.once("close", () => { closed = true; });
+  a2aSseEvent(response, { task: initialTask });
+  let previousState = a2aTaskState(initialTask);
+  if (isA2ASettledState(previousState)) {
+    response.end();
+    return;
+  }
+  let lastHeartbeat = Date.now();
+  while (!closed && !response.destroyed) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    const task = store.getA2ATask(endpointId, taskId, 0, true);
+    if (!task) break;
+    const state = a2aTaskState(task);
+    if (state !== previousState) {
+      if (state === "TASK_STATE_COMPLETED" && Array.isArray(task.artifacts)) {
+        for (const artifact of task.artifacts) {
+          a2aSseEvent(response, {
+            artifactUpdate: {
+              taskId,
+              contextId: task.contextId,
+              artifact,
+              append: false,
+              lastChunk: true,
+            },
+          });
+        }
+      }
+      a2aSseEvent(response, {
+        statusUpdate: {
+          taskId,
+          contextId: task.contextId,
+          status: task.status,
+        },
+      });
+      previousState = state;
+      if (isA2ASettledState(state)) {
+        response.end();
+        return;
+      }
+    }
+    if (Date.now() - lastHeartbeat >= 15_000) {
+      response.write(": heartbeat\n\n");
+      lastHeartbeat = Date.now();
+    }
+  }
+  if (!response.destroyed) response.end();
+}
+
 function a2aStoreError(error: unknown): A2AProtocolError {
   if (error instanceof A2AProtocolError) return error;
   const message = safeMessage(error);
@@ -420,7 +502,7 @@ function validateRemoteBinding(config: CoordinatorConfig): void {
   const a2aPublicBaseUrl = config.a2aEnabled
     ? normalizeA2APublicBaseUrl(config.a2aPublicBaseUrl, `http://127.0.0.1:${config.port}`)
     : "";
-  const loopback = new Set(["127.0.0.1", "::1", "localhost"]);
+  const loopback = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
   const a2aPublicUrl = a2aPublicBaseUrl ? new URL(a2aPublicBaseUrl) : null;
   if (a2aPublicUrl && !loopback.has(a2aPublicUrl.hostname) && a2aPublicUrl.protocol !== "https:") {
     throw new Error("AGAT_A2A_PUBLIC_BASE_URL должен использовать HTTPS при удалённой публикации координатора");
@@ -475,7 +557,12 @@ export function createCoordinatorServer(
       jwksUrl: config.oidcJwksUrl || undefined,
     })
     : null;
-  return http.createServer(async (request, response) => {
+  const a2aOutboundPolicy: A2AOutboundPolicy = {
+    allowLoopback: config.a2aAllowLoopbackOutbound,
+    timeoutMs: config.a2aOutboundTimeoutSeconds * 1_000,
+    maxResponseBytes: config.a2aMaxResponseBytes,
+  };
+  const server = http.createServer(async (request, response) => {
     setSecurityHeaders(response, config);
     const corsAllowed = setCors(request, response, config);
     if (request.method === "OPTIONS") {
@@ -495,7 +582,7 @@ export function createCoordinatorServer(
         json(response, 200, {
           status: "ok",
           time: new Date().toISOString(),
-          version: "1.3.0",
+          version: "1.4.0",
           processRuntime: processRuntime.snapshot(),
         });
         return;
@@ -565,13 +652,23 @@ export function createCoordinatorServer(
         }
         const endpointId = decodeA2APathSegment(a2aMatch[1], "endpointId");
         const operationPath = a2aMatch[2] ?? "";
-        validateA2AProtocolVersion(singleHeader(request.headers["a2a-version"]));
+        validateA2AProtocolVersion(
+          singleHeader(request.headers["a2a-version"])
+            ?? url.searchParams.get("A2A-Version")
+            ?? undefined,
+        );
         const endpoint = requireA2AEndpoint(request, store, endpointId);
         if (request.method === "POST") validateA2AContentType(singleHeader(request.headers["content-type"]));
+        if (operationPath.includes("/pushNotificationConfigs") && !endpoint.pushNotificationsEnabled) {
+          throw new A2AProtocolError(400, "FAILED_PRECONDITION", "PUSH_NOTIFICATION_NOT_SUPPORTED", "Push notifications выключены policy endpoint");
+        }
 
         if (request.method === "POST" && operationPath === "/message:send") {
           const body = await readA2AJson(request) as A2ASendMessageRequest;
           const normalized = normalizeA2ASendMessageRequest(body, endpoint);
+          if (normalized.pushNotificationConfig) {
+            await validateA2AOutboundTarget(normalized.pushNotificationConfig.url, a2aOutboundPolicy, true);
+          }
           const traceparent = a2aTraceparent(request.headers.traceparent);
           let task: Record<string, unknown>;
           try {
@@ -579,11 +676,98 @@ export function createCoordinatorServer(
           } catch (error) {
             throw a2aStoreError(error);
           }
+          if (normalized.pushNotificationConfig) {
+            try {
+              store.createA2APushConfig(endpoint.id, String(task.id), normalized.pushNotificationConfig);
+            } catch (error) {
+              throw a2aStoreError(error);
+            }
+          }
           if (!normalized.returnImmediately) {
             task = await waitForA2ATask(store, endpoint.id, String(task.id), normalized.historyLength, response);
           }
           if (!response.destroyed) a2aJson(response, 200, { task });
           return;
+        }
+
+        if (request.method === "POST" && operationPath === "/message:stream") {
+          if (!endpoint.streamingEnabled) {
+            throw new A2AProtocolError(400, "FAILED_PRECONDITION", "UNSUPPORTED_OPERATION", "Streaming выключен policy endpoint");
+          }
+          const body = await readA2AJson(request) as A2ASendMessageRequest;
+          const normalized = normalizeA2ASendMessageRequest(body, endpoint);
+          if (normalized.pushNotificationConfig) {
+            await validateA2AOutboundTarget(normalized.pushNotificationConfig.url, a2aOutboundPolicy, true);
+          }
+          const traceparent = a2aTraceparent(request.headers.traceparent);
+          let task: Record<string, unknown>;
+          try {
+            task = store.createA2ATask(endpoint, normalized, traceparent);
+            if (normalized.pushNotificationConfig) {
+              store.createA2APushConfig(endpoint.id, String(task.id), normalized.pushNotificationConfig);
+            }
+          } catch (error) {
+            throw a2aStoreError(error);
+          }
+          await streamA2ATask(request, response, store, endpoint.id, String(task.id), task);
+          return;
+        }
+
+        const subscribeTaskMatch = /^\/tasks\/([^/:]+):subscribe$/.exec(operationPath);
+        if ((request.method === "GET" || request.method === "POST") && subscribeTaskMatch?.[1]) {
+          if (!endpoint.streamingEnabled) {
+            throw new A2AProtocolError(400, "FAILED_PRECONDITION", "UNSUPPORTED_OPERATION", "Streaming выключен policy endpoint");
+          }
+          if (request.method === "POST") await readA2AJson(request);
+          const taskId = decodeA2APathSegment(subscribeTaskMatch[1], "taskId");
+          const task = store.getA2ATask(endpoint.id, taskId, 0, true);
+          if (!task) throw new A2AProtocolError(404, "NOT_FOUND", "TASK_NOT_FOUND", "A2A task не найден");
+          if (isA2ASettledState(a2aTaskState(task))) {
+            throw new A2AProtocolError(400, "FAILED_PRECONDITION", "UNSUPPORTED_OPERATION", "Terminal или interrupted task нельзя подписать повторно");
+          }
+          await streamA2ATask(request, response, store, endpoint.id, taskId, task);
+          return;
+        }
+
+        const pushConfigItemMatch = /^\/tasks\/([^/:]+)\/pushNotificationConfigs\/([^/]+)$/.exec(operationPath);
+        if (pushConfigItemMatch?.[1] && pushConfigItemMatch[2]) {
+          const taskId = decodeA2APathSegment(pushConfigItemMatch[1], "taskId");
+          const configId = decodeA2APathSegment(pushConfigItemMatch[2], "configId");
+          if (request.method === "GET") {
+            const pushConfig = store.getA2APushConfig(endpoint.id, taskId, configId);
+            if (!pushConfig) throw new A2AProtocolError(404, "NOT_FOUND", "TASK_NOT_FOUND", "A2A push config не найден");
+            a2aJson(response, 200, pushConfig);
+            return;
+          }
+          if (request.method === "DELETE") {
+            store.deleteA2APushConfig(endpoint.id, taskId, configId);
+            a2aJson(response, 200, {});
+            return;
+          }
+        }
+
+        const pushConfigCollectionMatch = /^\/tasks\/([^/:]+)\/pushNotificationConfigs$/.exec(operationPath);
+        if (pushConfigCollectionMatch?.[1]) {
+          const taskId = decodeA2APathSegment(pushConfigCollectionMatch[1], "taskId");
+          if (request.method === "POST") {
+            const rawConfig = await readA2AJson(request);
+            const config = normalizeA2APushNotificationConfig(rawConfig, undefined, taskId);
+            try {
+              await validateA2AOutboundTarget(config.url, a2aOutboundPolicy, true);
+              a2aJson(response, 200, store.createA2APushConfig(endpoint.id, taskId, config));
+            } catch (error) {
+              throw a2aStoreError(error);
+            }
+            return;
+          }
+          if (request.method === "GET") {
+            try {
+              a2aJson(response, 200, store.listA2APushConfigs(endpoint.id, taskId));
+            } catch (error) {
+              throw a2aStoreError(error);
+            }
+            return;
+          }
         }
 
         const cancelTaskMatch = /^\/tasks\/([^/:]+):cancel$/.exec(operationPath);
@@ -645,9 +829,7 @@ export function createCoordinatorServer(
         }
 
         if (
-          operationPath === "/message:stream"
-          || /:subscribe$/.test(operationPath)
-          || operationPath === "/extendedAgentCard"
+          operationPath === "/extendedAgentCard"
         ) {
           throw new A2AProtocolError(400, "FAILED_PRECONDITION", "UNSUPPORTED_OPERATION", "Эта A2A-операция не поддерживается endpoint");
         }
@@ -753,6 +935,8 @@ export function createCoordinatorServer(
         json(response, 200, {
           ...snapshot,
           enabled: config.a2aEnabled,
+          outboundEnabled: config.a2aOutboundEnabled,
+          loopbackOutboundAllowed: config.a2aAllowLoopbackOutbound,
           publicBaseUrl: a2aPublicBaseUrl,
           endpoints,
         });
@@ -788,6 +972,134 @@ export function createCoordinatorServer(
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         if (!store.deleteA2AEndpoint(manageA2AEndpointId, auth.projectId, auth.username)) {
           throw new HttpError(404, "A2A endpoint не найден");
+        }
+        noContent(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/a2a/remotes") {
+        if (!config.a2aOutboundEnabled) throw new HttpError(503, "Outbound A2A выключен централизованной конфигурацией");
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const body = await readJson<CreateA2ARemoteInput>(request);
+        if (typeof body.agentCardUrl !== "string" || !body.auth) throw new HttpError(400, "agentCardUrl и auth обязательны");
+        if (body.auth.mode === "oauth2_token_exchange") {
+          if (!auth.roles.has("admin")) {
+            throw new HttpError(403, "Delegated OAuth A2A peer может настраивать только admin");
+          }
+          if (typeof body.auth.tokenUrl === "string") {
+            await validateA2AOutboundTarget(body.auth.tokenUrl, a2aOutboundPolicy);
+          }
+        }
+        const discovered = await discoverA2ARemote(body.agentCardUrl, body.skillId, a2aOutboundPolicy);
+        json(response, 201, store.createA2ARemote(body, discovered, auth.projectId, auth.username));
+        return;
+      }
+
+      const invokeA2ARemoteId = routeParam(pathname, /^\/api\/v1\/a2a\/remotes\/([^/]+)\/message:send$/);
+      if (request.method === "POST" && invokeA2ARemoteId) {
+        if (!config.a2aOutboundEnabled) throw new HttpError(503, "Outbound A2A выключен централизованной конфигурацией");
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const remote = store.getA2ARemoteConnection(invokeA2ARemoteId, auth.projectId, true);
+        const remoteAuth = store.getA2ARemoteAuth(invokeA2ARemoteId, auth.projectId);
+        if (!remote || !remoteAuth) throw new HttpError(404, "Outbound A2A peer не найден или выключен");
+        const body = await readJson<A2AOutboundInvocationInput>(request, A2A_JSON_LIMIT_BYTES);
+        const normalized = normalizeA2ASendMessageRequest(body, {
+          inputModes: remote.inputModes,
+          outputModes: remote.outputModes,
+          maxInputCharacters: 100_000,
+          fileArtifactsEnabled: remote.allowFileArtifacts,
+          maxFileBytes: 2_000_000,
+          maxFiles: 8,
+          pushNotificationsEnabled: false,
+        });
+        const outboundRequest: Record<string, unknown> = {
+          message: normalized.message,
+          configuration: {
+            acceptedOutputModes: body.configuration?.acceptedOutputModes ?? remote.outputModes,
+            historyLength: normalized.historyLength,
+            returnImmediately: normalized.returnImmediately,
+          },
+          ...(body.metadata ? { metadata: body.metadata } : {}),
+        };
+        const subjectToken = auth.local ? null : bearerToken(request.headers.authorization);
+        const upstream = await invokeA2ARemote(
+          remote,
+          remoteAuth,
+          subjectToken,
+          "message:send",
+          outboundRequest,
+          a2aOutboundPolicy,
+        );
+        validateA2AOutboundResponse(upstream, remote);
+        const outboundTask = store.recordA2AOutboundTask(
+          remote,
+          outboundRequest,
+          upstream,
+          { subject: auth.subject, display: auth.username },
+          remoteAuth.mode === "oauth2_token_exchange",
+        );
+        json(response, 200, { outboundTask, response: upstream });
+        return;
+      }
+
+      const outboundTaskMatch = /^\/api\/v1\/a2a\/remotes\/([^/]+)\/outbound-tasks\/([^/:]+)(:cancel)?$/.exec(pathname);
+      if (outboundTaskMatch?.[1] && outboundTaskMatch[2]
+        && (request.method === "GET" || (request.method === "POST" && outboundTaskMatch[3] === ":cancel"))) {
+        if (!config.a2aOutboundEnabled) throw new HttpError(503, "Outbound A2A выключен централизованной конфигурацией");
+        const cancelling = outboundTaskMatch[3] === ":cancel";
+        const auth = await authorize(
+          request,
+          config,
+          oidcVerifier,
+          cancelling ? ["admin", "designer", "operator"] : READ_ROLES,
+          cancelling,
+        );
+        const remoteId = decodeURIComponent(outboundTaskMatch[1]);
+        const outboundTaskId = decodeURIComponent(outboundTaskMatch[2]);
+        const remote = store.getA2ARemoteConnection(remoteId, auth.projectId, true);
+        const remoteAuth = store.getA2ARemoteAuth(remoteId, auth.projectId);
+        const outboundTask = store.getA2AOutboundTask(outboundTaskId, auth.projectId);
+        if (!remote || !remoteAuth || !outboundTask || outboundTask.remoteId !== remoteId || typeof outboundTask.remoteTaskId !== "string") {
+          throw new HttpError(404, "Outbound A2A task не найден");
+        }
+        const subjectToken = auth.local ? null : bearerToken(request.headers.authorization);
+        const remoteTaskId = encodeURIComponent(outboundTask.remoteTaskId);
+        const upstream = await invokeA2ARemote(
+          remote,
+          remoteAuth,
+          subjectToken,
+          cancelling ? `tasks/${remoteTaskId}:cancel` : `tasks/${remoteTaskId}`,
+          cancelling ? {} : null,
+          a2aOutboundPolicy,
+        );
+        validateA2AOutboundResponse({ task: upstream }, remote);
+        const updated = store.updateA2AOutboundTask(remote.id, outboundTask.remoteTaskId, upstream, auth.projectId);
+        json(response, 200, { outboundTask: updated, response: upstream });
+        return;
+      }
+
+      const manageA2ARemoteId = routeParam(pathname, /^\/api\/v1\/a2a\/remotes\/([^/]+)$/);
+      if (request.method === "PATCH" && manageA2ARemoteId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const body = await readJson<UpdateA2ARemoteInput>(request);
+        if (body.skillId !== undefined) throw new HttpError(400, "Skill outbound peer неизменяем; создайте новую запись");
+        if (body.auth?.mode === "oauth2_token_exchange") {
+          if (!auth.roles.has("admin")) {
+            throw new HttpError(403, "Delegated OAuth A2A peer может настраивать только admin");
+          }
+          if (typeof body.auth.tokenUrl === "string") {
+            await validateA2AOutboundTarget(body.auth.tokenUrl, a2aOutboundPolicy);
+          }
+        }
+        const updated = store.updateA2ARemote(manageA2ARemoteId, body, auth.projectId, auth.username);
+        if (!updated) throw new HttpError(404, "Outbound A2A peer не найден");
+        json(response, 200, updated);
+        return;
+      }
+      if (request.method === "DELETE" && manageA2ARemoteId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        if (!store.deleteA2ARemote(manageA2ARemoteId, auth.projectId, auth.username)) {
+          throw new HttpError(404, "Outbound A2A peer не найден");
         }
         noContent(response);
         return;
@@ -1859,10 +2171,36 @@ export function createCoordinatorServer(
       }
       const status = error instanceof HttpError || error instanceof WorkerLauncherError || error instanceof AuthenticationError
         ? error.status
+        : error instanceof A2ATransportError
+          ? error.httpStatus
         : 400;
       json(response, status, { error: safeMessage(error) });
     }
   });
+  let pushPumpRunning = false;
+  const pushTimer = setInterval(() => {
+    if (!config.a2aEnabled || pushPumpRunning) return;
+    pushPumpRunning = true;
+    let deliveries: ReturnType<AgatStore["claimA2APushDeliveries"]>;
+    try {
+      deliveries = store.claimA2APushDeliveries(10);
+    } catch (error) {
+      pushPumpRunning = false;
+      console.warn(`Ошибка A2A push outbox: ${safeMessage(error)}`);
+      return;
+    }
+    void Promise.all(deliveries.map(async (delivery) => {
+      try {
+        await sendA2APush(delivery.url, delivery.authorization, delivery.payload, a2aOutboundPolicy);
+        store.completeA2APushDelivery(delivery.deliveryId, null);
+      } catch (error) {
+        store.completeA2APushDelivery(delivery.deliveryId, safeMessage(error));
+      }
+    })).finally(() => { pushPumpRunning = false; });
+  }, 500);
+  pushTimer.unref();
+  server.once("close", () => clearInterval(pushTimer));
+  return server;
 }
 
 async function main(): Promise<void> {

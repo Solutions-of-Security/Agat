@@ -40,7 +40,7 @@ from web_tools import (
 )
 
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
 
 WEB_SYSTEM_PROMPT = """

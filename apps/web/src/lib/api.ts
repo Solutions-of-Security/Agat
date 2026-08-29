@@ -1,6 +1,8 @@
 import type {
   A2AEndpoint,
   A2AEndpointSecret,
+  A2ARemote,
+  A2AOutboundInvocationResponse,
   A2ASnapshot,
   Agent,
   AuthUser,
@@ -45,6 +47,9 @@ import type {
   RunTrace,
   SaveMemoryRequest,
   SaveA2AEndpointRequest,
+  SaveA2ARemoteRequest,
+  UpdateA2ARemoteRequest,
+  InvokeA2ARemoteRequest,
   MemoryEntry,
   SchedulerMode,
   SaveMcpServerRequest,
@@ -159,6 +164,20 @@ export const api = {
     request<void>(`/a2a/endpoints/${encodeURIComponent(endpointId)}`, { method: "DELETE" }),
   rotateA2AEndpointToken: (endpointId: string) =>
     request<A2AEndpointSecret>(`/a2a/endpoints/${encodeURIComponent(endpointId)}/token/rotate`, { method: "POST" }),
+  createA2ARemote: (payload: SaveA2ARemoteRequest) =>
+    request<A2ARemote>("/a2a/remotes", { method: "POST", body: JSON.stringify(payload) }),
+  updateA2ARemote: (remoteId: string, payload: UpdateA2ARemoteRequest) =>
+    request<A2ARemote>(`/a2a/remotes/${encodeURIComponent(remoteId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteA2ARemote: (remoteId: string) =>
+    request<void>(`/a2a/remotes/${encodeURIComponent(remoteId)}`, { method: "DELETE" }),
+  invokeA2ARemote: (remoteId: string, payload: InvokeA2ARemoteRequest) =>
+    request<A2AOutboundInvocationResponse>(`/a2a/remotes/${encodeURIComponent(remoteId)}/message:send`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   evals: (signal?: AbortSignal) => request<EvalSnapshot>("/evals", { signal }),
   evalExperiment: (experimentId: string, signal?: AbortSignal) =>
     request<GoldenEvalExperiment>(`/evals/experiments/${encodeURIComponent(experimentId)}`, { signal }),

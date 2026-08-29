@@ -116,7 +116,7 @@ POST /api/v1/local-workers/:poolId/start
 ```dotenv
 AGAT_LOCAL_WORKER_LAUNCHER=true
 AGAT_LOCAL_WORKER_NAMESPACE=agat
-AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.3.0
+AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.4.0
 AGAT_LOCAL_WORKER_CONFIG_MAP=agat-worker-config
 AGAT_LOCAL_WORKER_SECRET=agat-secrets
 AGAT_LOCAL_MODEL_BASE_URL=http://host.docker.internal:11434/v1

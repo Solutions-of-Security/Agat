@@ -90,7 +90,7 @@ describe("A2A adapter", () => {
       protocolVersion: "1.0",
     }]);
     assert.deepEqual(card.capabilities, {
-      streaming: false,
+      streaming: true,
       pushNotifications: false,
       extendedAgentCard: false,
     });
@@ -331,6 +331,11 @@ describe("A2A adapter", () => {
     assert.equal(getResponse.status, 200);
     assert.equal(((await getResponse.json() as { id: string }).id), sent.task.id);
 
+    const queryVersionResponse = await fetch(`${base}/tasks/${sent.task.id}?A2A-Version=1.0`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(queryVersionResponse.status, 200);
+
     const cancelResponse = await fetch(`${base}/tasks/${sent.task.id}:cancel`, {
       method: "POST",
       headers: {
@@ -353,12 +358,31 @@ describe("A2A adapter", () => {
         "A2A-Version": "1.0",
         "content-type": "application/a2a+json",
       },
-      body: "{}",
+      body: JSON.stringify(sendRequest("http-stream")),
     });
-    assert.equal(streamResponse.status, 400);
-    assert.equal(
-      ((await streamResponse.json() as { error: { details: Array<{ reason: string }> } }).error.details[0]?.reason),
-      "UNSUPPORTED_OPERATION",
-    );
+    assert.equal(streamResponse.status, 200);
+    assert.match(streamResponse.headers.get("content-type") ?? "", /^text\/event-stream/);
+    const reader = streamResponse.body?.getReader();
+    assert.ok(reader);
+    const firstEvent = await reader.read();
+    assert.match(Buffer.from(firstEvent.value ?? []).toString("utf8"), /"task"/);
+    const nodeId = store.registerNode({
+      enrollmentToken: "unused",
+      name: "stream-worker",
+      platform: "test",
+      models: ["test-model"],
+    }).id;
+    const lease = store.leaseNext(nodeId);
+    assert.ok(lease);
+    store.completeLease(nodeId, lease.leaseId, "Streaming result");
+    let terminalEvents = "";
+    for (let attempt = 0; attempt < 10 && !terminalEvents.includes("TASK_STATE_COMPLETED"); attempt += 1) {
+      const next = await reader.read();
+      terminalEvents += Buffer.from(next.value ?? []).toString("utf8");
+      if (next.done) break;
+    }
+    assert.match(terminalEvents, /"artifactUpdate"/);
+    assert.match(terminalEvents, /"TASK_STATE_COMPLETED"/);
+    await reader.cancel();
   });
 });
