@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agat-keycloak-realm
+  labels:
+    app.kubernetes.io/name: agat-keycloak
+    app.kubernetes.io/part-of: agat
+data:
+  agat-realm.json: |
+    {
+      "realm": "agat",
+      "displayName": "АГАТ",
+      "enabled": true,
+      "registrationAllowed": false,
+      "resetPasswordAllowed": true,
+      "rememberMe": true,
+      "verifyEmail": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "bruteForceProtected": true,
+      "failureFactor": 5,
+      "waitIncrementSeconds": 60,
+      "maxFailureWaitSeconds": 900,
+      "sslRequired": "external",
+      "roles": {
+        "realm": [
+          { "name": "admin", "description": "Полное управление платформой АГАТ" },
+          { "name": "designer", "description": "Агенты, процессы и credentials" },
+          { "name": "operator", "description": "Запуски, остановка и подтверждения" },
+          { "name": "viewer", "description": "Просмотр текущего состояния" },
+          { "name": "auditor", "description": "Просмотр трасс и артефактов" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "agat-web",
+          "name": "АГАТ Web",
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "frontchannelLogout": true,
+          "redirectUris": [
+            "http://127.0.0.1:8787/*",
+            "http://localhost:8787/*"
+          ],
+          "webOrigins": [
+            "http://127.0.0.1:8787",
+            "http://localhost:8787"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "+"
+          },
+          "protocolMappers": [
+            {
+              "name": "AGAT projects",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "consentRequired": false,
+              "config": {
+                "user.attribute": "agat_projects",
+                "claim.name": "agat_projects",
+                "jsonType.label": "String",
+                "multivalued": "true",
+                "access.token.claim": "true",
+                "id.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "agat-admin",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "AGAT",
+          "lastName": "Administrator",
+          "email": "agat-admin@localhost",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "${AGAT_KEYCLOAK_DEMO_PASSWORD}",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["admin"],
+          "attributes": {
+            "agat_projects": ["default"]
+          }
+        }
+      ]
+    }

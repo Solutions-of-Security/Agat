@@ -1,0 +1,28 @@
+{
+  "name": "@agat/coordinator",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
+    "@opentelemetry/resources": "2.10.0",
+    "@opentelemetry/sdk-trace-node": "2.10.0",
+    "@temporalio/client": "~1.22.0",
+    "@temporalio/common": "~1.22.0"
+  }
+}

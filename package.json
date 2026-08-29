@@ -1,0 +1,36 @@
+{
+  "name": "agat-platform",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web && npm run build --workspace @agat/temporal-worker",
+    "dev:api": "npm run dev --workspace @agat/coordinator",
+    "dev:web": "npm run dev --workspace @agat/web",
+    "k8s:admin-token": "bash scripts/k8s-admin-token.sh",
+    "k8s:enrollment-token": "bash scripts/k8s-enrollment-token.sh",
+    "k8s:forward": "bash scripts/k8s-port-forward.sh",
+    "k8s:keycloak-password": "bash scripts/k8s-keycloak-password.sh",
+    "k8s:status": "bash scripts/k8s-status.sh",
+    "k8s:stop": "bash scripts/k8s-stop.sh",
+    "k8s:token": "bash scripts/k8s-admin-token.sh",
+    "k8s:up": "bash scripts/k8s-up.sh",
+    "start": "npm run start --workspace @agat/coordinator",
+    "test": "npm run test:coordinator && npm run test:worker && npm run test:temporal",
+    "test:coordinator": "npm run test --workspace @agat/coordinator",
+    "test:ollama-rag": "bash scripts/test-real-ollama-rag.sh",
+    "test:temporal": "npm run test --workspace @agat/temporal-worker",
+    "test:worker": "python3 -m unittest discover -s workers -p 'test_*.py'",
+    "temporal:promote": "bash scripts/temporal-rollout.sh promote",
+    "temporal:ramp": "bash scripts/temporal-rollout.sh ramp",
+    "temporal:status": "bash scripts/temporal-rollout.sh status",
+    "temporal:version": "bash scripts/temporal-rollout.sh version",
+    "typecheck": "npm run typecheck --workspace @agat/coordinator && npm run typecheck --workspace @agat/web && npm run typecheck --workspace @agat/temporal-worker"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@agat/temporal-worker",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "main": "dist/worker.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node dist/build-workflows.js",
+    "replay": "node dist/replay-fixtures.js",
+    "start": "node dist/worker.js",
+    "test": "npm run build && node --test test/*.test.mjs && npm run replay",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@temporalio/activity": "~1.22.0",
+    "@temporalio/common": "~1.22.0",
+    "@temporalio/worker": "~1.22.0",
+    "@temporalio/workflow": "~1.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "typescript": "7.0.2"
+  }
+}

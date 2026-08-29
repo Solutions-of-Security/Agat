@@ -1,0 +1,927 @@
+export type SchedulerMode = "sequential" | "parallel" | "auto";
+export type ResultDestination = "history" | "artifacts";
+export type AgentRuntime = "single" | "langgraph";
+export type AgentRuntimeProfile = "tool_loop_v1";
+
+export interface AgentRuntimeConfig {
+  profile: AgentRuntimeProfile;
+  maxIterations: number;
+}
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_external"
+  | "compensating"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type StageStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_external"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type ProcessNodeType =
+  | "start"
+  | "agent"
+  | "http"
+  | "transform"
+  | "wait"
+  | "approval"
+  | "artifact"
+  | "condition"
+  | "loop"
+  | "parallel_fork"
+  | "parallel_join"
+  | "signal"
+  | "subprocess"
+  | "end";
+export type ProcessBranch = "default" | "true" | "false" | "repeat" | "exit";
+export type ProcessConditionOperator = "always" | "contains" | "not_contains" | "equals" | "not_equals";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export interface ProcessCondition {
+  source: "last_output";
+  operator: ProcessConditionOperator;
+  value: string;
+  caseSensitive: boolean;
+}
+
+export interface ProcessCompensationConfig {
+  url: string;
+  method: HttpMethod;
+  headers: Record<string, string>;
+  body: string;
+  credentialId?: string;
+  timeoutSeconds: number;
+}
+
+export interface ProcessGraphNode {
+  id: string;
+  type: ProcessNodeType;
+  name: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  config: {
+    agentId?: string;
+    approvalRequired?: boolean;
+    condition?: ProcessCondition;
+    maxIterations?: number;
+    template?: string;
+    url?: string;
+    method?: HttpMethod;
+    headers?: Record<string, string>;
+    body?: string;
+    credentialId?: string;
+    timeoutSeconds?: number;
+    waitSeconds?: number;
+    approvalMessage?: string;
+    artifactName?: string;
+    artifactMediaType?: string;
+    artifactContent?: string;
+    /** Fork paired with this converging gateway. */
+    forkId?: string;
+    /** Stable public signal name. Correlation is rendered from process input/context. */
+    signalName?: string;
+    signalCorrelationKey?: string;
+    signalTimeoutSeconds?: number;
+    /** Published process invoked as a version-pinned subprocess. */
+    subprocessProcessId?: string;
+    subprocessVersion?: number;
+    subprocessInputTemplate?: string;
+    /** Header populated with a deterministic per-instance/per-visit key. */
+    idempotencyHeader?: string;
+    compensation?: ProcessCompensationConfig;
+  };
+}
+
+export interface ProcessGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  branch: ProcessBranch;
+}
+
+export interface ProcessGraph {
+  nodes: ProcessGraphNode[];
+  edges: ProcessGraphEdge[];
+}
+
+export interface CreateProcessInput {
+  name: string;
+  description?: string;
+  graph?: ProcessGraph;
+  templateId?: string;
+  isTemplate?: boolean;
+}
+
+export interface UpdateProcessInput {
+  name: string;
+  description?: string;
+  graph: ProcessGraph;
+  isTemplate?: boolean;
+}
+
+export interface StartProcessInput {
+  input: string;
+  priority?: number;
+  resultDestination?: ResultDestination;
+  artifactPath?: string;
+  startNodeId?: string;
+  knowledgeCollectionIds?: string[];
+}
+
+export interface ReplayProcessInstanceInput {
+  /** safe reuses recorded external side-effect results; live performs them again with new idempotency keys. */
+  mode?: "safe" | "live";
+  priority?: number;
+}
+
+export interface ProcessVersionDiffEntry {
+  kind: "node_added" | "node_removed" | "node_changed" | "edge_added" | "edge_removed" | "metadata_changed";
+  id: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface ProcessVersionDiff {
+  processId: string;
+  from: number | "draft";
+  to: number | "draft";
+  summary: {
+    addedNodes: number;
+    removedNodes: number;
+    changedNodes: number;
+    addedEdges: number;
+    removedEdges: number;
+    metadataChanged: boolean;
+  };
+  entries: ProcessVersionDiffEntry[];
+}
+
+export type ProcessWebhookKind = "start" | "signal";
+
+export interface CreateProcessWebhookInput {
+  name: string;
+  kind: ProcessWebhookKind;
+  signalName?: string;
+  defaultInput?: string;
+}
+
+export interface DeliverProcessWebhookInput {
+  input?: unknown;
+  payload?: unknown;
+  instanceId?: string;
+  correlationKey?: string;
+  priority?: number;
+}
+
+export interface DurableProcessState {
+  instanceId: string;
+  status: RunStatus;
+  currentNodeId: string | null;
+  currentNodeType: ProcessNodeType | null;
+  waitUntil: string | null;
+  transitionCount: number;
+  activeNodeIds?: string[];
+  pendingSignalNames?: string[];
+  updatedAt: string;
+}
+
+export interface DurableProcessStart {
+  instanceId: string;
+  processId: string;
+  projectId: string;
+  priority: number;
+}
+
+export interface TestProcessNodeInput {
+  node: ProcessGraphNode;
+  input: string;
+}
+
+export interface TestProcessNodeResult {
+  kind: "queued" | "evaluated" | "passthrough";
+  runId: string | null;
+  status: string;
+  output: string;
+  branch: ProcessBranch | null;
+}
+
+export interface WorkerRegistration {
+  enrollmentToken: string;
+  name: string;
+  platform: string;
+  architecture?: string;
+  endpoint?: string;
+  models: string[];
+  cpuCores?: number;
+  memoryMb?: number;
+  vramMb?: number;
+  gpu?: string;
+  maxConcurrency?: number;
+  labels?: Record<string, string>;
+  agentRuntimes?: AgentRuntime[];
+  modelProfiles?: WorkerModelProfile[];
+  embeddingModels?: string[];
+}
+
+export interface WorkerMetrics {
+  cpuPercent?: number;
+  memoryPercent?: number;
+  gpuPercent?: number;
+  batteryPercent?: number;
+  onBattery?: boolean;
+  temperatureC?: number;
+  vramUsedMb?: number;
+  powerWatts?: number;
+}
+
+export interface WorkerCapabilities {
+  endpoint?: string;
+  models: string[];
+  vramMb?: number;
+  maxConcurrency?: number;
+  labels?: Record<string, string>;
+  agentRuntimes?: AgentRuntime[];
+  modelProfiles?: WorkerModelProfile[];
+  embeddingModels?: string[];
+}
+
+export interface WorkerModelProfile {
+  name: string;
+  provider?: string;
+  contextWindow?: number;
+  sizeBytes?: number;
+  parameterCount?: number;
+  parameterSize?: string;
+  quantization?: string;
+  capabilities?: string[];
+  qualityScore?: number;
+  discoveredAt?: string;
+}
+
+export type ModelRouterStrategy = "balanced" | "performance" | "efficiency";
+
+export interface ModelRouterPolicy {
+  enabled: boolean;
+  strategy: ModelRouterStrategy;
+  minContextTokens: number;
+  minQualityScore: number;
+  minBatteryPercent: number;
+  maxTemperatureC: number;
+  allowUnknownProfiles: boolean;
+}
+
+export interface ModelRoutingDecision {
+  schemaVersion: 1;
+  selectedAt: string;
+  strategy: ModelRouterStrategy;
+  requestedModel: string | null;
+  selectedModel: string | null;
+  nodeId: string;
+  nodeName: string;
+  alternativesConsidered: number;
+  fallbackFrom: { nodeId: string; model: string | null } | null;
+  reasons: string[];
+  signals: {
+    freeSlots: number;
+    cpuPercent: number | null;
+    memoryPercent: number | null;
+    temperatureC: number | null;
+    batteryPercent: number | null;
+    onBattery: boolean;
+    contextWindow: number | null;
+    qualityScore: number | null;
+    sizeBytes: number | null;
+    parameterCount: number | null;
+    tokensPerSecond: number | null;
+    joulesPer1kTokens: number | null;
+    benchmarkSamples: number;
+    profileKnown: boolean;
+  };
+}
+
+export interface LaunchLocalWorkersInput {
+  name?: string;
+  model: string;
+  workers?: number;
+  concurrency?: number;
+  webEnabled?: boolean;
+}
+
+export interface LocalModelInfo {
+  name: string;
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+}
+
+export type LocalWorkerPoolStatus = "starting" | "ready" | "degraded" | "stopped";
+
+export interface LocalWorkerPool {
+  id: string;
+  name: string;
+  model: string;
+  workers: number;
+  desiredWorkers: number;
+  readyWorkers: number;
+  concurrency: number;
+  webEnabled: boolean;
+  status: LocalWorkerPoolStatus;
+  createdAt: string;
+  workerNames: string[];
+}
+
+export interface LocalWorkerLauncherSnapshot {
+  available: boolean;
+  reason: string | null;
+  runtime: "docker-desktop-kubernetes";
+  workerImage: string;
+  modelBaseUrl: string;
+  maxWorkersPerLaunch: number;
+  defaultWebEnabled: boolean;
+  models: LocalModelInfo[];
+  modelDiscoveryError: string | null;
+  pools: LocalWorkerPool[];
+}
+
+export interface CreateRunInput {
+  name: string;
+  input: string;
+  executionMode?: SchedulerMode;
+  priority?: number;
+  approvalRequired?: boolean;
+  agentIds?: string[];
+  resultDestination?: ResultDestination;
+  artifactPath?: string;
+  knowledgeCollectionIds?: string[];
+}
+
+export interface AgentExecutionSnapshot {
+  schemaVersion: 2;
+  capturedAt: string;
+  source: "run_creation" | "process_queue" | "migration_backfill" | "replay" | "evaluation" | "model_judge";
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+  model: string | null;
+  runtime: AgentRuntime;
+  runtimeConfig: AgentRuntimeConfig;
+  promptVersion: string;
+  definitionVersion: string;
+  registryPromptId: string | null;
+  registryPromptVersion: number | null;
+}
+
+export interface WorkerExecutionMetrics {
+  durationMs?: number;
+  modelDurationMs?: number;
+  modelCalls?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  toolCalls?: number;
+  model?: string;
+  provider?: string;
+  toolSchemaVersion?: string;
+  energyJoules?: number;
+}
+
+export interface ReplayVariantInput {
+  name: string;
+  modelOverrides?: Record<string, string | null>;
+}
+
+export interface ReplayRunInput {
+  variants?: ReplayVariantInput[];
+}
+
+export interface CreatePromptInput {
+  name: string;
+  description?: string;
+  agentId?: string | null;
+  content: string;
+}
+
+export interface CreatePromptVersionInput {
+  content: string;
+  changeNote?: string;
+}
+
+export interface EvalRubricCriterionInput {
+  id?: string;
+  label: string;
+  description?: string;
+  weight?: number;
+}
+
+export interface EvalExampleInput {
+  name?: string;
+  input: string;
+  referenceOutput?: string;
+  requiredTerms?: string[];
+  forbiddenTerms?: string[];
+  knowledgeCollectionIds?: string[];
+}
+
+export interface CreateEvalDatasetInput {
+  name: string;
+  description?: string;
+  changeNote?: string;
+  rubric?: EvalRubricCriterionInput[];
+  examples: EvalExampleInput[];
+}
+
+export interface CreateEvalDatasetVersionInput {
+  description?: string;
+  changeNote?: string;
+  rubric?: EvalRubricCriterionInput[];
+  examples: EvalExampleInput[];
+}
+
+export interface CreateEvalExperimentInput {
+  name: string;
+  datasetId: string;
+  datasetVersion?: number;
+  agentId: string;
+  promptId: string;
+  promptVersion: number;
+  model?: string | null;
+  minQualityScore?: number;
+}
+
+export interface HumanEvalReviewInput {
+  scores?: Record<string, number>;
+  overallScore?: number;
+  rationale: string;
+}
+
+export interface JudgeEvalExperimentInput {
+  model: string;
+}
+
+export interface PromotePromptInput {
+  version: number;
+  model?: string | null;
+  experimentId: string;
+}
+
+export interface WorkerArtifactInput {
+  name: string;
+  mediaType?: string;
+  content: string;
+}
+
+export type CredentialType = "http_header" | "api_key";
+
+export interface CredentialScope {
+  kind: "project" | "mcp";
+  serverNamespaces: string[];
+  toolPatterns: string[];
+  risks: McpToolRisk[];
+  allowCatalog: boolean;
+  expiresAt: string | null;
+}
+
+export interface CreateCredentialInput {
+  name: string;
+  type: CredentialType;
+  data: Record<string, string>;
+  scope?: Partial<CredentialScope>;
+}
+
+export interface CredentialSummary {
+  id: string;
+  name: string;
+  type: CredentialType;
+  fields: string[];
+  scope: CredentialScope;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type McpDefaultPolicy = "deny" | "approval" | "auto";
+export type McpToolPolicy = "allow" | "approval" | "deny";
+export type McpToolRisk = "read" | "write" | "destructive" | "unknown";
+export type McpRiskTier = "low" | "elevated" | "high" | "critical";
+export type McpPolicyEffect = "allow" | "approval" | "deny";
+
+export interface McpRiskDecision {
+  tier: McpRiskTier;
+  effect: McpPolicyEffect;
+  approvals: 0 | 1 | 2;
+}
+
+export interface McpPolicyRule {
+  id: string;
+  description: string;
+  match: {
+    serverNamespaces: string[];
+    toolPatterns: string[];
+    risks: McpToolRisk[];
+  };
+  decision: McpRiskDecision;
+}
+
+export interface McpPolicyDocument {
+  schemaVersion: 1;
+  name: string;
+  defaults: Record<McpToolRisk, McpRiskDecision>;
+  rules: McpPolicyRule[];
+}
+
+export interface McpPolicyDecision extends McpRiskDecision {
+  legacyPolicy: McpToolPolicy;
+  ruleId: string | null;
+  reason: string;
+  policyVersion: number;
+  policySha256: string;
+}
+
+export interface McpPolicyVersion {
+  version: number;
+  sha256: string;
+  document: McpPolicyDocument;
+  actor: string;
+  createdAt: string;
+}
+
+export interface McpEmergencyDenyState {
+  enabled: boolean;
+  reason: string;
+  actor: string | null;
+  changedAt: string | null;
+  pendingCallsDenied: number;
+  executingCalls: number;
+}
+
+export interface McpPolicySnapshot extends McpPolicyVersion {
+  emergencyDeny: McpEmergencyDenyState;
+}
+
+export interface McpPolicyDiffEntry {
+  serverId: string;
+  serverName: string;
+  namespace: string;
+  toolName: string;
+  publicName: string;
+  risk: McpToolRisk;
+  before: McpPolicyDecision;
+  after: McpPolicyDecision;
+}
+
+export interface McpPolicyPreview {
+  baseVersion: number;
+  baseSha256: string;
+  candidateSha256: string;
+  document: McpPolicyDocument;
+  changed: boolean;
+  summary: {
+    toolsEvaluated: number;
+    toolsChanged: number;
+    newlyAllowed: number;
+    newlyDenied: number;
+    approvalsIncreased: number;
+    approvalsDecreased: number;
+  };
+  changes: McpPolicyDiffEntry[];
+}
+export type McpToolCallStatus =
+  | "waiting_approval"
+  | "executing"
+  | "completed"
+  | "failed"
+  | "rejected"
+  | "expired";
+
+export interface CreateMcpServerInput {
+  name: string;
+  namespace: string;
+  endpoint: string;
+  credentialId?: string | null;
+  enabled?: boolean;
+  trustAnnotations?: boolean;
+  allowInsecureHttp?: boolean;
+  defaultPolicy?: McpDefaultPolicy;
+  catalogTtlSeconds?: number;
+}
+
+export interface UpdateMcpServerInput extends Partial<CreateMcpServerInput> {}
+
+export interface McpCatalogTool {
+  name: string;
+  publicName: string;
+  title: string | null;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown> | null;
+  annotations: Record<string, unknown> | null;
+}
+
+export interface McpLeaseTool {
+  publicName: string;
+  serverId: string;
+  serverName: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  risk: McpToolRisk;
+  policy: "allow" | "approval";
+  riskTier: McpRiskTier;
+  requiredApprovals: 0 | 1 | 2;
+  policyVersion: number;
+  policySha256: string;
+}
+
+export interface McpToolCallResponse {
+  callId: string;
+  status: McpToolCallStatus;
+  result?: unknown;
+  error?: string;
+  requiredApprovals?: number;
+  approvalCount?: number;
+  approvers?: string[];
+}
+
+export type A2AInputMode = "text/plain" | "application/json";
+export type A2ATaskState =
+  | "TASK_STATE_UNSPECIFIED"
+  | "TASK_STATE_SUBMITTED"
+  | "TASK_STATE_WORKING"
+  | "TASK_STATE_COMPLETED"
+  | "TASK_STATE_FAILED"
+  | "TASK_STATE_CANCELED"
+  | "TASK_STATE_INPUT_REQUIRED"
+  | "TASK_STATE_REJECTED"
+  | "TASK_STATE_AUTH_REQUIRED";
+
+export interface CreateA2AEndpointInput {
+  agentId: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  skillId?: string;
+  skillName?: string;
+  skillDescription?: string;
+  tags?: string[];
+  examples?: string[];
+  inputModes?: A2AInputMode[];
+  knowledgeCollectionIds?: string[];
+  approvalRequired?: boolean;
+  enabled?: boolean;
+  priority?: number;
+  maxInputCharacters?: number;
+  maxActiveTasks?: number;
+}
+
+export interface UpdateA2AEndpointInput extends Partial<CreateA2AEndpointInput> {}
+
+export interface A2APart {
+  text?: string;
+  raw?: string;
+  url?: string;
+  data?: unknown;
+  filename?: string;
+  mediaType?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2AMessage {
+  messageId: string;
+  contextId?: string;
+  taskId?: string;
+  role: "ROLE_USER" | "ROLE_AGENT" | "ROLE_UNSPECIFIED";
+  parts: A2APart[];
+  metadata?: Record<string, unknown>;
+  extensions?: string[];
+  referenceTaskIds?: string[];
+}
+
+export interface A2ASendMessageRequest {
+  tenant?: string;
+  message: A2AMessage;
+  configuration?: {
+    acceptedOutputModes?: string[];
+    historyLength?: number;
+    returnImmediately?: boolean;
+    taskPushNotificationConfig?: unknown;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2AEndpointConnection {
+  id: string;
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  agentRole: string;
+  name: string;
+  description: string;
+  version: string;
+  skillId: string;
+  skillName: string;
+  skillDescription: string;
+  tags: string[];
+  examples: string[];
+  inputModes: A2AInputMode[];
+  knowledgeCollectionIds: string[];
+  approvalRequired: boolean;
+  enabled: boolean;
+  priority: number;
+  maxInputCharacters: number;
+  maxActiveTasks: number;
+  tokenSuffix: string;
+  tokenRotatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface A2ANormalizedMessage {
+  message: A2AMessage;
+  input: string;
+  contextId: string;
+  historyLength: number;
+  returnImmediately: boolean;
+  requestSha256: string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  id?: string;
+}
+
+export interface CreateKnowledgeCollectionInput {
+  name: string;
+  description?: string;
+  embeddingModel: string;
+  chunkSize?: number;
+  chunkOverlap?: number;
+  topK?: number;
+}
+
+export interface IngestKnowledgeDocumentInput {
+  name: string;
+  sourceUri?: string;
+  mediaType?: string;
+  content: string;
+}
+
+export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed";
+export type MemoryKind = "working" | "episodic";
+
+export interface SaveMemoryInput {
+  kind: MemoryKind;
+  content: string;
+  agentId?: string | null;
+  ttlSeconds?: number;
+}
+
+export interface KnowledgeEmbeddingLease {
+  leaseId: string;
+  expiresAt: string;
+  projectId: string;
+  collection: {
+    id: string;
+    name: string;
+    embeddingModel: string;
+  };
+  document: {
+    id: string;
+    name: string;
+  };
+  chunks: Array<{
+    id: string;
+    ordinal: number;
+    content: string;
+  }>;
+}
+
+export interface KnowledgeEmbeddingResult {
+  chunkId: string;
+  embedding: number[];
+}
+
+export interface KnowledgeSearchQuery {
+  embeddingModel: string;
+  collectionIds: string[];
+  vector: number[];
+  topK?: number;
+}
+
+export interface KnowledgeSearchRequest {
+  queries: KnowledgeSearchQuery[];
+}
+
+export interface KnowledgeProvenance {
+  collectionId: string;
+  collectionName: string;
+  documentId: string;
+  documentName: string;
+  sourceUri: string | null;
+  documentSha256: string;
+  chunkId: string;
+  chunkOrdinal: number;
+  charStart: number;
+  charEnd: number;
+  chunkSha256: string;
+}
+
+export interface KnowledgeSearchHit {
+  marker: string;
+  score: number;
+  content: string;
+  provenance: KnowledgeProvenance;
+}
+
+export interface CreateAgentInput {
+  name: string;
+  role: string;
+  systemPrompt: string;
+  model?: string | null;
+  runtime?: AgentRuntime;
+  runtimeConfig?: Partial<AgentRuntimeConfig>;
+}
+
+export interface LeasePayload {
+  leaseId: string;
+  expiresAt: string;
+  traceContext: {
+    traceId: string;
+    traceparent: string;
+  };
+  run: {
+    id: string;
+    name: string;
+    input: string;
+    resultDestination: ResultDestination;
+    artifactPath: string | null;
+  };
+  stage: {
+    id: string;
+    position: number;
+    attempt: number;
+    processNodeId: string | null;
+  };
+  agent: {
+    id: string;
+    name: string;
+    role: string;
+    systemPrompt: string;
+    model: string | null;
+    runtime: AgentRuntime;
+    runtimeConfig: AgentRuntimeConfig;
+    promptVersion: string;
+    definitionVersion: string;
+  };
+  context: Array<{
+    agentName: string;
+    output: string;
+  }>;
+  routing: ModelRoutingDecision | null;
+  mcpTools: McpLeaseTool[];
+  knowledge: {
+    groups: Array<{
+      embeddingModel: string;
+      collectionIds: string[];
+      topK: number;
+    }>;
+    memory: Array<{
+      id: string;
+      kind: MemoryKind;
+      content: string;
+      agentId: string | null;
+      expiresAt: string | null;
+      createdAt: string;
+    }>;
+  };
+  activity?: {
+    kind: "http";
+    request: {
+      method: HttpMethod;
+      url: string;
+      headers: Record<string, string>;
+      body: string | null;
+      timeoutSeconds: number;
+      maxResponseBytes: number;
+    };
+  };
+}
+
+export interface EventRecord {
+  id: number;
+  runId: string | null;
+  stageId: string | null;
+  nodeId: string | null;
+  level: string;
+  type: string;
+  message: string;
+  data: Record<string, unknown> | null;
+  createdAt: string;
+}

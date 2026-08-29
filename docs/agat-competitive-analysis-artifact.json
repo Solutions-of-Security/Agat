@@ -1,0 +1,458 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "АГАТ: конкурентная карта и продуктовая стратегия",
+    "description": "Сравнение 12 конкурентов по 15 категориям, оценка разрыва в функциях и аудитории, позиционирование и приоритеты roadmap.",
+    "generatedAt": "2026-08-14T12:00:00+03:00",
+    "filters": [],
+    "cards": [],
+    "charts": [
+      {
+        "id": "breadth_chart",
+        "title": "Функциональная широта по 15 категориям",
+        "subtitle": "АГАТ — 58,3%; лидеры — 85–86,7%. Score отражает публично подтверждённые возможности, а не качество реализации.",
+        "type": "bar",
+        "dataset": "score_summary",
+        "sourceId": "score_summary_sql",
+        "valueFormat": "percent",
+        "encodings": {
+          "x": {"field": "product", "type": "nominal", "label": "Продукт"},
+          "y": {"field": "breadth", "type": "quantitative", "label": "Широта функций", "format": "percent"},
+          "tooltip": [
+            {"field": "sovereign_fit", "type": "quantitative", "label": "Sovereign fit", "format": "percent"},
+            {"field": "feature_gap", "type": "quantitative", "label": "Разрыв с АГАТ", "format": "percent"},
+            {"field": "audience_stage", "type": "quantitative", "label": "Audience stage"}
+          ]
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "landscape_table",
+        "title": "Карта конкурентного поля",
+        "subtitle": "12 продуктов оценены детально; UiPath и DIY показаны как соседние альтернативы без score.",
+        "dataset": "landscape_clusters",
+        "sourceId": "landscape_sql",
+        "columns": [
+          {"field": "set", "label": "Группа", "type": "text"},
+          {"field": "count", "label": "Количество", "format": "number"},
+          {"field": "products", "label": "Продукты", "type": "text"},
+          {"field": "competitive_job", "label": "Что заменяют для клиента", "type": "text"}
+        ]
+      },
+      {
+        "id": "score_table",
+        "title": "Насколько конкуренты ушли вперёд",
+        "subtitle": "Feature gap — разница unweighted breadth с текущим АГАТ. Audience stage — qualitative proxy 1–5, не market share.",
+        "dataset": "score_summary",
+        "sourceId": "score_summary_sql",
+        "defaultSort": {"field": "breadth", "direction": "desc"},
+        "columns": [
+          {"field": "product", "label": "Продукт", "type": "text"},
+          {"field": "type", "label": "Тип", "type": "text"},
+          {"field": "breadth", "label": "Широта", "format": "percent"},
+          {"field": "sovereign_fit", "label": "Sovereign fit", "format": "percent"},
+          {"field": "enterprise_fit", "label": "Enterprise fit", "format": "percent"},
+          {"field": "feature_gap", "label": "Разрыв с АГАТ", "format": "percent", "signed": true},
+          {"field": "distance", "label": "Оценка разрыва", "type": "text"},
+          {"field": "audience_stage", "label": "Audience 1–5", "format": "number"},
+          {"field": "audience_lead", "label": "Опережение, стадий", "format": "number", "signed": true}
+        ]
+      },
+      {
+        "id": "scenario_table",
+        "title": "Что даст рекомендуемый roadmap",
+        "subtitle": "Сценарный score при достижении целевых capability levels; это не прогноз сроков, качества или продаж.",
+        "dataset": "scenario_scores",
+        "sourceId": "scenario_sql",
+        "columns": [
+          {"field": "scenario", "label": "Сценарий", "type": "text"},
+          {"field": "breadth", "label": "Широта", "format": "percent"},
+          {"field": "sovereign_fit", "label": "Sovereign fit", "format": "percent"},
+          {"field": "enterprise_fit", "label": "Enterprise fit", "format": "percent"},
+          {"field": "meaning", "label": "Что добавлено", "type": "text"}
+        ]
+      },
+      {
+        "id": "capability_matrix",
+        "title": "Полная capability matrix, 0–4",
+        "subtitle": "0 — не подтверждено; 1 — basic/DIY/preview; 2 — usable, но ограниченно; 3 — зрелая возможность; 4 — сильная/category-leading.",
+        "dataset": "capability_matrix",
+        "sourceId": "matrix_sql",
+        "columns": [
+          {"field": "product", "label": "Продукт", "type": "text"},
+          {"field": "visual", "label": "Visual", "format": "number"},
+          {"field": "agents", "label": "Multi-agent", "format": "number"},
+          {"field": "workflow", "label": "Workflow", "format": "number"},
+          {"field": "hitl", "label": "HITL", "format": "number"},
+          {"field": "durable", "label": "Durable", "format": "number"},
+          {"field": "local", "label": "Local", "format": "number"},
+          {"field": "fleet", "label": "Fleet", "format": "number"},
+          {"field": "routing", "label": "Routing", "format": "number"},
+          {"field": "rag", "label": "RAG", "format": "number"},
+          {"field": "integrations", "label": "MCP/Integr.", "format": "number"},
+          {"field": "observability", "label": "Observe", "format": "number"},
+          {"field": "eval", "label": "Eval", "format": "number"},
+          {"field": "security", "label": "Security", "format": "number"},
+          {"field": "scale", "label": "Scale", "format": "number"},
+          {"field": "channels", "label": "Channels", "format": "number"}
+        ]
+      },
+      {
+        "id": "competitor_map",
+        "title": "Кому продают конкуренты и где у АГАТ окно",
+        "subtitle": "Краткий battlecard по 12 scored competitors.",
+        "dataset": "competitor_map",
+        "sourceId": "competitor_map_sql",
+        "defaultSort": {"field": "feature_gap", "direction": "desc"},
+        "columns": [
+          {"field": "product", "label": "Продукт", "type": "text"},
+          {"field": "segment", "label": "Сегмент", "type": "text"},
+          {"field": "audience", "label": "Основная аудитория", "type": "text"},
+          {"field": "lead", "label": "Где сильнее", "type": "text"},
+          {"field": "agat_wedge", "label": "Окно АГАТ", "type": "text"},
+          {"field": "feature_gap", "label": "Feature gap", "format": "percent", "signed": true},
+          {"field": "audience_lead", "label": "Audience lead", "format": "number", "signed": true}
+        ]
+      },
+      {
+        "id": "audience_table",
+        "title": "Рекомендуемая целевая аудитория",
+        "subtitle": "Приоритет задан по соответствию текущему клину, срочности боли и способности платить.",
+        "dataset": "audiences",
+        "sourceId": "audience_sql",
+        "columns": [
+          {"field": "priority", "label": "Приоритет", "type": "text"},
+          {"field": "segment", "label": "Сегмент", "type": "text"},
+          {"field": "buyer", "label": "Покупатель", "type": "text"},
+          {"field": "users", "label": "Пользователи", "type": "text"},
+          {"field": "job", "label": "Job to be done", "type": "text"},
+          {"field": "why", "label": "Почему АГАТ", "type": "text"},
+          {"field": "alternatives", "label": "Главные альтернативы", "type": "text"},
+          {"field": "gtm", "label": "Go-to-market", "type": "text"}
+        ]
+      },
+      {
+        "id": "roadmap_table",
+        "title": "Приоритеты функций",
+        "subtitle": "P0 закрывает table-stakes; P1 превращает распределённый fleet в moat; Defer защищает фокус.",
+        "dataset": "roadmap",
+        "sourceId": "roadmap_sql",
+        "columns": [
+          {"field": "priority", "label": "Приоритет", "type": "text"},
+          {"field": "horizon", "label": "Горизонт", "type": "text"},
+          {"field": "capability", "label": "Capability", "type": "text"},
+          {"field": "why", "label": "Почему сейчас", "type": "text"},
+          {"field": "success", "label": "Готово, когда", "type": "text"},
+          {"field": "dependency", "label": "Зависимости", "type": "text"}
+        ]
+      }
+    ],
+    "sources": [
+      {"id": "landscape_sql", "label": "Выполненный SQL по карте поля", "path": "docs/competitive-analysis-landscape.csv"},
+      {"id": "scenario_sql", "label": "Выполненный SQL по roadmap-сценариям", "path": "docs/competitive-analysis-scenario-summary.sql"},
+      {"id": "matrix_sql", "label": "Выполненный SQL по capability matrix", "path": "docs/competitive-analysis-scores.csv"},
+      {"id": "competitor_map_sql", "label": "Выполненный SQL по competitor map", "path": "docs/competitive-analysis-competitor-map.csv"},
+      {"id": "audience_sql", "label": "Выполненный SQL по audience segments", "path": "docs/competitive-analysis-audiences.csv"},
+      {"id": "roadmap_sql", "label": "Выполненный SQL по feature priorities", "path": "docs/competitive-analysis-roadmap.csv"},
+      {"id": "score_summary_sql", "label": "Выполненный SQL rollup score matrix", "path": "docs/competitive-analysis-score-summary.sql"},
+      {"id": "analysis_method", "label": "Матрица score и воспроизводимый sensitivity-анализ", "path": "docs/competitive-analysis-scores.csv"},
+      {"id": "evidence_register", "label": "Реестр официальных источников конкурентов", "path": "docs/competitive-analysis-sources.csv"},
+      {"id": "agat_docs", "label": "Документация текущей версии АГАТ", "path": "docs/README.md"}
+    ],
+    "blocks": [
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "sourceId": "analysis_method",
+        "body": "## Executive Summary\n\nАГАТ входит не в пустой рынок: детально оценены **12 конкурентов**, а вместе с UiPath и DIY-стеком decision set содержит **14 альтернатив**. По общей широте АГАТ набирает **58,3%** против **85–86,7%** у лидеров. Прямые Dify, Flowise, Sim и Just AI ушли вперёд прежде всего в RAG, интеграциях, evals и production maturity; n8n и Copilot дополнительно выигрывают экосистемой и дистрибуцией.\n\nПри этом АГАТ — **единственный продукт в подтверждённой выборке с 4/4 за централизованное управление разнородным outbound-only парком локальных моделей**. Рекомендация: строить категорию не вокруг «visual agent builder», а вокруг **sovereign AI operations control plane**. Сначала закрыть RAG, MCP/connectors, triggers и eval/replay; затем усилить hardware-aware routing, policy engine, fleet trust и production data plane."
+      },
+      {
+        "id": "findings_heading",
+        "type": "markdown",
+        "body": "## Findings\n\nОдин leaderboard вводит в заблуждение, поэтому ниже показаны unweighted breadth, соответствие выбранной sovereign-fleet нише и enterprise-automation fit."
+      },
+      {"id": "breadth_chart_block", "type": "chart", "chartId": "breadth_chart"},
+      {"id": "landscape_block", "type": "table", "tableId": "landscape_table"},
+      {"id": "score_block", "type": "table", "tableId": "score_table"},
+      {
+        "id": "distance_interpretation",
+        "type": "markdown",
+        "sourceId": "analysis_method",
+        "body": "### Как далеко ушли\n\n- **Большой разрыв, +26,7–28,3 п.п.:** Copilot Studio, Flowise и LangGraph/LangSmith.\n- **Значительный, +16,7–23,3 п.п.:** n8n, Sim, Just AI, CrewAI, Yandex и Dify.\n- **Умеренный, +6,7–10 п.п.:** Open WebUI и Langflow.\n- **AnythingLLM ниже по широте на 3,3 п.п., но опережает на три audience-stage** благодаря зрелой local-AI дистрибуции.\n\nУ всех **12 из 12** scored competitors есть usable/strong RAG, у всех 12 — integrations/MCP score не ниже 3, у 11 — eval score не ниже 2. Ни один из 12 не подтвердил аналогичный АГАТ distributed-fleet layer."
+      },
+      {"id": "scenario_block", "type": "table", "tableId": "scenario_table"},
+      {
+        "id": "matrix_heading",
+        "type": "markdown",
+        "body": "### Табличное сравнение по категориям\n\nМатрица отделяет реальный moat от обязательного функционального минимума. На узких экранах таблица прокручивается горизонтально."
+      },
+      {"id": "matrix_block", "type": "table", "tableId": "capability_matrix"},
+      {"id": "competitor_map_block", "type": "table", "tableId": "competitor_map"},
+      {
+        "id": "positioning",
+        "type": "markdown",
+        "body": "## Positioning decision\n\n**Категория:** control plane для суверенных AI-операций на распределённом локальном compute.\n\n**Сообщение:** «Оркестрация внутренних AI-процессов на локальных моделях и разнородном железе — без публикации model endpoints».\n\n**Три доказательства:** outbound-only worker topology; hardware telemetry и централизованный scheduler; durable visual workflows с approvals, project isolation и audit trace.\n\n**Не обещать:** самый широкий no-code builder, тысячи SaaS-коннекторов, лучший чат-интерфейс или replacement Microsoft/UiPath. В этих категориях incumbents обладают большим продуктовым и distribution moat."
+      },
+      {"id": "audience_block", "type": "table", "tableId": "audience_table"},
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## Next steps\n\nПоследовательность важна: P0 делает продукт продаваемым для типовых внутренних use cases, P1 превращает редкую архитектурную особенность в защищаемую систему, P2 закрывает требования масштабного enterprise rollout."
+      },
+      {"id": "roadmap_block", "type": "table", "tableId": "roadmap_table"},
+      {
+        "id": "operating_plan",
+        "type": "markdown",
+        "body": "### Коммерческая проверка параллельно с разработкой\n\n1. Найти 8–12 discovery-интервью у организаций с 2–20 локальными GPU/CPU узлами и закрытыми данными.\n2. Продать 2–3 платных пилота вокруг процессов с approvals и audit, а не вокруг generic chat.\n3. Зафиксировать baseline: время запуска процесса, доля успешных recovery, utilization локального железа, стоимость на run и количество ручных передач.\n4. После каждого P0 capability проводить replay/eval gate и security review.\n5. Создать partner package для интеграторов: reference architecture, threat model, deployment checklist и connector SDK."
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Further questions\n\n- Есть ли у потенциальных клиентов действительно **распределённый** парк, или главным ограничением является только on-prem/privacy?\n- Кто владеет бюджетом: AI platform, infrastructure, automation CoE или business unit?\n- Достаточно ли 10–15 отраслевых connectors, чтобы выиграть пилот, или нужен совместимый n8n/MCP bridge?\n- Какая эксплуатационная модель предпочтительна: appliance, Kubernetes, managed control plane или полностью air-gapped?\n- За что готовы платить: число worker-узлов, concurrent runs, governance pack, support/SLA или solution deployment?"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats\n\n- Score — экспертная рубрика по публичным official sources, а не vendor certification. Отсутствие evidence снижает оценку, но не доказывает физическое отсутствие функции.\n- Audience maturity — качественный proxy по adoption claims, экосистеме и production maturity; это не market share, revenue или active users.\n- Vendor adoption claims не проверялись независимо. Цены, UX usability, implementation quality и total cost of ownership не сравнивались.\n- Текущие возможности АГАТ взяты из репозитория; roadmap-функции не засчитывались как shipped.\n- P0/P1 scenario score показывает механический эффект целевых capability levels и не является прогнозом сроков, качества, продаж или product-market fit.\n- Jupyter/nbconvert отсутствовал в bundled runtime. Все code cells notebook были выполнены последовательно тем же Python 3.12 и pandas через cell replay; assertions и независимая сверка прошли."
+      },
+      {
+        "id": "primary_sources",
+        "type": "markdown",
+        "body": "## Основные официальные источники\n\n[Dify](https://docs.dify.ai/en/guides/application-orchestrate/creating-an-application) · [Flowise](https://docs.flowiseai.com/) · [n8n](https://n8n.io/ai/) · [Sim](https://docs.sim.ai/introduction) · [Langflow](https://docs.langflow.org/) · [CrewAI](https://docs.crewai.com/) · [LangGraph/LangSmith](https://docs.langchain.com/oss/python/langgraph/overview) · [AnythingLLM](https://docs.anythingllm.com/) · [Open WebUI](https://docs.openwebui.com/) · [Just AI](https://docs.agentplatform.just-ai.com/about/) · [Yandex AI Studio](https://aistudio.yandex.ru/ru/agent-atelier) · [Microsoft Copilot Studio](https://learn.microsoft.com/en-us/microsoft-copilot-studio/fundamentals-what-is-copilot-studio) · [UiPath Maestro](https://www.uipath.com/platform/agentic-automation/business-orchestration)\n\nПолный evidence register содержит 41 запись с описанием подтверждённой возможности и датой доступа."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-14T12:00:00+03:00",
+    "status": "ready",
+    "datasets": {
+      "headline_metrics": [
+        {
+          "scored_competitors": 12,
+          "decision_alternatives": 14,
+          "agat_breadth": 0.583333,
+          "leader_breadth": 0.866667,
+          "current_sovereign": 0.65,
+          "p0_sovereign": 0.7925,
+          "p1_sovereign": 0.9,
+          "audience_gap_min": 2,
+          "audience_gap_max": 4
+        }
+      ],
+      "landscape_clusters": [
+        {
+          "set": "Прямые visual/self-hosted workflow builders",
+          "count": 6,
+          "products": "Dify, Flowise, n8n, Sim, Langflow, Just AI",
+          "competitive_job": "Собрать и запустить AI/workflow automation с UI, RAG и integrations"
+        },
+        {
+          "set": "Developer runtime и control plane",
+          "count": 2,
+          "products": "CrewAI, LangGraph + LangSmith",
+          "competitive_job": "Дать инженерным командам durable agent runtime, observability и evals"
+        },
+        {
+          "set": "Local/private AI workspace",
+          "count": 2,
+          "products": "AnythingLLM, Open WebUI",
+          "competitive_job": "Быстро дать private chat, RAG и local tools без process platform"
+        },
+        {
+          "set": "Cloud ecosystem agent platforms",
+          "count": 2,
+          "products": "Yandex AI Studio + Workflows, Microsoft Copilot Studio",
+          "competitive_job": "Использовать облачную экосистему, connectors, identity и channels"
+        },
+        {
+          "set": "Соседние альтернативы вне score",
+          "count": 2,
+          "products": "UiPath Maestro, DIY stack (Temporal/LangGraph + Ollama/vLLM + Kubernetes)",
+          "competitive_job": "Enterprise orchestration или собственная сборка под закрытый контур"
+        }
+      ],
+      "score_summary": [
+        {"product": "Microsoft Copilot Studio", "type": "Соседний", "breadth": 0.866667, "sovereign_fit": 0.77, "enterprise_fit": 0.965, "feature_gap": 0.283333, "distance": "Большой", "audience_stage": 5, "audience_lead": 4},
+        {"product": "Flowise", "type": "Прямой", "breadth": 0.85, "sovereign_fit": 0.77, "enterprise_fit": 0.9275, "feature_gap": 0.266667, "distance": "Большой", "audience_stage": 4, "audience_lead": 3},
+        {"product": "LangGraph + LangSmith", "type": "Соседний", "breadth": 0.85, "sovereign_fit": 0.78, "enterprise_fit": 0.935, "feature_gap": 0.266667, "distance": "Большой", "audience_stage": 5, "audience_lead": 4},
+        {"product": "n8n", "type": "Прямой/заменитель", "breadth": 0.816667, "sovereign_fit": 0.725, "enterprise_fit": 0.9025, "feature_gap": 0.233333, "distance": "Значительный", "audience_stage": 5, "audience_lead": 4},
+        {"product": "Sim", "type": "Прямой", "breadth": 0.816667, "sovereign_fit": 0.75, "enterprise_fit": 0.88, "feature_gap": 0.233333, "distance": "Значительный", "audience_stage": 3, "audience_lead": 2},
+        {"product": "Just AI Agent Platform", "type": "Прямой (РФ)", "breadth": 0.816667, "sovereign_fit": 0.7425, "enterprise_fit": 0.8725, "feature_gap": 0.233333, "distance": "Значительный", "audience_stage": 4, "audience_lead": 3},
+        {"product": "CrewAI", "type": "Соседний", "breadth": 0.8, "sovereign_fit": 0.7275, "enterprise_fit": 0.88, "feature_gap": 0.216667, "distance": "Значительный", "audience_stage": 4, "audience_lead": 3},
+        {"product": "Yandex AI Studio + Workflows", "type": "Соседний (РФ)", "breadth": 0.8, "sovereign_fit": 0.7125, "enterprise_fit": 0.8925, "feature_gap": 0.216667, "distance": "Значительный", "audience_stage": 5, "audience_lead": 4},
+        {"product": "Dify", "type": "Прямой", "breadth": 0.75, "sovereign_fit": 0.685, "enterprise_fit": 0.7925, "feature_gap": 0.166667, "distance": "Значительный", "audience_stage": 4, "audience_lead": 3},
+        {"product": "Langflow", "type": "Прямой", "breadth": 0.683333, "sovereign_fit": 0.6275, "enterprise_fit": 0.73, "feature_gap": 0.1, "distance": "Умеренный", "audience_stage": 4, "audience_lead": 3},
+        {"product": "Open WebUI", "type": "Заменитель", "breadth": 0.65, "sovereign_fit": 0.5925, "enterprise_fit": 0.6925, "feature_gap": 0.066667, "distance": "Умеренный", "audience_stage": 4, "audience_lead": 3},
+        {"product": "АГАТ", "type": "Baseline", "breadth": 0.583333, "sovereign_fit": 0.65, "enterprise_fit": 0.535, "feature_gap": 0, "distance": "Baseline", "audience_stage": 1, "audience_lead": 0},
+        {"product": "AnythingLLM", "type": "Заменитель", "breadth": 0.55, "sovereign_fit": 0.525, "enterprise_fit": 0.55, "feature_gap": -0.033333, "distance": "АГАТ шире", "audience_stage": 4, "audience_lead": 3}
+      ],
+      "scenario_scores": [
+        {"scenario": "Текущий АГАТ", "breadth": 0.583333, "sovereign_fit": 0.65, "enterprise_fit": 0.535, "meaning": "Только подтверждённые shipped-возможности"},
+        {"scenario": "После P0", "breadth": 0.733333, "sovereign_fit": 0.7925, "enterprise_fit": 0.73, "meaning": "Табличный минимум: RAG, MCP/connectors, triggers и eval/replay"},
+        {"scenario": "После P1", "breadth": 0.85, "sovereign_fit": 0.9, "enterprise_fit": 0.85, "meaning": "P0 плюс quality/resource router, policy engine, fleet trust и production data plane"}
+      ],
+      "capability_matrix": [
+        {"product": "АГАТ", "visual": 4, "agents": 3, "workflow": 3, "hitl": 3, "durable": 3, "local": 4, "fleet": 4, "routing": 2, "rag": 0, "integrations": 1, "observability": 3, "eval": 0, "security": 3, "scale": 1, "channels": 1},
+        {"product": "Dify", "visual": 4, "agents": 3, "workflow": 4, "hitl": 2, "durable": 2, "local": 4, "fleet": 0, "routing": 2, "rag": 4, "integrations": 4, "observability": 3, "eval": 3, "security": 3, "scale": 3, "channels": 4},
+        {"product": "Flowise", "visual": 4, "agents": 4, "workflow": 4, "hitl": 4, "durable": 3, "local": 4, "fleet": 0, "routing": 1, "rag": 4, "integrations": 4, "observability": 4, "eval": 4, "security": 4, "scale": 4, "channels": 3},
+        {"product": "n8n", "visual": 4, "agents": 3, "workflow": 4, "hitl": 4, "durable": 4, "local": 3, "fleet": 0, "routing": 1, "rag": 3, "integrations": 4, "observability": 4, "eval": 3, "security": 4, "scale": 4, "channels": 4},
+        {"product": "Sim", "visual": 4, "agents": 3, "workflow": 4, "hitl": 4, "durable": 3, "local": 4, "fleet": 0, "routing": 2, "rag": 4, "integrations": 4, "observability": 4, "eval": 2, "security": 4, "scale": 3, "channels": 4},
+        {"product": "Langflow", "visual": 4, "agents": 3, "workflow": 3, "hitl": 3, "durable": 2, "local": 4, "fleet": 0, "routing": 1, "rag": 4, "integrations": 4, "observability": 3, "eval": 2, "security": 2, "scale": 3, "channels": 3},
+        {"product": "CrewAI", "visual": 3, "agents": 4, "workflow": 4, "hitl": 3, "durable": 3, "local": 3, "fleet": 0, "routing": 2, "rag": 4, "integrations": 4, "observability": 4, "eval": 3, "security": 4, "scale": 4, "channels": 3},
+        {"product": "LangGraph + LangSmith", "visual": 2, "agents": 4, "workflow": 4, "hitl": 4, "durable": 4, "local": 3, "fleet": 0, "routing": 3, "rag": 4, "integrations": 4, "observability": 4, "eval": 4, "security": 4, "scale": 4, "channels": 3},
+        {"product": "AnythingLLM", "visual": 3, "agents": 2, "workflow": 2, "hitl": 1, "durable": 1, "local": 4, "fleet": 0, "routing": 3, "rag": 4, "integrations": 3, "observability": 2, "eval": 1, "security": 2, "scale": 2, "channels": 3},
+        {"product": "Open WebUI", "visual": 1, "agents": 2, "workflow": 2, "hitl": 2, "durable": 2, "local": 4, "fleet": 0, "routing": 2, "rag": 4, "integrations": 4, "observability": 3, "eval": 2, "security": 4, "scale": 3, "channels": 4},
+        {"product": "Just AI Agent Platform", "visual": 4, "agents": 4, "workflow": 4, "hitl": 3, "durable": 3, "local": 4, "fleet": 0, "routing": 2, "rag": 4, "integrations": 4, "observability": 3, "eval": 2, "security": 4, "scale": 4, "channels": 4},
+        {"product": "Yandex AI Studio + Workflows", "visual": 4, "agents": 3, "workflow": 4, "hitl": 2, "durable": 4, "local": 1, "fleet": 0, "routing": 3, "rag": 4, "integrations": 4, "observability": 4, "eval": 3, "security": 4, "scale": 4, "channels": 4},
+        {"product": "Microsoft Copilot Studio", "visual": 4, "agents": 4, "workflow": 4, "hitl": 4, "durable": 4, "local": 1, "fleet": 0, "routing": 3, "rag": 4, "integrations": 4, "observability": 4, "eval": 4, "security": 4, "scale": 4, "channels": 4}
+      ],
+      "competitor_map": [
+        {"product": "Microsoft Copilot Studio", "segment": "Enterprise ecosystem", "audience": "Microsoft 365/Power Platform enterprises и citizen developers", "lead": "1400+ connectors, governance, evals, channels, distribution", "agat_wedge": "Изолированный local execution plane вне cloud-first estate", "feature_gap": 0.283333, "audience_lead": 4},
+        {"product": "Flowise", "segment": "Visual AI builder", "audience": "Developer и enterprise AI teams", "lead": "Agentflow, HITL, checkpoints, evals, RAG, integrations", "agat_wedge": "Нет distributed hardware control plane", "feature_gap": 0.266667, "audience_lead": 3},
+        {"product": "LangGraph + LangSmith", "segment": "Agent runtime/control plane", "audience": "Advanced AI engineering/platform teams", "lead": "Durable runtime, traces, datasets, evals, production deploy", "agat_wedge": "Не готовый visual operator product и нет local fleet", "feature_gap": 0.266667, "audience_lead": 4},
+        {"product": "n8n", "segment": "Business automation", "audience": "IT/ops/RevOps от SMB до enterprise", "lead": "1000+ integrations, triggers, reliable automation, governance", "agat_wedge": "Local models — nodes, не управляемый compute fleet", "feature_gap": 0.233333, "audience_lead": 4},
+        {"product": "Sim", "segment": "Visual AI builder", "audience": "AI builders и product teams", "lead": "Modern UX, 1000+ integrations, local models, HITL", "agat_wedge": "Нет fleet scheduler и hardware-aware operations", "feature_gap": 0.233333, "audience_lead": 2},
+        {"product": "Just AI Agent Platform", "segment": "Enterprise agent platform (РФ)", "audience": "Enterprise, contact centers, integrators", "lead": "On-prem, multichannel/voice, flows, RAG, MCP, security", "agat_wedge": "Нет доказанного distributed hardware scheduler", "feature_gap": 0.233333, "audience_lead": 3},
+        {"product": "CrewAI", "segment": "Agent runtime/control plane", "audience": "Code-first developer и enterprise teams", "lead": "Multi-agent, memory, persistence, observability, policy hooks", "agat_wedge": "Не visual-first и не управляет локальным железом", "feature_gap": 0.216667, "audience_lead": 3},
+        {"product": "Yandex AI Studio + Workflows", "segment": "Cloud AI platform (РФ)", "audience": "Yandex Cloud developers и enterprises", "lead": "Managed models, agents, workflows, IAM и cloud services", "agat_wedge": "Нет self-host/air-gap и local worker control", "feature_gap": 0.216667, "audience_lead": 4},
+        {"product": "Dify", "segment": "Visual AI builder", "audience": "AI product teams, developers, SMB/enterprise", "lead": "RAG, plugins, workflows и app delivery", "agat_wedge": "Нет distributed fleet и hardware routing", "feature_gap": 0.166667, "audience_lead": 3},
+        {"product": "Langflow", "segment": "Visual developer framework", "audience": "Python/AI developers", "lead": "Python extensibility, MCP, RAG и API deploy", "agat_wedge": "Меньше operator/governance layer; нет fleet", "feature_gap": 0.1, "audience_lead": 3},
+        {"product": "Open WebUI", "segment": "Local AI workspace", "audience": "Private AI users, labs и organizations", "lead": "Local chat, RAG, MCP/tools, RBAC/SSO", "agat_wedge": "Нет visual durable process orchestration", "feature_gap": 0.066667, "audience_lead": 3},
+        {"product": "AnythingLLM", "segment": "Local AI workspace", "audience": "Individuals и privacy-sensitive teams", "lead": "Local-first RAG, agent flows, model routing и desktop", "agat_wedge": "Слабее approvals, audit, durability и fleet operations", "feature_gap": -0.033333, "audience_lead": 3}
+      ],
+      "audiences": [
+        {"priority": "1", "segment": "Регулируемые mid-market/enterprise команды с 2–20 GPU/CPU узлами", "buyer": "CIO/CTO, Head of AI/Platform, CISO", "users": "Platform engineer, process designer, operator, auditor", "job": "Запускать внутренние AI-процессы на локальных данных и моделях с approvals и audit без открытия model endpoints", "why": "Outbound-only fleet, local-first, durable visual workflow, project isolation", "alternatives": "Just AI, Flowise/Dify self-host, n8n + Ollama, DIY LangGraph", "gtm": "Paid pilot вокруг 1–2 процессов; deployment blueprint; security review; ROI по использованию существующего железа"},
+        {"priority": "1", "segment": "Системные интеграторы и AI-консалтинг, поставляющие on-prem решения", "buyer": "Practice lead / solution director", "users": "Solution architect, developer, support engineer", "job": "Тиражировать управляемый agent stack в закрытых контурах клиентов", "why": "Единый control plane и повторяемый worker deployment вместо bespoke glue", "alternatives": "Dify, Flowise, LangGraph, Just AI", "gtm": "Partner edition, reference architectures, connector SDK, co-selling"},
+        {"priority": "2", "segment": "Промышленность, филиальные сети и R&D с распределённым железом", "buyer": "IT infrastructure/operations lead", "users": "Site admin, AI engineer, operator", "job": "Использовать простаивающее или географически распределённое железо без входящих соединений", "why": "Уникальный NAT-friendly worker model и telemetry-aware scheduling", "alternatives": "DIY Kubernetes/Ray/Slurm, local scripts", "gtm": "Pilot на 3+ площадках; capacity dashboard; reliability proof"},
+        {"priority": "2", "segment": "Небольшие privacy-first AI teams", "buyer": "Founder/CTO or team lead", "users": "AI developer, analyst", "job": "Быстро собрать private workflow с локальными моделями", "why": "Больше governance и durability, чем у local chat workspaces", "alternatives": "AnythingLLM, Open WebUI, Flowise", "gtm": "Community/self-host funnel; convert when multi-user governance/fleet need appears"},
+        {"priority": "3", "segment": "Крупные Microsoft/UiPath estates", "buyer": "Enterprise automation leader", "users": "Citizen developer, CoE, compliance", "job": "Расширить существующий automation ecosystem агентами", "why": "Только как isolated local execution plane рядом с incumbent, не как замена всей платформы", "alternatives": "Copilot Studio, UiPath, n8n Enterprise", "gtm": "Integration/sidecar story; avoid rip-and-replace"},
+        {"priority": "Не фокус", "segment": "Generic SMB SaaS automation и mass chatbot teams", "buyer": "Business owner / marketing / support", "users": "No-code operator", "job": "Подключить много SaaS и каналов с минимальной настройкой", "why": "Текущая дифференциация АГАТ для них малозначима", "alternatives": "n8n, Copilot Studio, Just AI, Dify, Sim", "gtm": "Не тратить roadmap на head-on connector/channel race"}
+      ],
+      "roadmap": [
+        {"priority": "P0", "horizon": "0–2 релиза", "capability": "Local RAG + provenance + managed memory", "why": "У 12 из 12 scored competitors есть usable/strong RAG; отсутствие блокирует большинство внутренних knowledge use cases", "success": "Индексирование локальных источников; citations в trace; project isolation; quality benchmark", "dependency": "Artifact Store, project isolation, model/tool trace"},
+        {"priority": "P0", "horizon": "0–2 релиза", "capability": "MCP gateway + connector SDK/registry", "why": "Интеграции — крупнейший разрыв с Dify/Flowise/n8n/Sim/Just AI/Copilot; gateway позволяет сохранить контроль", "success": "10–15 критичных MCP/HTTP/DB connectors; allowlists; credentials; per-tool approval/audit", "dependency": "HTTP tool, encrypted credentials, RBAC"},
+        {"priority": "P0", "horizon": "0–2 релиза", "capability": "Schedules, webhooks и event triggers", "why": "Без внешнего запуска canvas остаётся designer demo, а не automation platform", "success": "Cron/webhook trigger; idempotency; signing; retry/dead-letter; audit trail", "dependency": "Durable runtime, gateway"},
+        {"priority": "P0", "horizon": "0–2 релиза", "capability": "Eval/replay + prompt/model registry", "why": "У АГАТ score 0 против 2–4 у production leaders; без regression gate нельзя безопасно менять модели", "success": "Golden datasets; trace replay; side-by-side model comparison; release gate", "dependency": "Existing trace schema and immutable process versions"},
+        {"priority": "P1", "horizon": "2–4 релиза", "capability": "Benchmark-aware model and worker router", "why": "Развивает уникальный fleet moat вместо копирования generic builder features", "success": "Hardware profiles; quality/latency/cost benchmark; policy/SLA routing; fallback", "dependency": "Worker telemetry, scheduler, eval datasets"},
+        {"priority": "P1", "horizon": "2–4 релиза", "capability": "Risk-tier policy engine for tools and approvals", "why": "Превращает approvals + RBAC в enterprise control plane", "success": "Policy-as-code; risk labels; four-eyes approval; scoped secrets; deny/allow evidence", "dependency": "RBAC, approval node, audit trace, MCP gateway"},
+        {"priority": "P1", "horizon": "2–4 релиза", "capability": "Fleet lifecycle and trust", "why": "Закрывает эксплуатационный риск уникальной distributed architecture", "success": "Signed workers; enrollment; version/health inventory; staged rollout; drain/cordon", "dependency": "Worker protocol and central node management"},
+        {"priority": "P1", "horizon": "2–4 релиза", "capability": "Production data plane", "why": "Текущий SQLite/single coordinator ограничивает production adoption", "success": "PostgreSQL; HA coordinator; backups; retention/GC; object storage; disaster restore test", "dependency": "Current persistence and Artifact Store"},
+        {"priority": "P2", "horizon": "4–6 релизов", "capability": "OTel/SIEM export and enterprise tenancy", "why": "Нужно аудиторам и platform operations после доказанного pilot value", "success": "GenAI spans; audit export; quotas; SCIM/groups; tenant-level policy", "dependency": "Trace pipeline, Keycloak, production data plane"},
+        {"priority": "Defer", "horizon": "После подтверждения PMF", "capability": "Voice, mass channels, full RPA/computer use, 1000 generic connectors", "why": "На этих полях Copilot, Just AI, n8n и UiPath имеют дистрибуционный moat; они размывают sovereign-fleet позиционирование", "success": "Возвращаться только при повторяемом paid demand от целевого сегмента", "dependency": "Product-market evidence"}
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [
+    {
+      "id": "landscape_sql",
+      "label": "Выполненный SQL по карте конкурентного поля",
+      "path": "docs/competitive-analysis-landscape.csv",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT set_name AS \"set\", count, products, competitive_job\nFROM competitive_analysis_landscape\nORDER BY sort_order;",
+        "description": "Loads the decision-set grouping used in the landscape table.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_landscape"]
+      }
+    },
+    {
+      "id": "scenario_sql",
+      "label": "Выполненный SQL по roadmap-сценариям",
+      "path": "docs/competitive-analysis-scenario-summary.sql",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT\n    scenario,\n    (\n        visual_workflow + multi_agent + workflow_breadth + hitl + durability +\n        local_selfhost + distributed_fleet + resource_routing + rag_memory +\n        integrations_mcp + observability + evaluation + security_governance +\n        enterprise_scale + end_user_channels\n    ) / 60.0 AS breadth,\n    (\n        visual_workflow * 6 + multi_agent * 6 + workflow_breadth * 7 + hitl * 6 +\n        durability * 7 + local_selfhost * 9 + distributed_fleet * 14 +\n        resource_routing * 9 + rag_memory * 7 + integrations_mcp * 7 +\n        observability * 6 + evaluation * 5 + security_governance * 6 +\n        enterprise_scale * 3 + end_user_channels * 2\n    ) / 400.0 AS sovereign_fit,\n    (\n        visual_workflow * 6 + multi_agent * 6 + workflow_breadth * 9 + hitl * 8 +\n        durability * 9 + local_selfhost * 2 + distributed_fleet * 1 +\n        resource_routing * 4 + rag_memory * 8 + integrations_mcp * 12 +\n        observability * 8 + evaluation * 7 + security_governance * 9 +\n        enterprise_scale * 7 + end_user_channels * 4\n    ) / 400.0 AS enterprise_fit,\n    description AS meaning\nFROM competitive_analysis_scenarios\nORDER BY rowid;",
+        "description": "Computes breadth and both weighted fits for current, P0 and P1 scenarios.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_scenarios"]
+      }
+    },
+    {
+      "id": "matrix_sql",
+      "label": "Выполненный SQL по capability matrix",
+      "path": "docs/competitive-analysis-scores.csv",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT\n    product,\n    visual_workflow AS visual,\n    multi_agent AS agents,\n    workflow_breadth AS workflow,\n    hitl,\n    durability AS durable,\n    local_selfhost AS local,\n    distributed_fleet AS fleet,\n    resource_routing AS routing,\n    rag_memory AS rag,\n    integrations_mcp AS integrations,\n    observability,\n    evaluation AS eval,\n    security_governance AS security,\n    enterprise_scale AS scale,\n    end_user_channels AS channels\nFROM competitive_analysis_scores\nORDER BY rowid;",
+        "description": "Selects and labels all 15 feature scores in source-file order.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_scores"]
+      }
+    },
+    {
+      "id": "competitor_map_sql",
+      "label": "Выполненный SQL по competitor map",
+      "path": "docs/competitive-analysis-competitor-map.csv",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT product, segment, audience, lead, agat_wedge, feature_gap, audience_lead\nFROM competitive_analysis_competitor_map\nORDER BY rowid;",
+        "description": "Loads the 12-product battlecard with feature and audience distance.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_competitor_map"]
+      }
+    },
+    {
+      "id": "audience_sql",
+      "label": "Выполненный SQL по audience segments",
+      "path": "docs/competitive-analysis-audiences.csv",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT\n    priority,\n    segment,\n    buyer,\n    primary_users AS users,\n    job_to_be_done AS job,\n    why_agat AS why,\n    main_alternatives AS alternatives,\n    go_to_market AS gtm\nFROM competitive_analysis_audiences\nORDER BY rowid;",
+        "description": "Loads prioritized target-audience recommendations.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_audiences"]
+      }
+    },
+    {
+      "id": "roadmap_sql",
+      "label": "Выполненный SQL по feature priorities",
+      "path": "docs/competitive-analysis-roadmap.csv",
+      "query": {
+        "engine": "sqlite",
+        "sql": "SELECT\n    priority,\n    horizon,\n    capability,\n    decision_rationale AS why,\n    success_evidence AS success,\n    dependency\nFROM competitive_analysis_roadmap\nORDER BY rowid;",
+        "description": "Loads P0/P1/P2 and defer decisions with completion evidence and dependencies.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["competitive_analysis_roadmap"]
+      }
+    },
+    {
+      "id": "score_summary_sql",
+      "label": "Выполненный SQL rollup score matrix",
+      "path": "docs/competitive-analysis-score-summary.sql",
+      "query": {
+        "engine": "sqlite",
+        "sql": "WITH rollup AS (\n    SELECT\n        s.product,\n        s.comparison_type AS type,\n        s.audience_maturity AS audience_stage,\n        AVG(s.score) / 4.0 AS breadth,\n        SUM(s.score * c.weight_sovereign) / 400.0 AS sovereign_fit,\n        SUM(s.score * c.weight_enterprise) / 400.0 AS enterprise_fit\n    FROM scores_long AS s\n    JOIN category_weights AS c\n      ON c.category_id = s.category_id\n    GROUP BY s.product, s.comparison_type, s.audience_maturity\n),\nbaseline AS (\n    SELECT breadth, audience_stage\n    FROM rollup\n    WHERE product = 'АГАТ'\n)\nSELECT\n    r.product,\n    r.type,\n    r.breadth,\n    r.sovereign_fit,\n    r.enterprise_fit,\n    r.breadth - b.breadth AS feature_gap,\n    CASE\n        WHEN r.product = 'АГАТ' THEN 'Baseline'\n        WHEN r.breadth - b.breadth <= 0 THEN 'АГАТ шире'\n        WHEN r.breadth - b.breadth <= 0.05 THEN 'Паритет'\n        WHEN r.breadth - b.breadth <= 0.15 THEN 'Умеренный'\n        WHEN r.breadth - b.breadth <= 0.25 THEN 'Значительный'\n        ELSE 'Большой'\n    END AS distance,\n    r.audience_stage,\n    r.audience_stage - b.audience_stage AS audience_lead\nFROM rollup AS r\nCROSS JOIN baseline AS b\nORDER BY r.breadth DESC, r.product;",
+        "description": "Executed in SQLite after melting competitive-analysis-scores.csv to scores_long and loading competitive-analysis-categories.csv as category_weights.",
+        "executed_at": "2026-08-14T12:00:00+03:00",
+        "tables_used": ["scores_long", "category_weights"]
+      }
+    },
+    {
+      "id": "analysis_method",
+      "label": "Матрица score и воспроизводимый sensitivity-анализ",
+      "path": "docs/competitive-analysis-scores.csv",
+      "description": "15-category score matrix. Weights are in competitive-analysis-categories.csv, scenarios in competitive-analysis-scenarios.csv, and executable calculations in agat-competitive-analysis.ipynb."
+    },
+    {
+      "id": "evidence_register",
+      "label": "Реестр официальных источников конкурентов",
+      "path": "docs/competitive-analysis-sources.csv",
+      "description": "41 evidence records from official vendor documentation, vendor sites and vendor-owned GitHub, with claim summary and access date."
+    },
+    {
+      "id": "agat_docs",
+      "label": "Документация текущей версии АГАТ",
+      "path": "docs/README.md",
+      "description": "README, architecture, processes, local-workers, durable-runtime, identity/gateway, execution traces, web access and roadmap; implementation spot-checked in code/tests."
+    }
+  ],
+  "package_info": {
+    "originUrl": "artifact://agat-competitive-analysis",
+    "controls": {"edit": false, "refresh": false}
+  }
+}

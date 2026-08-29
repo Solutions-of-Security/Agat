@@ -1,0 +1,35 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Unit and Temporal history replay tests
+        run: npm test
+      - run: npm run build
+      - name: Validate deployment inputs
+        env:
+          AGAT_ADMIN_TOKEN: ci-admin-token
+          AGAT_ENROLLMENT_TOKEN: ci-enrollment-token
+        run: |
+          docker compose config --quiet
+          bash -n scripts/*.sh

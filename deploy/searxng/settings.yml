@@ -1,0 +1,27 @@
+use_default_settings:
+  engines:
+    remove:
+      - ahmia
+      - torch
+      - wikidata
+
+general:
+  debug: false
+  instance_name: "AGAT Search"
+  donation_url: false
+  contact_url: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  # Overridden by the SEARXNG_SECRET container environment variable.
+  secret_key: "overridden-by-container-secret"
+  limiter: false
+  image_proxy: false
+
+outgoing:
+  request_timeout: 8.0

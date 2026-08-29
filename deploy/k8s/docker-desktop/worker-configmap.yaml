@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agat-worker-config
+data:
+  AGAT_COORDINATOR_URL: "http://agat-coordinator:8787"
+  AGAT_WORKER_NAME: "docker-desktop-worker"
+  AGAT_WORKER_MODELS: "qwen3:8b"
+  AGAT_EMBEDDING_MODELS: "embeddinggemma"
+  AGAT_MODEL_BASE_URL: "http://host.docker.internal:11434/v1"
+  AGAT_MODEL_DISCOVERY: "auto"
+  AGAT_WORKER_CONCURRENCY: "1"
+  AGAT_WORKER_CREDENTIALS: "/state/worker.json"
+  AGAT_WORKER_LABELS: "runtime=kubernetes,cluster=docker-desktop"
+  AGAT_POLL_INTERVAL: "3"
+  AGAT_WEB_ENABLED: "true"
+  AGAT_WEB_SEARCH_URL: "http://agat-search:8080/search"
+  AGAT_WEB_TIMEOUT: "12"
+  AGAT_WEB_FETCH_MAX_BYTES: "1000000"
+  AGAT_WEB_FETCH_MAX_CHARS: "12000"
+  AGAT_WEB_SEARCH_MAX_RESULTS: "6"
+  AGAT_WEB_MAX_TOOL_ROUNDS: "6"
+  AGAT_MCP_APPROVAL_TIMEOUT_SECONDS: "690"
+  AGAT_OTEL_ENABLED: "false"
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_SERVICE_NAME: "agat-worker"
+  TMPDIR: "/tmp"
