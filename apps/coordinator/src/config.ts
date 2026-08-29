@@ -92,6 +92,11 @@ export interface CoordinatorConfig {
   mcpRequestTimeoutSeconds: number;
   mcpMaxResponseBytes: number;
   mcpApprovalTtlSeconds: number;
+  sandboxEnabled: boolean;
+  sandboxNamespace: string;
+  sandboxWasiImage: string;
+  sandboxRuntimeClass: string;
+  sandboxNetworkPolicyEnforced: boolean;
   a2aEnabled: boolean;
   a2aPublicBaseUrl: string;
   a2aOutboundEnabled: boolean;
@@ -155,7 +160,7 @@ export function loadConfig(): CoordinatorConfig {
       .filter(Boolean),
     localWorkerLauncherEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_LAUNCHER, false),
     localWorkerNamespace: process.env.AGAT_LOCAL_WORKER_NAMESPACE ?? "agat",
-    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.4.0",
+    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.5.0",
     localWorkerConfigMap: process.env.AGAT_LOCAL_WORKER_CONFIG_MAP ?? "agat-worker-config",
     localWorkerSecret: process.env.AGAT_LOCAL_WORKER_SECRET ?? "agat-secrets",
     localWorkerModelBaseUrl: process.env.AGAT_LOCAL_MODEL_BASE_URL ?? "http://host.docker.internal:11434/v1",
@@ -171,6 +176,15 @@ export function loadConfig(): CoordinatorConfig {
     mcpRequestTimeoutSeconds: Math.max(1, Math.min(300, integerFromEnv(process.env.AGAT_MCP_REQUEST_TIMEOUT_SECONDS, 60))),
     mcpMaxResponseBytes: Math.max(65_536, integerFromEnv(process.env.AGAT_MCP_MAX_RESPONSE_BYTES, 4_194_304)),
     mcpApprovalTtlSeconds: Math.max(30, Math.min(86_400, integerFromEnv(process.env.AGAT_MCP_APPROVAL_TTL_SECONDS, 600))),
+    sandboxEnabled: booleanFromEnv(process.env.AGAT_SANDBOX_ENABLED, false),
+    sandboxNamespace: optionalSafeText(process.env.AGAT_SANDBOX_NAMESPACE ?? "agat", "AGAT_SANDBOX_NAMESPACE", 63),
+    sandboxWasiImage: optionalSafeText(
+      process.env.AGAT_SANDBOX_WASI_IMAGE ?? "agat-local/sandbox-wasi:1.5.0",
+      "AGAT_SANDBOX_WASI_IMAGE",
+      512,
+    ),
+    sandboxRuntimeClass: optionalSafeText(process.env.AGAT_SANDBOX_RUNTIME_CLASS, "AGAT_SANDBOX_RUNTIME_CLASS", 63),
+    sandboxNetworkPolicyEnforced: booleanFromEnv(process.env.AGAT_SANDBOX_NETWORK_POLICY_ENFORCED, false),
     a2aEnabled: booleanFromEnv(process.env.AGAT_A2A_ENABLED, true),
     a2aPublicBaseUrl: (process.env.AGAT_A2A_PUBLIC_BASE_URL ?? `http://127.0.0.1:${port}`).replace(/\/+$/, ""),
     a2aOutboundEnabled: booleanFromEnv(process.env.AGAT_A2A_OUTBOUND_ENABLED, true),

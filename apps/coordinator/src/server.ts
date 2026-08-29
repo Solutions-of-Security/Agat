@@ -31,6 +31,7 @@ import {
 import { bearerToken, tokensEqual } from "./security.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import { McpGateway } from "./mcp.js";
+import { createSandboxExecutor } from "./sandbox.js";
 import {
   A2A_MEDIA_TYPE,
   A2A_PROTOCOL_VERSION,
@@ -544,7 +545,7 @@ export function createCoordinatorServer(
     requestTimeoutSeconds: config.mcpRequestTimeoutSeconds,
     maxResponseBytes: config.mcpMaxResponseBytes,
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
-  }),
+  }, undefined, createSandboxExecutor(config)),
 ): http.Server {
   const a2aPublicBaseUrl = normalizeA2APublicBaseUrl(
     config.a2aPublicBaseUrl,
@@ -582,8 +583,9 @@ export function createCoordinatorServer(
         json(response, 200, {
           status: "ok",
           time: new Date().toISOString(),
-          version: "1.4.0",
+          version: "1.5.0",
           processRuntime: processRuntime.snapshot(),
+          sandbox: mcpGateway.sandboxSnapshot(),
         });
         return;
       }
@@ -912,7 +914,7 @@ export function createCoordinatorServer(
         const mcp = overview.mcp && typeof overview.mcp === "object" ? overview.mcp as Record<string, unknown> : {};
         json(response, 200, {
           ...overview,
-          mcp: { ...mcp, enabled: config.mcpEnabled },
+          mcp: { ...mcp, enabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot() },
           processRuntime: processRuntime.snapshot(),
         });
         return;
@@ -1163,6 +1165,7 @@ export function createCoordinatorServer(
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
         json(response, 200, {
           enabled: config.mcpEnabled,
+          sandbox: mcpGateway.sandboxSnapshot(),
           servers: mcpGateway.listServers(auth.projectId),
           policy: store.getMcpPolicySnapshot(auth.projectId),
         });
@@ -1208,6 +1211,9 @@ export function createCoordinatorServer(
       if (request.method === "POST" && pathname === "/api/v1/mcp/servers") {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         const body = await readJson<CreateMcpServerInput>(request);
+        if ((body.transport && body.transport !== "http") || body.sandbox) {
+          if (!auth.roles.has("admin")) throw new HttpError(403, "Изолированные MCP tools может настраивать только admin");
+        }
         json(response, 201, await mcpGateway.createServer(body, auth.projectId));
         return;
       }
@@ -1241,6 +1247,12 @@ export function createCoordinatorServer(
       if (request.method === "PATCH" && mcpServerId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         const body = await readJson<UpdateMcpServerInput>(request);
+        const current = mcpGateway.listServers(auth.projectId).find((item) => item.id === mcpServerId);
+        if (!current) throw new HttpError(404, "MCP-сервер не найден");
+        if ((current.transport !== "http" || (body.transport && body.transport !== "http") || body.sandbox !== undefined)
+          && !auth.roles.has("admin")) {
+          throw new HttpError(403, "Изолированные MCP tools может настраивать только admin");
+        }
         const updated = mcpGateway.updateServer(mcpServerId, body, auth.projectId);
         if (!updated) throw new HttpError(404, "MCP-сервер не найден");
         json(response, 200, updated);
@@ -1248,6 +1260,11 @@ export function createCoordinatorServer(
       }
       if (request.method === "DELETE" && mcpServerId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const current = mcpGateway.listServers(auth.projectId).find((item) => item.id === mcpServerId);
+        if (!current) throw new HttpError(404, "MCP-сервер не найден");
+        if (current.transport !== "http" && !auth.roles.has("admin")) {
+          throw new HttpError(403, "Изолированные MCP tools может удалять только admin");
+        }
         if (!mcpGateway.deleteServer(mcpServerId, auth.projectId)) throw new HttpError(404, "MCP-сервер не найден");
         noContent(response);
         return;
@@ -2229,7 +2246,7 @@ async function main(): Promise<void> {
     requestTimeoutSeconds: config.mcpRequestTimeoutSeconds,
     maxResponseBytes: config.mcpMaxResponseBytes,
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
-  });
+  }, undefined, createSandboxExecutor(config));
   const server = createCoordinatorServer(config, store, localWorkerLauncher, processRuntime, mcpGateway);
 
   void localWorkerLauncher.snapshot().then((snapshot) => {
@@ -2248,6 +2265,8 @@ async function main(): Promise<void> {
     console.log(`Runtime процессов: ${processRuntime.snapshot().mode}`);
     console.log(`OpenTelemetry: ${config.otelEnabled ? "включён" : "выключен"}`);
     console.log(`MCP gateway: ${config.mcpEnabled ? "включён" : "выключен"}`);
+    const sandbox = mcpGateway.sandboxSnapshot();
+    console.log(`Tool sandbox: ${sandbox?.available ? "доступен" : sandbox?.reason ?? "не настроен"}`);
     console.log(`A2A adapter: ${config.a2aEnabled ? `включён · ${config.a2aPublicBaseUrl}` : "выключен"}`);
   });
 

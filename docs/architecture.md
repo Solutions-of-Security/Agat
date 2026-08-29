@@ -22,6 +22,7 @@ flowchart LR
     TW -->|"защищённый internal tick"| C
     C -->|"ограниченный Kubernetes API"| K8S["Local worker launcher"]
     K8S --> KW["1..N локальных worker pods"]
+    C -->|"one-shot Secret + NetworkPolicy + Job"| SBX["WASI / digest-pinned OCI sandbox"]
     C --> DB[("SQLite / WAL")]
     DB --> KB[("Collections / chunks / vectors / memory")]
     C --> ART[("Artifact Store")]
@@ -69,7 +70,8 @@ Coordinator хранит состояние очереди, но не подкл
 - неизменяемые снимки опубликованных версий процессов;
 - OIDC RS256/JWKS verifier, role/project authorization, CSP, anti-framing и CORS allowlist;
 - локальный Kubernetes worker launcher: создание независимых worker-пулов, stop/start и discovery установленных моделей.
-- MCP host/gateway: Streamable HTTP catalogs, project allowlist, immutable policy-as-code и effective diff, risk-tier/four-eyes approvals, scoped credentials, persisted emergency deny, encrypted call state и final-preflight upstream proxy без раскрытия credentials workers.
+- MCP host/gateway: Streamable HTTP и static isolated catalogs, project allowlist, immutable policy-as-code и effective diff, risk-tier/four-eyes approvals, scoped credentials, persisted emergency deny, encrypted call/profile state и final-preflight proxy без раскрытия credentials workers.
+- isolated tool executor: bounded WASI module либо digest-pinned OCI command, per-call non-root/read-only Kubernetes Job, default-deny exact-IP egress, ephemeral Secret cleanup и optional operator-provided gVisor/Kata RuntimeClass.
 - pull-safe Model Router: hardware/model profiles, пассивный EWMA throughput/energy, глобальное ранжирование свободных узлов, SLA filters, explainable trace и fallback между попытками.
 - Local RAG control plane: chunking, pull-based embedding jobs, collection snapshot запуска, cosine retrieval, provenance audit, TTL cleanup, каскадное удаление и export.
 - Golden eval control plane: immutable prompt/dataset versions, batch candidate runs через обычный scheduler, append-only human/model-judge audit, knowledge fingerprint и matching promotion gate.
@@ -78,7 +80,7 @@ Coordinator хранит состояние очереди, но не подкл
 
 SQLite предполагает один активный экземпляр coordinator. Temporal делает процесс durable при рестартах, но сам по себе не превращает SQLite state store в HA: незавершённый PostgreSQL driver fail-closed, а проект перехода описан в [PostgreSQL state-store design](./postgresql-state-store-design.md).
 
-В Docker Desktop coordinator использует namespace-scoped service account для управления только Kubernetes Deployments. Пользователь передаёт launcher только модель, число workers, concurrency и флаг web-tools; image, command, Secret и model endpoint остаются operator config. Подробнее: [локальный запуск нескольких workers](./local-workers.md).
+В Docker Desktop coordinator использует namespace-scoped service account. Launcher управляет Deployments; sandbox executor — только Jobs, Pods/log, Secrets и NetworkPolicies того же namespace. Пользователь launcher передаёт только модель, число workers, concurrency и флаг web-tools; isolated image/module/command меняет только `admin`. Подробнее: [локальный запуск нескольких workers](./local-workers.md) и [изолированное выполнение tools](./isolated-tool-execution.md).
 
 ### Worker
 

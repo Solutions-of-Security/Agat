@@ -13,7 +13,7 @@ data:
   AGAT_LEASE_TTL_SECONDS: "180"
   AGAT_LOCAL_WORKER_LAUNCHER: "true"
   AGAT_LOCAL_WORKER_NAMESPACE: "agat"
-  AGAT_LOCAL_WORKER_IMAGE: "agat-local/worker:1.4.0"
+  AGAT_LOCAL_WORKER_IMAGE: "agat-local/worker:1.5.0"
   AGAT_LOCAL_WORKER_EMBEDDING_MODELS: "embeddinggemma"
   AGAT_LOCAL_WORKER_CONFIG_MAP: "agat-worker-config"
   AGAT_LOCAL_WORKER_SECRET: "agat-secrets"
@@ -38,6 +38,13 @@ data:
   AGAT_MCP_REQUEST_TIMEOUT_SECONDS: "60"
   AGAT_MCP_MAX_RESPONSE_BYTES: "4194304"
   AGAT_MCP_APPROVAL_TTL_SECONDS: "600"
+  AGAT_SANDBOX_ENABLED: "true"
+  AGAT_SANDBOX_NAMESPACE: "agat"
+  AGAT_SANDBOX_WASI_IMAGE: "agat-local/sandbox-wasi:1.5.0"
+  AGAT_SANDBOX_RUNTIME_CLASS: ""
+  # Docker Desktop's default CNI does not guarantee NetworkPolicy enforcement.
+  # WASI remains usable; native container tools stay fail-closed until an enforcing CNI is installed.
+  AGAT_SANDBOX_NETWORK_POLICY_ENFORCED: "false"
   AGAT_A2A_ENABLED: "true"
   AGAT_A2A_PUBLIC_BASE_URL: "http://127.0.0.1:8787"
   AGAT_A2A_OUTBOUND_ENABLED: "true"

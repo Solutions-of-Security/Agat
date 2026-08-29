@@ -15,6 +15,7 @@ import {
   type McpUpstreamClient,
 } from "../src/mcp.js";
 import { CoordinatorTelemetry } from "../src/telemetry.js";
+import type { SandboxExecution, SandboxExecutor } from "../src/sandbox.js";
 
 const stores: AgatStore[] = [];
 const temporaryFiles: string[] = [];
@@ -139,7 +140,7 @@ describe("MCP gateway and risk policy", () => {
       preview_diff_json: "[]",
     });
     const version = migrated.db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(version.user_version, 17);
+    assert.equal(version.user_version, 18);
   });
 
   it("rejects endpoint secrets and transport-owned credential headers", async () => {
@@ -693,5 +694,120 @@ describe("MCP gateway and risk policy", () => {
     assert.equal(deniedByScope.status, "failed");
     assert.match(deniedByScope.error ?? "", /Scope credentials/);
     assert.equal(upstream.calls.length, 1);
+  });
+
+  it("routes an encrypted WASI profile through the same critical four-eyes policy boundary", async () => {
+    const store = new AgatStore(":memory:", { seedDemo: false, credentialsKey: "wasi-test-key" });
+    stores.push(store);
+    const executions: SandboxExecution[] = [];
+    const sandbox: SandboxExecutor = {
+      snapshot: () => ({
+        enabled: true,
+        available: true,
+        reason: null,
+        namespace: "agat",
+        wasiImage: "agat-local/sandbox-wasi:1.5.0",
+        runtimeClass: null,
+        networkPolicyEnforced: false,
+      }),
+      execute: async (input) => {
+        input.assertAllowed();
+        executions.push(input);
+        return { resultType: "complete", content: [{ type: "text", text: "isolated-ok" }] };
+      },
+    };
+    const telemetry = new CoordinatorTelemetry({ enabled: false, serviceName: "test", exporterEndpoint: "" });
+    const gateway = new McpGateway(store, telemetry, {
+      enabled: true,
+      requestTimeoutSeconds: 10,
+      maxResponseBytes: 1_000_000,
+      approvalTtlSeconds: 300,
+    }, undefined, sandbox);
+    const credential = store.createCredential({
+      name: "WASI scoped token",
+      type: "api_key",
+      data: { apiKey: "wasi-scoped-secret" },
+      scope: {
+        kind: "mcp",
+        serverNamespaces: ["isolated"],
+        toolPatterns: ["delete_cache"],
+        risks: ["destructive"],
+        allowCatalog: false,
+        expiresAt: null,
+      },
+    });
+    const moduleBase64 = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).toString("base64");
+    const server = await gateway.createServer({
+      name: "Isolated cleanup",
+      namespace: "isolated",
+      transport: "wasi",
+      credentialId: String(credential.id),
+      defaultPolicy: "auto",
+      sandbox: {
+        moduleBase64,
+        tool: {
+          name: "delete_cache",
+          description: "Delete an isolated cache entry",
+          inputSchema: { type: "object", properties: { key: { type: "string" } } },
+          annotations: { destructiveHint: true },
+        },
+      },
+    }, "default");
+    assert.equal(server.transport, "wasi");
+    assert.equal(JSON.stringify(server).includes(moduleBase64), false);
+    assert.equal(JSON.stringify(server).includes("wasi-scoped-secret"), false);
+    const persisted = store.db.prepare("SELECT sandbox_blob, sandbox_summary_json FROM mcp_servers WHERE id = ?")
+      .get(String(server.id)) as { sandbox_blob: string; sandbox_summary_json: string };
+    assert.equal(persisted.sandbox_blob.includes(moduleBase64), false);
+    assert.equal(persisted.sandbox_summary_json.includes(moduleBase64), false);
+
+    const { nodeId, lease } = addWorkerAndLease(store);
+    const pending = await gateway.callLeaseTool({
+      nodeId,
+      leaseId: lease.leaseId,
+      publicName: "isolated__delete_cache",
+      clientCallId: "isolated-critical",
+      arguments: { key: "customer-42" },
+    });
+    assert.equal(pending.status, "waiting_approval");
+    assert.equal(pending.requiredApprovals, 2);
+    await gateway.decideCall(pending.callId, "approve", "default", { subject: "one", display: "one" });
+    const completed = await gateway.decideCall(pending.callId, "approve", "default", { subject: "two", display: "two" });
+    assert.equal(completed.status, "completed");
+    assert.equal(executions.length, 1);
+    assert.equal(executions[0]?.credential?.data.apiKey, "wasi-scoped-secret");
+
+    const changedPending = await gateway.callLeaseTool({
+      nodeId,
+      leaseId: lease.leaseId,
+      publicName: "isolated__delete_cache",
+      clientCallId: "isolated-profile-changed",
+      arguments: { key: "customer-43" },
+    });
+    assert.equal(changedPending.status, "waiting_approval");
+    await gateway.decideCall(changedPending.callId, "approve", "default", { subject: "one", display: "one" });
+    const replacementModuleBase64 = Buffer.from([
+      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+      0x00, 0x01, 0x00,
+    ]).toString("base64");
+    const updated = gateway.updateServer(String(server.id), {
+      sandbox: {
+        moduleBase64: replacementModuleBase64,
+        tool: {
+          name: "delete_cache",
+          description: "Delete an isolated cache entry",
+          inputSchema: { type: "object", properties: { key: { type: "string" } } },
+          annotations: { destructiveHint: true },
+        },
+      },
+    }, "default");
+    assert.notEqual(
+      (updated?.sandbox as { profileSha256?: string } | null)?.profileSha256,
+      (server.sandbox as { profileSha256?: string } | null)?.profileSha256,
+    );
+    const blocked = await gateway.decideCall(changedPending.callId, "approve", "default", { subject: "two", display: "two" });
+    assert.equal(blocked.status, "rejected");
+    assert.match(blocked.error ?? "", /profile changed/);
+    assert.equal(executions.length, 1);
   });
 });

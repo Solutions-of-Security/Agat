@@ -207,6 +207,8 @@ MCP client работает в coordinator, поэтому удалённому 
 
 HTTP endpoint разрешается отдельным флагом только для контролируемой локальной сети. Для production ограничьте исходящий трафик coordinator и не включайте доверие к annotations непроверенного server. Все параметры и lifecycle описаны в [руководстве MCP gateway](./mcp-gateway.md).
 
+`admin` также может зарегистрировать один WASI module либо digest-pinned OCI tool. Они используют тот же catalog/risk/approval/kill-switch path, но запускаются одноразовым Kubernetes Job; обычный Docker Compose не исполняет их. Начинайте с WASI без filesystem/network capabilities. OCI требует проверенного enforcing CNI и `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=true`. Формат profile, guest/container contract и smoke test: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
 Worker ожидает operator approval до `AGAT_MCP_APPROVAL_TIMEOUT_SECONDS=690`; его lease в это время продолжает продлеваться. Если worker прекращает ожидание раньше из-за пользовательского тайм-аута, он атомарно отменяет ещё не подтверждённый вызов.
 
 ## Публикация агента через A2A

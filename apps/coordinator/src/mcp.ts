@@ -9,6 +9,12 @@ import {
 } from "@modelcontextprotocol/client";
 
 import type { CoordinatorTelemetry } from "./telemetry.js";
+import {
+  normalizeSandboxProfile,
+  sandboxCatalogTool,
+  type SandboxExecutor,
+  type SandboxSnapshot,
+} from "./sandbox.js";
 import type {
   CredentialScope,
   CreateMcpServerInput,
@@ -18,11 +24,13 @@ import type {
   McpToolCallResponse,
   McpToolPolicy,
   McpToolRisk,
+  McpSandboxProfile,
+  McpTransport,
   UpdateMcpServerInput,
 } from "./types.js";
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
-const MCP_CLIENT_VERSION = "1.4.0";
+const MCP_CLIENT_VERSION = "1.5.0";
 
 export interface McpGatewayOptions {
   enabled: boolean;
@@ -36,7 +44,9 @@ export interface McpServerConnection {
   projectId: string;
   name: string;
   namespace: string;
+  transport: McpTransport;
   endpoint: string;
+  sandbox: McpSandboxProfile | null;
   credentialId: string | null;
   credential: null | {
     type: string;
@@ -138,7 +148,23 @@ export interface McpUpstreamClient {
     tool: McpCatalogTool,
     argumentsValue: Record<string, unknown>,
     assertAllowed?: () => void,
+    callId?: string,
   ): Promise<unknown>;
+}
+
+export interface NormalizedMcpServerInput {
+  name: string;
+  namespace: string;
+  transport: McpTransport;
+  endpoint: string;
+  sandbox: McpSandboxProfile | null;
+  catalog: McpCatalogTool[];
+  credentialId: string | null;
+  enabled: boolean;
+  trustAnnotations: boolean;
+  allowInsecureHttp: boolean;
+  defaultPolicy: McpDefaultPolicy;
+  catalogTtlSeconds: number;
 }
 
 function boundedInteger(value: unknown, min: number, max: number, fallback: number): number {
@@ -157,30 +183,47 @@ function requiredText(value: unknown, field: string, maxLength: number): string 
 export function normalizeMcpServerInput(
   input: CreateMcpServerInput,
   current?: McpServerConnection,
-): Required<Omit<CreateMcpServerInput, "credentialId">> & { credentialId: string | null } {
+): NormalizedMcpServerInput {
   const name = requiredText(input.name ?? current?.name, "Название MCP-сервера", 100);
   const namespace = requiredText(input.namespace ?? current?.namespace, "Namespace", 24).toLowerCase();
   if (!/^[a-z][a-z0-9_]{0,23}$/.test(namespace)) {
     throw new Error("Namespace должен начинаться с буквы и содержать только a-z, 0-9 и _");
   }
-  const endpoint = requiredText(input.endpoint ?? current?.endpoint, "Endpoint", 2_000);
-  let parsed: URL;
-  try {
-    parsed = new URL(endpoint);
-  } catch {
-    throw new Error("Некорректный URL MCP endpoint");
+  const transport = input.transport ?? current?.transport ?? "http";
+  if (!(transport === "http" || transport === "wasi" || transport === "container")) {
+    throw new Error("Неизвестный transport MCP-сервера");
   }
-  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
-    throw new Error("MCP endpoint должен быть HTTP(S) URL без credentials и fragment");
-  }
-  for (const key of parsed.searchParams.keys()) {
-    if (/(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)/i.test(key)) {
-      throw new Error("Секреты MCP нельзя передавать в query-параметрах endpoint");
+  let sandbox: McpSandboxProfile | null = null;
+  let endpoint: string;
+  let catalog: McpCatalogTool[];
+  let allowInsecureHttp: boolean;
+  if (transport === "http") {
+    const endpointValue = requiredText(input.endpoint ?? (current?.transport === "http" ? current.endpoint : undefined), "Endpoint", 2_000);
+    let parsed: URL;
+    try {
+      parsed = new URL(endpointValue);
+    } catch {
+      throw new Error("Некорректный URL MCP endpoint");
     }
-  }
-  const allowInsecureHttp = input.allowInsecureHttp ?? current?.allowInsecureHttp ?? false;
-  if (parsed.protocol === "http:" && !allowInsecureHttp) {
-    throw new Error("Для HTTP endpoint нужно явно разрешить небезопасный транспорт");
+    if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
+      throw new Error("MCP endpoint должен быть HTTP(S) URL без credentials и fragment");
+    }
+    for (const key of parsed.searchParams.keys()) {
+      if (/(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)/i.test(key)) {
+        throw new Error("Секреты MCP нельзя передавать в query-параметрах endpoint");
+      }
+    }
+    allowInsecureHttp = input.allowInsecureHttp ?? (current?.transport === "http" ? current.allowInsecureHttp : false);
+    if (parsed.protocol === "http:" && !allowInsecureHttp) {
+      throw new Error("Для HTTP endpoint нужно явно разрешить небезопасный транспорт");
+    }
+    endpoint = parsed.toString();
+    catalog = current?.transport === "http" ? current.catalog : [];
+  } else {
+    sandbox = normalizeSandboxProfile(transport, input.sandbox, current?.transport === transport ? current.sandbox ?? undefined : undefined);
+    endpoint = `sandbox://${transport}/${sandbox.profileSha256}`;
+    allowInsecureHttp = false;
+    catalog = [sandboxCatalogTool(sandbox, publicMcpToolName(namespace, sandbox.tool.name))];
   }
   const defaultPolicy = input.defaultPolicy ?? current?.defaultPolicy ?? "deny";
   if (!(["deny", "approval", "auto"] as const).includes(defaultPolicy)) {
@@ -194,10 +237,13 @@ export function normalizeMcpServerInput(
   return {
     name,
     namespace,
-    endpoint: parsed.toString(),
+    transport,
+    endpoint,
+    sandbox,
+    catalog,
     credentialId,
     enabled: input.enabled ?? current?.enabled ?? true,
-    trustAnnotations: input.trustAnnotations ?? current?.trustAnnotations ?? false,
+    trustAnnotations: input.trustAnnotations ?? current?.trustAnnotations ?? transport !== "http",
     allowInsecureHttp,
     defaultPolicy,
     catalogTtlSeconds: boundedInteger(input.catalogTtlSeconds ?? current?.catalogTtlSeconds, 30, 86_400, 300),
@@ -211,7 +257,9 @@ export function normalizeMcpServerPatch(
   return normalizeMcpServerInput({
     name: input.name ?? current.name,
     namespace: input.namespace ?? current.namespace,
-    endpoint: input.endpoint ?? current.endpoint,
+    transport: input.transport ?? current.transport,
+    endpoint: input.endpoint ?? (current.transport === "http" ? current.endpoint : undefined),
+    sandbox: input.sandbox === undefined ? current.sandbox : input.sandbox,
     credentialId: input.credentialId === undefined ? undefined : input.credentialId,
     enabled: input.enabled ?? current.enabled,
     trustAnnotations: input.trustAnnotations ?? current.trustAnnotations,
@@ -395,7 +443,10 @@ function boundedFetch(timeoutMs: number, maxResponseBytes: number): FetchLike {
 }
 
 export class SdkMcpUpstreamClient implements McpUpstreamClient {
-  constructor(private readonly options: Pick<McpGatewayOptions, "requestTimeoutSeconds" | "maxResponseBytes">) {}
+  constructor(
+    private readonly options: Pick<McpGatewayOptions, "requestTimeoutSeconds" | "maxResponseBytes">,
+    private readonly sandbox?: SandboxExecutor,
+  ) {}
 
   private async useClient<T>(
     server: McpServerConnection,
@@ -421,6 +472,10 @@ export class SdkMcpUpstreamClient implements McpUpstreamClient {
   }
 
   async listTools(server: McpServerConnection): Promise<McpCatalogResult> {
+    if ((server.transport ?? "http") !== "http") {
+      if (!server.sandbox || server.catalog.length !== 1) throw new Error("Каталог isolated MCP tool повреждён");
+      return { tools: server.catalog, ttlMs: 86_400_000, cacheScope: "private" };
+    }
     return this.useClient(server, "catalog", undefined, async (client) => {
       const result = await client.listTools(undefined, { cacheMode: "refresh" });
       return {
@@ -436,7 +491,21 @@ export class SdkMcpUpstreamClient implements McpUpstreamClient {
     tool: McpCatalogTool,
     argumentsValue: Record<string, unknown>,
     assertAllowed?: () => void,
+    callId?: string,
   ): Promise<CallToolResult> {
+    if ((server.transport ?? "http") !== "http") {
+      if (!this.sandbox) throw new Error("Sandbox executor не настроен");
+      if (!server.sandbox || !callId) throw new Error("Sandbox execution context неполон");
+      return this.sandbox.execute({
+        callId,
+        transport: server.transport as Exclude<McpTransport, "http">,
+        profile: server.sandbox,
+        arguments: argumentsValue,
+        credential: server.credential ? { type: server.credential.type, data: server.credential.data } : null,
+        maxResponseBytes: this.options.maxResponseBytes,
+        assertAllowed: assertAllowed ?? (() => undefined),
+      }) as Promise<CallToolResult>;
+    }
     return this.useClient(server, "tool", tool, (client) => {
       assertAllowed?.();
       return client.callTool({
@@ -464,8 +533,13 @@ export class McpGateway {
     private readonly telemetry: CoordinatorTelemetry,
     private readonly options: McpGatewayOptions,
     upstream?: McpUpstreamClient,
+    private readonly sandbox?: SandboxExecutor,
   ) {
-    this.upstream = upstream ?? new SdkMcpUpstreamClient(options);
+    this.upstream = upstream ?? new SdkMcpUpstreamClient(options, sandbox);
+  }
+
+  sandboxSnapshot(): SandboxSnapshot | null {
+    return this.sandbox?.snapshot() ?? null;
   }
 
   listServers(projectId: string): Array<Record<string, unknown>> {
@@ -595,6 +669,8 @@ export class McpGateway {
         toolName: execution.publicName,
         callId: execution.callId,
         risk: execution.risk,
+        transport: execution.server.transport,
+        sandboxProfileSha256: execution.server.sandbox?.profileSha256 ?? null,
         riskTier: execution.decision.tier,
         requiredApprovals: execution.decision.approvals,
         policyVersion: execution.decision.policyVersion,
@@ -605,6 +681,7 @@ export class McpGateway {
         execution.tool,
         execution.arguments,
         () => this.store.assertMcpToolCallExecutable(execution.callId),
+        execution.callId,
       ));
       this.store.completeMcpToolCall(execution.callId, result);
       return { callId: execution.callId, status: "completed", result };

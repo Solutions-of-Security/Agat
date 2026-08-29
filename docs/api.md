@@ -353,7 +353,7 @@ Content-Type: application/json
 Worker запрашивает lease с собственной версией:
 
 ```json
-{ "workerVersion": "1.4.0" }
+{ "workerVersion": "1.5.0" }
 ```
 
 Lease содержит run input, immutable agent snapshot, ordered `agent.specialists` для team, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator. Team целиком исполняется на одном lease/worker; specialist prompts и models берутся только из pinned snapshots.
@@ -487,7 +487,7 @@ Replay терминального agent-only запуска:
 
 ## MCP gateway
 
-Dashboard routes используют обычный OIDC/project context. Читать catalog/policy могут все authenticated roles; создавать/изменять servers, legacy tool policy, scoped credentials и policy-as-code — `admin/designer`; принимать tool approval — `admin/operator`; глобальный emergency deny — только `admin`.
+Dashboard routes используют обычный OIDC/project context. Читать catalog/policy могут все authenticated roles; создавать/изменять HTTP servers, legacy tool policy, scoped credentials и policy-as-code — `admin/designer`; создавать или заменять исполняемый WASI/OCI profile и включать глобальный emergency deny — только `admin`; принимать tool approval — `admin/operator`.
 
 ### Scoped credential
 
@@ -583,7 +583,7 @@ Switch глобален для coordinator, persisted и требует непу
 GET /api/v1/mcp/servers
 ```
 
-Ответ содержит `enabled`, безопасные server metadata, catalog tools, legacy и effective `risk/policy`, `riskTier`, `requiredApprovals`, policy version/hash/rule/reason, состояние синхронизации и policy snapshot. Credentials и полные call arguments/results не возвращаются.
+Ответ содержит `enabled`, snapshot доступности sandbox executor, безопасные server metadata, `transport`, redacted sandbox profile/hash, catalog tools, legacy и effective `risk/policy`, `riskTier`, `requiredApprovals`, policy version/hash/rule/reason, состояние синхронизации и policy snapshot. Module bytes, credentials и полные call arguments/results не возвращаются.
 
 ### Создать сервер
 
@@ -608,6 +608,64 @@ Content-Type: application/json
 
 Создание сразу пробует `tools/list`. Ошибка подключения сохраняется в `lastError`, но server definition остаётся для исправления endpoint/credentials.
 
+### Создать isolated tool
+
+WASI profile (`admin`) загружает один bounded module и одну MCP schema. Для update существующего profile `moduleBase64` можно опустить:
+
+```json
+{
+  "name": "Локальный summarizer",
+  "namespace": "local_wasi",
+  "transport": "wasi",
+  "credentialId": null,
+  "enabled": true,
+  "trustAnnotations": true,
+  "defaultPolicy": "deny",
+  "sandbox": {
+    "moduleBase64": "<base64 WASI Preview 1 module, max 512 KiB>",
+    "tool": {
+      "name": "summarize",
+      "description": "Summarize bounded JSON input",
+      "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] },
+      "annotations": { "readOnlyHint": true }
+    },
+    "timeoutSeconds": 20,
+    "cpuMillis": 500,
+    "memoryMiB": 128,
+    "egress": []
+  }
+}
+```
+
+OCI profile требует полный digest, exec-array и, при необходимости, exact public IP/TCP port allowlist:
+
+```json
+{
+  "name": "Изолированный renderer",
+  "namespace": "renderer",
+  "transport": "container",
+  "credentialId": "mcp-scoped-credential-uuid",
+  "enabled": true,
+  "trustAnnotations": true,
+  "defaultPolicy": "approval",
+  "sandbox": {
+    "image": "registry.example.com/tools/renderer@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "command": ["/opt/renderer", "run"],
+    "tool": {
+      "name": "render",
+      "inputSchema": { "type": "object", "properties": {} },
+      "annotations": { "destructiveHint": true }
+    },
+    "timeoutSeconds": 60,
+    "cpuMillis": 1000,
+    "memoryMiB": 256,
+    "egress": [{ "ip": "93.184.216.34", "port": 443 }]
+  }
+}
+```
+
+Isolated tool с credential принимает только `scope.kind=mcp`; namespace/tool/risk/expiry проверяются непосредственно перед Job. OCI execution возвращает fail-closed ошибку, пока оператор не подтвердил enforcement CNI через `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=true`. Полный runtime contract: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
 ### Изменить, удалить и синхронизировать
 
 ```http
@@ -616,7 +674,7 @@ DELETE /api/v1/mcp/servers/:serverId
 POST   /api/v1/mcp/servers/:serverId/sync
 ```
 
-Изменение namespace, endpoint или credentials очищает старый каталог. Сервер с `waiting_approval/executing` call удалить нельзя.
+Изменение namespace, endpoint или credentials очищает старый HTTP-каталог. Для isolated transport catalog строится из нормализованного admin-managed profile; изменение profile обновляет `profileSha256`. Создание, изменение и удаление isolated server требует роль `admin`; сервер с `waiting_approval/executing` call удалить нельзя.
 
 ### Tool policy
 
@@ -680,7 +738,7 @@ POST /api/v1/leases/:leaseId/mcp/tool-calls/:callId/cancel
 
 Атомарно переводит ещё ожидающий approval вызов в `expired`, когда worker прекращает его ждать. Уже выполняющийся вызов не прерывается: API возвращает `executing`, а worker продолжает ждать в отдельном bounded execution window.
 
-Полный контракт и policy model: [MCP gateway и risk policy](./mcp-gateway.md).
+Полный контракт и policy model: [MCP gateway и risk policy](./mcp-gateway.md) и [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
 
 ## A2A interoperability
 

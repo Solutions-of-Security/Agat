@@ -14,7 +14,9 @@ const MANAGED_LABEL = "agat.local/managed";
 const POOL_LABEL = "agat.local/pool-id";
 const ANNOTATION_PREFIX = "agat.local/";
 const SERVICE_ACCOUNT_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
-const MAX_KUBERNETES_RESPONSE_BYTES = 2_000_000;
+// The sandbox log endpoint may legitimately return the configured MCP maximum
+// (4 MiB) plus one byte used to detect overflow.
+const MAX_KUBERNETES_RESPONSE_BYTES = 4_300_000;
 const MAX_MODEL_RESPONSE_BYTES = 1_000_000;
 
 type JsonObject = Record<string, unknown>;
@@ -359,6 +361,10 @@ export class InClusterKubernetesTransport implements KubernetesTransport {
             try {
               parsed = JSON.parse(raw);
             } catch {
+              if (/\/log(?:\?|$)/.test(requestPath)) {
+                reject(new WorkerLauncherError(502, "Sandbox tool должен вывести ровно одно JSON-значение"));
+                return;
+              }
               parsed = { message: raw };
             }
           }

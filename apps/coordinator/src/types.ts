@@ -634,10 +634,54 @@ export type McpToolCallStatus =
   | "rejected"
   | "expired";
 
+export type McpTransport = "http" | "wasi" | "container";
+
+export interface McpSandboxEgressRule {
+  ip: string;
+  port: number;
+}
+
+export interface McpIsolatedToolDefinition {
+  name: string;
+  title?: string | null;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown> | null;
+  annotations?: Record<string, unknown> | null;
+}
+
+export interface McpSandboxProfileInput {
+  tool: McpIsolatedToolDefinition;
+  moduleBase64?: string | null;
+  image?: string | null;
+  command?: string[];
+  timeoutSeconds?: number;
+  cpuMillis?: number;
+  memoryMiB?: number;
+  egress?: McpSandboxEgressRule[];
+}
+
+export interface McpSandboxProfile {
+  tool: McpIsolatedToolDefinition;
+  moduleBase64: string | null;
+  moduleSha256: string | null;
+  image: string | null;
+  command: string[];
+  timeoutSeconds: number;
+  cpuMillis: number;
+  memoryMiB: number;
+  egress: McpSandboxEgressRule[];
+  profileSha256: string;
+}
+
+export interface McpSandboxSummary extends Omit<McpSandboxProfile, "moduleBase64"> {}
+
 export interface CreateMcpServerInput {
   name: string;
   namespace: string;
-  endpoint: string;
+  transport?: McpTransport;
+  endpoint?: string;
+  sandbox?: McpSandboxProfileInput | null;
   credentialId?: string | null;
   enabled?: boolean;
   trustAnnotations?: boolean;

@@ -212,13 +212,22 @@ Project-scoped adapter подключает внешние agent platforms бе�
 
 Подробности: [A2A interoperability 1.4](./a2a-adapter.md). Источник контракта: [официальная спецификация A2A](https://a2a-protocol.org/latest/specification/).
 
-## Следующий релиз
+## Реализовано в 1.5
 
 ### Изолированное выполнение tools
 
-WASM/WASI для узких tools, rootless container или microVM для code execution, read-only filesystem по умолчанию, сетевой egress allowlist и ephemeral credentials от secret broker.
+- один policy boundary для HTTP, WASI и digest-pinned OCI MCP tools;
+- bounded WASI Preview 1 module под wasmtime-py 48.0.0 без preopened filesystem/network capabilities и с fuel metering;
+- одноразовый Kubernetes Job с non-root UID, read-only root, RuntimeDefault seccomp, drop ALL, resource/deadline limits и `backoffLimit=0`;
+- default-deny `NetworkPolicy` и не более 16 exact public-IP/TCP rules; OCI fail-closed без подтверждённого enforcing CNI;
+- optional operator-managed gVisor/Kata RuntimeClass вместо ложного обещания встроенной microVM;
+- ephemeral immutable Secret broker для arguments/module/scoped credential; при emergency deny egress policy снимается только после подтверждённой остановки Pod;
+- admin-only executable profile, encrypted module/profile, redacted API summary и profile hash в SQLite audit/OTel;
+- responsive WASI/OCI editor и SQLite migration v18.
 
-## После стабилизации
+Подробности: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
+## Следующий релиз
 
 ### Native edge worker
 
@@ -228,6 +237,8 @@ WASM/WASI для узких tools, rootless container или microVM для code
 - remote wipe node credentials.
 
 Web/PWA остаётся control surface и не обещает надёжный background inference там, где ОС его запрещает.
+
+## После стабилизации
 
 ### Fleet и HA
 
@@ -252,6 +263,6 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.2 | Расширение process builder | Fork/join, triggers, subprocess, diff/replay, BPMN и compensation поверх durable runtime |
 | P1 | Готово в 1.3 | LangGraph specialist teams | Supervisor/handoff внутри bounded agent stage без переноса durable orchestration |
 | P2 | Готово в 1.4 | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и bounded files поверх существующей очереди |
-| P1 | Следующий шаг | Изолированное выполнение tools | Сужает blast radius code/tool execution через WASM/rootless/microVM и egress policy |
-| P2 | Запланировано | Native mobile worker | Дороже PWA и полезен только для узких edge-сценариев |
+| P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
+| P2 | Следующий шаг | Native mobile worker | Дороже PWA и полезен только для узких edge-сценариев |
 | P3 | Запланировано | HA control plane | После подтверждения нагрузки и multi-team требований |

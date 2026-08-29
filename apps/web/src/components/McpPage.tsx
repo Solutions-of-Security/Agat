@@ -16,6 +16,7 @@ import { Icon } from "./Icon";
 const emptyServer: SaveMcpServerRequest = {
   name: "",
   namespace: "",
+  transport: "http",
   endpoint: "https://",
   credentialId: null,
   enabled: true,
@@ -24,6 +25,7 @@ const emptyServer: SaveMcpServerRequest = {
   defaultPolicy: "deny",
   catalogTtlSeconds: 300,
 };
+const MAX_WASM_UPLOAD_BYTES = 512 * 1024;
 
 const riskCopy = {
   read: "Чтение",
@@ -51,7 +53,9 @@ function serverForm(server: McpServer | null): SaveMcpServerRequest {
   return server ? {
     name: server.name,
     namespace: server.namespace,
-    endpoint: server.endpoint,
+    transport: server.transport,
+    endpoint: server.transport === "http" ? server.endpoint : "",
+    sandbox: server.sandbox ? { ...server.sandbox } : undefined,
     credentialId: server.credentialId,
     enabled: server.enabled,
     trustAnnotations: server.trustAnnotations,
@@ -59,6 +63,42 @@ function serverForm(server: McpServer | null): SaveMcpServerRequest {
     defaultPolicy: server.defaultPolicy,
     catalogTtlSeconds: server.catalogTtlSeconds,
   } : emptyServer;
+}
+
+function isolatedRisk(server: SaveMcpServerRequest): keyof typeof riskCopy {
+  const annotations = server.sandbox?.tool.annotations;
+  if (annotations?.destructiveHint === true) return "destructive";
+  if (annotations?.readOnlyHint === true) return "read";
+  if (annotations?.idempotentHint === true) return "write";
+  return "unknown";
+}
+
+function riskAnnotations(
+  risk: keyof typeof riskCopy,
+  current: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const next = { ...(current ?? {}) };
+  delete next.destructiveHint;
+  delete next.readOnlyHint;
+  delete next.idempotentHint;
+  if (risk === "destructive") next.destructiveHint = true;
+  if (risk === "read") next.readOnlyHint = true;
+  if (risk === "write") next.idempotentHint = true;
+  return next;
+}
+
+function fileBase64(file: File): Promise<string> {
+  if (file.size < 8 || file.size > MAX_WASM_UPLOAD_BYTES) {
+    return Promise.reject(new Error("WASI module должен иметь размер от 8 байт до 512 KiB"));
+  }
+  return file.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32_768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+    }
+    return btoa(binary);
+  });
 }
 
 function displayEndpoint(value: string): string {
@@ -86,19 +126,31 @@ interface McpServerDialogProps {
   credentials: CredentialSummary[];
   busy: boolean;
   error: string | null;
+  canManageSandbox: boolean;
   onClose: () => void;
   onSubmit: (payload: SaveMcpServerRequest) => void;
 }
 
-function McpServerDialog({ open, server, credentials, busy, error, onClose, onSubmit }: McpServerDialogProps) {
+function McpServerDialog({ open, server, credentials, busy, error, canManageSandbox, onClose, onSubmit }: McpServerDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<SaveMcpServerRequest>(emptyServer);
+  const [schemaText, setSchemaText] = useState('{"type":"object","properties":{}}');
+  const [commandText, setCommandText] = useState('["/opt/tool","run"]');
+  const [egressText, setEgressText] = useState("[]");
+  const [moduleName, setModuleName] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) {
-      setForm(serverForm(server));
+      const next = serverForm(server);
+      setForm(next);
+      setSchemaText(JSON.stringify(next.sandbox?.tool.inputSchema ?? { type: "object", properties: {} }, null, 2));
+      setCommandText(JSON.stringify(next.sandbox?.command ?? ["/opt/tool", "run"], null, 2));
+      setEgressText(JSON.stringify(next.sandbox?.egress ?? [], null, 2));
+      setModuleName(next.sandbox?.moduleSha256 ? `Сохранён · ${next.sandbox.moduleSha256.slice(0, 16)}` : "");
+      setValidationError(null);
       dialog.showModal();
     }
     if (!open && dialog.open) dialog.close();
@@ -106,12 +158,67 @@ function McpServerDialog({ open, server, credentials, busy, error, onClose, onSu
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit({
-      ...form,
-      name: form.name.trim(),
-      namespace: form.namespace.trim().toLowerCase(),
-      endpoint: form.endpoint.trim(),
-    });
+    try {
+      const payload: SaveMcpServerRequest = {
+        ...form,
+        name: form.name.trim(),
+        namespace: form.namespace.trim().toLowerCase(),
+        endpoint: form.transport === "http" ? form.endpoint?.trim() : undefined,
+      };
+      if (form.transport !== "http") {
+        const inputSchema = JSON.parse(schemaText) as unknown;
+        const command = form.transport === "container" ? JSON.parse(commandText) as unknown : [];
+        const egress = form.transport === "container" ? JSON.parse(egressText) as unknown : [];
+        if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema)) throw new Error("Input schema должна быть JSON-объектом");
+        if (!Array.isArray(command) || !command.every((part) => typeof part === "string") || !Array.isArray(egress)) {
+          throw new Error("Command должен быть массивом строк, egress — JSON-массивом");
+        }
+        payload.sandbox = {
+          ...form.sandbox!,
+          tool: { ...form.sandbox!.tool, inputSchema: inputSchema as Record<string, unknown> },
+          command: command.map(String),
+          egress: egress as Array<{ ip: string; port: number }>,
+        };
+      }
+      setValidationError(null);
+      onSubmit(payload);
+    } catch (submitError) {
+      setValidationError(submitError instanceof Error ? submitError.message : "Некорректная sandbox-конфигурация");
+    }
+  }
+
+  function selectTransport(transport: SaveMcpServerRequest["transport"]) {
+    setForm((current) => ({
+      ...current,
+      transport,
+      endpoint: transport === "http" ? current.endpoint || "https://" : "",
+      trustAnnotations: transport === "http" ? current.trustAnnotations : true,
+      allowInsecureHttp: transport === "http" ? current.allowInsecureHttp : false,
+      sandbox: transport === "http" ? undefined : current.sandbox ?? {
+        tool: {
+          name: "",
+          description: "",
+          inputSchema: { type: "object", properties: {} },
+          annotations: {},
+        },
+        command: transport === "container" ? ["/opt/tool", "run"] : [],
+        timeoutSeconds: 30,
+        cpuMillis: 500,
+        memoryMiB: 128,
+        egress: [],
+      },
+    }));
+  }
+
+  function updateSandbox(patch: Partial<NonNullable<SaveMcpServerRequest["sandbox"]>>) {
+    setForm((current) => ({ ...current, sandbox: { ...current.sandbox!, ...patch } }));
+  }
+
+  function updateSandboxTool(patch: Partial<NonNullable<SaveMcpServerRequest["sandbox"]>["tool"]>) {
+    setForm((current) => ({
+      ...current,
+      sandbox: { ...current.sandbox!, tool: { ...current.sandbox!.tool, ...patch } },
+    }));
   }
 
   return (
@@ -120,7 +227,7 @@ function McpServerDialog({ open, server, credentials, busy, error, onClose, onSu
         <div className="dialog-head">
           <div>
             <h2>{server ? "Настройка MCP-сервера" : "Новый MCP-сервер"}</h2>
-            <p>Streamable HTTP · протокол 2026-07-28 · policy закрыта по умолчанию</p>
+            <p>Streamable HTTP, WASI или digest-pinned OCI · единый policy boundary</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть"><Icon name="close" /></button>
         </div>
@@ -136,15 +243,51 @@ function McpServerDialog({ open, server, credentials, busy, error, onClose, onSu
           </label>
         </div>
         <label className="field">
-          <span>Streamable HTTP endpoint</span>
-          <input required type="url" maxLength={2_000} value={form.endpoint} placeholder="https://mcp.example.com/mcp" onChange={(event) => setForm((current) => ({ ...current, endpoint: event.target.value }))} />
+          <span>Transport</span>
+          <select value={form.transport} disabled={Boolean(server && server.transport !== "http" && !canManageSandbox)} onChange={(event) => selectTransport(event.target.value as SaveMcpServerRequest["transport"])}>
+            <option value="http">Streamable HTTP</option>
+            {canManageSandbox ? <option value="wasi">WASM / WASI Preview 1</option> : null}
+            {canManageSandbox ? <option value="container">OCI container by digest</option> : null}
+          </select>
+          <small className="field-hint">WASI и OCI profiles доступны только admin и всегда проходят MCP approvals.</small>
         </label>
+        {form.transport === "http" ? (
+          <label className="field">
+            <span>Streamable HTTP endpoint</span>
+            <input required type="url" maxLength={2_000} value={form.endpoint ?? ""} placeholder="https://mcp.example.com/mcp" onChange={(event) => setForm((current) => ({ ...current, endpoint: event.target.value }))} />
+          </label>
+        ) : (
+          <section className="mcp-sandbox-form" aria-label="Профиль изолированного tool">
+            <div className="mcp-dialog__grid">
+              <label className="field"><span>Tool name</span><input required maxLength={128} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" value={form.sandbox?.tool.name ?? ""} placeholder="render_report" onChange={(event) => updateSandboxTool({ name: event.target.value })} /></label>
+              <label className="field"><span>Risk annotation</span><select value={isolatedRisk(form)} onChange={(event) => updateSandboxTool({ annotations: riskAnnotations(event.target.value as keyof typeof riskCopy, form.sandbox?.tool.annotations) })}><option value="read">Read only</option><option value="write">Write / idempotent</option><option value="destructive">Destructive · four-eyes</option><option value="unknown">Unknown</option></select></label>
+            </div>
+            <label className="field"><span>Описание</span><input maxLength={8_000} value={form.sandbox?.tool.description ?? ""} onChange={(event) => updateSandboxTool({ description: event.target.value })} /></label>
+            <label className="field"><span>Input schema · JSON</span><textarea className="mcp-sandbox-form__json" spellCheck={false} value={schemaText} onChange={(event) => setSchemaText(event.target.value)} /></label>
+            {form.transport === "wasi" ? (
+              <label className="field"><span>WASI module</span><input required={!server?.sandbox?.moduleSha256} type="file" accept=".wasm,application/wasm" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setValidationError(null); void fileBase64(file).then((moduleBase64) => { updateSandbox({ moduleBase64 }); setModuleName(file.name); }).catch((uploadError: unknown) => setValidationError(uploadError instanceof Error ? uploadError.message : "Не удалось прочитать WASI module")); }} /><small className="field-hint">{moduleName || "До 512 KiB; filesystem и network capabilities не выдаются."}</small></label>
+            ) : (
+              <>
+                <label className="field"><span>OCI image digest</span><input required maxLength={512} value={form.sandbox?.image ?? ""} placeholder={`registry.example/tool@sha256:${"a".repeat(64)}`} onChange={(event) => updateSandbox({ image: event.target.value })} /></label>
+                <div className="mcp-dialog__grid">
+                  <label className="field"><span>Exec command · JSON array</span><textarea className="mcp-sandbox-form__json" spellCheck={false} value={commandText} onChange={(event) => setCommandText(event.target.value)} /></label>
+                  <label className="field"><span>Egress · exact IP/port JSON</span><textarea className="mcp-sandbox-form__json" spellCheck={false} value={egressText} onChange={(event) => setEgressText(event.target.value)} /></label>
+                </div>
+              </>
+            )}
+            <div className="mcp-dialog__grid mcp-sandbox-form__limits">
+              <label className="field"><span>Timeout, сек.</span><input type="number" min={1} max={120} value={form.sandbox?.timeoutSeconds ?? 30} onChange={(event) => updateSandbox({ timeoutSeconds: Number(event.target.value) })} /></label>
+              <label className="field"><span>CPU, millicores</span><input type="number" min={25} max={4_000} value={form.sandbox?.cpuMillis ?? 500} onChange={(event) => updateSandbox({ cpuMillis: Number(event.target.value) })} /></label>
+              <label className="field"><span>Memory, MiB</span><input type="number" min={32} max={2_048} value={form.sandbox?.memoryMiB ?? 128} onChange={(event) => updateSandbox({ memoryMiB: Number(event.target.value) })} /></label>
+            </div>
+          </section>
+        )}
         <div className="mcp-dialog__grid">
           <label className="field">
             <span>Credentials</span>
             <select value={form.credentialId ?? ""} onChange={(event) => setForm((current) => ({ ...current, credentialId: event.target.value || null }))}>
               <option value="">Без credentials</option>
-              {credentials.filter((credential) => credential.scope.kind === "project" || credential.scope.serverNamespaces.includes(form.namespace)).map((credential) => <option value={credential.id} key={credential.id}>{credential.name} · {credential.type} · {credential.scope.kind}</option>)}
+              {credentials.filter((credential) => (form.transport === "http" || credential.scope.kind === "mcp") && (credential.scope.kind === "project" || credential.scope.serverNamespaces.includes(form.namespace))).map((credential) => <option value={credential.id} key={credential.id}>{credential.name} · {credential.type} · {credential.scope.kind}</option>)}
             </select>
           </label>
           <label className="field">
@@ -156,17 +299,17 @@ function McpServerDialog({ open, server, credentials, busy, error, onClose, onSu
             </select>
           </label>
         </div>
-        <label className="field">
+        {form.transport === "http" ? <label className="field">
           <span>TTL каталога, секунд</span>
           <input type="number" min={30} max={86_400} value={form.catalogTtlSeconds} onChange={(event) => setForm((current) => ({ ...current, catalogTtlSeconds: Number(event.target.value) }))} />
-        </label>
+        </label> : null}
         <div className="mcp-dialog__checks">
           <label><input type="checkbox" checked={form.enabled} onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))} /><span><strong>Сервер включён</strong><small>Каталог участвует в lease</small></span></label>
-          <label><input type="checkbox" checked={form.trustAnnotations} onChange={(event) => setForm((current) => ({ ...current, trustAnnotations: event.target.checked }))} /><span><strong>Доверять annotations</strong><small>Разрешает risk-классификацию сервера</small></span></label>
-          <label><input type="checkbox" checked={form.allowInsecureHttp} onChange={(event) => setForm((current) => ({ ...current, allowInsecureHttp: event.target.checked }))} /><span><strong>Разрешить HTTP</strong><small>Только для контролируемой локальной сети</small></span></label>
+          <label><input type="checkbox" checked={form.trustAnnotations} disabled={form.transport !== "http"} onChange={(event) => setForm((current) => ({ ...current, trustAnnotations: event.target.checked }))} /><span><strong>Доверять annotations</strong><small>{form.transport === "http" ? "Разрешает risk-классификацию сервера" : "Isolated manifest утверждает admin"}</small></span></label>
+          {form.transport === "http" ? <label><input type="checkbox" checked={form.allowInsecureHttp} onChange={(event) => setForm((current) => ({ ...current, allowInsecureHttp: event.target.checked }))} /><span><strong>Разрешить HTTP</strong><small>Только для контролируемой локальной сети</small></span></label> : <label><input type="checkbox" checked readOnly /><span><strong>Read-only root</strong><small>Non-root, seccomp и drop ALL capabilities</small></span></label>}
         </div>
-        {form.trustAnnotations ? <p className="mcp-trust-warning"><Icon name="warning" size={17} /> Аннотации задаёт MCP-сервер. Включайте доверие только после проверки владельца и транспорта.</p> : null}
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {form.trustAnnotations ? <p className="mcp-trust-warning"><Icon name="warning" size={17} /> {form.transport === "http" ? "Аннотации задаёт MCP-сервер. Включайте доверие только после проверки владельца и транспорта." : "Risk annotation входит в исполняемый profile и фиксируется его SHA-256; изменение требует нового approval."}</p> : null}
+        {validationError || error ? <p className="form-error" role="alert">{validationError || error}</p> : null}
         <div className="dialog-actions">
           <button className="button button--secondary" type="button" onClick={onClose}>Отмена</button>
           <button className="button button--primary" type="submit" disabled={busy}><Icon name={server ? "check" : "plus"} size={17} />{busy ? "Сохраняем…" : "Сохранить"}</button>
@@ -196,6 +339,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
 
   const canManagePolicy = roles.includes("admin") || roles.includes("designer");
   const canManageMcp = canManagePolicy;
+  const canManageSandbox = roles.includes("admin");
   const canEmergencyDeny = roles.includes("admin");
 
   useEffect(() => {
@@ -307,6 +451,8 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
       </section>
 
       {!mcp.enabled ? <p className="mcp-banner mcp-banner--error"><Icon name="warning" size={18} />Gateway отключён через AGAT_MCP_ENABLED.</p> : null}
+      {mcp.sandbox && !mcp.sandbox.available ? <p className="mcp-banner"><Icon name="shield" size={18} />Sandbox недоступен: {mcp.sandbox.reason}. HTTP MCP продолжает работать.</p> : null}
+      {mcp.sandbox?.available && !mcp.sandbox.networkPolicyEnforced ? <p className="mcp-banner"><Icon name="warning" size={18} />WASI доступен; OCI tools fail-closed до подтверждения enforcement NetworkPolicy.</p> : null}
       {mcp.policy.emergencyDeny.enabled ? <p className="mcp-banner mcp-banner--error"><Icon name="warning" size={18} />Emergency deny включён: {mcp.policy.emergencyDeny.reason}. Новые вызовы запрещены; выполняются: {mcp.policy.emergencyDeny.executingCalls}.</p> : null}
       {error && !dialogOpen ? <button className="connection-toast mcp-page__error" type="button" onClick={() => setError(null)}>{error}</button> : null}
 
@@ -337,7 +483,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
         <section className="large-empty-state large-empty-state--compact">
           <Icon name="plug" size={32} />
           <h2>Подключённых MCP-серверов пока нет</h2>
-          <p>Добавьте Streamable HTTP endpoint. Новый сервер создаётся с deny policy; каталог не станет доступен агентам до явного решения.</p>
+          <p>Добавьте Streamable HTTP endpoint или admin-managed isolated tool. Новый источник создаётся с deny policy.</p>
           {canManageMcp ? <button className="button button--primary" type="button" onClick={() => setDialogOpen(true)}><Icon name="plus" size={16} />Добавить сервер</button> : null}
         </section>
       ) : (
@@ -345,23 +491,23 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
           {mcp.servers.map((server) => (
             <article className={`mcp-server${server.enabled ? "" : " is-disabled"}`} key={server.id}>
               <header className="mcp-server__head">
-                <span className="mcp-server__icon"><Icon name="plug" /></span>
+                <span className="mcp-server__icon"><Icon name={server.transport === "http" ? "plug" : "shield"} /></span>
                 <div>
                   <h2>{server.name}<code>{server.namespace}</code></h2>
-                  <p title={server.endpoint}>{displayEndpoint(server.endpoint)}</p>
+                  <p title={server.endpoint}>{server.transport === "http" ? displayEndpoint(server.endpoint) : `${server.transport.toUpperCase()} · ${server.sandbox?.profileSha256?.slice(0, 20) ?? "profile"}`}</p>
                 </div>
                 <span className={`mcp-health ${server.lastError ? "mcp-health--error" : server.lastSyncAt ? "mcp-health--ok" : ""}`}><i />{!server.enabled ? "выключен" : server.lastError ? "ошибка" : server.lastSyncAt ? "готов" : "не синхронизирован"}</span>
                 <div className="mcp-server__actions">
-                  <button className="button button--secondary" type="button" disabled={!canManageMcp || busyKey !== null || !server.enabled} onClick={() => void run(`sync:${server.id}`, () => api.syncMcpServer(server.id)).catch(() => undefined)}><Icon name="repeat" size={14} />Синхронизировать</button>
-                  <button className="icon-button" type="button" aria-label="Настроить сервер" disabled={!canManageMcp} onClick={() => { setEditing(server); setError(null); setDialogOpen(true); }}><Icon name="dots" /></button>
-                  <button className="icon-button icon-button--danger" type="button" aria-label="Удалить сервер" disabled={!canManageMcp || busyKey !== null} onClick={() => void remove(server)}><Icon name="trash" size={17} /></button>
+                  {server.transport === "http" ? <button className="button button--secondary" type="button" disabled={!canManageMcp || busyKey !== null || !server.enabled} onClick={() => void run(`sync:${server.id}`, () => api.syncMcpServer(server.id)).catch(() => undefined)}><Icon name="repeat" size={14} />Синхронизировать</button> : null}
+                  <button className="icon-button" type="button" aria-label="Настроить сервер" disabled={!canManageMcp || (server.transport !== "http" && !canManageSandbox)} onClick={() => { setEditing(server); setError(null); setDialogOpen(true); }}><Icon name="dots" /></button>
+                  <button className="icon-button icon-button--danger" type="button" aria-label="Удалить сервер" disabled={!canManageMcp || (server.transport !== "http" && !canManageSandbox) || busyKey !== null} onClick={() => void remove(server)}><Icon name="trash" size={17} /></button>
                 </div>
               </header>
               <dl className="mcp-server__meta">
-                <div><dt>Протокол</dt><dd>{server.protocolVersion}</dd></div>
+                <div><dt>Transport</dt><dd>{server.transport === "http" ? server.protocolVersion : server.transport.toUpperCase()}</dd></div>
                 <div><dt>Default policy</dt><dd>{server.defaultPolicy}</dd></div>
                 <div><dt>Annotations</dt><dd>{server.trustAnnotations ? "trusted" : "untrusted"}</dd></div>
-                <div><dt>Каталог</dt><dd>{shortDate(server.lastSyncAt)}</dd></div>
+                <div><dt>{server.transport === "http" ? "Каталог" : "Profile SHA-256"}</dt><dd>{server.transport === "http" ? shortDate(server.lastSyncAt) : server.sandbox?.profileSha256?.slice(0, 16)}</dd></div>
               </dl>
               {server.lastError ? <p className="mcp-server__error"><Icon name="warning" size={15} />{server.lastError}</p> : null}
               <div className="mcp-tools">
@@ -389,7 +535,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
             {mcp.recentCalls.slice(0, 30).map((call) => (
               <div className="mcp-call" key={call.callId}>
                 <time>{shortDate(call.createdAt)}</time>
-                <div><code>{call.publicName}</code><small>{call.serverName} · {call.riskTier} · {call.policy} · approvals {call.approvalCount}/{call.requiredApprovals}</small></div>
+                <div><code>{call.publicName}</code><small>{call.serverName} · {call.transport ?? "http"}{call.sandboxProfileSha256 ? ` · profile ${call.sandboxProfileSha256.slice(0, 16)}` : ""} · {call.riskTier} · {call.policy} · approvals {call.approvalCount}/{call.requiredApprovals}</small></div>
                 <span className={`mcp-call__status mcp-call__status--${call.status}`}>{statusCopy[call.status]}</span>
                 <p>{call.error || JSON.stringify(call.arguments)}</p>
               </div>
@@ -398,7 +544,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
         )}
       </section>
 
-      <McpServerDialog open={dialogOpen} server={editing} credentials={credentials} busy={busyKey === "save"} error={dialogOpen ? error : null} onClose={() => { setDialogOpen(false); setEditing(null); setError(null); }} onSubmit={(payload) => void save(payload)} />
+      <McpServerDialog open={dialogOpen} server={editing} credentials={credentials} busy={busyKey === "save"} error={dialogOpen ? error : null} canManageSandbox={canManageSandbox} onClose={() => { setDialogOpen(false); setEditing(null); setError(null); }} onSubmit={(payload) => void save(payload)} />
     </main>
   );
 }

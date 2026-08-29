@@ -15,7 +15,7 @@ import type { NodeTracerProvider, SpanExporter } from "@opentelemetry/sdk-trace-
 const require = createRequire(import.meta.url);
 
 const INSTRUMENTATION_NAME = "io.agat.coordinator";
-const INSTRUMENTATION_VERSION = "1.4.0";
+const INSTRUMENTATION_VERSION = "1.5.0";
 
 export interface TelemetryOptions {
   enabled: boolean;
@@ -65,6 +65,8 @@ export interface McpSpanInput {
   toolName: string;
   callId: string;
   risk: string;
+  transport?: string;
+  sandboxProfileSha256?: string | null;
   riskTier?: string;
   requiredApprovals?: number;
   policyVersion?: number;
@@ -255,6 +257,8 @@ export class CoordinatorTelemetry {
         "agat.mcp.server.name": input.serverName,
         "agat.mcp.call.id": input.callId,
         "agat.mcp.tool.risk": input.risk,
+        "agat.mcp.transport": input.transport ?? "http",
+        "agat.mcp.sandbox.profile_sha256": input.sandboxProfileSha256 ?? "",
         "agat.mcp.risk_tier": input.riskTier ?? "unknown",
         "agat.mcp.required_approvals": input.requiredApprovals ?? 0,
         "agat.mcp.policy.version": input.policyVersion ?? 0,

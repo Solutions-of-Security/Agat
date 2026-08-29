@@ -48,7 +48,7 @@
 - body size ограничен 1 MiB; только authenticated Kong/coordinator routes загрузки knowledge document и embedding batch имеют отдельный лимит 8 MiB при доменном лимите текста 2 млн символов;
 - systemd unit использует `NoNewPrivileges`, `ProtectSystem` и отдельный writable path.
 - локальный worker launcher требует роли `admin` (либо legacy admin token), валидирует модель и лимиты и не принимает произвольный manifest/image/command;
-- launcher service account ограничен namespace Role для Deployments, а создаваемые worker pods не получают Kubernetes token, запускаются non-root и с read-only root filesystem.
+- coordinator service account ограничен namespace Role для worker Deployments и sandbox Jobs/Pods-log/Secrets/NetworkPolicies; создаваемые pods не получают Kubernetes token, запускаются non-root и с read-only root filesystem.
 - Kong — единственный публичный API service: 1 MiB body limit, rate limit, correlation ID; Admin API выключен, `/api/v1/internal` закрыт отдельным маршрутом;
 - Temporal internal tick дополнительно защищён отдельным случайным token и недоступен через Gateway;
 - LangGraph не импортируется в Temporal Workflow и не использует отдельный durable checkpointer, поэтому graph/team state не создаёт ещё один backup/trust boundary;
@@ -80,6 +80,10 @@
 - [ ] Для каждого MCP server проверены владелец, namespace, credentials, catalog и per-tool policy; `trustAnnotations` не включён автоматически.
 - [ ] MCP policy candidate просмотрен через effective diff, опубликован с актуальным `baseSha256`, а critical tools не используют legacy local auth вместо двух OIDC-аккаунтов.
 - [ ] MCP credentials имеют `kind=mcp`, минимальные namespaces/tool patterns/risks, ограниченный upstream IAM, expiry и проверенную rotation procedure.
+- [ ] Isolated profile изменяет только `admin`; WASI module hash или OCI image digest прошёл review и сопоставлен с исходниками/build provenance.
+- [ ] Для OCI установлен enforcing CNI и только после negative egress test задано `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=true`; allowlist содержит exact public IP/port.
+- [ ] Sandbox Pod Security проверена: non-root, read-only root, RuntimeDefault seccomp, drop ALL, no service-account token; optional RuntimeClass действительно установлен и протестирован.
+- [ ] После success/failure/emergency deny не остаются Secrets или Jobs с `sandbox.agat.dev/managed=true`; NetworkPolicy удалена после подтверждённой остановки Pod либо намеренно сохранена fail-closed и поставлена в операторскую очистку.
 - [ ] Дежурная смена умеет включить emergency deny, проверить `executingCalls`, остановить side effect во внешней системе и снять switch только с новой причиной.
 - [ ] Для каждого A2A endpoint проверены владелец внешнего клиента, агент, публичное описание, knowledge collections, approval/limits; token передан через secret channel и имеет rotation procedure.
 - [ ] `AGAT_A2A_PUBLIC_BASE_URL` совпадает с реальным HTTPS origin; Agent Card URL не публикуется как доказательство авторизации.
@@ -88,20 +92,22 @@
 - [ ] Дежурная смена умеет независимо отключить `AGAT_A2A_OUTBOUND_ENABLED` либо весь inbound/push adapter через `AGAT_A2A_ENABLED`.
 - [ ] Если оператор вручную включил LangSmith/сторонний tracing, настроены egress, redaction, retention и договорные основания передачи данных.
 - [ ] Backup SQLite регулярно проверяется восстановлением.
-- [ ] `agat-coordinator` RoleBinding не расширен за пределы локального namespace и Deployments.
+- [ ] `agat-coordinator` RoleBinding не расширен за пределы локального namespace и необходимых Deployments/Jobs/Pods-log/Secrets/NetworkPolicies.
 - [ ] `AGAT_CREDENTIALS_KEY`, пароль Keycloak PostgreSQL и imported user passwords не «ротируются» заменой Secret без миграции данных.
 
-## Kubernetes worker launcher
+## Kubernetes worker launcher и tool sandbox
 
-В локальном Docker Desktop контуре coordinator получает service-account token только для управления worker Deployments. Kubernetes RBAC не умеет ограничить `create` по label или префиксу имени, поэтому Role технически действует на Deployments всего namespace `agat`. Прикладной слой управляет только объектами с `agat.local/managed=true` и не предоставляет пользователю raw Kubernetes API. Не переносите этот RoleBinding в общий production namespace; выделите отдельный namespace или отдельный launcher service с admission policy.
+В локальном Docker Desktop контуре coordinator получает service-account token для worker Deployments и одноразовых sandbox Jobs/Pods-log/Secrets/NetworkPolicies. Kubernetes RBAC не умеет ограничить `create` по label или префиксу имени, поэтому Role технически действует на эти resource types всего namespace `agat`. Прикладной слой управляет только объектами с `agat.local/managed=true` или `sandbox.agat.dev/managed=true` и не предоставляет пользователю raw Kubernetes API. Не переносите этот RoleBinding в общий production namespace; выделите отдельный namespace, admission policy или отдельный executor service.
 
 Docker socket намеренно не монтируется. Docker Compose и обычный host-запуск coordinator не создают процессы по запросу браузера: без локального Kubernetes launcher возвращает явный статус `available: false`.
+
+WASI runner не preopen-ит directories и не предоставляет network imports. OCI разрешён только по image digest и fail-closed без подтверждённого NetworkPolicy enforcement. Ephemeral Secret ограничивает lifetime, но module/container видит переданный ему scoped credential по назначению и потому остаётся недоверенным кодом. Для production предпочтителен отдельный namespace/node pool и gVisor/Kata RuntimeClass. Полная граница: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
 
 ## Dashboard auth и RBAC
 
 При `AGAT_OIDC_ENABLED=true` все dashboard API, включая overview, SSE, trace и artifact download, требуют Bearer access token. Browser adapter использует Authorization Code flow с PKCE, обновляет token до истечения и не кладёт access token в URL. CSP разрешает `connect-src` только same-origin и точный origin OIDC issuer.
 
-`admin` управляет projects/scheduler/local workers; `designer` — agents, credentials и definitions; `operator` — launches, cancel и approvals; `viewer/auditor` — read-only. Точная матрица приведена в [identity и gateway](./identity-and-gateway.md).
+`admin` управляет projects/scheduler/local workers и исполняемыми WASI/OCI profiles; `designer` — agents, credentials, definitions, HTTP MCP и policy-as-code; `operator` — launches, cancel и approvals; `viewer/auditor` — read-only. Точная матрица приведена в [identity и gateway](./identity-and-gateway.md).
 
 При `AGAT_OIDC_ENABLED=false` сохраняется legacy local mode: изменяющие/чувствительные запросы используют `X-Agat-Admin-Token`. Этот режим предназначен для loopback/разработки и не заменяет SSO при сетевой публикации.
 

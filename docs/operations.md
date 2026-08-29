@@ -11,6 +11,22 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
+## Rollout 1.5 isolated MCP tools
+
+Coordinator мигрирует SQLite schema `17 → 18`: `mcp_servers` получает transport и encrypted/redacted sandbox profile, `mcp_tool_calls` — transport и immutable profile hash. Перед rollout сделайте согласованный backup SQLite/WAL, Artifact Store и `AGAT_CREDENTIALS_KEY`; старый binary после записи schema v18 не является поддерживаемым rollback-путём без восстановления backup.
+
+Обновите coordinator/dashboard до `1.5.0`, примените namespace Role и соберите `agat-local/sandbox-wasi:1.5.0`. Docker Compose оставляет `AGAT_SANDBOX_ENABLED=false`. Kubernetes profile включает WASI, но намеренно держит `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=false`: native OCI tools не запускаются, пока оператор не установит enforcing CNI и не подтвердит negative egress test. Не выставляйте этот флаг только ради прохождения smoke test.
+
+Первый smoke test выполняйте read-only WASI module без credential, затем с истекающим `kind=mcp` scope. Проверьте two-person destructive approval отдельным test profile, emergency deny во время long-running Job и cleanup:
+
+```bash
+kubectl get jobs,secrets,networkpolicies -n agat -l sandbox.agat.dev/managed=true
+kubectl auth can-i create jobs --as=system:serviceaccount:agat:agat-coordinator -n agat
+node --import tsx --test apps/coordinator/test/mcp.test.ts apps/coordinator/test/sandbox.test.ts
+```
+
+Production OCI profile требует review полного image digest и command, отдельного namespace/node pool по модели угроз и, при необходимости, установленного `AGAT_SANDBOX_RUNTIME_CLASS`. Подробный contract и incident procedure: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
 ## Rollout 1.4 A2A interoperability
 
 Coordinator мигрирует SQLite schema `16 → 17`: добавляет endpoint capabilities/file limits и таблицы `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`. Перед rollout сделайте согласованный backup SQLite/WAL, Artifact Store и `AGAT_CREDENTIALS_KEY`.
@@ -160,7 +176,7 @@ kubectl logs -n agat deployment/agat-keycloak --tail=100
 kubectl logs -n agat deployment/agat-temporal-worker --tail=100
 ```
 
-Для MCP сначала проверьте `lastError` и время catalog sync в разделе **MCP**, затем coordinator log. Worker никогда не соединяется с MCP endpoint напрямую. `waiting_approval` требует решения в карточке запуска; `expired` означает, что lease или approval TTL закончился. Полные arguments/results в logs и overview намеренно отсутствуют — сверяйте `callId`, status, SHA-256 и размер.
+Для MCP сначала проверьте `lastError`, transport/profile hash и время catalog sync в разделе **MCP**, затем coordinator log. Worker никогда не соединяется с MCP endpoint или sandbox Pod напрямую. `waiting_approval` требует решения в карточке запуска; `expired` означает, что lease или approval TTL закончился. Для OCI ошибка про NetworkPolicy означает fail-closed operator gate, а не сбой image. Полные arguments/results в logs и overview намеренно отсутствуют — сверяйте `callId`, status, transport, profile/result SHA-256 и размер.
 
 ## Аварийная блокировка MCP
 

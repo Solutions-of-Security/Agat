@@ -12,15 +12,16 @@
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
 - `agat-worker` — один pod с runtime `single` и `langgraph`, исполняющий lease через локальный OpenAI-compatible model server;
 - управляемые `agat-local-*` Deployments — по одному pod на каждый worker, созданный кнопкой в разделе **Узлы**;
+- одноразовые `agat-tool-*` Jobs для admin-managed WASI tools и, после явного CNI gate, digest-pinned OCI tools;
 - `agat-search` — внутренний SearXNG `ClusterIP` для `web_search`; наружу сервис не публикуется;
 - `agat-data` на 1 GiB, `agat-keycloak-postgres` и `agat-temporal-data` по 2 GiB, `agat-worker-state` на 128 MiB;
 - init/startup/readiness/liveness checks; coordinator и Temporal worker начинают работу только после готовности Temporal namespace;
 - resource requests/limits и урезанные Linux capabilities; worker pods не получают service-account token;
-- namespace-scoped service account coordinator с ограниченным Role для управления локальными worker Deployments.
+- namespace-scoped service account coordinator с Role для worker Deployments и одноразовых sandbox Jobs, Pods/log, Secrets и NetworkPolicies.
 
 Манифесты находятся в `deploy/k8s/docker-desktop`. Secret намеренно не хранится в репозитории: скрипт создаёт его при первом запуске и не ротирует при последующих.
 
-Образы SearXNG и локального Temporal server закреплены версией и multi-arch digest, чтобы повторный запуск не получил непроверенное изменение из плавающего `latest`. Keycloak, PostgreSQL и Kong также используют фиксированные версии.
+Образы SearXNG и локального Temporal server закреплены версией и multi-arch digest, чтобы повторный запуск не получил непроверенное изменение из плавающего `latest`. Keycloak, PostgreSQL и Kong также используют фиксированные версии. Скрипт дополнительно собирает доверенный `agat-local/sandbox-wasi:1.5.0`; загружаемые OCI tools обязаны указывать полный digest.
 
 ## Требования
 

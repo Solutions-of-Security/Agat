@@ -43,6 +43,7 @@ import {
   type ResolvedMcpLeaseTool,
   type StoredMcpCall,
 } from "./mcp.js";
+import { sandboxSummary } from "./sandbox.js";
 import {
   DEFAULT_MCP_POLICY,
   evaluateMcpPolicy,
@@ -139,6 +140,15 @@ import type {
 
 type SqlScalar = string | number | bigint | Uint8Array | null;
 type Row = Record<string, SqlScalar>;
+
+function mcpExecutableProfileMatches(row: Row, resolved: ResolvedMcpLeaseTool): boolean {
+  const storedTransport = typeof row.transport === "string" ? row.transport : "http";
+  const currentTransport = resolved.server.transport ?? "http";
+  if (storedTransport !== currentTransport) return false;
+  if (currentTransport === "http") return true;
+  const storedHash = typeof row.sandbox_profile_sha256 === "string" ? row.sandbox_profile_sha256 : "";
+  return Boolean(storedHash && resolved.server.sandbox?.profileSha256 === storedHash);
+}
 type ActiveMcpPolicy = {
   version: number;
   sha256: string;
@@ -1234,7 +1244,10 @@ export class AgatStore {
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
         namespace TEXT NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'http',
         endpoint TEXT NOT NULL,
+        sandbox_blob TEXT,
+        sandbox_summary_json TEXT,
         credential_id TEXT REFERENCES credentials(id) ON DELETE SET NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
         trust_annotations INTEGER NOT NULL DEFAULT 0,
@@ -1271,6 +1284,8 @@ export class AgatStore {
         client_call_id TEXT NOT NULL,
         server_id TEXT NOT NULL,
         server_name TEXT NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'http',
+        sandbox_profile_sha256 TEXT,
         tool_name TEXT NOT NULL,
         public_name TEXT NOT NULL,
         risk TEXT NOT NULL,
@@ -1845,6 +1860,16 @@ export class AgatStore {
     if (!credentialColumns.some((column) => column.name === "scope_json")) {
       this.db.exec(`ALTER TABLE credentials ADD COLUMN scope_json TEXT NOT NULL DEFAULT '{"kind":"project","serverNamespaces":[],"toolPatterns":[],"risks":["read","write","destructive","unknown"],"allowCatalog":true,"expiresAt":null}';`);
     }
+    const mcpServerColumns = this.db.prepare("PRAGMA table_info(mcp_servers)").all() as Row[];
+    if (!mcpServerColumns.some((column) => column.name === "transport")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN transport TEXT NOT NULL DEFAULT 'http';");
+    }
+    if (!mcpServerColumns.some((column) => column.name === "sandbox_blob")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN sandbox_blob TEXT;");
+    }
+    if (!mcpServerColumns.some((column) => column.name === "sandbox_summary_json")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN sandbox_summary_json TEXT;");
+    }
     const mcpCallColumns = this.db.prepare("PRAGMA table_info(mcp_tool_calls)").all() as Row[];
     if (!mcpCallColumns.some((column) => column.name === "risk_tier")) {
       this.db.exec("ALTER TABLE mcp_tool_calls ADD COLUMN risk_tier TEXT NOT NULL DEFAULT 'high';");
@@ -1872,6 +1897,12 @@ export class AgatStore {
     }
     if (!mcpCallColumns.some((column) => column.name === "preview_diff_json")) {
       this.db.exec("ALTER TABLE mcp_tool_calls ADD COLUMN preview_diff_json TEXT NOT NULL DEFAULT '[]';");
+    }
+    if (!mcpCallColumns.some((column) => column.name === "transport")) {
+      this.db.exec("ALTER TABLE mcp_tool_calls ADD COLUMN transport TEXT NOT NULL DEFAULT 'http';");
+    }
+    if (!mcpCallColumns.some((column) => column.name === "sandbox_profile_sha256")) {
+      this.db.exec("ALTER TABLE mcp_tool_calls ADD COLUMN sandbox_profile_sha256 TEXT;");
     }
     const a2aEndpointColumns = this.db.prepare("PRAGMA table_info(a2a_endpoints)").all() as Row[];
     if (!a2aEndpointColumns.some((column) => column.name === "output_modes_json")) {
@@ -1966,7 +1997,7 @@ export class AgatStore {
       this.db.prepare("UPDATE stages SET process_token_id = ? WHERE run_id = (SELECT run_id FROM process_instances WHERE id = ?) AND process_token_id IS NULL")
         .run(tokenId, String(instance.id));
     }
-    this.db.exec("PRAGMA user_version = 17;");
+    this.db.exec("PRAGMA user_version = 18;");
   }
 
   private seedAgents(): void {
@@ -2449,9 +2480,17 @@ export class AgatStore {
     return credential;
   }
 
-  private assertMcpCredentialBinding(credentialId: string, namespace: string, projectId: string): void {
+  private assertMcpCredentialBinding(
+    credentialId: string,
+    namespace: string,
+    projectId: string,
+    isolated = false,
+  ): void {
     const credential = this.credentialData(credentialId, projectId);
     if (!credential) throw new Error("Credentials MCP-сервера не найдены");
+    if (isolated && credential.scope.kind !== "mcp") {
+      throw new Error("Изолированный MCP tool принимает только credentials со scope kind=mcp");
+    }
     if (credential.scope.kind === "mcp" && !credential.scope.serverNamespaces.includes(namespace)) {
       throw new Error(`Scope credentials не разрешает MCP namespace ${namespace}`);
     }
@@ -2737,7 +2776,11 @@ export class AgatStore {
         id: row.id,
         name: row.name,
         namespace: row.namespace,
+        transport: row.transport,
         endpoint: row.endpoint,
+        sandbox: row.sandbox_summary_json
+          ? parseJson<Record<string, unknown>>(row.sandbox_summary_json, {})
+          : null,
         credentialId: row.credential_id,
         hasCredential: typeof row.credential_id === "string" && Boolean(row.credential_id),
         enabled: Number(row.enabled) === 1,
@@ -2762,7 +2805,8 @@ export class AgatStore {
   listRecentMcpToolCalls(projectId = "default", limit = 100): Array<Record<string, unknown>> {
     const project = normalizeProjectId(projectId);
     return (this.db.prepare(`
-      SELECT id, run_id, stage_id, server_id, server_name, tool_name, public_name,
+      SELECT id, run_id, stage_id, server_id, server_name, transport, sandbox_profile_sha256,
+        tool_name, public_name,
         risk, risk_tier, legacy_policy, policy, required_approvals, policy_version,
         policy_sha256, policy_rule_id, policy_reason, status, arguments_summary_json,
         preview_diff_json, result_sha256, result_bytes,
@@ -2780,6 +2824,8 @@ export class AgatStore {
       stageId: row.stage_id,
       serverId: row.server_id,
       serverName: row.server_name,
+      transport: row.transport,
+      sandboxProfileSha256: row.sandbox_profile_sha256,
       toolName: row.tool_name,
       publicName: row.public_name,
       risk: row.risk,
@@ -2812,29 +2858,42 @@ export class AgatStore {
   createMcpServer(input: CreateMcpServerInput, projectId = "default"): Record<string, unknown> {
     const project = this.requireProject(projectId);
     const normalized = normalizeMcpServerInput(input);
-    if (normalized.credentialId) this.assertMcpCredentialBinding(normalized.credentialId, normalized.namespace, project);
+    if (normalized.credentialId) {
+      this.assertMcpCredentialBinding(normalized.credentialId, normalized.namespace, project, normalized.transport !== "http");
+    }
     const id = randomUUID();
     const timestamp = nowIso();
     try {
       this.db.prepare(`
         INSERT INTO mcp_servers(
-          id, project_id, name, namespace, endpoint, credential_id, enabled,
+          id, project_id, name, namespace, transport, endpoint, sandbox_blob, sandbox_summary_json,
+          credential_id, enabled,
           trust_annotations, allow_insecure_http, protocol_version, default_policy,
-          catalog_ttl_ms, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          catalog_json, catalog_ttl_ms, catalog_scope, catalog_expires_at, last_sync_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         project,
         normalized.name,
         normalized.namespace,
+        normalized.transport,
         normalized.endpoint,
+        normalized.sandbox
+          ? encryptCredential({ payload: JSON.stringify(normalized.sandbox) }, this.credentialsKey)
+          : null,
+        normalized.sandbox ? JSON.stringify(sandboxSummary(normalized.sandbox)) : null,
         normalized.credentialId,
         normalized.enabled ? 1 : 0,
         normalized.trustAnnotations ? 1 : 0,
         normalized.allowInsecureHttp ? 1 : 0,
         MCP_PROTOCOL_VERSION,
         normalized.defaultPolicy,
+        JSON.stringify(normalized.catalog),
         normalized.catalogTtlSeconds * 1_000,
+        "private",
+        normalized.transport === "http" ? null : new Date(Date.now() + 86_400_000).toISOString(),
+        normalized.transport === "http" ? null : timestamp,
         timestamp,
         timestamp,
       );
@@ -2848,6 +2907,8 @@ export class AgatStore {
       projectId: project,
       serverId: id,
       namespace: normalized.namespace,
+      transport: normalized.transport,
+      sandboxProfileSha256: normalized.sandbox?.profileSha256 ?? null,
       defaultPolicy: normalized.defaultPolicy,
     });
     return this.listMcpServers(project).find((server) => server.id === id)!;
@@ -2858,36 +2919,45 @@ export class AgatStore {
     const current = this.getMcpServerConnection(id, project);
     if (!current) return null;
     const normalized = normalizeMcpServerPatch(input, current);
-    if (normalized.credentialId) this.assertMcpCredentialBinding(normalized.credentialId, normalized.namespace, project);
-    const resetCatalog = normalized.namespace !== current.namespace
+    if (normalized.credentialId) {
+      this.assertMcpCredentialBinding(normalized.credentialId, normalized.namespace, project, normalized.transport !== "http");
+    }
+    const resetCatalog = normalized.transport !== current.transport
+      || normalized.namespace !== current.namespace
       || normalized.endpoint !== current.endpoint
       || normalized.credentialId !== current.credentialId;
+    const catalog = normalized.transport === "http"
+      ? resetCatalog ? [] : current.catalog
+      : normalized.catalog;
     const timestamp = nowIso();
     try {
       this.db.prepare(`
         UPDATE mcp_servers SET
-          name = ?, namespace = ?, endpoint = ?, credential_id = ?, enabled = ?,
+          name = ?, namespace = ?, transport = ?, endpoint = ?, sandbox_blob = ?, sandbox_summary_json = ?,
+          credential_id = ?, enabled = ?,
           trust_annotations = ?, allow_insecure_http = ?, default_policy = ?,
-          catalog_ttl_ms = ?, catalog_json = CASE WHEN ? THEN '[]' ELSE catalog_json END,
-          catalog_expires_at = CASE WHEN ? THEN NULL ELSE catalog_expires_at END,
-          last_sync_at = CASE WHEN ? THEN NULL ELSE last_sync_at END,
-          last_error = CASE WHEN ? THEN NULL ELSE last_error END,
+          catalog_ttl_ms = ?, catalog_json = ?, catalog_scope = 'private',
+          catalog_expires_at = ?, last_sync_at = ?, last_error = NULL,
           updated_at = ?
         WHERE id = ? AND project_id = ?
       `).run(
         normalized.name,
         normalized.namespace,
+        normalized.transport,
         normalized.endpoint,
+        normalized.sandbox
+          ? encryptCredential({ payload: JSON.stringify(normalized.sandbox) }, this.credentialsKey)
+          : null,
+        normalized.sandbox ? JSON.stringify(sandboxSummary(normalized.sandbox)) : null,
         normalized.credentialId,
         normalized.enabled ? 1 : 0,
         normalized.trustAnnotations ? 1 : 0,
         normalized.allowInsecureHttp ? 1 : 0,
         normalized.defaultPolicy,
         normalized.catalogTtlSeconds * 1_000,
-        resetCatalog ? 1 : 0,
-        resetCatalog ? 1 : 0,
-        resetCatalog ? 1 : 0,
-        resetCatalog ? 1 : 0,
+        JSON.stringify(catalog),
+        normalized.transport === "http" ? null : new Date(Date.now() + 86_400_000).toISOString(),
+        normalized.transport === "http" ? null : timestamp,
         timestamp,
         id,
         project,
@@ -2901,6 +2971,8 @@ export class AgatStore {
     this.addEvent(null, null, null, "info", "mcp.server.updated", `Обновлён MCP-сервер «${normalized.name}»`, {
       projectId: project,
       serverId: id,
+      transport: normalized.transport,
+      sandboxProfileSha256: normalized.sandbox?.profileSha256 ?? null,
       catalogReset: resetCatalog,
     });
     return this.listMcpServers(project).find((server) => server.id === id) ?? null;
@@ -2953,12 +3025,21 @@ export class AgatStore {
     if (!row) return null;
     const project = String(row.project_id);
     const credentialId = typeof row.credential_id === "string" && row.credential_id ? row.credential_id : null;
+    const transport = String(row.transport ?? "http") as McpServerConnection["transport"];
+    let sandbox: McpServerConnection["sandbox"] = null;
+    if (typeof row.sandbox_blob === "string" && row.sandbox_blob) {
+      const payload = decryptCredential(row.sandbox_blob, this.credentialsKey).payload;
+      if (!payload) throw new Error("Зашифрованный sandbox profile повреждён");
+      sandbox = parseJson<McpServerConnection["sandbox"]>(payload, null);
+    }
     return {
       id: String(row.id),
       projectId: project,
       name: String(row.name),
       namespace: String(row.namespace),
+      transport,
       endpoint: String(row.endpoint),
+      sandbox,
       credentialId,
       credential: credentialId ? this.credentialData(credentialId, project) : null,
       enabled: Number(row.enabled) === 1,
@@ -2973,7 +3054,7 @@ export class AgatStore {
   dueMcpServerIds(limit = 10): string[] {
     return (this.db.prepare(`
       SELECT id FROM mcp_servers
-      WHERE enabled = 1
+      WHERE enabled = 1 AND transport = 'http'
         AND (last_sync_at IS NULL OR catalog_expires_at IS NULL OR catalog_expires_at <= ?)
       ORDER BY COALESCE(last_sync_at, '') ASC LIMIT ?
     `).all(nowIso(), Math.max(1, Math.min(100, Math.trunc(limit)))) as Row[]).map((row) => String(row.id));
@@ -3097,12 +3178,13 @@ export class AgatStore {
       this.db.prepare(`
         INSERT INTO mcp_tool_calls(
           id, project_id, run_id, stage_id, lease_id, node_id, client_call_id,
-          server_id, server_name, tool_name, public_name, risk, risk_tier,
+          server_id, server_name, transport, sandbox_profile_sha256,
+          tool_name, public_name, risk, risk_tier,
           legacy_policy, policy, required_approvals, policy_version, policy_sha256,
           policy_rule_id, policy_reason, status, arguments_blob, arguments_summary_json,
           preview_diff_json, traceparent, error, expires_at, created_at, started_at,
           completed_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         callId,
         input.resolved.projectId,
@@ -3113,6 +3195,8 @@ export class AgatStore {
         input.clientCallId,
         input.resolved.server.id,
         input.resolved.server.name,
+        input.resolved.server.transport,
+        input.resolved.server.sandbox?.profileSha256 ?? null,
         input.resolved.tool.name,
         input.resolved.publicName,
         input.resolved.risk,
@@ -3152,6 +3236,8 @@ export class AgatStore {
         {
           callId,
           serverId: input.resolved.server.id,
+          transport: input.resolved.server.transport,
+          sandboxProfileSha256: input.resolved.server.sandbox?.profileSha256 ?? null,
           tool: input.resolved.publicName,
           risk: input.resolved.risk,
           riskTier: decision.tier,
@@ -3225,6 +3311,22 @@ export class AgatStore {
       const resolved = this.resolveMcpLeaseTool(String(row.node_id), String(row.lease_id), String(row.public_name));
       if (!resolved) return null;
       const timestamp = nowIso();
+      if (!mcpExecutableProfileMatches(row, resolved)) {
+        this.db.prepare(`
+          UPDATE mcp_tool_calls SET status = 'rejected', error = ?, completed_at = ?, updated_at = ?
+          WHERE id = ? AND status = 'waiting_approval'
+        `).run("Execution blocked: isolated executable profile changed after request", timestamp, timestamp, callId);
+        this.addEvent(resolved.runId, resolved.stageId, resolved.nodeId, "error", "mcp.call.profile_changed", `MCP-вызов ${resolved.publicName} отклонён после изменения executable profile`, {
+          callId,
+          tool: resolved.publicName,
+          storedTransport: row.transport ?? "http",
+          currentTransport: resolved.server.transport ?? "http",
+          storedProfileSha256: row.sandbox_profile_sha256 ?? null,
+          currentProfileSha256: resolved.server.sandbox?.profileSha256 ?? null,
+        });
+        const rejected = this.db.prepare("SELECT * FROM mcp_tool_calls WHERE id = ?").get(callId) as Row;
+        return { call: this.mcpCallResponse(rejected, false), execution: null };
+      }
       if (resolved.decision.effect === "deny") {
         this.db.prepare(`
           UPDATE mcp_tool_calls SET status = 'rejected', error = ?, completed_at = ?, updated_at = ?
@@ -3428,6 +3530,8 @@ export class AgatStore {
       : Number.POSITIVE_INFINITY;
     const reason = !resolved
       ? "MCP server/tool больше не доступен этой аренде"
+      : !mcpExecutableProfileMatches(row, resolved)
+        ? "isolated executable profile изменён после создания call"
       : resolved.decision.effect === "deny"
         ? resolved.decision.reason
         : approvalCount < requiredNow

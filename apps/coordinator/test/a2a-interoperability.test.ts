@@ -416,7 +416,7 @@ describe("A2A 1.4 interoperability", () => {
     assert.deepEqual(card.defaultOutputModes, ["text/plain", "application/pdf"]);
   });
 
-  it("reserves delegated OAuth trust for admins and exposes only its approved origin", async () => {
+  it("reserves delegated OAuth and isolated MCP executable profiles for admins", async () => {
     let identityPort = 0;
     let tokenExchangeRequests = 0;
     const identityAndPeer = http.createServer((request, response) => {
@@ -462,7 +462,7 @@ describe("A2A 1.4 interoperability", () => {
       host: "127.0.0.1",
       port: 0,
       serveWeb: false,
-      mcpEnabled: false,
+      mcpEnabled: true,
       oidcEnabled: true,
       oidcIssuer: issuer,
       oidcClientId: "agat-web",
@@ -477,6 +477,45 @@ describe("A2A 1.4 interoperability", () => {
     const remotesUrl = `http://127.0.0.1:${coordinatorPort}/api/v1/a2a/remotes`;
     const designerAuthorization = `Bearer ${oidcToken(issuer, "designer")}`;
     const adminAuthorization = `Bearer ${oidcToken(issuer, "admin")}`;
+    const mcpServersUrl = `http://127.0.0.1:${coordinatorPort}/api/v1/mcp/servers`;
+    const isolatedProfile = {
+      name: "Admin WASI",
+      namespace: "admin_wasi",
+      transport: "wasi",
+      sandbox: {
+        moduleBase64: Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).toString("base64"),
+        tool: {
+          name: "cleanup",
+          inputSchema: { type: "object", properties: {} },
+          annotations: { destructiveHint: true },
+        },
+      },
+    };
+    const deniedIsolatedCreate = await fetch(mcpServersUrl, {
+      method: "POST",
+      headers: { authorization: designerAuthorization, "content-type": "application/json" },
+      body: JSON.stringify(isolatedProfile),
+    });
+    assert.equal(deniedIsolatedCreate.status, 403);
+    const allowedIsolatedCreate = await fetch(mcpServersUrl, {
+      method: "POST",
+      headers: { authorization: adminAuthorization, "content-type": "application/json" },
+      body: JSON.stringify(isolatedProfile),
+    });
+    assert.equal(allowedIsolatedCreate.status, 201);
+    const isolatedServer = await allowedIsolatedCreate.json() as { id: string; sandbox: { moduleSha256: string } };
+    assert.equal(isolatedServer.sandbox.moduleSha256.length, 64);
+    assert.equal(JSON.stringify(isolatedServer).includes(isolatedProfile.sandbox.moduleBase64), false);
+    const deniedIsolatedDelete = await fetch(`${mcpServersUrl}/${isolatedServer.id}`, {
+      method: "DELETE",
+      headers: { authorization: designerAuthorization },
+    });
+    assert.equal(deniedIsolatedDelete.status, 403);
+    const allowedIsolatedDelete = await fetch(`${mcpServersUrl}/${isolatedServer.id}`, {
+      method: "DELETE",
+      headers: { authorization: adminAuthorization },
+    });
+    assert.equal(allowedIsolatedDelete.status, 204);
     const delegatedAuth = {
       mode: "oauth2_token_exchange",
       tokenUrl: `${issuer}/oauth/token`,

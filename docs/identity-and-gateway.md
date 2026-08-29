@@ -25,8 +25,8 @@ npm run --silent k8s:keycloak-password
 
 | Роль | Доступ |
 |---|---|
-| `admin` | проекты, scheduler, локальные worker-пулы, MCP emergency deny, delegated A2A OAuth trust и все операции |
-| `designer` | агенты, scoped credentials, MCP server/tool и policy preview/activation, A2A endpoints и peers без delegated OAuth trust, prompt/dataset versions и promotion, черновики/публикация процессов, запуск и тест шага |
+| `admin` | проекты, scheduler, локальные worker-пулы, isolated WASI/OCI profiles, MCP emergency deny, delegated A2A OAuth trust и все операции |
+| `designer` | агенты, scoped credentials, HTTP MCP server/tool и policy preview/activation, A2A endpoints и peers без delegated OAuth trust, prompt/dataset versions и promotion, черновики/публикация процессов, запуск и тест шага |
 | `operator` | запуск/отмена, golden candidate/judge runs, test node и решения stage/MCP approval |
 | `viewer` | read-only состояние проекта |
 | `auditor` | read-only состояние, trace/артефакты и append-only human eval review |

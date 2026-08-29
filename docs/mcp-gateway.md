@@ -1,6 +1,6 @@
 # MCP gateway и risk policy
 
-АГАТ 1.1 подключает внешние инструменты через центральный MCP gateway. Coordinator является единственным MCP client/host: endpoint и credentials никогда не передаются worker-узлам, а модель получает только схемы инструментов, разрешённых для текущего проекта и lease. Базовый gateway 0.5 дополнен risk tiers, immutable policy-as-code, preview diff, distinct four-eyes approvals, scoped credentials и глобальным emergency deny.
+АГАТ 1.5 подключает внешние и изолированные инструменты через центральный MCP gateway. Coordinator является единственным MCP client/host: endpoint, executable profile и credentials никогда не передаются worker-узлам, а модель получает только схемы инструментов, разрешённых для текущего проекта и lease. Базовый gateway 0.5 дополнен risk tiers, immutable policy-as-code, preview diff, distinct four-eyes approvals, scoped credentials, глобальным emergency deny и одноразовыми WASI/OCI sandbox Jobs.
 
 Реализация использует официальный TypeScript SDK `@modelcontextprotocol/client` 2.x и закрепляет ревизию протокола `2026-07-28`. Эта ревизия использует stateless core, request-scoped Streamable HTTP, `Mcp-Method`/`Mcp-Name`, cache hints и усиленную authorization model. Источники: [анонс MCP 2026-07-28](https://blog.modelcontextprotocol.io/posts/2026-07-28/), [tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), [Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http), [authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization), [официальный TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
 
@@ -84,6 +84,15 @@ Worker не открывает соединение к MCP server. Его node t
 
 Namespace преобразует upstream tool в OpenAI-compatible public name. Например, `find/customer` сервера `crm` получает стабильное имя вида `crm__find_customer_<hash>`. Это исключает коллизии между серверами и не меняет upstream `tools/call` name.
 
+### Isolated transport
+
+`admin` может вместо HTTP выбрать один из статических catalog transports:
+
+- `wasi` — зашифрованный bounded WebAssembly module, Wasmtime fuel, без preopened filesystem и network capability;
+- `container` — OCI image только по полному digest, exec-array, read-only/non-root Job и exact public-IP/TCP egress allowlist.
+
+Оба транспорта создают ровно один catalog tool из admin-reviewed schema/annotations и проходят тот же policy/approval path. Module и ephemeral scoped credential монтируются через one-shot Kubernetes Secret; profile bytes не возвращаются API. Полный контракт, CNI fail-closed gate и runtime variables: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
 ## Approval и lease
 
 Approval создаётся непосредственно перед upstream side effect. Worker продолжает renew lease каждые 45 секунд и опрашивает состояние вызова; стандартный предел ожидания — 690 секунд, то есть больше server-side approval TTL и максимального upstream timeout. Coordinator не выполнит approval, если lease уже завершён, потерян или истёк. Если worker прекращает ждать раньше из-за пользовательской настройки, он атомарно отменяет ещё не подтверждённый вызов. Завершить lease при уже выполняющемся MCP-вызове coordinator не разрешает.
@@ -96,11 +105,11 @@ Operator preview содержит redacted arguments и безопасный dif
 
 ## Данные и audit
 
-Schema migration v14 сохраняет в SQLite:
+Schema migration v18 сохраняет в SQLite:
 
-- `mcp_servers` — project-scoped connection и catalog metadata;
+- `mcp_servers` — project-scoped connection, encrypted sandbox profile и redacted catalog metadata;
 - `mcp_tool_policies` — явные per-tool overrides;
-- `mcp_tool_calls` — lifecycle, risk tier, immutable policy snapshot, preview diff, decision, result hash и timestamps;
+- `mcp_tool_calls` — lifecycle, transport/profile hash, risk tier, immutable policy snapshot, preview diff, decision, result hash и timestamps;
 - `mcp_tool_call_approvals` — distinct решения по OIDC subject;
 - `mcp_policy_versions` — immutable project-scoped JSON policy и SHA-256;
 - `credentials.scope_json` и `settings.mcp_emergency_deny` — credential boundary и persisted global switch.
@@ -125,7 +134,8 @@ Persisted switch глобален для coordinator и доступен тол�
 - bearer/header credentials добавляет только coordinator;
 - transport-owned headers (`Mcp-Protocol-Version`, `Mcp-Method`, `Mcp-Name`, session/content routing) нельзя переопределить через credentials;
 - interactive OAuth и token passthrough не поддерживаются;
-- `stdio` servers и запуск subprocess из web UI не поддерживаются.
+- произвольный host `stdio`/subprocess не поддерживается; native execution разрешён только через admin-managed digest-pinned Kubernetes Job;
+- isolated egress отделён от coordinator egress и требует exact-IP NetworkPolicy; native container fail-closed без подтверждённого CNI enforcement.
 
 MCP endpoint является доверенной operator configuration и может указывать на внутренний сервис. Для hard multi-tenant deployment дополнительно ограничьте egress coordinator через NetworkPolicy/firewall и отдельные project gateways.
 
@@ -139,6 +149,8 @@ MCP endpoint является доверенной operator configuration и м�
 | `AGAT_MCP_MAX_RESPONSE_BYTES` | `4194304` | Лимит полного MCP response stream |
 | `AGAT_MCP_APPROVAL_TTL_SECONDS` | `600` | Срок жизни запроса решения в coordinator |
 | `AGAT_MCP_APPROVAL_TIMEOUT_SECONDS` | `690` | Сколько worker ждёт approval; значение по умолчанию превышает server TTL и максимальный upstream timeout |
+
+Sandbox variables и runtime contract вынесены в [отдельный runbook](./isolated-tool-execution.md#конфигурация).
 
 Catalog `ttlMs` и `cacheScope` сохраняются в coordinator. После истечения TTL фоновая синхронизация обновляет catalog; при временной ошибке последний успешный каталог остаётся видимым, но UI показывает ошибку. Отключённый сервер немедленно перестаёт выдавать tools в новые lease.
 

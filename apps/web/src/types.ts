@@ -681,6 +681,32 @@ export interface McpPolicyPreview {
   }>;
 }
 export type McpToolCallStatus = "waiting_approval" | "executing" | "completed" | "failed" | "rejected" | "expired";
+export type McpTransport = "http" | "wasi" | "container";
+
+export interface McpSandboxEgressRule {
+  ip: string;
+  port: number;
+}
+
+export interface McpSandboxProfile {
+  tool: {
+    name: string;
+    title?: string | null;
+    description?: string;
+    inputSchema: Record<string, unknown>;
+    outputSchema?: Record<string, unknown> | null;
+    annotations?: Record<string, unknown> | null;
+  };
+  moduleBase64?: string | null;
+  moduleSha256?: string | null;
+  image?: string | null;
+  command?: string[];
+  timeoutSeconds?: number;
+  cpuMillis?: number;
+  memoryMiB?: number;
+  egress?: McpSandboxEgressRule[];
+  profileSha256?: string;
+}
 
 export interface McpTool {
   name: string;
@@ -706,7 +732,9 @@ export interface McpServer {
   id: string;
   name: string;
   namespace: string;
+  transport: McpTransport;
   endpoint: string;
+  sandbox: (Omit<McpSandboxProfile, "moduleBase64"> & { moduleBase64?: never }) | null;
   credentialId: string | null;
   hasCredential: boolean;
   enabled: boolean;
@@ -732,6 +760,8 @@ export interface McpToolCall {
   stageId: string;
   serverId: string;
   serverName: string;
+  transport: McpTransport;
+  sandboxProfileSha256: string | null;
   toolName: string;
   publicName: string;
   risk: McpToolRisk;
@@ -761,6 +791,15 @@ export interface McpToolCall {
 
 export interface McpOverview {
   enabled: boolean;
+  sandbox: {
+    enabled: boolean;
+    available: boolean;
+    reason: string | null;
+    namespace: string;
+    wasiImage: string;
+    runtimeClass: string | null;
+    networkPolicyEnforced: boolean;
+  } | null;
   servers: McpServer[];
   recentCalls: McpToolCall[];
   policy: McpPolicySnapshot;
@@ -769,7 +808,9 @@ export interface McpOverview {
 export interface SaveMcpServerRequest {
   name: string;
   namespace: string;
-  endpoint: string;
+  transport: McpTransport;
+  endpoint?: string;
+  sandbox?: McpSandboxProfile | null;
   credentialId: string | null;
   enabled: boolean;
   trustAnnotations: boolean;

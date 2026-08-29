@@ -7,10 +7,11 @@ readonly expected_context="docker-desktop"
 readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly repo_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly manifests_dir="${repo_root}/deploy/k8s/docker-desktop"
-readonly image_tag="${AGAT_K8S_IMAGE_TAG:-1.4.0}"
+readonly image_tag="${AGAT_K8S_IMAGE_TAG:-1.5.0}"
 readonly coordinator_image="agat-local/coordinator:${image_tag}"
 readonly worker_image="agat-local/worker:${image_tag}"
 readonly temporal_worker_image="agat-local/temporal-worker:${image_tag}"
+readonly sandbox_wasi_image="agat-local/sandbox-wasi:${image_tag}"
 
 die() {
   printf 'Ошибка: %s\n' "$*" >&2
@@ -281,6 +282,14 @@ if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
     --tag "${temporal_worker_image}" \
     --file "${repo_root}/apps/temporal-worker/Dockerfile" \
     "${repo_root}"
+
+  printf 'Собираю %s для %s...\n' "${sandbox_wasi_image}" "${platform}"
+  docker buildx build \
+    --load \
+    --platform "${platform}" \
+    --tag "${sandbox_wasi_image}" \
+    --file "${repo_root}/sandbox/Dockerfile" \
+    "${repo_root}"
 fi
 
 kubectl apply --kustomize "${manifests_dir}"
@@ -330,6 +339,7 @@ kubectl set env deployment/agat-coordinator \
   --namespace "${namespace}" \
   "AGAT_SEED_DEMO=${AGAT_SEED_DEMO:-false}" \
   "AGAT_LOCAL_WORKER_IMAGE=${worker_image}" \
+  "AGAT_SANDBOX_WASI_IMAGE=${sandbox_wasi_image}" \
   "AGAT_LOCAL_MODEL_BASE_URL=${model_base_url}" \
   "AGAT_LOCAL_WORKER_EMBEDDING_MODELS=${AGAT_LOCAL_WORKER_EMBEDDING_MODELS:-${embedding_models}}" \
   "AGAT_LOCAL_WORKER_WEB_ENABLED=${web_enabled}" \

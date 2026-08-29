@@ -76,7 +76,7 @@ python3 workers/agat_worker.py
 
 Созданные pods работают от UID/GID `10001`, с read-only root filesystem, без service-account token и без Linux capabilities. Model API key и enrollment token подключаются из существующего `agat-secrets`.
 
-Coordinator использует отдельный service account `agat-coordinator`. Namespace Role разрешает только операции `get/list/create/patch/delete` над Deployments. Публичный API не принимает Kubernetes manifest, image, command, URL model server или имя Secret от пользователя — они задаются доверенной конфигурацией оператора.
+Coordinator использует отдельный service account `agat-coordinator`. Launcher вызывает только `get/list/create/patch/delete` для Deployments; тот же namespace Role отдельно содержит минимальные verbs для isolated-tool Jobs/Pods-log/Secrets/NetworkPolicies. Launcher API не принимает Kubernetes manifest, image, command, URL model server или имя Secret от пользователя — они задаются доверенной конфигурацией оператора.
 
 ## API
 
@@ -116,7 +116,7 @@ POST /api/v1/local-workers/:poolId/start
 ```dotenv
 AGAT_LOCAL_WORKER_LAUNCHER=true
 AGAT_LOCAL_WORKER_NAMESPACE=agat
-AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.4.0
+AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.5.0
 AGAT_LOCAL_WORKER_CONFIG_MAP=agat-worker-config
 AGAT_LOCAL_WORKER_SECRET=agat-secrets
 AGAT_LOCAL_MODEL_BASE_URL=http://host.docker.internal:11434/v1
