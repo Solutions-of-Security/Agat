@@ -15,7 +15,7 @@ import type { NodeTracerProvider, SpanExporter } from "@opentelemetry/sdk-trace-
 const require = createRequire(import.meta.url);
 
 const INSTRUMENTATION_NAME = "io.agat.coordinator";
-const INSTRUMENTATION_VERSION = "1.2.0";
+const INSTRUMENTATION_VERSION = "1.3.0";
 
 export interface TelemetryOptions {
   enabled: boolean;
@@ -42,6 +42,8 @@ export interface StageSpanInput {
   agentId: string;
   model: string | null;
   runtime: string;
+  runtimeProfile: string;
+  specialistCount: number;
   attempt: number;
   nodeId: string;
 }
@@ -200,6 +202,8 @@ export class CoordinatorTelemetry {
         ...(input.model ? { "agat.agent.model": input.model } : {}),
         "agat.agent.id": input.agentId,
         "agat.agent.runtime": input.runtime,
+        "agat.agent.runtime_profile": input.runtimeProfile,
+        "agat.agent.specialist_count": input.specialistCount,
         "agat.run.id": input.runId,
         "agat.stage.id": input.stageId,
         "agat.stage.attempt": input.attempt,

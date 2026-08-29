@@ -33,7 +33,10 @@
 - knowledge collections/documents/memory изолированы по project; worker search ограничен collections snapshot активного stage lease, а vectors проходят лимит размерности и finite-number validation;
 - RAG snippets и memory маркируются как недоверенный контекст, source/chunk provenance и hashes сохраняются в audit, а embedding запроса — только как SHA-256 и размерность;
 - модель не получает произвольный HTTP-клиент: web-доступ ограничен `web_search`/`web_fetch`, публичными IP, портами 80/443, типами контента, размером, таймаутом и числом раундов;
-- LangGraph runtime ограничен известным профилем `tool_loop_v1` и 1–12 model-итерациями; пользователь не загружает произвольный Python-код или graph module;
+- LangGraph runtime ограничен известными профилями `tool_loop_v1` и `specialist_team_v1`, 1–12 model-итерациями и 1–8 handoffs; пользователь не загружает произвольный Python-код, graph module или state schema;
+- specialist team содержит только 2–8 обычных агентов того же project; self-reference, duplicates, внутренние служебные system/eval agents, nested teams и изменение используемого specialist в team отклоняются coordinator;
+- supervisor может делегировать только точному ID из immutable lease snapshot; worker валидирует structured decision и bounded state на каждом graph transition;
+- scheduler выдаёт team только worker, который объявил `specialist_team_v1` и все pinned модели; legacy workers fail-closed не получают team stage;
 - поисковая строка и содержимое прочитанной страницы не записываются в журнал tool calls;
 - скрытая chain-of-thought и provider-поля reasoning/thinking не записываются; trace содержит только наблюдаемые действия;
 - полный trace и скачивание артефакта требуют authenticated dashboard access;
@@ -47,7 +50,7 @@
 - launcher service account ограничен namespace Role для Deployments, а создаваемые worker pods не получают Kubernetes token, запускаются non-root и с read-only root filesystem.
 - Kong — единственный публичный API service: 1 MiB body limit, rate limit, correlation ID; Admin API выключен, `/api/v1/internal` закрыт отдельным маршрутом;
 - Temporal internal tick дополнительно защищён отдельным случайным token и недоступен через Gateway;
-- LangGraph не импортируется в Temporal Workflow и не использует отдельный durable checkpointer, поэтому graph state не создаёт ещё один backup/trust boundary;
+- LangGraph не импортируется в Temporal Workflow и не использует отдельный durable checkpointer, поэтому graph/team state не создаёт ещё один backup/trust boundary;
 - Keycloak PostgreSQL, Temporal, coordinator и workers запускаются non-root; root init используется только для одноразовой установки владельца конкретного PostgreSQL PVC с capabilities `CHOWN/FOWNER`.
 
 ## Production checklist
@@ -103,6 +106,8 @@ Docker socket намеренно не монтируется. Docker Compose и 
 Trace повышает наблюдаемость, но становится журналом внутренней информации. Не передавайте секреты в prompt; если это неизбежно, до production добавьте redaction/retention policy и RBAC. Экспортированный из браузера `trace.json` имеет ту же чувствительность, что input и output запуска.
 
 Web tool arguments по умолчанию редактируются: сохраняется длина search query и host для fetch, но не полный запрос или URL path/query. Tool output представлен статусом, типом и размером; содержимое внешней страницы остаётся только в краткоживущем model context worker.
+
+Для specialist team authenticated execution manifest содержит pinned system prompts участников. События `agent_handoff` намеренно ограничены ID/name/definition hash, phase и размерами: raw assignment, specialist output и скрытое reasoning в audit/OTLP не попадают. Экспорт trace поэтому всё равно считается чувствительным, но не становится дополнительным журналом внутренних делегирований.
 
 Artifact Store разрешает только UTF-8 text artifacts через текущий worker API и ограничивает количество/размер. Имена нормализуются, реальный storage filename для agent artifact получает случайный префикс, а UI скачивает файл по UUID metadata. `AGAT_ARTIFACTS_DIR` является trusted operator config; не разрешайте пользователю менять эту переменную.
 

@@ -2,9 +2,33 @@ export type SchedulerMode = "sequential" | "parallel" | "auto";
 export type ResultDestination = "history" | "artifacts";
 export type AgentRuntime = "single" | "langgraph";
 
-export interface AgentRuntimeConfig {
+export interface ToolLoopAgentRuntimeConfig {
   profile: "tool_loop_v1";
   maxIterations: number;
+}
+
+export interface SpecialistTeamAgentRuntimeConfig {
+  profile: "specialist_team_v1";
+  maxIterations: number;
+  maxHandoffs: number;
+  stateSchema: "specialist_team_state_v1";
+  specialistAgentIds: string[];
+}
+
+export type AgentRuntimeConfig = ToolLoopAgentRuntimeConfig | SpecialistTeamAgentRuntimeConfig;
+
+export interface SpecialistExecutionSnapshot {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+  model: string | null;
+  runtimeConfig: ToolLoopAgentRuntimeConfig;
+  promptVersion: string;
+  definitionVersion: string;
+  registryPromptId: string | null;
+  registryPromptVersion: number | null;
 }
 export type RunStatus =
   | "queued"
@@ -131,6 +155,7 @@ export interface Stage {
     model: string | null;
     runtime: AgentRuntime;
     runtimeConfig: AgentRuntimeConfig;
+    specialists: SpecialistExecutionSnapshot[];
     promptVersion: string;
     definitionVersion: string;
     registryPromptId: string | null;
@@ -267,6 +292,7 @@ export interface ComputeNode {
   modelProfiles: NodeModelProfile[];
   labels: Record<string, string>;
   agentRuntimes: AgentRuntime[];
+  agentRuntimeProfiles: Array<"tool_loop_v1" | "specialist_team_v1">;
   cpuCores: number;
   memoryMb: number;
   vramMb: number;
@@ -808,7 +834,7 @@ export interface RunTrace {
 }
 
 export interface ExecutionManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   runId: string;
   traceId: string;
   sourceRunId: string | null;
@@ -823,7 +849,7 @@ export interface ExecutionManifest {
     processNodeId: string | null;
     stageInputSha256: string | null;
     agent: {
-      schemaVersion: 2;
+      schemaVersion: 3;
       capturedAt: string;
       source: "run_creation" | "process_queue" | "migration_backfill" | "replay" | "evaluation" | "model_judge";
       id: string;
@@ -833,6 +859,7 @@ export interface ExecutionManifest {
       model: string | null;
       runtime: AgentRuntime;
       runtimeConfig: AgentRuntimeConfig;
+      specialists: SpecialistExecutionSnapshot[];
       promptVersion: string;
       definitionVersion: string;
       registryPromptId: string | null;

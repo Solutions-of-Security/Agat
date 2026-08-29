@@ -163,13 +163,13 @@ class WorkerTelemetry:
                 {
                     "service.name": service_name
                     or os.getenv("OTEL_SERVICE_NAME", "agat-worker"),
-                    "service.version": "1.2.0",
+                    "service.version": "1.3.0",
                 }
             )
         )
         self._provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(self._provider)
-        self._tracer = trace.get_tracer("io.agat.worker", "1.2.0")
+        self._tracer = trace.get_tracer("io.agat.worker", "1.3.0")
         self._propagator = TraceContextTextMapPropagator()
         self._span_kind = SpanKind
         self._status_code = (Status, StatusCode)
@@ -188,11 +188,20 @@ class WorkerTelemetry:
         agent = lease.get("agent", {})
         stage = lease.get("stage", {})
         run = lease.get("run", {})
+        runtime_config = agent.get("runtimeConfig")
+        runtime_profile = (
+            str(runtime_config.get("profile", "tool_loop_v1"))
+            if isinstance(runtime_config, dict)
+            else "tool_loop_v1"
+        )
+        specialists = agent.get("specialists")
         attributes: dict[str, Any] = {
             "gen_ai.operation.name": "invoke_agent",
             "gen_ai.agent.name": str(agent.get("name", "agent")),
             "agat.agent.id": str(agent.get("id", "")),
             "agat.agent.runtime": str(agent.get("runtime", "single")),
+            "agat.agent.runtime_profile": runtime_profile,
+            "agat.agent.specialist_count": len(specialists) if isinstance(specialists, list) else 0,
             "agat.run.id": str(run.get("id", "")),
             "agat.stage.id": str(stage.get("id", "")),
             "agat.stage.attempt": int(stage.get("attempt", 1)),

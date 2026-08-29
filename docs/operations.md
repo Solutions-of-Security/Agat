@@ -11,6 +11,12 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
+## Rollout 1.3 specialist teams
+
+Coordinator мигрирует SQLite schema `15 → 16` и добавляет к node capabilities `agent_runtime_profiles_json`. Сначала обновите coordinator, затем workers; legacy worker безопасно считается совместимым только с `tool_loop_v1` и не получает `specialist_team_v1`. Перед созданием production team убедитесь, что карточка узла показывает профиль и все модели supervisor/specialists.
+
+Team нельзя распределить между несколькими узлами. При недостатке хотя бы одной pinned модели stage остаётся в очереди с обычным readiness/scheduler explanation. Rollback binary допустим только после проверенного backup базы: старый coordinator не знает manifest v3 и новое поле capability, поэтому смешанный control-plane rollout не поддерживается.
+
 ## Temporal rollout и replay
 
 Перед каждым production worker build выполняются `npm run typecheck`, `npm test` и `npm run build`. `npm test` включает replay сохранённых Temporal histories. Новый immutable build сначала запускается как canary, затем получает ограниченный ramp и только после наблюдения становится current:
@@ -84,7 +90,7 @@ Workflow конкретного instance открывается по ссылк�
 
 A2A task является обычным run, поэтому потеря worker обрабатывается тем же lease TTL. Внешний клиент продолжает polling той же task ID; повторный `message:send` с тем же `messageId` и payload не создаёт второй run.
 
-Для LangGraph повторяется весь внутренний graph attempt: per-node checkpoints намеренно не сохраняются отдельно от stage. Текущие web-tools read-only; будущие write-tools должны дедуплицироваться как минимум по `stage.id`.
+Для LangGraph повторяется весь внутренний graph attempt: per-node checkpoints намеренно не сохраняются отдельно от stage. Для team это означает повтор supervisor и всех завершённых handoffs. Web-tools read-only; MCP side effects проходят существующие policy/approval/idempotency checks, а неизвестный исход блокирует автоматический retry stage.
 
 Embedding job использует такой же pull lease и максимум три попытки. После потери worker просроченная job возвращается в `pending`; уже принятый batch не пересчитывается. Если документ перешёл в `failed`, удалите его и загрузите заново после исправления модели/endpoint. Изменение размерности одной embedding-модели внутри существующей collection отклоняется — создайте новую collection и переиндексируйте документы.
 
@@ -119,12 +125,14 @@ python3 -m py_compile workers/agat_worker.py workers/web_tools.py workers/teleme
 PYTHONPATH=workers python3 -m unittest discover -s workers -p 'test_*.py' -v
 ```
 
-Для проверки реального LangGraph-пути сначала установите закреплённую зависимость. В разделе **Узлы** ожидаются runtime `single` и `langgraph`; если показан только `single`, worker безопасно не получит LangGraph-stage:
+Для проверки реального LangGraph-пути сначала установите закреплённую зависимость. В разделе **Узлы** ожидаются runtime `single`, `langgraph` и profiles `tool_loop_v1`, `specialist_team_v1`; если показан только `single`, worker безопасно не получит LangGraph-stage:
 
 ```bash
 python3 -m pip install --requirement workers/requirements.txt
 PYTHONPATH=workers python3 -m unittest \
   workers.test_web_tools.ModelToolLoopTests.test_langgraph_runtime_executes_bounded_model_tool_graph -v
+PYTHONPATH=workers python3 -m unittest \
+  workers.test_web_tools.ModelToolLoopTests.test_specialist_team_runs_versioned_handoff_and_validated_state -v
 ```
 
 Dry-run проверяет coordinator без model server:

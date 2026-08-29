@@ -179,17 +179,30 @@ Project-scoped adapter подключает внешние agent platforms бе�
 
 Подробности: [Process Builder 1.2](./process-builder-1.2.md) и [Визуальные процессы](./processes.md).
 
-## Следующий релиз
+## Реализовано в 1.3
 
 ### LangGraph specialist teams
 
-Текущий `tool_loop_v1` расширяется версионированными specialist subgraphs, supervisor/handoff и проверяемыми state schemas. Команды агентов остаются внутренностью одного agent/team stage; долгие ожидания, approvals и бизнес-переходы не переносятся из Temporal в LangGraph.
+Текущий `tool_loop_v1` расширен версионированным `specialist_team_v1` без переноса durable orchestration из Temporal.
 
-## После стабилизации
+- supervisor выбирает только project-scoped участников из immutable ordered snapshot;
+- каждый specialist выполняется отдельным bounded `tool_loop_v1` subgraph со своим pinned prompt/model;
+- supervisor принимает структурированные `delegate/finish` решения, а общий `maxHandoffs` ограничен `1..8`;
+- `specialist_team_state_v1` проверяется на каждом переходе, произвольные Python graphs и state schemas не загружаются;
+- worker публикует `agentRuntimeProfiles`, scheduler требует профиль и все модели команды на одном узле;
+- handoff audit и OTel metadata не сохраняют raw assignment/output или скрытое reasoning;
+- execution manifest v3 и replay сохраняют точные definition hashes участников;
+- approvals, MCP policy, credentials и emergency deny продолжают исполняться coordinator gateway.
+
+Подробности: [LangGraph specialist teams 1.3](./langgraph-specialist-teams.md) и [Runtime агентов](./agent-runtimes.md).
+
+## Следующий релиз
 
 ### Расширенная A2A interoperability
 
 После появления подтверждённого интеграционного спроса inbound adapter можно расширить outbound client, delegated authorization, streaming/push и file artifacts. Это отдельный этап: базовый A2A 1.0 boundary уже реализован и не заменяет внутреннюю очередь. Источник: [актуальная официальная спецификация A2A](https://a2a-protocol.org/latest/specification/).
+
+## После стабилизации
 
 ### Изолированное выполнение tools
 
@@ -225,6 +238,7 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.0 | Production hardening durable runtime | Снижает операционный риск перед расширением deployment и HA |
 | P1 | Готово в 1.1 | Risk-tier approvals + emergency deny | Единая policy-as-code boundary, four-eyes, scoped secrets и kill switch |
 | P1 | Готово в 1.2 | Расширение process builder | Fork/join, triggers, subprocess, diff/replay, BPMN и compensation поверх durable runtime |
-| P1 | Следующий шаг | LangGraph specialist teams | Supervisor/handoff внутри bounded agent stage без переноса durable orchestration |
+| P1 | Готово в 1.3 | LangGraph specialist teams | Supervisor/handoff внутри bounded agent stage без переноса durable orchestration |
+| P2 | Следующий шаг | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и files только при подтверждённом спросе |
 | P2 | Запланировано | Native mobile worker | Дороже PWA и полезен только для узких edge-сценариев |
 | P3 | Запланировано | HA control plane | После подтверждения нагрузки и multi-team требований |

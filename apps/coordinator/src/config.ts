@@ -151,7 +151,7 @@ export function loadConfig(): CoordinatorConfig {
       .filter(Boolean),
     localWorkerLauncherEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_LAUNCHER, false),
     localWorkerNamespace: process.env.AGAT_LOCAL_WORKER_NAMESPACE ?? "agat",
-    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.2.0",
+    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.3.0",
     localWorkerConfigMap: process.env.AGAT_LOCAL_WORKER_CONFIG_MAP ?? "agat-worker-config",
     localWorkerSecret: process.env.AGAT_LOCAL_WORKER_SECRET ?? "agat-secrets",
     localWorkerModelBaseUrl: process.env.AGAT_LOCAL_MODEL_BASE_URL ?? "http://host.docker.internal:11434/v1",

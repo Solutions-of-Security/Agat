@@ -16,7 +16,7 @@
 - `Kubernetes ready` — pod прошёл startup/readiness probe;
 - `Heartbeat online` — worker зарегистрирован в АГАТ и отправляет heartbeat.
 
-Карточка узла отдельно показывает `Agent runtimes`. Managed Docker workers публикуют `single` и `langgraph`; переносимый Python worker без установленных requirements публикует только `single`. Scheduler не выдаёт LangGraph-агента несовместимому узлу.
+Карточка узла отдельно показывает `Agent runtimes` и `LangGraph profiles`. Managed Docker workers публикуют `single`, `langgraph`, `tool_loop_v1` и `specialist_team_v1`; переносимый Python worker без установленных requirements публикует только `single` и пустой список profiles. Scheduler не выдаёт LangGraph/team stage несовместимому узлу.
 
 Остановка пула масштабирует все его Deployments до нуля, но сохраняет конфигурацию. Кнопка **Запустить** возобновляет тот же пул. Кнопка удаления использует отдельное подтверждение и удаляет только Deployments выбранного управляемого пула. После остановки активный lease может оставаться `running` до завершения worker или истечения `AGAT_LEASE_TTL_SECONDS`, после чего coordinator безопасно вернёт этап в очередь.
 
@@ -46,14 +46,14 @@ Launcher передаёт значение как `AGAT_EMBEDDING_MODELS`; он�
 
 ## LangGraph runtime
 
-Image `agat-local/worker` устанавливает `workers/requirements.txt`, поэтому дополнительные Kubernetes-пулы сразу поддерживают оба runtime. Для worker, запущенного прямо из исходников:
+Image `agat-local/worker` устанавливает `workers/requirements.txt`, поэтому дополнительные Kubernetes-пулы сразу поддерживают оба LangGraph-профиля. Для worker, запущенного прямо из исходников:
 
 ```bash
 python3 -m pip install --requirement workers/requirements.txt
 python3 workers/agat_worker.py
 ```
 
-Установка не нужна для `single`. Подробности о границе с Temporal, bounded profile и восстановлении: [runtime агентов](./agent-runtimes.md).
+Установка не нужна для `single`. Team требует, чтобы один worker имел модели supervisor и всех pinned specialists; она не распределяется между узлами. Подробности о границе с Temporal, bounded profiles и восстановлении: [runtime агентов](./agent-runtimes.md) и [specialist teams 1.3](./langgraph-specialist-teams.md).
 
 ## Несколько workers и слабое железо
 
@@ -116,7 +116,7 @@ POST /api/v1/local-workers/:poolId/start
 ```dotenv
 AGAT_LOCAL_WORKER_LAUNCHER=true
 AGAT_LOCAL_WORKER_NAMESPACE=agat
-AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.2.0
+AGAT_LOCAL_WORKER_IMAGE=agat-local/worker:1.3.0
 AGAT_LOCAL_WORKER_CONFIG_MAP=agat-worker-config
 AGAT_LOCAL_WORKER_SECRET=agat-secrets
 AGAT_LOCAL_MODEL_BASE_URL=http://host.docker.internal:11434/v1

@@ -9,7 +9,7 @@
 | Coordinator + SQLite | опубликованный снимок графа, текущий узел, loop counters, stages, approvals, events, credentials и Artifact Store |
 | Temporal Workflow | удержание экземпляра живым, durable timer для `wait`, Updates/Signals, parent/child, Continue-As-New и история оркестрации |
 | Temporal Activity | идемпотентный вызов внутреннего `tick` либо создание scheduled instance в coordinator и возврат компактного состояния |
-| Model worker | agent/HTTP stages через lease-очередь; `single` или LangGraph выполняются здесь, inference не выполняется внутри Workflow |
+| Model worker | agent/HTTP stages через lease-очередь; `single`, LangGraph tool loop или specialist team выполняются здесь, inference не выполняется внутри Workflow |
 
 ```mermaid
 sequenceDiagram
@@ -27,7 +27,7 @@ sequenceDiagram
     TW->>API: internal tick (Activity)
     API->>DB: продвинуть мгновенные шаги или поставить stage
     W->>API: lease / complete
-    Note over W: single либо bounded LangGraph StateGraph
+    Note over W: single, tool loop либо bounded specialist team
     API->>T: Update processChangedV1
     T->>TW: следующий tick
 ```
@@ -47,7 +47,7 @@ sequenceDiagram
 
 Workflow-код не читает сеть, filesystem, environment или текущее время через Node API. Все внешние действия вынесены в Activity; Activity импортируются в Workflow только как TypeScript-типы. Production worker использует заранее собранный `workflow-bundle.js`.
 
-LangGraph не входит в bundle Temporal worker и не меняет последовательность Workflow commands. Он компилируется model worker без checkpointer на время одного lease attempt. Поэтому добавление runtime не требует patch marker или новой Temporal task queue для уже запущенных executions; правила versioning ниже потребуются, только если изменится сам Workflow-код. Подробная граница: [runtime агентов](./agent-runtimes.md).
+LangGraph не входит в bundle Temporal worker и не меняет последовательность Workflow commands. `tool_loop_v1` и `specialist_team_v1` компилируются model worker без checkpointer на время одного lease attempt. Supervisor/handoffs не создают Workflow commands, не удерживают durable wait/approval и при потере worker повторяются целиком из immutable stage snapshot. Поэтому добавление профиля 1.3 не требует patch marker или новой Temporal task queue для уже запущенных executions; правила versioning ниже потребуются, только если изменится сам Workflow-код. Подробная граница: [runtime агентов](./agent-runtimes.md) и [specialist teams](./langgraph-specialist-teams.md).
 
 Перед несовместимым изменением Workflow следует:
 

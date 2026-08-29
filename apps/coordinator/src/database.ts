@@ -65,6 +65,9 @@ import type {
   AgentExecutionSnapshot,
   AgentRuntime,
   AgentRuntimeConfig,
+  AgentRuntimeProfile,
+  SpecialistExecutionSnapshot,
+  ToolLoopAgentRuntimeConfig,
   CreateCredentialInput,
   CredentialScope,
   CreateAgentInput,
@@ -188,6 +191,7 @@ function agentSnapshot(
   source: AgentExecutionSnapshot["source"],
   capturedAt = nowIso(),
   modelOverride?: string | null,
+  specialists: SpecialistExecutionSnapshot[] = [],
 ): AgentExecutionSnapshot {
   const runtime = normalizeAgentRuntime(row.runtime);
   const runtimeConfig = normalizeAgentRuntimeConfig(parseJson<Record<string, unknown>>(row.runtime_config_json, {}));
@@ -195,7 +199,7 @@ function agentSnapshot(
     ? (typeof row.model === "string" && row.model ? row.model : null)
     : modelOverride;
   const definition = {
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     id: String(row.id),
     name: String(row.name),
     role: String(row.role),
@@ -203,6 +207,7 @@ function agentSnapshot(
     model,
     runtime,
     runtimeConfig,
+    specialists,
     registryPromptId: typeof row.registry_prompt_id === "string" ? row.registry_prompt_id : null,
     registryPromptVersion: typeof row.registry_prompt_version === "number"
       ? row.registry_prompt_version
@@ -219,15 +224,86 @@ function agentSnapshot(
   };
 }
 
+function specialistExecutionSnapshot(row: Record<string, unknown>): SpecialistExecutionSnapshot {
+  const runtimeConfig = normalizeAgentRuntimeConfig(parseJson<Record<string, unknown>>(row.runtime_config_json, {}));
+  if (runtimeConfig.profile !== "tool_loop_v1") throw new Error("Вложенные specialist teams запрещены");
+  const model = typeof row.model === "string" && row.model ? row.model : null;
+  const definition = {
+    schemaVersion: 1 as const,
+    id: String(row.id),
+    name: String(row.name),
+    role: String(row.role),
+    systemPrompt: String(row.system_prompt),
+    model,
+    runtimeConfig: runtimeConfig as ToolLoopAgentRuntimeConfig,
+    registryPromptId: typeof row.registry_prompt_id === "string" ? row.registry_prompt_id : null,
+    registryPromptVersion: typeof row.registry_prompt_version === "number"
+      ? row.registry_prompt_version
+      : typeof row.registry_prompt_version === "bigint"
+        ? Number(row.registry_prompt_version)
+        : null,
+  };
+  return {
+    ...definition,
+    promptVersion: sha256Text(definition.systemPrompt),
+    definitionVersion: sha256Text(JSON.stringify(definition)),
+  };
+}
+
 function parseAgentSnapshot(value: unknown): AgentExecutionSnapshot | null {
   const snapshot = parseJson<Partial<AgentExecutionSnapshot> | null>(value, null);
-  if (!snapshot || ![1, 2].includes(Number(snapshot.schemaVersion)) || typeof snapshot.id !== "string") return null;
+  if (!snapshot || ![1, 2, 3].includes(Number(snapshot.schemaVersion)) || typeof snapshot.id !== "string") return null;
   if (typeof snapshot.name !== "string" || typeof snapshot.role !== "string" || typeof snapshot.systemPrompt !== "string") {
     return null;
   }
   try {
+    const runtimeConfig = normalizeAgentRuntimeConfig(snapshot.runtimeConfig);
+    const rawSpecialists = Array.isArray(snapshot.specialists) ? snapshot.specialists : [];
+    const specialists = rawSpecialists.map((candidate): SpecialistExecutionSnapshot => {
+      if (!candidate || typeof candidate !== "object") throw new Error("Некорректный snapshot specialist");
+      const raw = candidate as Partial<SpecialistExecutionSnapshot>;
+      const memberConfig = normalizeAgentRuntimeConfig(raw.runtimeConfig);
+      if (memberConfig.profile !== "tool_loop_v1") throw new Error("Вложенные specialist teams запрещены");
+      if (typeof raw.id !== "string" || typeof raw.name !== "string" || typeof raw.role !== "string"
+        || typeof raw.systemPrompt !== "string") {
+        throw new Error("Некорректный snapshot specialist");
+      }
+      const model = typeof raw.model === "string" && raw.model ? raw.model : null;
+      const definition = {
+        schemaVersion: 1 as const,
+        id: raw.id,
+        name: raw.name,
+        role: raw.role,
+        systemPrompt: raw.systemPrompt,
+        model,
+        runtimeConfig: memberConfig,
+        registryPromptId: typeof raw.registryPromptId === "string" ? raw.registryPromptId : null,
+        registryPromptVersion: typeof raw.registryPromptVersion === "number"
+          && Number.isInteger(raw.registryPromptVersion)
+          && raw.registryPromptVersion > 0
+          ? raw.registryPromptVersion
+          : null,
+      };
+      return {
+        ...definition,
+        promptVersion: typeof raw.promptVersion === "string"
+          ? raw.promptVersion
+          : sha256Text(raw.systemPrompt),
+        definitionVersion: typeof raw.definitionVersion === "string"
+          ? raw.definitionVersion
+          : sha256Text(JSON.stringify(definition)),
+      };
+    });
+    if (runtimeConfig.profile === "specialist_team_v1") {
+      if (specialists.length !== runtimeConfig.specialistAgentIds.length
+        || specialists.some((specialist, index) => specialist.id !== runtimeConfig.specialistAgentIds[index])) {
+        throw new Error("Snapshot команды не соответствует runtime config");
+      }
+    } else if (specialists.length > 0) {
+      throw new Error("Обычный agent snapshot не должен содержать specialists");
+    }
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       capturedAt: typeof snapshot.capturedAt === "string" ? snapshot.capturedAt : nowIso(),
       source: snapshot.source ?? "migration_backfill",
       id: snapshot.id,
@@ -236,7 +312,8 @@ function parseAgentSnapshot(value: unknown): AgentExecutionSnapshot | null {
       systemPrompt: snapshot.systemPrompt,
       model: typeof snapshot.model === "string" && snapshot.model ? snapshot.model : null,
       runtime: normalizeAgentRuntime(snapshot.runtime),
-      runtimeConfig: normalizeAgentRuntimeConfig(snapshot.runtimeConfig),
+      runtimeConfig,
+      specialists,
       promptVersion: typeof snapshot.promptVersion === "string"
         ? snapshot.promptVersion
         : sha256Text(snapshot.systemPrompt),
@@ -253,6 +330,13 @@ function parseAgentSnapshot(value: unknown): AgentExecutionSnapshot | null {
   } catch {
     return null;
   }
+}
+
+function pinnedAgentModels(snapshot: AgentExecutionSnapshot): string[] {
+  return [...new Set([
+    snapshot.model,
+    ...snapshot.specialists.map((specialist) => specialist.model),
+  ].filter((model): model is string => typeof model === "string" && model.length > 0))];
 }
 
 function normalizeExecutionMetrics(value: unknown): WorkerExecutionMetrics {
@@ -388,6 +472,7 @@ interface RoutingNode {
   modelProfiles: WorkerModelProfile[];
   benchmarks: Map<string, StoredModelBenchmark>;
   runtimes: Set<AgentRuntime>;
+  runtimeProfiles: Set<AgentRuntimeProfile>;
   metrics: WorkerMetrics;
   freeSlots: number;
 }
@@ -478,12 +563,46 @@ function normalizeAgentRuntimeConfig(value: unknown): AgentRuntimeConfig {
   }
   const config = (value ?? {}) as Record<string, unknown>;
   const profile = config.profile ?? "tool_loop_v1";
-  if (profile !== "tool_loop_v1") throw new Error("Неизвестный профиль runtime агента");
   const maxIterations = config.maxIterations ?? 6;
   if (!Number.isInteger(maxIterations) || Number(maxIterations) < 1 || Number(maxIterations) > 12) {
     throw new Error("Лимит итераций runtime должен быть целым числом от 1 до 12");
   }
-  return { profile, maxIterations: Number(maxIterations) };
+  if (profile === "tool_loop_v1") {
+    return { profile, maxIterations: Number(maxIterations) };
+  }
+  if (profile !== "specialist_team_v1") throw new Error("Неизвестный профиль runtime агента");
+
+  const maxHandoffs = config.maxHandoffs ?? 4;
+  if (!Number.isInteger(maxHandoffs) || Number(maxHandoffs) < 1 || Number(maxHandoffs) > 8) {
+    throw new Error("Лимит handoff должен быть целым числом от 1 до 8");
+  }
+  const stateSchema = config.stateSchema ?? "specialist_team_state_v1";
+  if (stateSchema !== "specialist_team_state_v1") {
+    throw new Error("Неизвестная state schema команды агентов");
+  }
+  if (!Array.isArray(config.specialistAgentIds)
+    || config.specialistAgentIds.length < 2
+    || config.specialistAgentIds.length > 8) {
+    throw new Error("Команда должна содержать от 2 до 8 специалистов");
+  }
+  const specialistAgentIds = config.specialistAgentIds.map((value) => {
+    if (typeof value !== "string") throw new Error("Идентификатор специалиста должен быть строкой");
+    const id = value.trim();
+    if (!id || id.length > 128 || /[\u0000-\u001f\u007f]/u.test(id)) {
+      throw new Error("Некорректный идентификатор специалиста");
+    }
+    return id;
+  });
+  if (new Set(specialistAgentIds).size !== specialistAgentIds.length) {
+    throw new Error("Специалисты команды не должны повторяться");
+  }
+  return {
+    profile,
+    maxIterations: Number(maxIterations),
+    maxHandoffs: Number(maxHandoffs),
+    stateSchema,
+    specialistAgentIds,
+  };
 }
 
 function normalizeAgentRuntimes(value: unknown): AgentRuntime[] {
@@ -492,6 +611,17 @@ function normalizeAgentRuntimes(value: unknown): AgentRuntime[] {
   const runtimes = [...new Set(value.map((item) => normalizeAgentRuntime(item)))];
   if (runtimes.length === 0) throw new Error("Worker должен поддерживать хотя бы один runtime агента");
   return runtimes;
+}
+
+function normalizeAgentRuntimeProfiles(value: unknown): AgentRuntimeProfile[] {
+  if (value === undefined || value === null) return ["tool_loop_v1"];
+  if (!Array.isArray(value)) throw new Error("agentRuntimeProfiles должен быть массивом");
+  if (value.length > 16) throw new Error("Worker объявил слишком много agent runtime profiles");
+  const profiles = value.map((profile): AgentRuntimeProfile => {
+    if (profile === "tool_loop_v1" || profile === "specialist_team_v1") return profile;
+    throw new Error("Worker объявил неизвестный agent runtime profile");
+  });
+  return [...new Set(profiles)];
 }
 
 function normalizeEmbeddingModels(value: unknown): string[] {
@@ -521,13 +651,18 @@ function normalizeAgentInput(input: CreateAgentInput): {
   const model = rawModel === null || rawModel === undefined || (typeof rawModel === "string" && rawModel.trim() === "")
     ? ""
     : requiredAgentText(rawModel, "Модель", 200);
+  const runtime = normalizeAgentRuntime(input.runtime);
+  const runtimeConfig = normalizeAgentRuntimeConfig(input.runtimeConfig);
+  if (runtimeConfig.profile === "specialist_team_v1" && runtime !== "langgraph") {
+    throw new Error("Профиль specialist_team_v1 требует runtime langgraph");
+  }
   return {
     name: requiredAgentText(input.name, "Имя агента", 80),
     role: requiredAgentText(input.role, "Роль агента", 280),
     systemPrompt: requiredAgentText(input.systemPrompt, "Системный промпт", 20_000),
     model,
-    runtime: normalizeAgentRuntime(input.runtime),
-    runtimeConfig: normalizeAgentRuntimeConfig(input.runtimeConfig),
+    runtime,
+    runtimeConfig,
   };
 }
 
@@ -826,6 +961,7 @@ export class AgatStore {
         model_profiles_json TEXT NOT NULL DEFAULT '[]',
         labels_json TEXT NOT NULL DEFAULT '{}',
         agent_runtimes_json TEXT NOT NULL DEFAULT '["single"]',
+        agent_runtime_profiles_json TEXT NOT NULL DEFAULT '["tool_loop_v1"]',
         embedding_models_json TEXT NOT NULL DEFAULT '[]',
         cpu_cores INTEGER NOT NULL DEFAULT 1,
         memory_mb INTEGER NOT NULL DEFAULT 0,
@@ -1507,6 +1643,9 @@ export class AgatStore {
     if (!nodeColumns.some((column) => column.name === "agent_runtimes_json")) {
       this.db.exec("ALTER TABLE nodes ADD COLUMN agent_runtimes_json TEXT NOT NULL DEFAULT '[\"single\"]';");
     }
+    if (!nodeColumns.some((column) => column.name === "agent_runtime_profiles_json")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN agent_runtime_profiles_json TEXT NOT NULL DEFAULT '[\"tool_loop_v1\"]';");
+    }
     if (!nodeColumns.some((column) => column.name === "embedding_models_json")) {
       this.db.exec("ALTER TABLE nodes ADD COLUMN embedding_models_json TEXT NOT NULL DEFAULT '[]';");
     }
@@ -1717,7 +1856,7 @@ export class AgatStore {
       this.db.prepare("UPDATE stages SET process_token_id = ? WHERE run_id = (SELECT run_id FROM process_instances WHERE id = ?) AND process_token_id IS NULL")
         .run(tokenId, String(instance.id));
     }
-    this.db.exec("PRAGMA user_version = 15;");
+    this.db.exec("PRAGMA user_version = 16;");
   }
 
   private seedAgents(): void {
@@ -3835,6 +3974,7 @@ export class AgatStore {
   createAgent(input: CreateAgentInput, projectId = "default"): Record<string, unknown> {
     const project = this.requireProject(projectId);
     const agent = normalizeAgentInput(input);
+    this.validateSpecialistTeamConfig(agent.runtimeConfig, project);
     const duplicate = this.db
       .prepare("SELECT id FROM agents WHERE name = ? COLLATE NOCASE AND (project_id = ? OR is_builtin = 1)")
       .get(agent.name, project) as Row | undefined;
@@ -3894,6 +4034,7 @@ export class AgatStore {
         {},
       ),
     });
+    this.validateSpecialistTeamConfig(agent.runtimeConfig, project, agentId);
     const duplicate = this.db
       .prepare("SELECT id FROM agents WHERE name = ? COLLATE NOCASE AND id <> ? AND (project_id = ? OR is_builtin = 1)")
       .get(agent.name, agentId, project) as Row | undefined;
@@ -4406,13 +4547,13 @@ export class AgatStore {
             project,
             parseJson<unknown>(example.knowledge_collection_ids_json, []),
           );
-          const snapshot = agentSnapshot({
+          const snapshot = this.captureAgentSnapshot({
             ...agent,
             system_prompt: String(prompt.content),
             model,
             registry_prompt_id: input.promptId,
             registry_prompt_version: promptVersion,
-          }, "evaluation", timestamp, model);
+          }, "evaluation", project, timestamp, model);
           insertRun.run(
             runId,
             `${name} · ${String(example.name)}`.slice(0, 120),
@@ -6907,7 +7048,7 @@ export class AgatStore {
             index,
             index === 0 ? (initiallyAwaitingApproval ? "waiting_approval" : "queued") : "pending",
             approvalRequired && isLast ? 1 : 0,
-            JSON.stringify(agentSnapshot(agentRow, "run_creation", timestamp)),
+            JSON.stringify(this.captureAgentSnapshot(agentRow, "run_creation", project, timestamp)),
             timestamp,
             timestamp,
           );
@@ -6952,16 +7093,18 @@ export class AgatStore {
     const models = [...new Set(registration.models.map((model) => model.trim()).filter(Boolean))];
     const modelProfiles = normalizeModelProfiles(registration.modelProfiles, models);
     const agentRuntimes = normalizeAgentRuntimes(registration.agentRuntimes);
+    const agentRuntimeProfiles = normalizeAgentRuntimeProfiles(registration.agentRuntimeProfiles);
     const embeddingModels = normalizeEmbeddingModels(registration.embeddingModels);
 
     this.db
       .prepare(`
         INSERT INTO nodes(
           id, name, platform, architecture, endpoint, models_json, model_profiles_json,
-          labels_json, agent_runtimes_json, embedding_models_json, cpu_cores, memory_mb, vram_mb, gpu,
+          labels_json, agent_runtimes_json, agent_runtime_profiles_json, embedding_models_json,
+          cpu_cores, memory_mb, vram_mb, gpu,
           max_concurrency, token_hash, status,
           metrics_json, last_seen, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
           platform = excluded.platform,
           architecture = excluded.architecture,
@@ -6970,6 +7113,7 @@ export class AgatStore {
           model_profiles_json = excluded.model_profiles_json,
           labels_json = excluded.labels_json,
           agent_runtimes_json = excluded.agent_runtimes_json,
+          agent_runtime_profiles_json = excluded.agent_runtime_profiles_json,
           embedding_models_json = excluded.embedding_models_json,
           cpu_cores = excluded.cpu_cores,
           memory_mb = excluded.memory_mb,
@@ -6991,6 +7135,7 @@ export class AgatStore {
         JSON.stringify(modelProfiles),
         JSON.stringify(registration.labels ?? {}),
         JSON.stringify(agentRuntimes),
+        JSON.stringify(agentRuntimeProfiles),
         JSON.stringify(embeddingModels),
         clampInteger(registration.cpuCores, 1, 512, 1),
         clampInteger(registration.memoryMb, 0, 16_777_216, 0),
@@ -7009,6 +7154,7 @@ export class AgatStore {
       modelProfiles: modelProfiles.length,
       maxConcurrency,
       agentRuntimes,
+      agentRuntimeProfiles,
       embeddingModels,
     });
     return { id, token };
@@ -7023,7 +7169,10 @@ export class AgatStore {
     const timestamp = nowIso();
     if (capabilities) {
       const models = [...new Set(capabilities.models.map((model) => model.trim()).filter(Boolean))];
-      const current = this.db.prepare("SELECT model_profiles_json, vram_mb, embedding_models_json FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
+      const current = this.db.prepare(`
+        SELECT model_profiles_json, vram_mb, embedding_models_json, agent_runtime_profiles_json
+        FROM nodes WHERE id = ?
+      `).get(nodeId) as Row | undefined;
       const modelProfiles = capabilities.modelProfiles === undefined
         ? normalizeModelProfiles(parseJson<unknown>(current?.model_profiles_json, []), models)
         : normalizeModelProfiles(capabilities.modelProfiles, models);
@@ -7031,6 +7180,9 @@ export class AgatStore {
         ? Number(current?.vram_mb ?? 0)
         : clampInteger(capabilities.vramMb, 0, 16_777_216, 0);
       const agentRuntimes = normalizeAgentRuntimes(capabilities.agentRuntimes);
+      const agentRuntimeProfiles = capabilities.agentRuntimeProfiles === undefined
+        ? normalizeAgentRuntimeProfiles(parseJson<unknown>(current?.agent_runtime_profiles_json, ["tool_loop_v1"]))
+        : normalizeAgentRuntimeProfiles(capabilities.agentRuntimeProfiles);
       const embeddingModels = capabilities.embeddingModels === undefined
         ? normalizeEmbeddingModels(parseJson<unknown>(current?.embedding_models_json, []))
         : normalizeEmbeddingModels(capabilities.embeddingModels);
@@ -7044,6 +7196,7 @@ export class AgatStore {
             model_profiles_json = ?,
             labels_json = ?,
             agent_runtimes_json = ?,
+            agent_runtime_profiles_json = ?,
             embedding_models_json = ?,
             vram_mb = ?,
             max_concurrency = ?,
@@ -7058,6 +7211,7 @@ export class AgatStore {
           JSON.stringify(modelProfiles),
           JSON.stringify(capabilities.labels ?? {}),
           JSON.stringify(agentRuntimes),
+          JSON.stringify(agentRuntimeProfiles),
           JSON.stringify(embeddingModels),
           vramMb,
           clampInteger(capabilities.maxConcurrency, 1, 32, 1),
@@ -7091,6 +7245,9 @@ export class AgatStore {
         modelProfiles: normalizeModelProfiles(parseJson<unknown>(row.model_profiles_json, []), models),
         benchmarks: this.modelBenchmarks(String(row.id)),
         runtimes: new Set(normalizeAgentRuntimes(parseJson<unknown>(row.agent_runtimes_json, ["single"]))),
+        runtimeProfiles: new Set(normalizeAgentRuntimeProfiles(
+          parseJson<unknown>(row.agent_runtime_profiles_json, ["tool_loop_v1"]),
+        )),
         metrics: parseJson<WorkerMetrics>(row.metrics_json, {}),
         freeSlots,
       }];
@@ -7108,6 +7265,9 @@ export class AgatStore {
     const options: RoutingOption[] = [];
     for (const node of nodes) {
       if (!node.runtimes.has(snapshot.runtime)) continue;
+      if (snapshot.runtime === "langgraph" && !node.runtimeProfiles.has(snapshot.runtimeConfig.profile)) continue;
+      const pinnedModels = pinnedAgentModels(snapshot);
+      if (node.models.length > 0 && pinnedModels.some((model) => !node.models.includes(model))) continue;
       const temperature = node.metrics.temperatureC;
       if (policy.maxTemperatureC > 0 && temperature !== undefined && temperature > policy.maxTemperatureC) continue;
       if (node.metrics.onBattery
@@ -7289,6 +7449,9 @@ export class AgatStore {
       const agentRuntimes = new Set(
         normalizeAgentRuntimes(parseJson<unknown>(node.agent_runtimes_json, ["single"])),
       );
+      const agentRuntimeProfiles = new Set(
+        normalizeAgentRuntimeProfiles(parseJson<unknown>(node.agent_runtime_profiles_json, ["tool_loop_v1"])),
+      );
       const candidates = this.db
         .prepare(`
           SELECT
@@ -7354,8 +7517,11 @@ export class AgatStore {
           }, "migration_backfill");
         const requestedModel = snapshot.model;
         const requestedRuntime = snapshot.runtime;
-        const modelCompatible = requestedModel === null || models.size === 0 || models.has(requestedModel);
-        if (!modelCompatible || !agentRuntimes.has(requestedRuntime)) return false;
+        const requiredModels = pinnedAgentModels(snapshot);
+        const modelCompatible = models.size === 0 || requiredModels.every((model) => models.has(model));
+        const profileCompatible = requestedRuntime !== "langgraph"
+          || agentRuntimeProfiles.has(snapshot.runtimeConfig.profile);
+        if (!modelCompatible || !agentRuntimes.has(requestedRuntime) || !profileCompatible) return false;
         selectedMcpTools = this.mcpLeaseTools(String(row.project_id));
         if (!modelRouterPolicy.enabled) return true;
         const routing = this.routeAgentStage(
@@ -7422,6 +7588,11 @@ export class AgatStore {
         {
           leaseId,
           runtime: candidateSnapshot.runtime,
+          runtimeProfile: candidateSnapshot.runtimeConfig.profile,
+          specialistDefinitionVersions: candidateSnapshot.specialists.map((specialist) => ({
+            id: specialist.id,
+            definitionVersion: specialist.definitionVersion,
+          })),
           requestedModel: candidateSnapshot.model,
           selectedModel,
           routing: routingDecision,
@@ -7515,6 +7686,13 @@ export class AgatStore {
             selectedModel,
             runtime: candidateSnapshot.runtime,
             runtimeConfig: candidateSnapshot.runtimeConfig,
+            specialists: candidateSnapshot.specialists.map((specialist) => ({
+              id: specialist.id,
+              name: specialist.name,
+              model: specialist.model,
+              promptVersion: specialist.promptVersion,
+              definitionVersion: specialist.definitionVersion,
+            })),
             promptVersion: candidateSnapshot.promptVersion,
             definitionVersion: candidateSnapshot.definitionVersion,
           },
@@ -7536,6 +7714,8 @@ export class AgatStore {
         agentId: candidateSnapshot.id,
         model: selectedModel,
         runtime: candidateSnapshot.runtime,
+        runtimeProfile: candidateSnapshot.runtimeConfig.profile,
+        specialistCount: candidateSnapshot.specialists.length,
         attempt: Number(candidate.attempt) + 1,
         nodeId,
       });
@@ -7552,6 +7732,7 @@ export class AgatStore {
           workerVersion: workerVersion.slice(0, 80),
           models: [...models],
           agentRuntimes: [...agentRuntimes],
+          agentRuntimeProfiles: [...agentRuntimeProfiles],
           embeddingModels: normalizeEmbeddingModels(parseJson<unknown>(node.embedding_models_json, [])),
           labels: parseJson<Record<string, string>>(node.labels_json, {}),
           memoryMb: Number(node.memory_mb),
@@ -7593,6 +7774,7 @@ export class AgatStore {
           model: selectedModel,
           runtime: candidateSnapshot.runtime,
           runtimeConfig: candidateSnapshot.runtimeConfig,
+          specialists: candidateSnapshot.specialists,
           promptVersion: candidateSnapshot.promptVersion,
           definitionVersion: candidateSnapshot.definitionVersion,
         },
@@ -8076,16 +8258,24 @@ export class AgatStore {
     const benchmarkTimestamps = onlineProfiles
       .map((profile) => (profile.benchmark as Record<string, unknown> | null)?.lastObservedAt)
       .filter((value): value is string => typeof value === "string");
+    const agentsById = new Map(agents.map((agent) => [String(agent.id), agent]));
     const readyAgents = agents.filter((agent) => {
-      const requestedModel = typeof agent.model === "string" ? agent.model : null;
+      const runtimeConfig = normalizeAgentRuntimeConfig(agent.runtimeConfig);
+      const specialistModels = runtimeConfig.profile === "specialist_team_v1"
+        ? runtimeConfig.specialistAgentIds.map((id) => agentsById.get(id)?.model)
+        : [];
+      const requestedModels = [agent.model, ...specialistModels]
+        .filter((model): model is string => typeof model === "string" && model.length > 0);
       const requestedRuntime = normalizeAgentRuntime(agent.runtime);
       return onlineNodes.some((node) => {
         const advertisedModels = node.models as string[];
         const advertisedRuntimes = normalizeAgentRuntimes(node.agentRuntimes);
-        const modelCompatible = requestedModel === null
-          || advertisedModels.length === 0
-          || advertisedModels.includes(requestedModel);
-        return modelCompatible && advertisedRuntimes.includes(requestedRuntime);
+        const advertisedProfiles = normalizeAgentRuntimeProfiles(node.agentRuntimeProfiles);
+        const modelCompatible = advertisedModels.length === 0
+          || requestedModels.every((model) => advertisedModels.includes(model));
+        const profileCompatible = requestedRuntime !== "langgraph"
+          || advertisedProfiles.includes(runtimeConfig.profile);
+        return modelCompatible && advertisedRuntimes.includes(requestedRuntime) && profileCompatible;
       });
     }).length;
 
@@ -8373,7 +8563,7 @@ export class AgatStore {
               registry_prompt_version: snapshot.registryPromptVersion,
             }, "replay", timestamp, Object.hasOwn(variant.modelOverrides, snapshot.id)
               ? variant.modelOverrides[snapshot.id]
-              : undefined);
+              : undefined, snapshot.specialists);
             insertStage.run(
               randomUUID(),
               replayId,
@@ -8441,7 +8631,7 @@ export class AgatStore {
       };
     });
     const base = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       runId: String(run.id),
       traceId: String(run.trace_id),
       sourceRunId: typeof run.replay_of_run_id === "string" ? run.replay_of_run_id : null,
@@ -9023,6 +9213,64 @@ export class AgatStore {
     return this.effectiveAgentRows(projectId).find((row) => row.id === agentId) ?? null;
   }
 
+  private validateSpecialistTeamConfig(
+    config: AgentRuntimeConfig,
+    projectId: string,
+    teamAgentId?: string,
+  ): void {
+    if (config.profile !== "specialist_team_v1") return;
+    if (teamAgentId && config.specialistAgentIds.includes(teamAgentId)) {
+      throw new Error("Команда не может включать саму себя");
+    }
+    const rows = new Map(this.effectiveAgentRows(projectId).map((row) => [String(row.id), row]));
+    for (const specialistId of config.specialistAgentIds) {
+      const specialist = rows.get(specialistId);
+      if (!specialist || specialistId === "__agat_eval_judge__" || specialistId === "__agat_system__") {
+        throw new Error(`Специалист ${specialistId} не найден в проекте`);
+      }
+      const specialistConfig = normalizeAgentRuntimeConfig(
+        parseJson<Record<string, unknown>>(specialist.runtime_config_json, {}),
+      );
+      if (specialistConfig.profile !== "tool_loop_v1") {
+        throw new Error("Вложенные specialist teams запрещены");
+      }
+    }
+    if (!teamAgentId) return;
+    for (const candidate of rows.values()) {
+      if (String(candidate.id) === teamAgentId) continue;
+      const candidateConfig = normalizeAgentRuntimeConfig(
+        parseJson<Record<string, unknown>>(candidate.runtime_config_json, {}),
+      );
+      if (candidateConfig.profile === "specialist_team_v1"
+        && candidateConfig.specialistAgentIds.includes(teamAgentId)) {
+        throw new Error("Агент уже используется как specialist и не может стать вложенной командой");
+      }
+    }
+  }
+
+  private captureAgentSnapshot(
+    row: Record<string, unknown>,
+    source: AgentExecutionSnapshot["source"],
+    projectId: string,
+    capturedAt = nowIso(),
+    modelOverride?: string | null,
+  ): AgentExecutionSnapshot {
+    const runtimeConfig = normalizeAgentRuntimeConfig(
+      parseJson<Record<string, unknown>>(row.runtime_config_json, {}),
+    );
+    const specialists = runtimeConfig.profile === "specialist_team_v1"
+      ? (() => {
+        const rows = new Map(this.effectiveAgentRows(projectId).map((candidate) => [String(candidate.id), candidate]));
+        return runtimeConfig.specialistAgentIds.map((specialistId) => {
+          const specialist = rows.get(specialistId);
+          if (!specialist) throw new Error(`Специалист ${specialistId} не найден в проекте`);
+          return specialistExecutionSnapshot(specialist);
+        });
+      })()
+      : [];
+    return agentSnapshot(row, source, capturedAt, modelOverride, specialists);
+  }
+
   private pinSubprocessVersions(processId: string, graph: ProcessGraph, projectId: string): ProcessGraph {
     const pinned = structuredClone(graph);
     for (const node of pinned.nodes) {
@@ -9600,7 +9848,7 @@ export class AgatStore {
         node.id,
         tokenId,
         lastOutput,
-        JSON.stringify(agentSnapshot(agentRow, "process_queue", timestamp)),
+        JSON.stringify(this.captureAgentSnapshot(agentRow, "process_queue", projectId, timestamp)),
         timestamp,
         timestamp,
       );
@@ -10536,6 +10784,9 @@ export class AgatStore {
       labels: parseJson<Record<string, string>>(row.labels_json, {}),
       agentRuntimes: normalizeAgentRuntimes(
         parseJson<unknown>(row.agent_runtimes_json, ["single"]),
+      ),
+      agentRuntimeProfiles: normalizeAgentRuntimeProfiles(
+        parseJson<unknown>(row.agent_runtime_profiles_json, ["tool_loop_v1"]),
       ),
       embeddingModels: normalizeEmbeddingModels(parseJson<unknown>(row.embedding_models_json, [])),
       cpuCores: row.cpu_cores,

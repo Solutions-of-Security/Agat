@@ -15,6 +15,7 @@ flowchart LR
     D --> W["Worker · invoke_agent {name}"]
     W --> M["Worker · chat {model}"]
     W --> T["Worker · execute_tool {tool}"]
+    W --> H["Worker · agent_handoff {specialist}"]
 ```
 
 Coordinator передаёт контекст worker через W3C `traceparent`; worker продолжает тот же trace и также передаёт контекст OpenAI-compatible model endpoint. Используются актуальные имена операций GenAI semantic conventions: `invoke_agent`, `chat` и `execute_tool`. Coordinator `dispatch_agent` остаётся внутренним span АГАТ и не имитирует второй GenAI agent invocation.
@@ -22,7 +23,7 @@ Coordinator передаёт контекст worker через W3C `traceparent
 В spans передаются безопасные технические атрибуты:
 
 - run, stage, agent и node ID;
-- agent runtime, model/provider и номер попытки;
+- agent runtime/profile, число specialists, model/provider и номер попытки;
 - latency, число model/tool calls;
 - input/output token usage, только если provider вернул `usage`;
 - статус и `error.type`.
@@ -73,18 +74,18 @@ npm run k8s:up
 
 - имя, роль и system prompt;
 - model pin;
-- `single | langgraph` runtime и bounded config;
+- `single | langgraph` runtime, точный bounded profile/config и, для team, ordered specialist snapshots;
 - SHA-256 `promptVersion` и `definitionVersion`;
 - worker version, модели, runtime capabilities и tool schema на фактическом lease;
 - explainable Model Router decision отдельно от исходного model pin;
 - immutable список `knowledgeCollectionIds`, подключённых к run, и provenance retrieval в trace events;
 - измеренные model/tool calls, latency, tokens и опциональную energy estimate.
 
-`GET /api/v1/runs/:id/trace` возвращает `manifest` с `inputSha256`, hash входа каждого stage и `manifestSha256`. Редактирование агента после создания run не меняет уже сохранённый snapshot или replay.
+`GET /api/v1/runs/:id/trace` возвращает manifest schema v3 с `inputSha256`, hash входа каждого stage и `manifestSha256`. Specialist snapshot имеет schema v1 и фиксирует ID, metadata, prompt/model/runtime и definition hashes. Редактирование team или участника после создания run не меняет уже сохранённый snapshot или replay.
 
 У старых stage snapshot создаётся во время миграции с `source=migration_backfill`. UI показывает предупреждение: такой snapshot соответствует конфигурации на момент миграции и не доказывает историческую конфигурацию до обновления.
 
-Manifest не содержит credentials. При этом он содержит system prompt, а обычный trace — точные input/output, поэтому endpoint остаётся authenticated и project-scoped.
+Manifest не содержит credentials. При этом он содержит system prompts supervisor и specialists, а обычный trace — точные input/output, поэтому endpoint остаётся authenticated и project-scoped. Handoff audit сохраняет только phase, member ID/name/hash и размеры assignment/output; их raw текст и скрытое reasoning не записываются.
 
 ## Безопасный replay
 

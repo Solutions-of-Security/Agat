@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import type { Agent, ComputeNode, Overview, Run, RunStatus, ViewId } from "../types";
 import { Icon } from "./Icon";
 
@@ -16,10 +18,23 @@ function time(value: string): string {
   return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 }
 
-function isAgentReady(agent: Agent, nodes: ComputeNode[]): boolean {
+function isAgentReady(agent: Agent, agentsById: Map<string, Agent>, nodes: ComputeNode[]): boolean {
+  const memberIds = agent.runtimeConfig.profile === "specialist_team_v1"
+    ? agent.runtimeConfig.specialistAgentIds
+    : [];
+  const requiredModels = [
+    agent.model,
+    ...memberIds.map((id) => agentsById.get(id)?.model ?? null),
+  ].filter((model): model is string => Boolean(model));
   return nodes.some((node) => {
-    const modelCompatible = agent.model === null || node.models.length === 0 || node.models.includes(agent.model);
-    return node.status === "online" && modelCompatible && node.agentRuntimes.includes(agent.runtime);
+    const modelCompatible = node.models.length === 0
+      || requiredModels.every((model) => node.models.includes(model));
+    const profileCompatible = agent.runtime !== "langgraph"
+      || node.agentRuntimeProfiles.includes(agent.runtimeConfig.profile);
+    return node.status === "online"
+      && modelCompatible
+      && profileCompatible
+      && node.agentRuntimes.includes(agent.runtime);
   });
 }
 
@@ -52,6 +67,10 @@ export function OverviewPage({ overview, onCreateRun, onNavigate, onOpenRun }: O
     .filter((run) => ["queued", "running", "waiting_approval"].includes(run.status))
     .slice(0, 6);
   const recentEvents = overview.events.slice(-7).reverse();
+  const agentsById = useMemo(
+    () => new Map(overview.agents.map((agent) => [agent.id, agent])),
+    [overview.agents],
+  );
 
   return (
     <main className="main-column section-page" id="overview">
@@ -89,11 +108,11 @@ export function OverviewPage({ overview, onCreateRun, onNavigate, onOpenRun }: O
           <header><div><h2>Готовность агентов</h2><p>Модель и runtime сопоставлены с online-узлом</p></div><button type="button" onClick={() => onNavigate("agents")}>Управлять <Icon name="chevron" size={15} /></button></header>
           <div className="readiness-list">
             {overview.agents.slice(0, 6).map((agent) => {
-              const ready = isAgentReady(agent, overview.nodes);
+              const ready = isAgentReady(agent, agentsById, overview.nodes);
               return (
                 <div key={agent.id}>
                   <span className={`status-dot status-dot--${ready ? "online" : "waiting"}`} />
-                  <span><strong>{agent.name}</strong><small className="mono">{agent.model ?? "Автовыбор"} · {agent.runtime}</small></span>
+                  <span><strong>{agent.name}</strong><small className="mono">{agent.model ?? "Автовыбор"} · {agent.runtimeConfig.profile}</small></span>
                   <em>{ready ? "Готов" : "Нет узла"}</em>
                 </div>
               );

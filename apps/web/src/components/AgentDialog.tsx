@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import type { Agent, CreateAgentRequest } from "../types";
 import { Icon } from "./Icon";
@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 interface AgentDialogProps {
   open: boolean;
   agent: Agent | null;
+  agents: Agent[];
   models: string[];
   busy: boolean;
   error: string | null;
@@ -25,9 +26,18 @@ const emptyForm: CreateAgentRequest = {
   },
 };
 
-export function AgentDialog({ open, agent, models, busy, error, onClose, onSubmit }: AgentDialogProps) {
+export function AgentDialog({ open, agent, agents, models, busy, error, onClose, onSubmit }: AgentDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<CreateAgentRequest>(emptyForm);
+  const specialistCandidates = useMemo(
+    () => agents.filter((candidate) =>
+      candidate.id !== agent?.id && candidate.runtimeConfig.profile !== "specialist_team_v1"),
+    [agent?.id, agents],
+  );
+  const teamConfig = form.runtimeConfig.profile === "specialist_team_v1" ? form.runtimeConfig : null;
+  const teamMemberError = teamConfig && (
+    teamConfig.specialistAgentIds.length < 2 || teamConfig.specialistAgentIds.length > 8
+  ) ? "Выберите от 2 до 8 специалистов." : null;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -120,6 +130,9 @@ export function AgentDialog({ open, agent, models, busy, error, onClose, onSubmi
             onChange={(event) => setForm((current) => ({
               ...current,
               runtime: event.target.value === "langgraph" ? "langgraph" : "single",
+              runtimeConfig: event.target.value === "langgraph" || current.runtimeConfig.profile === "tool_loop_v1"
+                ? current.runtimeConfig
+                : { profile: "tool_loop_v1", maxIterations: current.runtimeConfig.maxIterations },
             }))}
           >
             <option value="single">Single · прямой model/tool loop</option>
@@ -130,32 +143,111 @@ export function AgentDialog({ open, agent, models, busy, error, onClose, onSubmi
           </small>
         </label>
         {form.runtime === "langgraph" ? (
-          <label className="field">
-            <span>Максимум итераций графа</span>
-            <input
-              type="number"
-              min={1}
-              max={12}
-              step={1}
-              value={form.runtimeConfig.maxIterations}
-              onChange={(event) => setForm((current) => ({
-                ...current,
-                runtimeConfig: {
-                  ...current.runtimeConfig,
-                  maxIterations: Number(event.target.value),
-                },
-              }))}
-            />
-            <small className="field-hint">
-              Профиль tool_loop_v1: чередование model → tools с жёстким пределом 1–12.
-            </small>
-          </label>
+          <>
+            <label className="field">
+              <span>Профиль графа</span>
+              <select
+                value={form.runtimeConfig.profile}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  runtimeConfig: event.target.value === "specialist_team_v1"
+                    ? {
+                      profile: "specialist_team_v1",
+                      maxIterations: current.runtimeConfig.maxIterations,
+                      maxHandoffs: 4,
+                      stateSchema: "specialist_team_state_v1",
+                      specialistAgentIds: [],
+                    }
+                    : { profile: "tool_loop_v1", maxIterations: current.runtimeConfig.maxIterations },
+                }))}
+              >
+                <option value="tool_loop_v1">Tool loop v1 · один агент</option>
+                <option value="specialist_team_v1">Specialist team v1 · supervisor + handoff</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Максимум итераций subgraph</span>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                step={1}
+                value={form.runtimeConfig.maxIterations}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  runtimeConfig: {
+                    ...current.runtimeConfig,
+                    maxIterations: Number(event.target.value),
+                  },
+                }))}
+              />
+              <small className="field-hint">
+                Жёсткий предел 1–12 дополнительно ограничивается настройкой worker.
+              </small>
+            </label>
+            {teamConfig ? (
+              <div className="agent-team-config">
+                <label className="field">
+                  <span>Максимум handoff</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={teamConfig.maxHandoffs}
+                    onChange={(event) => setForm((current) => current.runtimeConfig.profile === "specialist_team_v1" ? ({
+                      ...current,
+                      runtimeConfig: {
+                        ...current.runtimeConfig,
+                        maxHandoffs: Number(event.target.value),
+                      },
+                    }) : current)}
+                  />
+                </label>
+                <fieldset className="agent-team-picker">
+                  <legend>Specialists · {teamConfig.specialistAgentIds.length}/8</legend>
+                  <p>Участники фиксируются immutable snapshots при создании run.</p>
+                  <div>
+                    {specialistCandidates.map((candidate) => {
+                      const selected = teamConfig.specialistAgentIds.includes(candidate.id);
+                      return (
+                        <label key={candidate.id}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={!selected && teamConfig.specialistAgentIds.length >= 8}
+                            onChange={() => setForm((current) => {
+                              if (current.runtimeConfig.profile !== "specialist_team_v1") return current;
+                              const ids = current.runtimeConfig.specialistAgentIds;
+                              return {
+                                ...current,
+                                runtimeConfig: {
+                                  ...current.runtimeConfig,
+                                  specialistAgentIds: ids.includes(candidate.id)
+                                    ? ids.filter((id) => id !== candidate.id)
+                                    : [...ids, candidate.id],
+                                },
+                              };
+                            })}
+                          />
+                          <span><strong>{candidate.name}</strong><small>{candidate.role} · {candidate.model ?? "автовыбор"}</small></span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {specialistCandidates.length === 0 ? <small className="field-hint">Сначала создайте как минимум двух обычных агентов.</small> : null}
+                  {teamMemberError ? <small className="form-error">{teamMemberError}</small> : null}
+                </fieldset>
+                <p className="agent-team-schema">State schema <code>{teamConfig.stateSchema}</code> · произвольные schemas и вложенные teams запрещены.</p>
+              </div>
+            ) : null}
+          </>
         ) : null}
 
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <div className="dialog-actions">
           <button className="button button--secondary" type="button" onClick={onClose}>Отмена</button>
-          <button className="button button--primary" type="submit" disabled={busy}>
+          <button className="button button--primary" type="submit" disabled={busy || Boolean(teamMemberError)}>
             <Icon name={agent ? "check" : "plus"} size={17} />
             {busy ? "Сохраняем…" : agent ? "Сохранить" : "Создать агента"}
           </button>

@@ -121,6 +121,14 @@ export function NodesPage({ nodes, models }: { nodes: ComputeNode[]; models: str
                   {node.agentRuntimes.map((runtime) => <code key={runtime}>{runtime}</code>)}
                 </div>
               </div>
+              <div className="fleet-card__tools">
+                <span>LangGraph profiles</span>
+                <div>
+                  {node.agentRuntimeProfiles.length
+                    ? node.agentRuntimeProfiles.map((profile) => <code key={profile}>{profile}</code>)
+                    : <em>не поддерживаются</em>}
+                </div>
+              </div>
               <footer><span>Heartbeat</span><time className="mono">{relativeTime(node.lastSeen)}</time></footer>
             </article>
           ))}

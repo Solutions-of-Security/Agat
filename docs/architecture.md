@@ -34,7 +34,7 @@ flowchart LR
     W1 -->|"локальные /v1/embeddings"| M1
     W2 --> M2["LM Studio / llama.cpp"]
     W3 --> M3["малая локальная модель"]
-    W1 --> LG["LangGraph · bounded inner graph"]
+    W1 --> LG["LangGraph · tool loop / specialist team"]
     W1 -.->|"W3C trace context + OTLP"| OTel
     LG --> M1
     W1 -->|"controlled web tools"| SEARCH["SearXNG + public-page reader"]
@@ -89,11 +89,11 @@ SQLite предполагает один активный экземпляр coo
 - вызывает `POST /v1/chat/completions` локального model server;
 - объявляет доступные embedding models, забирает отдельные embedding leases и вызывает локальный `POST /v1/embeddings`;
 - embedding-ит запрос запуска, получает от coordinator только snippets из разрешённого snapshot collections и добавляет `[K…]/[M…]` как недоверенный контекст;
-- исполняет выбранный runtime агента: прямой `single` либо bounded LangGraph `StateGraph` внутри одного lease;
+- исполняет выбранный runtime/profile агента: прямой `single`, bounded `tool_loop_v1` либо supervisor + specialist subgraphs `specialist_team_v1` внутри одного lease;
 - исполняет OpenAI-compatible `tool_calls` в ограниченном цикле и предоставляет опциональные `web_search`/`web_fetch` без прямого сетевого доступа модели;
 - получает только effective MCP tool schemas текущего lease и вызывает их через coordinator; endpoint и upstream credentials worker не видит;
 - сообщает результат или ошибку coordinator;
-- сообщает наблюдаемые model/tool calls; provider-specific hidden reasoning намеренно отбрасывается;
+- сообщает наблюдаемые model/tool calls и redacted handoff metadata; provider-specific hidden reasoning, raw assignment и specialist output в audit намеренно не записываются;
 - продолжает W3C trace через agent/model/tool spans и возвращает token/time metrics;
 - умеет `--once --dry-run` для сквозной проверки без модели.
 
@@ -105,7 +105,7 @@ React + Vite в `apps/web`.
 
 - отдельные live-разделы обзора, агентов, запусков, процессов, Knowledge, Golden eval, MCP gateway, A2A adapter, узлов и моделей;
 - реальные счётчики из SQLite и worker heartbeat вместо статических карточек;
-- создание и редактирование конфигураций агентов;
+- создание и редактирование конфигураций агентов и bounded specialist teams;
 - создание проектов и выбор project context;
 - создание зашифрованных credentials без возврата secret values;
 - совместимость `agent.model ↔ node.models` и статистика участия агента в запусках;
@@ -127,9 +127,9 @@ Agent Card намеренно отделён от authenticated task API и со
 
 ### Каталог агентов
 
-Агент — сохраняемая конфигурация в таблице `agents`: имя, ответственность, system prompt, необязательная конкретная модель, runtime и его версионированный bounded-профиль. Пустая модель означает policy-driven автовыбор. Lease получает только лучший свежий свободный worker, совместимый с model pin/runtime и Model Router constraints. Точное решение хранится отдельно от immutable agent snapshot.
+Агент — сохраняемая конфигурация в таблице `agents`: имя, ответственность, system prompt, необязательная конкретная модель, runtime и его версионированный bounded-профиль. `specialist_team_v1` дополнительно ссылается на 2–8 обычных агентов того же project. При создании run coordinator фиксирует ordered snapshots всех участников; scheduler требует профиль и все pinned модели на одном worker. Пустая модель означает policy-driven автовыбор. Lease получает только лучший свежий свободный worker, совместимый с model pins/runtime/profile и Model Router constraints. Точное решение хранится отдельно от immutable agent snapshot.
 
-Temporal управляет всем процессом, а LangGraph — только внутренними переходами одного агентного stage. LangGraph не импортируется в детерминированный Workflow и компилируется без собственного durable checkpointer, поэтому SQLite/Temporal не конкурируют с третьим источником истины. Подробности: [runtime агентов](./agent-runtimes.md).
+Temporal управляет всем процессом, а LangGraph — только внутренними переходами одного agent/team stage. Team supervisor/handoffs не умеют ждать process approval, создавать durable timer или переходить на другой lease. LangGraph не импортируется в детерминированный Workflow и компилируется без собственного durable checkpointer, поэтому SQLite/Temporal не конкурируют с третьим источником истины. Подробности: [runtime агентов](./agent-runtimes.md) и [specialist teams 1.3](./langgraph-specialist-teams.md).
 
 Local RAG также не добавляет второй orchestrator или сетевой vector service: coordinator остаётся владельцем lifecycle и provenance, а worker — владельцем model calls. Подробности: [Local RAG и управляемая память](./local-rag-and-memory.md).
 

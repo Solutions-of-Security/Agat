@@ -7,15 +7,16 @@
 3. Заполните имя, роль и системный промпт.
 4. Оставьте модель пустой для автовыбора либо укажите точное имя из worker, например `qwen3:8b`.
 5. Выберите runtime: `Single` для простого агента или `LangGraph` для bounded model/tool-графа.
-6. Для LangGraph задайте максимум 1–12 model-итераций.
-7. Сохраните агента — initial prompt/model станут `v1` project-specific prompt registry, а агент сразу появится в каталоге и конструкторе запуска.
+6. Для LangGraph выберите профиль: одиночный `tool_loop_v1` либо `specialist_team_v1`.
+7. Для tool loop задайте максимум 1–12 model-итераций. Для team дополнительно выберите 2–8 обычных агентов и максимум 1–8 handoffs.
+8. Сохраните агента — initial prompt/model станут `v1` project-specific prompt registry, а агент сразу появится в каталоге и конструкторе запуска.
 
 Карточка показывает не расчётные заглушки, а реальные данные coordinator:
 
 - количество запусков, где агент участвует;
 - активные цепочки;
 - дату последнего запуска;
-- число online-узлов, совместимых одновременно по модели и runtime;
+- число online-узлов, совместимых одновременно по модели, runtime/profile и, для team, моделям всех участников;
 - состояние `Готов` или `Нет узла`.
 
 `Нет узла` не запрещает поставить задачу в очередь. Она начнётся, когда подключится совместимый worker.
@@ -31,11 +32,12 @@
 ## Runtime
 
 - `single` — текущий прямой model/tool loop с минимальным overhead;
-- `langgraph` — профиль `tool_loop_v1`, реализованный через LangGraph `StateGraph` с conditional edges и жёстким пределом итераций;
+- `langgraph/tool_loop_v1` — один LangGraph `StateGraph` с conditional edges и жёстким пределом итераций;
+- `langgraph/specialist_team_v1` — supervisor с 2–8 immutable specialist snapshots, bounded handoffs и проверяемым `specialist_team_state_v1`;
 - worker без установленного LangGraph не получает такие этапы и продолжает обслуживать `single`;
 - Docker/Kubernetes worker уже содержит нужную зависимость; для отдельной машины выполните `python3 -m pip install -r workers/requirements.txt`.
 
-Runtime относится только к выбранному агенту. Wait, approval, process loops и восстановление бизнес-процесса по-прежнему принадлежат coordinator/Temporal. Полный контракт и ограничения: [Runtime агентов: Single и LangGraph](./agent-runtimes.md).
+Team может включать только обычных агентов того же project: self-reference, duplicates, внутренние служебные system/eval agents и nested teams отклоняются. При создании run coordinator фиксирует ordered snapshots участников; последующее редактирование specialist не меняет уже созданный run. Runtime относится только к выбранному agent stage. Wait, approval, process loops и восстановление бизнес-процесса по-прежнему принадлежат coordinator/Temporal. Полный контракт и ограничения: [Runtime агентов](./agent-runtimes.md) и [LangGraph specialist teams 1.3](./langgraph-specialist-teams.md).
 
 ## Цепочки и подтверждение
 
@@ -45,6 +47,6 @@ Approval gate применяется перед последним агенто�
 
 ## Редактирование
 
-`Настроить` изменяет имя, роль, runtime и предел итераций. Активные prompt/model показаны read-only: новая immutable prompt version, model candidate и их promotion выполняются в **Golden eval → Prompt registry** только после matching PASS experiment. Подробности: [Golden eval и prompt registry](./golden-eval-prompt-registry.md).
+`Настроить` изменяет имя, роль, runtime/profile, пределы итераций/handoffs и состав team. Активные prompt/model показаны read-only: новая immutable prompt version, model candidate и их promotion выполняются в **Golden eval → Prompt registry** только после matching PASS experiment. Подробности: [Golden eval и prompt registry](./golden-eval-prompt-registry.md).
 
 Каждый stage получает immutable agent snapshot при создании/постановке в очередь. Поэтому редактирование metadata или последующий promotion не изменяют уже созданные runs и их replay manifest. Удаление агента намеренно не добавлено, чтобы не нарушать историю запусков; безопасная архивация будет отдельным состоянием.

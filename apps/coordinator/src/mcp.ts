@@ -22,7 +22,7 @@ import type {
 } from "./types.js";
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
-const MCP_CLIENT_VERSION = "1.2.0";
+const MCP_CLIENT_VERSION = "1.3.0";
 
 export interface McpGatewayOptions {
   enabled: boolean;

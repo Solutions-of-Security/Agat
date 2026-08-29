@@ -1,12 +1,26 @@
 export type SchedulerMode = "sequential" | "parallel" | "auto";
 export type ResultDestination = "history" | "artifacts";
 export type AgentRuntime = "single" | "langgraph";
-export type AgentRuntimeProfile = "tool_loop_v1";
+export type AgentRuntimeProfile = "tool_loop_v1" | "specialist_team_v1";
 
-export interface AgentRuntimeConfig {
-  profile: AgentRuntimeProfile;
+export interface ToolLoopAgentRuntimeConfig {
+  profile: "tool_loop_v1";
   maxIterations: number;
 }
+
+export interface SpecialistTeamAgentRuntimeConfig {
+  profile: "specialist_team_v1";
+  /** Bound applied independently to every specialist tool-loop subgraph. */
+  maxIterations: number;
+  /** Total supervisor-to-specialist transitions inside one lease attempt. */
+  maxHandoffs: number;
+  /** Known, worker-validated shared state contract. Arbitrary schemas are not executable. */
+  stateSchema: "specialist_team_state_v1";
+  /** Existing project-visible agents resolved to immutable snapshots at run creation. */
+  specialistAgentIds: string[];
+}
+
+export type AgentRuntimeConfig = ToolLoopAgentRuntimeConfig | SpecialistTeamAgentRuntimeConfig;
 export type RunStatus =
   | "queued"
   | "running"
@@ -229,6 +243,7 @@ export interface WorkerRegistration {
   maxConcurrency?: number;
   labels?: Record<string, string>;
   agentRuntimes?: AgentRuntime[];
+  agentRuntimeProfiles?: AgentRuntimeProfile[];
   modelProfiles?: WorkerModelProfile[];
   embeddingModels?: string[];
 }
@@ -251,6 +266,7 @@ export interface WorkerCapabilities {
   maxConcurrency?: number;
   labels?: Record<string, string>;
   agentRuntimes?: AgentRuntime[];
+  agentRuntimeProfiles?: AgentRuntimeProfile[];
   modelProfiles?: WorkerModelProfile[];
   embeddingModels?: string[];
 }
@@ -364,8 +380,22 @@ export interface CreateRunInput {
   knowledgeCollectionIds?: string[];
 }
 
+export interface SpecialistExecutionSnapshot {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+  model: string | null;
+  runtimeConfig: ToolLoopAgentRuntimeConfig;
+  promptVersion: string;
+  definitionVersion: string;
+  registryPromptId: string | null;
+  registryPromptVersion: number | null;
+}
+
 export interface AgentExecutionSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   capturedAt: string;
   source: "run_creation" | "process_queue" | "migration_backfill" | "replay" | "evaluation" | "model_judge";
   id: string;
@@ -375,6 +405,8 @@ export interface AgentExecutionSnapshot {
   model: string | null;
   runtime: AgentRuntime;
   runtimeConfig: AgentRuntimeConfig;
+  /** Ordered, version-pinned subgraphs for specialist_team_v1; empty for other profiles. */
+  specialists: SpecialistExecutionSnapshot[];
   promptVersion: string;
   definitionVersion: string;
   registryPromptId: string | null;
@@ -877,6 +909,7 @@ export interface LeasePayload {
     model: string | null;
     runtime: AgentRuntime;
     runtimeConfig: AgentRuntimeConfig;
+    specialists: SpecialistExecutionSnapshot[];
     promptVersion: string;
     definitionVersion: string;
   };

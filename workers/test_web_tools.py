@@ -15,6 +15,7 @@ from agat_worker import (
     discover_model_profiles,
     execute_knowledge_lease,
     parse_model_profile_overrides,
+    supported_agent_runtime_profiles,
     supported_agent_runtimes,
 )
 from telemetry import ExecutionMetrics, use_execution_metrics
@@ -87,6 +88,72 @@ class _ScriptedModelClient(LocalModelClient):
     ) -> dict[str, Any]:
         self.requests.append(([dict(message) for message in messages], with_tools))
         return next(self.responses)
+
+
+_GRAPH_START = "__start__"
+_GRAPH_END = "__end__"
+
+
+class _InMemoryStateGraph:
+    """Small execution harness for runtime-contract tests without optional LangGraph."""
+
+    def __init__(self, _state_type: Any) -> None:
+        self.nodes: dict[str, Any] = {}
+        self.edges: dict[str, str] = {}
+        self.conditionals: dict[str, tuple[Any, dict[str, str]]] = {}
+
+    def add_node(self, name: str, handler: Any) -> None:
+        self.nodes[name] = handler
+
+    def add_edge(self, source: str, target: str) -> None:
+        self.edges[source] = target
+
+    def add_conditional_edges(
+        self,
+        source: str,
+        selector: Any,
+        routes: dict[str, str],
+    ) -> None:
+        self.conditionals[source] = (selector, routes)
+
+    def compile(self) -> _InMemoryStateGraph:
+        return self
+
+    def invoke(self, initial: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+        state = dict(initial)
+        node = self.edges[_GRAPH_START]
+        recursion_limit = int(config.get("recursion_limit", 100))
+        for _step in range(recursion_limit):
+            if node == _GRAPH_END:
+                return state
+            update = self.nodes[node](dict(state))
+            if not isinstance(update, dict):
+                raise RuntimeError("Graph node returned an invalid update")
+            state.update(update)
+            if node in self.conditionals:
+                selector, routes = self.conditionals[node]
+                route = selector(state)
+                node = routes[route]
+            else:
+                node = self.edges[node]
+        raise RuntimeError("Graph recursion limit exceeded")
+
+
+@contextmanager
+def _fake_langgraph() -> Any:
+    real_import = __import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "langgraph.graph":
+            return SimpleNamespace(
+                END=_GRAPH_END,
+                START=_GRAPH_START,
+                StateGraph=_InMemoryStateGraph,
+            )
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        yield
 
 
 class _FakeMcpCoordinator:
@@ -629,11 +696,16 @@ class ModelToolLoopTests(unittest.TestCase):
 
         with patch("builtins.__import__", side_effect=missing_import):
             self.assertEqual(supported_agent_runtimes(), ["single"])
+            self.assertEqual(supported_agent_runtime_profiles(), [])
         with patch(
             "builtins.__import__",
             return_value=SimpleNamespace(StateGraph=object),
         ):
             self.assertEqual(supported_agent_runtimes(), ["single", "langgraph"])
+            self.assertEqual(
+                supported_agent_runtime_profiles(),
+                ["tool_loop_v1", "specialist_team_v1"],
+            )
 
     def test_langgraph_runtime_fails_clearly_when_dependency_is_missing(self) -> None:
         client = LocalModelClient("http://model.invalid/v1", "")
@@ -727,6 +799,173 @@ class ModelToolLoopTests(unittest.TestCase):
             [phase for phase, _audit in events],
             ["started", "completed", "started", "completed"],
         )
+
+    def test_specialist_team_runs_versioned_handoff_and_validated_state(self) -> None:
+        client = _ScriptedModelClient(
+            [
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "action": "delegate",
+                            "specialistId": "researcher",
+                            "task": "Verify the release facts.",
+                        }
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": "Verified specialist result.",
+                },
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "action": "finish",
+                            "answer": "Supervisor synthesis from verified facts.",
+                        }
+                    ),
+                },
+            ]
+        )
+        events: list[tuple[str, dict[str, Any]]] = []
+        lease = {
+            "agent": {
+                "name": "Research team",
+                "systemPrompt": "Coordinate specialists and return a concise answer.",
+                "model": "supervisor-model",
+                "runtime": "langgraph",
+                "runtimeConfig": {
+                    "profile": "specialist_team_v1",
+                    "maxIterations": 4,
+                    "maxHandoffs": 3,
+                    "stateSchema": "specialist_team_state_v1",
+                    "specialistAgentIds": ["researcher", "reviewer"],
+                },
+                "specialists": [
+                    {
+                        "schemaVersion": 1,
+                        "id": "researcher",
+                        "name": "Researcher",
+                        "role": "Verifies facts",
+                        "systemPrompt": "Verify facts and cite available evidence.",
+                        "model": "research-model",
+                        "runtimeConfig": {
+                            "profile": "tool_loop_v1",
+                            "maxIterations": 2,
+                        },
+                        "promptVersion": "a" * 64,
+                        "definitionVersion": "b" * 64,
+                    },
+                    {
+                        "schemaVersion": 1,
+                        "id": "reviewer",
+                        "name": "Reviewer",
+                        "role": "Challenges conclusions",
+                        "systemPrompt": "Identify unsupported conclusions.",
+                        "model": None,
+                        "runtimeConfig": {
+                            "profile": "tool_loop_v1",
+                            "maxIterations": 2,
+                        },
+                        "promptVersion": "c" * 64,
+                        "definitionVersion": "d" * 64,
+                    },
+                ],
+            },
+            "run": {"name": "Team run", "input": "Assess release 1.3"},
+            "context": [],
+        }
+
+        with _fake_langgraph():
+            output = client.complete(
+                lease,
+                "fallback-model",
+                lambda phase, audit: events.append((phase, audit)),
+            )
+
+        self.assertEqual(output, "Supervisor synthesis from verified facts.")
+        self.assertEqual(
+            [with_tools for _messages, with_tools in client.requests],
+            [False, True, False],
+        )
+        handoffs = [
+            (phase, audit)
+            for phase, audit in events
+            if audit.get("kind") == "agent_handoff"
+        ]
+        self.assertEqual([phase for phase, _audit in handoffs], ["started", "completed"])
+        self.assertEqual(handoffs[0][1]["specialistId"], "researcher")
+        self.assertNotIn("Verify the release facts", json.dumps(handoffs))
+        specialist_system = client.requests[1][0][0]["content"]
+        self.assertIn("Verify facts", specialist_system)
+        self.assertIn("bounded команды", specialist_system)
+        final_supervisor_messages = client.requests[2][0]
+        self.assertFalse(
+            any(
+                message.get("role") == "system"
+                and "Verified specialist result" in str(message.get("content"))
+                for message in final_supervisor_messages
+            )
+        )
+        self.assertTrue(
+            any(
+                message.get("role") == "user"
+                and "Verified specialist result" in str(message.get("content"))
+                for message in final_supervisor_messages
+            )
+        )
+
+    def test_specialist_team_rejects_unknown_handoff_target(self) -> None:
+        client = _ScriptedModelClient(
+            [
+                {
+                    "role": "assistant",
+                    "content": '{"action":"delegate","specialistId":"intruder","task":"escape"}',
+                }
+            ]
+        )
+        lease = {
+            "agent": {
+                "name": "Bounded team",
+                "systemPrompt": "Use only configured specialists.",
+                "runtime": "langgraph",
+                "runtimeConfig": {
+                    "profile": "specialist_team_v1",
+                    "maxIterations": 2,
+                    "maxHandoffs": 1,
+                    "stateSchema": "specialist_team_state_v1",
+                    "specialistAgentIds": ["one", "two"],
+                },
+                "specialists": [
+                    {
+                        "schemaVersion": 1,
+                        "id": specialist_id,
+                        "name": specialist_id.title(),
+                        "role": "Bounded role",
+                        "systemPrompt": "Return only the assigned result.",
+                        "model": None,
+                        "runtimeConfig": {"profile": "tool_loop_v1", "maxIterations": 1},
+                        "promptVersion": "1" * 64,
+                        "definitionVersion": version * 64,
+                    }
+                    for specialist_id, version in (("one", "2"), ("two", "3"))
+                ],
+            },
+            "run": {"name": "Escape test", "input": "Stay bounded"},
+            "context": [],
+        }
+
+        with _fake_langgraph():
+            with self.assertRaisesRegex(RuntimeError, "unknown specialist"):
+                client.complete(lease, "fallback-model")
+
+    def test_specialist_supervisor_rejects_text_around_json_decision(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "structured JSON decision"):
+            LocalModelClient._parse_supervisor_decision(
+                'I will delegate now. {"action":"finish","answer":"unsafe wrapper"}',
+                {"one", "two"},
+            )
 
     def test_trace_audit_redacts_sensitive_tool_arguments(self) -> None:
         search = LocalModelClient._request_audit(

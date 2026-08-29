@@ -13,11 +13,25 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
-function compatibleNodes(agent: Agent, nodes: ComputeNode[]): ComputeNode[] {
+function compatibleNodes(
+  agent: Agent,
+  nodes: ComputeNode[],
+  agentsById: Map<string, Agent>,
+): ComputeNode[] {
+  const memberIds = agent.runtimeConfig.profile === "specialist_team_v1"
+    ? agent.runtimeConfig.specialistAgentIds
+    : [];
+  const requiredModels = new Set([
+    agent.model,
+    ...memberIds.map((id) => agentsById.get(id)?.model ?? null),
+  ].filter((model): model is string => Boolean(model)));
   return nodes.filter((node) => {
     if (node.status !== "online") return false;
-    const modelCompatible = agent.model === null || node.models.length === 0 || node.models.includes(agent.model);
-    return modelCompatible && node.agentRuntimes.includes(agent.runtime);
+    const modelCompatible = node.models.length === 0
+      || [...requiredModels].every((model) => node.models.includes(model));
+    const profileCompatible = agent.runtime !== "langgraph"
+      || node.agentRuntimeProfiles.includes(agent.runtimeConfig.profile);
+    return modelCompatible && profileCompatible && node.agentRuntimes.includes(agent.runtime);
   });
 }
 
@@ -31,17 +45,18 @@ interface AgentsPageProps {
 
 export function AgentsPage({ agents, nodes, onCreate, onEdit, onRun }: AgentsPageProps) {
   const [query, setQuery] = useState("");
+  const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase("ru"));
   const visibleAgents = useMemo(() => {
     if (!deferredQuery) return agents;
     return agents.filter((agent) =>
-      [agent.name, agent.role, agent.model ?? "автовыбор", agent.runtime]
+      [agent.name, agent.role, agent.model ?? "автовыбор", agent.runtime, agent.runtimeConfig.profile]
         .join(" ")
         .toLocaleLowerCase("ru")
         .includes(deferredQuery),
     );
   }, [agents, deferredQuery]);
-  const readyCount = agents.filter((agent) => compatibleNodes(agent, nodes).length > 0).length;
+  const readyCount = agents.filter((agent) => compatibleNodes(agent, nodes, agentsById).length > 0).length;
 
   return (
     <main className="main-column section-page" id="agents">
@@ -73,8 +88,14 @@ export function AgentsPage({ agents, nodes, onCreate, onEdit, onRun }: AgentsPag
       ) : (
         <section className="agent-grid" aria-label="Список агентов">
           {visibleAgents.map((agent) => {
-            const compatible = compatibleNodes(agent, nodes);
+            const compatible = compatibleNodes(agent, nodes, agentsById);
             const ready = compatible.length > 0;
+            const teamMembers = agent.runtimeConfig.profile === "specialist_team_v1"
+              ? agent.runtimeConfig.specialistAgentIds.flatMap((id) => {
+                const member = agentsById.get(id);
+                return member ? [member] : [];
+              })
+              : [];
             return (
               <article className="agent-card" key={agent.id}>
                 <div className="agent-card__head">
@@ -84,7 +105,9 @@ export function AgentsPage({ agents, nodes, onCreate, onEdit, onRun }: AgentsPag
                       <h2>{agent.name}</h2>
                       {agent.isBuiltIn ? <span className="tag">Встроенный</span> : <span className="tag tag--custom">Пользовательский</span>}
                       <span className={`tag tag--runtime tag--runtime-${agent.runtime}`}>
-                        {agent.runtime === "langgraph" ? "LangGraph" : "Single"}
+                        {agent.runtimeConfig.profile === "specialist_team_v1"
+                          ? `Team · ${teamMembers.length}`
+                          : agent.runtime === "langgraph" ? "LangGraph" : "Single"}
                       </span>
                     </div>
                     <p>{agent.role}</p>
@@ -98,6 +121,14 @@ export function AgentsPage({ agents, nodes, onCreate, onEdit, onRun }: AgentsPag
                   <span>Системный промпт</span>
                   <p>{agent.systemPrompt}</p>
                 </div>
+
+                {teamMembers.length > 0 ? (
+                  <div className="agent-team-preview">
+                    <span>Specialist subgraphs</span>
+                    <div>{teamMembers.map((member) => <code key={member.id}>{member.name}</code>)}</div>
+                    <small>{agent.runtimeConfig.profile === "specialist_team_v1" ? `${agent.runtimeConfig.maxHandoffs} handoff · ${agent.runtimeConfig.stateSchema}` : ""}</small>
+                  </div>
+                ) : null}
 
                 <dl className="agent-card__metrics">
                   <div><dt>Модель</dt><dd className="mono">{agent.model ?? "Автовыбор"}</dd></div>

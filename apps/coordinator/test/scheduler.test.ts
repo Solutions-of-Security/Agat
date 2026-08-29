@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, it } from "node:test";
 
 import { AgatStore } from "../src/database.js";
-import type { AgentRuntime, ProcessGraph } from "../src/types.js";
+import type { AgentRuntime, AgentRuntimeProfile, ProcessGraph } from "../src/types.js";
 
 const stores: AgatStore[] = [];
 const temporaryDatabases: string[] = [];
@@ -28,6 +28,7 @@ function addNode(
   maxConcurrency = 1,
   models = ["test-model"],
   agentRuntimes: AgentRuntime[] = ["single"],
+  agentRuntimeProfiles: AgentRuntimeProfile[] = ["tool_loop_v1"],
 ) {
   const credentials = store.registerNode({
     enrollmentToken: "unused-at-store-layer",
@@ -36,6 +37,7 @@ function addNode(
     models,
     maxConcurrency,
     agentRuntimes,
+    agentRuntimeProfiles,
   });
   return credentials.id;
 }
@@ -145,6 +147,7 @@ describe("scheduler", () => {
         maxConcurrency: 2,
         labels: { runtime: "kubernetes" },
         agentRuntimes: ["single", "langgraph", "langgraph"],
+        agentRuntimeProfiles: ["tool_loop_v1", "specialist_team_v1", "specialist_team_v1"],
       },
     );
 
@@ -155,6 +158,7 @@ describe("scheduler", () => {
     assert.equal(node.endpoint, "http://model-server:11434/v1");
     assert.deepEqual(node.labels, { runtime: "kubernetes" });
     assert.deepEqual(node.agentRuntimes, ["single", "langgraph"]);
+    assert.deepEqual(node.agentRuntimeProfiles, ["tool_loop_v1", "specialist_team_v1"]);
   });
 
   it("removes only stale nodes that belonged to deleted managed worker pools", () => {
@@ -723,6 +727,7 @@ describe("scheduler", () => {
       1,
       ["test-model"],
       ["single", "langgraph"],
+      ["tool_loop_v1", "specialist_team_v1"],
     );
     const agent = store.createAgent({
       name: "Graph researcher",
@@ -746,6 +751,184 @@ describe("scheduler", () => {
       profile: "tool_loop_v1",
       maxIterations: 5,
     });
+  });
+
+  it("pins ordered specialist subgraphs and requires every member model on one worker", () => {
+    const store = createStore();
+    const researcher = store.createAgent({
+      name: "Team researcher",
+      role: "Collects verified facts",
+      systemPrompt: "Return verified facts with concise provenance.",
+      model: "research-model",
+      runtime: "langgraph",
+      runtimeConfig: { profile: "tool_loop_v1", maxIterations: 3 },
+    });
+    const reviewer = store.createAgent({
+      name: "Team reviewer",
+      role: "Challenges unsupported conclusions",
+      systemPrompt: "Review the supplied evidence and identify unsupported claims.",
+      model: "review-model",
+      runtime: "langgraph",
+      runtimeConfig: { profile: "tool_loop_v1", maxIterations: 2 },
+    });
+    const team = store.createAgent({
+      name: "Research team",
+      role: "Supervises bounded specialist work",
+      systemPrompt: "Delegate only when needed and synthesize the final answer.",
+      model: "supervisor-model",
+      runtime: "langgraph",
+      runtimeConfig: {
+        profile: "specialist_team_v1",
+        maxIterations: 4,
+        maxHandoffs: 3,
+        stateSchema: "specialist_team_state_v1",
+        specialistAgentIds: [String(researcher.id), String(reviewer.id)],
+      },
+    });
+    const incompleteNode = addNode(
+      store,
+      "team-node-missing-review-model",
+      1,
+      ["supervisor-model", "research-model"],
+      ["single", "langgraph"],
+      ["tool_loop_v1", "specialist_team_v1"],
+    );
+    const completeNode = addNode(
+      store,
+      "team-node-complete",
+      1,
+      ["supervisor-model", "research-model", "review-model"],
+      ["single", "langgraph"],
+      ["tool_loop_v1", "specialist_team_v1"],
+    );
+    const legacyProfileNode = addNode(
+      store,
+      "team-node-old-profile",
+      1,
+      ["supervisor-model", "research-model", "review-model"],
+      ["single", "langgraph"],
+      ["tool_loop_v1"],
+    );
+    const run = store.createRun({
+      name: "Pinned team",
+      input: "Investigate the release",
+      approvalRequired: false,
+      agentIds: [String(team.id)],
+    });
+
+    const updatedResearcher = store.updateAgent(String(researcher.id), {
+      name: "Renamed researcher",
+      role: "Updated role after run creation",
+      systemPrompt: "Return verified facts with concise provenance.",
+      model: "research-model",
+      runtime: "langgraph",
+      runtimeConfig: { profile: "tool_loop_v1", maxIterations: 5 },
+    });
+    assert.equal(updatedResearcher?.name, "Renamed researcher");
+    assert.equal(store.leaseNext(incompleteNode), null);
+    assert.equal(store.leaseNext(legacyProfileNode), null);
+    const lease = store.leaseNext(completeNode);
+    assert.ok(lease);
+    assert.equal(lease.agent.runtimeConfig.profile, "specialist_team_v1");
+    assert.deepEqual(lease.agent.specialists.map((specialist) => specialist.id), [
+      researcher.id,
+      reviewer.id,
+    ]);
+    assert.equal(lease.agent.specialists[0]?.name, "Team researcher");
+    assert.equal(lease.agent.specialists[0]?.runtimeConfig.maxIterations, 3);
+    assert.equal(lease.agent.specialists[0]?.definitionVersion.length, 64);
+    assert.equal(lease.agent.specialists[1]?.model, "review-model");
+    const pinnedVersions = lease.agent.specialists.map((specialist) => specialist.definitionVersion);
+    store.completeLease(completeNode, lease.leaseId, "Team result");
+    const manifest = store.getRunTrace(run.id)?.manifest as {
+      schemaVersion: number;
+      stages: Array<{ agent: { specialists: Array<{ definitionVersion: string }> } }>;
+    };
+    assert.equal(manifest.schemaVersion, 3);
+    assert.deepEqual(
+      manifest.stages[0]?.agent.specialists.map((specialist) => specialist.definitionVersion),
+      pinnedVersions,
+    );
+    const replay = store.replayRun(run.id, { variants: [{ name: "Team replay" }] });
+    assert.equal(replay.runs.length, 1);
+    const replayLease = store.leaseNext(completeNode);
+    assert.ok(replayLease);
+    assert.deepEqual(
+      replayLease.agent.specialists.map((specialist) => specialist.definitionVersion),
+      pinnedVersions,
+    );
+  });
+
+  it("rejects unsafe or recursive specialist team definitions", () => {
+    const store = createStore();
+    const first = store.createAgent({
+      name: "First specialist",
+      role: "First bounded role",
+      systemPrompt: "Return a bounded first result.",
+    });
+    const second = store.createAgent({
+      name: "Second specialist",
+      role: "Second bounded role",
+      systemPrompt: "Return a bounded second result.",
+    });
+    const teamConfig = {
+      profile: "specialist_team_v1" as const,
+      maxIterations: 4,
+      maxHandoffs: 2,
+      stateSchema: "specialist_team_state_v1" as const,
+      specialistAgentIds: [String(first.id), String(second.id)],
+    };
+    assert.throws(() => store.createAgent({
+      name: "Single member team",
+      role: "Invalid team",
+      systemPrompt: "Never runs.",
+      runtime: "langgraph",
+      runtimeConfig: { ...teamConfig, specialistAgentIds: [String(first.id)] },
+    }), /от 2 до 8/);
+    assert.throws(() => store.createAgent({
+      name: "Unknown member team",
+      role: "Invalid team",
+      systemPrompt: "Never runs.",
+      runtime: "langgraph",
+      runtimeConfig: { ...teamConfig, specialistAgentIds: [String(first.id), "missing-agent"] },
+    }), /не найден/);
+
+    const team = store.createAgent({
+      name: "Valid team",
+      role: "Coordinates two specialists",
+      systemPrompt: "Use a bounded supervisor policy.",
+      runtime: "langgraph",
+      runtimeConfig: teamConfig,
+    });
+    assert.throws(() => store.createAgent({
+      name: "Nested team",
+      role: "Invalid nested team",
+      systemPrompt: "Never runs.",
+      runtime: "langgraph",
+      runtimeConfig: {
+        ...teamConfig,
+        specialistAgentIds: [String(team.id), String(first.id)],
+      },
+    }), /Вложенные specialist teams запрещены/);
+    assert.throws(() => store.updateAgent(String(first.id), {
+      name: "First specialist",
+      role: "Attempts to become a nested team",
+      systemPrompt: "Return a bounded first result.",
+      model: null,
+      runtime: "langgraph",
+      runtimeConfig: {
+        ...teamConfig,
+        specialistAgentIds: [String(second.id), "collector"],
+      },
+    }), /используется как specialist/);
+    assert.throws(() => store.updateAgent(String(team.id), {
+      name: "Valid team",
+      role: "Attempts self reference",
+      systemPrompt: "Use a bounded supervisor policy.",
+      model: null,
+      runtime: "langgraph",
+      runtimeConfig: { ...teamConfig, specialistAgentIds: [String(team.id), String(second.id)] },
+    }), /не может включать саму себя/);
   });
 
   it("rejects unknown or unbounded agent runtime configuration", () => {
@@ -867,6 +1050,7 @@ describe("scheduler", () => {
     assert.equal(agent?.runtime, "single");
     assert.deepEqual(agent?.runtimeConfig, { profile: "tool_loop_v1", maxIterations: 6 });
     assert.deepEqual(node?.agentRuntimes, ["single"]);
+    assert.deepEqual(node?.agentRuntimeProfiles, ["tool_loop_v1"]);
     assert.equal(node?.vramMb, 0);
     assert.deepEqual(node?.modelProfiles, []);
     const inspection = new DatabaseSync(dbPath);
@@ -900,7 +1084,7 @@ describe("scheduler", () => {
       "SELECT value FROM settings WHERE key = 'model_router_policy'",
     ).get() as { value?: string } | undefined;
     inspection.close();
-    assert.equal(userVersion.user_version, 15);
+    assert.equal(userVersion.user_version, 16);
     assert.equal(benchmarkTable?.name, "model_benchmarks");
     assert.equal(knowledgeTable?.name, "knowledge_collections");
     assert.equal(a2aEndpointTable?.name, "a2a_endpoints");

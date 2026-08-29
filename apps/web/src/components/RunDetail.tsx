@@ -343,6 +343,7 @@ function EvaluationPanel({ run, trace, models, busy, onReplay }: EvaluationPanel
   const comparison = trace?.comparison;
   const golden = trace?.goldenEvaluation;
   const migratedSnapshot = manifest?.stages.some((stage) => stage.agent.source === "migration_backfill") ?? false;
+  const specialistSnapshots = manifest?.stages.flatMap((stage) => stage.agent.specialists ?? []) ?? [];
 
   return (
     <div className="evaluation-panel">
@@ -356,6 +357,11 @@ function EvaluationPanel({ run, trace, models, busy, onReplay }: EvaluationPanel
           <div><dt>Manifest SHA-256</dt><dd className="mono">{manifest?.manifestSha256 ?? "загружается"}</dd></div>
           <div><dt>Input SHA-256</dt><dd className="mono">{manifest?.inputSha256 ?? "загружается"}</dd></div>
         </dl>
+        {specialistSnapshots.length > 0 ? (
+          <p className="evaluation-note">
+            Specialist snapshots · {specialistSnapshots.map((specialist) => `${specialist.name}@${specialist.definitionVersion.slice(0, 8)}`).join(" · ")}
+          </p>
+        ) : null}
         {migratedSnapshot ? <p className="evaluation-note evaluation-note--warn">Legacy stage был зафиксирован при миграции; snapshot мог быть создан позже исходного выполнения.</p> : null}
         <p className="evaluation-note">External tool results не считаются детерминированными; process/HTTP replay намеренно запрещён.</p>
       </div>

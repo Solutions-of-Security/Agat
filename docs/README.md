@@ -1,6 +1,6 @@
 # АГАТ
 
-АГАТ 1.2 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
+АГАТ 1.3 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
 
 MVP уже включает:
 
@@ -15,7 +15,7 @@ MVP уже включает:
 - live-события через SSE;
 - live-разделы `Обзор`, `Агенты`, `Запуски`, `Узлы` и `Модели` без статических карточек;
 - создание и редактирование агентов из интерфейса: роль, system prompt и привязка модели;
-- выбор `single | langgraph`, bounded runtime-профиль и проверку совместимости модели/runtime с online-workers;
+- выбор `single | langgraph`, профили `tool_loop_v1 | specialist_team_v1` и проверку совместимости всех pinned моделей/runtime/profile с online-workers;
 - визуальный конструктор процессов с агентами, условиями и ограниченными циклами;
 - n8n-подобный редактор с picker, drag-and-drop, поиском узлов, undo/redo, вставкой в edge, autosave, test node и запуском с выбранного шага;
 - шаги `HTTP`, `Transform`, `Wait`, `Approval` и `Artifact`, зашифрованные credentials и безопасные шаблонные выражения;
@@ -104,6 +104,7 @@ python3 workers/agat_worker.py
 - [OpenTelemetry, execution manifest, replay и eval](./observability-replay-evals.md)
 - [Создание и настройка агентов](./agents.md)
 - [Runtime агентов: Single и LangGraph](./agent-runtimes.md)
+- [LangGraph specialist teams 1.3](./langgraph-specialist-teams.md)
 - [Системный промпт агента «Юрист РФ»](./prompts/lawyer-rf.md)
 - [Визуальные процессы и циклы](./processes.md)
 - [Process Builder 1.2](./process-builder-1.2.md)
@@ -134,4 +135,4 @@ PYTHONPATH=workers python3 -m unittest discover -s workers -p 'test_*.py'
 
 Обычный `npm test` не требует запущенной модели. `npm run test:ollama-rag` — отдельный реальный интеграционный тест через локальные Ollama, coordinator и Python-worker; его prerequisites и гарантии описаны в разделе [Local RAG](./local-rag-and-memory.md#реальный-ollama-e2e).
 
-Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/input/task/trace boundaries и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime routing, реальный LangGraph StateGraph, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop и MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries.
+Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/input/task/trace boundaries и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop и MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries.

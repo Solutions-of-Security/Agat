@@ -14,7 +14,7 @@
 
 Node token возвращается один раз при регистрации и хранится worker локально. В базе хранится только SHA-256 hash.
 
-После регистрации worker передаёт в heartbeat текущие `models`, `modelProfiles`, VRAM, `endpoint`, `maxConcurrency`, `labels` и `agentRuntimes`. Поэтому изменение списка моделей или установленного runtime не требует новой регистрации или повторной передачи enrollment token.
+После регистрации worker передаёт в heartbeat текущие `models`, `modelProfiles`, VRAM, `endpoint`, `maxConcurrency`, `labels`, `agentRuntimes` и `agentRuntimeProfiles`. Поэтому изменение списка моделей или установленного runtime/profile не требует новой регистрации или повторной передачи enrollment token.
 
 ## Dashboard
 
@@ -146,6 +146,27 @@ Node token возвращается один раз при регистраци�
 
 `model: null` включает автовыбор. `model: "qwen3:8b"` ограничивает выдачу этапа workers, которые объявили это точное имя модели. `runtime` принимает `single` или `langgraph`; неизвестные runtime и `maxIterations` вне `1..12` отклоняются. Если поля runtime не переданы, новый агент получает безопасный default `single/tool_loop_v1/6`; legacy PATCH без этих полей сохраняет текущую конфигурацию. Ответ агента дополнительно содержит `runtime`, `runtimeConfig`, `isBuiltIn`, `totalRuns`, `activeRuns` и `lastRunAt`.
 
+Team создаётся тем же endpoint:
+
+```json
+{
+  "name": "Исследовательская команда",
+  "role": "Делегирует проверку фактов и рецензию",
+  "systemPrompt": "Выбирай специалиста по задаче и заверши итог только по проверенным результатам.",
+  "model": "qwen3:8b",
+  "runtime": "langgraph",
+  "runtimeConfig": {
+    "profile": "specialist_team_v1",
+    "maxIterations": 4,
+    "maxHandoffs": 3,
+    "stateSchema": "specialist_team_state_v1",
+    "specialistAgentIds": ["researcher-agent-id", "reviewer-agent-id"]
+  }
+}
+```
+
+`specialistAgentIds` требует 2–8 разных обычных агентов того же project. Self-reference, внутренние служебные system/eval agents, nested teams, неизвестная state schema, `maxHandoffs` вне `1..8` и попытка превратить уже используемого specialist в team отклоняются. Run/process/eval creation фиксирует ordered immutable snapshots всех участников.
+
 Worker сообщает совместимость при регистрации и в heartbeat:
 
 ```json
@@ -157,12 +178,12 @@ Worker сообщает совместимость при регистрации
     "maxConcurrency": 1,
     "labels": { "web": "controlled" },
     "agentRuntimes": ["single", "langgraph"],
-    "embeddingModels": ["embeddinggemma"]
+    "agentRuntimeProfiles": ["tool_loop_v1", "specialist_team_v1"]
   }
 }
 ```
 
-Scheduler сопоставляет и модель, и runtime. Старый worker без поля `agentRuntimes` считается совместимым только с `single`.
+Scheduler сопоставляет модель, runtime и профиль. Для team один worker должен объявить модели supervisor и всех pinned specialists. Старый worker без `agentRuntimes` считается совместимым только с `single`; worker без `agentRuntimeProfiles` — только с `tool_loop_v1` и не получает team stage.
 
 Ресурсная политика:
 
@@ -332,10 +353,10 @@ Content-Type: application/json
 Worker запрашивает lease с собственной версией:
 
 ```json
-{ "workerVersion": "1.2.0" }
+{ "workerVersion": "1.3.0" }
 ```
 
-Lease содержит run input, immutable agent snapshot, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator.
+Lease содержит run input, immutable agent snapshot, ordered `agent.specialists` для team, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator. Team целиком исполняется на одном lease/worker; specialist prompts и models берутся только из pinned snapshots.
 
 Embedding lease:
 
@@ -420,7 +441,7 @@ Coordinator проверяет node/stage lease, project и snapshot collections
   "events": [],
   "artifacts": [],
   "manifest": {
-    "schemaVersion": 1,
+    "schemaVersion": 3,
     "traceId": "...",
     "inputSha256": "...",
     "stages": [],
@@ -438,7 +459,7 @@ Coordinator проверяет node/stage lease, project и snapshot collections
 }
 ```
 
-Trace содержит до 10 000 событий в исходном порядке. `manifest` schema v2 фиксирует prompt/model/runtime/worker snapshots, registry prompt/version, routing decision и hashes. `comparison` появляется после ad-hoc replay и содержит baseline, кандидатов и gates completion/latency/token budget; его quality честно остаётся `not_evaluated`. Для candidate/judge run поле `goldenEvaluation` содержит experiment, exact versions, score source и release gates. Скрытая chain-of-thought не записывается.
+Trace содержит до 10 000 событий в исходном порядке. `manifest` schema v3 фиксирует prompt/model/runtime/worker snapshots, registry prompt/version, routing decision и hashes; для team она дополнительно содержит ordered specialist snapshots schema v1. `agent_handoff` events хранят member ID/name/hash и размеры assignment/output без их текста. `comparison` появляется после ad-hoc replay и содержит baseline, кандидатов и gates completion/latency/token budget; его quality честно остаётся `not_evaluated`. Для candidate/judge run поле `goldenEvaluation` содержит experiment, exact versions, score source и release gates. Скрытая chain-of-thought не записывается.
 
 Replay терминального agent-only запуска:
 

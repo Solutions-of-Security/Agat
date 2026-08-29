@@ -495,7 +495,7 @@ export function createCoordinatorServer(
         json(response, 200, {
           status: "ok",
           time: new Date().toISOString(),
-          version: "1.2.0",
+          version: "1.3.0",
           processRuntime: processRuntime.snapshot(),
         });
         return;

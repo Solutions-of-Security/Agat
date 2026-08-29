@@ -25,6 +25,8 @@ describe("OpenTelemetry export", () => {
       agentId: "collector",
       model: "test-model",
       runtime: "single",
+      runtimeProfile: "tool_loop_v1",
+      specialistCount: 0,
       attempt: 1,
       nodeId: "node-1",
     });
@@ -55,6 +57,8 @@ describe("OpenTelemetry export", () => {
     assert.equal(stageSpan.spanContext().traceId, runSpan.spanContext().traceId);
     assert.equal(stageSpan.parentSpanContext?.spanId, runSpan.spanContext().spanId);
     assert.equal(stageSpan.attributes["agat.model.calls"], 1);
+    assert.equal(stageSpan.attributes["agat.agent.runtime_profile"], "tool_loop_v1");
+    assert.equal(stageSpan.attributes["agat.agent.specialist_count"], 0);
     assert.equal("gen_ai.input.messages" in stageSpan.attributes, false);
     assert.equal("gen_ai.output.messages" in stageSpan.attributes, false);
     assert.equal(mcpSpan.attributes["agat.mcp.risk_tier"], "critical");

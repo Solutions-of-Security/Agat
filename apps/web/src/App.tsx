@@ -573,6 +573,7 @@ export default function App() {
       <AgentDialog
         open={agentDialogOpen}
         agent={editingAgent}
+        agents={overview.agents}
         models={overview.models}
         busy={busy}
         error={agentFormError}
