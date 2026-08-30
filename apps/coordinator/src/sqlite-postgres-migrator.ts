@@ -6,9 +6,9 @@ import { pathToFileURL } from "node:url";
 
 import pg, { type Client, type ClientConfig } from "pg";
 
-import { AgatStore } from "./database.js";
+import { AgatStore, POSTGRES_SCHEMA_VERSION } from "./database.js";
 
-const REQUIRED_SQLITE_SCHEMA_VERSION = 23;
+const REQUIRED_SQLITE_SCHEMA_VERSION = POSTGRES_SCHEMA_VERSION;
 const DEFAULT_BATCH_ROWS = 250;
 const MAX_POSTGRES_PARAMETERS = 60_000;
 const MIGRATION_LOCK_ID = 867_530_902;
@@ -351,7 +351,9 @@ async function assertTargetShape(client: Client, tables: SqliteTable[]): Promise
   const expectedTables = [
     ...tables.map((table) => table.name),
     "agat_dr_canaries",
+    "agat_cell_runtime",
     "agat_schema_migrations",
+    "region_loss_dr_activations",
   ].sort();
   if (actualTables.join("\u0000") !== expectedTables.join("\u0000")) {
     throw new Error("Schema drift: набор SQLite и PostgreSQL tables различается");

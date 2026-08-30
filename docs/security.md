@@ -82,6 +82,7 @@
 - [ ] Enrollment token ротируется после подключения парка.
 - [ ] Для shared-token server workers задан `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; private release key хранится вне coordinator, trust roots ротируются с overlap, baseline rollout имеет проверенный fallback, revoke отрепетирован. Native edge отдельно проверяется Play Integrity/App Attest.
 - [ ] Project `homeRegion/allowedRegions/residencyDomain`, queue и quotas утверждены владельцем данных; online cross-residency relocation запрещён.
+- [ ] Region-loss policy содержит только same-residency transitions; source полностью fenced внешним control plane, PostgreSQL/S3/Temporal evidence свежее и согласовано, activation подтверждена двумя distinct OIDC subject, target runtime использует exact activation ID/write epoch/bucket.
 - [ ] Startup role-profile gate подтверждает разные фактические system/tenant users; tenant не имеет powerful attributes/membership, database/schema `CREATE`, DDL/global write; negative cross-project read/write тест запускается после каждой privilege migration.
 - [ ] System database credential рассматривается как cell-wide secret, доступен только coordinator/migration job и имеет отдельную rotation/incident procedure.
 - [ ] SIEM sink использует HTTPS, scoped Bearer, дедупликацию `idempotencyKey`, мониторинг oldest pending/retries и утверждённые retention/poison-event правила.
@@ -210,7 +211,7 @@ Runbook и список параметров: [Production hardening durable runt
 
 ## Fleet/HA boundary
 
-Одна HA-cell имеет фиксированную пару `AGAT_REGION/AGAT_RESIDENCY_DOMAIN` и одну PostgreSQL authority. Project payload не реплицируется приложением между cells; `allowedRegions` не является разрешением произвольной replica забрать данные другого residency domain. Изменение home cell требует остановки writes, offline migration и reconciliation.
+Одна HA-cell имеет фиксированную пару `AGAT_REGION/AGAT_RESIDENCY_DOMAIN`, одну PostgreSQL metadata authority и один S3 payload authority. Project payload не реплицируется приложением между cells; `allowedRegions` не является разрешением произвольной replica забрать данные другого residency domain. Обычное изменение home cell требует остановки writes, offline migration и reconciliation. Region-loss — отдельный break-glass whole-cell transition: source database/object/ingress/enrollment/credentials полностью fenced, target остаётся изолированным до sealed evidence и two-person approval, а runtime admission требует exact monotonic activation marker. Подробная процедура: [Region-loss DR](./region-loss-dr.md).
 
 Release signature доказывает, что canonical manifest подписан доверенным Ed25519 key, но не доказывает, что недоверенный host реально исполняет заявленные bytes. Digest/release identity, staged cohort и revoke являются admission controls; stronger supply-chain guarantee требует проверенной OCI provenance и runtime/hardware attestation.
 

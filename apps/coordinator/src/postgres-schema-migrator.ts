@@ -24,6 +24,8 @@ interface SchemaMigrationEnvironment {
   runtimeRole: string;
   region: string;
   residencyDomain: string;
+  regionLossDrActivationId: string;
+  regionLossDrWriteEpoch: number;
   migrationDatabase: PostgresDatabaseOptions;
   runtimeDatabase: PostgresDatabaseOptions;
   directSsl: ClientConfig["ssl"];
@@ -87,7 +89,7 @@ function environment(): SchemaMigrationEnvironment {
   if (Boolean(sslCert) !== Boolean(sslKey)) throw new Error("PostgreSQL client certificate и key задаются вместе");
   const common = {
     tenantUrl,
-    applicationName: "agat-postgres-schema-v23",
+    applicationName: "agat-postgres-schema-v24",
     poolMax: 1,
     connectTimeoutMs: integer(process.env.AGAT_POSTGRES_CONNECT_TIMEOUT_MS, 5_000, 500, 60_000),
     idleTimeoutMs: integer(process.env.AGAT_POSTGRES_IDLE_TIMEOUT_MS, 30_000, 1_000, 600_000),
@@ -104,6 +106,8 @@ function environment(): SchemaMigrationEnvironment {
     runtimeRole: roles[1]!,
     region: process.env.AGAT_REGION ?? "local",
     residencyDomain: process.env.AGAT_RESIDENCY_DOMAIN ?? process.env.AGAT_REGION ?? "local",
+    regionLossDrActivationId: process.env.AGAT_REGION_LOSS_DR_ACTIVATION_ID ?? "",
+    regionLossDrWriteEpoch: integer(process.env.AGAT_REGION_LOSS_DR_WRITE_EPOCH, 1, 1, 1_000_000_000),
     migrationDatabase: { ...common, systemUrl: migrationUrl, roleMode: "migration" },
     runtimeDatabase: { ...common, systemUrl: runtimeUrl, roleMode: "runtime", statementTimeoutMs: 30_000 },
     directSsl: sslMode === "disable" ? false : {
@@ -152,6 +156,8 @@ function validateRuntime(config: SchemaMigrationEnvironment, requireAdmission: b
     requirePostgresAdmission: requireAdmission,
     region: config.region,
     residencyDomain: config.residencyDomain,
+    regionLossDrActivationId: config.regionLossDrActivationId,
+    regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
     coordinatorInstanceId: "schema-runtime-validation",
   });
   store.close();
@@ -203,7 +209,9 @@ export async function migratePostgresSchemaAndAdmit(): Promise<{
       requirePostgresAdmission: false,
       region: config.region,
       residencyDomain: config.residencyDomain,
-      coordinatorInstanceId: "schema-migration-v23",
+      regionLossDrActivationId: config.regionLossDrActivationId,
+      regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
+      coordinatorInstanceId: "schema-migration-v24",
     });
     migrator.close();
 

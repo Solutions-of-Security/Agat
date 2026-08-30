@@ -25,7 +25,8 @@ flowchart LR
     C -->|"one-shot Secret + NetworkPolicy + Job"| SBX["WASI / digest-pinned OCI sandbox"]
     C --> DB[("PostgreSQL · regional HA-cell")]
     DB --> KB[("Collections / chunks / vectors / memory")]
-    DB --> ART[("Artifact metadata + bytes")]
+    DB --> ART[("Artifact metadata + delete outbox")]
+    C --> S3[("Versioned S3 payload authority")]
     C -->|"redacted audit outbox"| SIEM["SIEM HTTPS sink"]
     C -->|"MCP 2026-07-28 · policy proxy"| MCP["Remote/internal MCP servers"]
     C -.->|"OTLP/HTTP · optional"| OTel["OpenTelemetry Collector"]
@@ -84,8 +85,9 @@ Coordinator хранит состояние очереди, но не подкл
 - native edge trust boundary: one-time hashed challenges, external Play Integrity/App Attest verification, hardware-attested device token lifecycle, control-only pending-wipe scope и immutable wipe audit.
 - Fleet release boundary: Ed25519 manifests, public trust roots, expiry/revoke, deterministic target/fallback cohorts и fail-closed worker admission.
 - SIEM boundary: transactional audit outbox, leased batches, redacted NDJSON, idempotency key и retry/backoff.
+- region-loss boundary: external source fencing, same-residency policy, sealed PostgreSQL/S3/Temporal evidence, distinct approvers, atomic whole-cell relocation и monotonic write epoch.
 
-PostgreSQL является единственным source of truth внутри Fleet HA-cell; dual-write с SQLite отсутствует. Каждая cell принимает только свой `region/residencyDomain`, а online cross-cell relocation отклоняется. SQLite по-прежнему требует один coordinator. Production endpoint проходит отдельный multi-AZ/PITR evidence gate и measured restore/failover canaries; application `haReady` не подменяет HA database. Реализация и gates описаны в [Fleet и HA 1.7](./fleet-ha-1.7.md), [Managed PostgreSQL](./managed-postgresql-resilience.md) и [PostgreSQL state-store](./postgresql-state-store-design.md).
+PostgreSQL является единственным metadata/source-of-control внутри Fleet HA-cell; S3 exact version является authority artifact bytes, dual-write с SQLite отсутствует. Каждая cell принимает только свой `region/residencyDomain`, а обычный online cross-cell relocation отклоняется. SQLite по-прежнему требует один coordinator. Production endpoint проходит отдельный multi-AZ/PITR evidence gate и measured restore/failover canaries; application `haReady` не подменяет HA database. При потере региона разрешён только fully fenced whole-cell transition внутри того же residency domain: schema v24 marker требует exact activation ID и monotonic write epoch, поэтому stale source runtime не стартует. Реализация и gates описаны в [Fleet и HA 1.7](./fleet-ha-1.7.md), [Managed PostgreSQL](./managed-postgresql-resilience.md), [Region-loss DR](./region-loss-dr.md) и [PostgreSQL state-store](./postgresql-state-store-design.md).
 
 В Docker Desktop coordinator использует namespace-scoped service account. Launcher управляет Deployments; sandbox executor — только Jobs, Pods/log, Secrets и NetworkPolicies того же namespace. Пользователь launcher передаёт только модель, число workers, concurrency и флаг web-tools; isolated image/module/command меняет только `admin`. Подробнее: [локальный запуск нескольких workers](./local-workers.md) и [изолированное выполнение tools](./isolated-tool-execution.md).
 
@@ -216,6 +218,6 @@ stateDiagram-v2
 
 `events` — append-only наблюдаемый журнал. При создании/постановке stage coordinator фиксирует immutable agent snapshot; при выдаче lease — точный run input, outputs предыдущих этапов, worker snapshot и W3C trace context. Worker добавляет progress, model/tool calls и метрики, а coordinator — переходы, approval, retry, output и создание файлов. Скрытая chain-of-thought не является частью модели данных.
 
-Stage output всегда хранится в state store, поэтому UI не зависит от worker filesystem. В текущей schema v23 PostgreSQL хранит project ownership, metadata, SHA-256, retention/state и durable delete outbox, а S3-compatible exact object version является authority bytes. Replica при authenticated download проверяет provider metadata, payload hash/size и локальный cache под `AGAT_ARTIFACTS_DIR`; повреждённый cache восстанавливается, silent fallback в BYTEA запрещён. Legacy PostgreSQL payload переносится bounded idempotent backfill после PUT/HEAD verification.
+Stage output всегда хранится в authoritative storage, поэтому UI не зависит от worker filesystem. В текущей schema v24 PostgreSQL хранит project ownership, metadata, SHA-256, retention/state и durable delete outbox, а S3-compatible exact object version является authority bytes. Replica при authenticated download проверяет provider metadata, payload hash/size и локальный cache под `AGAT_ARTIFACTS_DIR`; повреждённый cache восстанавливается, silent fallback в BYTEA запрещён. Legacy PostgreSQL payload переносится bounded idempotent backfill после PUT/HEAD verification. Region-loss activation меняет bucket reference только после sealed evidence, что target replica сохранила exact versions и совпала с database reference digest.
 
 Подробности и границы: [S3 Artifact Store](./s3-artifact-store-lifecycle.md), [журнал выполнения и артефакты](./execution-traces-and-artifacts.md), [OpenTelemetry, manifest, replay/eval](./observability-replay-evals.md) и [Golden eval/prompt registry](./golden-eval-prompt-registry.md).

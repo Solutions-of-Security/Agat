@@ -9,7 +9,7 @@
 - `agat-coordinator` — две stateless replicas с RollingUpdate (`maxUnavailable=0`), PDB `minAvailable=1` и preferred pod anti-affinity;
 - `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с migration/runtime/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
 - `agat-artifact-store` — local MinIO/PVC с bucket versioning; это developer profile, а не production durability claim;
-- `agat-artifact-store-bootstrap-v23`, `agat-postgres-role-bootstrap-v23` и `agat-postgres-schema-v23` — versioned one-shot Jobs для bucket, ownership/role boundary, transactional schema, DR canaries и connection admission;
+- `agat-artifact-store-bootstrap-v24`, `agat-postgres-role-bootstrap-v24` и `agat-postgres-schema-v24` — versioned one-shot Jobs для bucket, ownership/role boundary, transactional schema, DR canaries, region-loss marker и connection admission;
 - `agat-keycloak` и `agat-keycloak-postgres` — OIDC, роли, пользователи и проекты; Keycloak доступен на `http://127.0.0.1:8080`;
 - `agat-temporal` — persistent локальный dev-server с namespace `agat`, gRPC/HTTP/metrics и UI на `http://127.0.0.1:8233`;
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
@@ -54,7 +54,7 @@ npm run k8s:up
 2. создаст namespace, application Secret с отдельными Artifact Store keys и coordinator PostgreSQL Secret при первом запуске;
 3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
 4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся bucket/role-bootstrap/schema/admission Jobs;
-5. только после schema v23 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
+5. только после schema v24 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
 Чистый namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: state migrator существует, но намеренно не запускается автоматически без maintenance/reconciliation. После [offline migration](./sqlite-postgresql-migration.md) можно подтвердить authority cutover:

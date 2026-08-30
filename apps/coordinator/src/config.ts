@@ -162,6 +162,8 @@ export interface CoordinatorConfig {
   coordinatorInstanceId: string;
   region: string;
   residencyDomain: string;
+  regionLossDrActivationId: string;
+  regionLossDrWriteEpoch: number;
   workerReleasePublicKeys: Record<string, string>;
   requireSignedWorkerReleases: boolean;
   siemEnabled: boolean;
@@ -303,6 +305,12 @@ export function loadConfig(): CoordinatorConfig {
       "AGAT_RESIDENCY_DOMAIN",
       63,
     ).toLowerCase(),
+    regionLossDrActivationId: optionalSafeText(
+      process.env.AGAT_REGION_LOSS_DR_ACTIVATION_ID,
+      "AGAT_REGION_LOSS_DR_ACTIVATION_ID",
+      128,
+    ),
+    regionLossDrWriteEpoch: integerFromEnv(process.env.AGAT_REGION_LOSS_DR_WRITE_EPOCH, 1),
     workerReleasePublicKeys: safeJsonStringMap(
       process.env.AGAT_WORKER_RELEASE_PUBLIC_KEYS,
       "AGAT_WORKER_RELEASE_PUBLIC_KEYS",
@@ -405,6 +413,20 @@ export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): vo
   }
   if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(config.residencyDomain)) {
     throw new Error("AGAT_RESIDENCY_DOMAIN должен содержать 1..63 символа [a-z0-9._-]");
+  }
+  if (config.regionLossDrActivationId
+    && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(config.regionLossDrActivationId)) {
+    throw new Error("AGAT_REGION_LOSS_DR_ACTIVATION_ID имеет небезопасный формат");
+  }
+  if (!Number.isSafeInteger(config.regionLossDrWriteEpoch) || config.regionLossDrWriteEpoch < 1) {
+    throw new Error("AGAT_REGION_LOSS_DR_WRITE_EPOCH должен быть положительным целым числом");
+  }
+  if (config.stateStoreDriver !== "postgresql"
+    && (config.regionLossDrActivationId || config.regionLossDrWriteEpoch !== 1)) {
+    throw new Error("Region-loss DR activation требует PostgreSQL state store");
+  }
+  if (!config.regionLossDrActivationId && config.regionLossDrWriteEpoch !== 1) {
+    throw new Error("Write epoch > 1 требует AGAT_REGION_LOSS_DR_ACTIVATION_ID");
   }
   if (config.stateStoreDriver === "postgresql") {
     if (!config.postgresUrl || !config.postgresTenantUrl) {

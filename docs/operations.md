@@ -11,20 +11,21 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
-Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v23 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
+Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v24 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
 
 ## Rollout 1.7 Fleet и HA
 
-Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Текущая schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, сохранив PostgreSQL для metadata/delete outbox и bounded legacy backfill. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
+Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority; текущая schema v24 добавила immutable region-loss activation ledger и monotonic cell write epoch. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
 2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
-3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v23 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
+3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v24 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
 4. Для production endpoint выполните multi-AZ/PITR preflight, actual failover и isolated restore по [managed PostgreSQL runbook](./managed-postgresql-resilience.md). Сохраните HMAC reports и exact SLO policy approval; application `haReady` этот gate не заменяет.
 5. Подготовьте versioned S3-compatible bucket, примените Agat lifecycle rule без current-version expiration, выполните BYTEA backfill/reconciliation и только затем включите `AGAT_ARTIFACT_STORE_DRIVER=s3`; подробный порядок — в [artifact store runbook](./s3-artifact-store-lifecycle.md).
-6. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
-7. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
-8. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
+6. Подготовьте dormant target в разрешённом residency domain, внешний source fencing и односторонние PostgreSQL/S3/Temporal recovery paths; выполните rehearsal по [region-loss runbook](./region-loss-dr.md). Не запускайте target runtime без exact activation ID/write epoch.
+7. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
+8. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
+9. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
 
 Docker Desktop 1.7 разворачивает PostgreSQL и две coordinator replicas для локальной проверки. Если namespace уже содержит SQLite coordinator, `npm run k8s:up` остановится до любых apply/build. `AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true` только подтверждает осознанный запуск нового PostgreSQL authority и **не переносит данные**; старый `agat-data` PVC остаётся до удаления namespace. Не используйте флаг вместо миграции.
 
@@ -53,11 +54,15 @@ Coordinator startup не выполняет DDL. При rollout останови
 
 ### Managed PostgreSQL resilience
 
-Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v23 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
+Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v24 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
 
 ### S3-compatible Artifact Store
 
 В Fleet/HA новые payloads записываются в versioned object store до commit PostgreSQL metadata. Coordinator проверяет SHA-256, размер, project hash и exact version ID; локальный файл служит только cache. Lifecycle worker удаляет только exact version через transactional outbox, а retention/legal hold блокируют enqueue. Bucket lifecycle управляет лишь incomplete multipart uploads и noncurrent versions: current versions удаляет только application state machine. Provisioning, backfill, reconciliation, typed confirmations и recovery описаны в [S3 Artifact Store и lifecycle](./s3-artifact-store-lifecycle.md).
+
+### Residency-aware region-loss DR
+
+Region-loss не является обычным rollout или database failover. Сначала внешний control plane полностью fence source database/object writes, ingress, enrollment и credentials. Затем изолированные PostgreSQL/S3/Temporal targets подтверждаются fresh HMAC evidence и двумя distinct approver. Suspended Job `agat-region-loss-dr-activation-v24` атомарно меняет whole-cell placement, revokes source workers, requeues outboxes и увеличивает write epoch. Target coordinator запускается только с exact `AGAT_REGION_LOSS_DR_ACTIVATION_ID`, `AGAT_REGION_LOSS_DR_WRITE_EPOCH` и target S3 bucket. Failback проходит как новый reverse transition; полный runbook: [Residency-aware region-loss DR](./region-loss-dr.md).
 
 ## Rollout 1.6 native edge worker
 
@@ -141,7 +146,7 @@ SQLite developer mode использует WAL. Для согласованно�
 
 В PostgreSQL Fleet/HA mode metadata, knowledge vectors, encrypted A2A/MCP state, queue/leases, audit outbox и artifact storage intents находятся в database authority HA-cell. Payload authority находится в versioned S3-compatible bucket той же residency cell; coordinator file cache не является источником истины и не входит в restore set. PostgreSQL PITR и bucket version/lifecycle retention должны иметь согласованный recovery window. Проверка restore должна включать:
 
-1. PostgreSQL schema version `23`, catalog manifest, admission marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
+1. PostgreSQL schema version `24`, catalog manifest, admission marker, cell activation/write-epoch marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
 2. counts/foreign keys и выборочные content hashes для runs, knowledge, A2A/MCP и artifacts, включая exact bucket/key/version references;
 3. отсутствие cross-project read/write под tenant role;
 4. reconciliation активных Temporal instances с application rows;
@@ -161,7 +166,7 @@ SQLite developer mode использует WAL. Для согласованно�
 - Secrets `agat-secrets` и `agat-postgres-secrets` в защищённом secret manager;
 - definitions управляемых worker-пулов в Kubernetes API.
 
-Не восстанавливайте PostgreSQL, object store, Temporal и identity state в произвольные разные моменты: artifact references, execution tokens/history и авторизация могут разойтись. После region-loss не подключайте database snapshot или bucket к coordinator другой residency cell до одобренного DR decision. Region-loss failover и SIEM poison-event retention/DLQ остаются следующими production gates в [roadmap](./roadmap.md).
+Не восстанавливайте PostgreSQL, object store, Temporal и identity state в произвольные разные моменты: artifact references, execution tokens/history и авторизация могут разойтись. После region-loss не подключайте snapshot/bucket к target coordinator до полного source fencing, same-residency policy decision и atomic activation по [runbook](./region-loss-dr.md). Следующие production gates — OCI/runtime attestation и SIEM poison-event retention/DLQ в [roadmap](./roadmap.md).
 
 ## Восстановление durable process
 

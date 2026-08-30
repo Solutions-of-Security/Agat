@@ -4,9 +4,14 @@ namespace: agat
 resources:
   - postgres-resilience-gate.yaml
   - postgres-resilience-network-policy.yaml
+  - region-loss-dr-activation.yaml
+  - region-loss-dr-network-policy.yaml
 configMapGenerator:
   - name: agat-postgres-resilience-policy
     files:
       - policy.json=postgres-resilience-policy.json
+  - name: agat-region-loss-dr-policy
+    files:
+      - policy.json=region-loss-dr-policy.json
 generatorOptions:
   disableNameSuffixHash: true

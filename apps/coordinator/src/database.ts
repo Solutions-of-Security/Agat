@@ -227,8 +227,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 23;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-s3-artifact-lifecycle-v23";
+export const POSTGRES_SCHEMA_VERSION = 24;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-residency-region-loss-dr-v24";
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -992,6 +992,8 @@ export interface StoreOptions {
   coordinatorInstanceId?: string;
   region?: string;
   residencyDomain?: string;
+  regionLossDrActivationId?: string;
+  regionLossDrWriteEpoch?: number;
   workerReleasePublicKeys?: Record<string, string>;
   requireSignedWorkerReleases?: boolean;
   artifactStoreDriver?: "filesystem" | "postgresql" | "s3";
@@ -1012,6 +1014,8 @@ export class AgatStore {
   private readonly coordinatorInstanceId: string;
   private readonly region: string;
   private readonly residencyDomain: string;
+  private readonly regionLossDrActivationId: string;
+  private readonly regionLossDrWriteEpoch: number;
   private readonly workerReleasePublicKeys: ReadonlyMap<string, string>;
   private readonly requireSignedWorkerReleases: boolean;
   private readonly postgresTenantRole: string | null;
@@ -1098,6 +1102,19 @@ export class AgatStore {
     this.coordinatorInstanceId = options.coordinatorInstanceId ?? `coordinator-${process.pid}`;
     this.region = options.region ?? "local";
     this.residencyDomain = options.residencyDomain ?? this.region;
+    this.regionLossDrActivationId = options.regionLossDrActivationId?.trim() ?? "";
+    this.regionLossDrWriteEpoch = options.regionLossDrWriteEpoch ?? 1;
+    if (this.regionLossDrActivationId
+      && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(this.regionLossDrActivationId)) {
+      throw new Error("Region-loss DR activation ID имеет небезопасный формат");
+    }
+    if (!Number.isSafeInteger(this.regionLossDrWriteEpoch) || this.regionLossDrWriteEpoch < 1) {
+      throw new Error("Region-loss DR write epoch должен быть положительным целым числом");
+    }
+    if (this.stateStoreDriver === "sqlite"
+      && (this.regionLossDrActivationId || this.regionLossDrWriteEpoch !== 1)) {
+      throw new Error("Region-loss DR activation поддерживается только PostgreSQL HA-cell");
+    }
     this.workerReleasePublicKeys = new Map(Object.entries(options.workerReleasePublicKeys ?? {}));
     this.requireSignedWorkerReleases = options.requireSignedWorkerReleases ?? false;
     this.telemetry = options.telemetry ?? new CoordinatorTelemetry({
@@ -1156,11 +1173,13 @@ export class AgatStore {
   maintenanceTick(): void {
     this.heartbeatCoordinatorReplica();
     this.completeAutomaticWaitStages();
+    // Preserve the side-effect guard while expiring a lost lease: executing MCP calls
+    // must be observed before their execution windows are converted to `expired`.
+    this.cleanupExpiredLeases();
     this.cleanupExpiredMcpCalls();
     this.cleanupExpiredKnowledgeLeases();
     this.cleanupExpiredMemory();
     this.cleanupEdgeEnrollmentChallenges();
-    this.cleanupExpiredLeases();
   }
 
   private configure(): void {
@@ -2513,6 +2532,41 @@ export class AgatStore {
         CREATE INDEX IF NOT EXISTS idx_agat_dr_canaries_issued
           ON agat_dr_canaries(issued_at, id);
 
+        CREATE TABLE IF NOT EXISTS region_loss_dr_activations (
+          id TEXT PRIMARY KEY,
+          incident_id TEXT NOT NULL,
+          plan_sha256 TEXT NOT NULL UNIQUE CHECK(length(plan_sha256) = 64),
+          policy_sha256 TEXT NOT NULL CHECK(length(policy_sha256) = 64),
+          evidence_sha256 TEXT NOT NULL CHECK(length(evidence_sha256) = 64),
+          source_region TEXT NOT NULL,
+          target_region TEXT NOT NULL,
+          residency_domain TEXT NOT NULL,
+          source_cluster_id TEXT NOT NULL,
+          target_cluster_id TEXT NOT NULL,
+          source_bucket TEXT NOT NULL,
+          target_bucket TEXT NOT NULL,
+          write_epoch INTEGER NOT NULL UNIQUE CHECK(write_epoch >= 2),
+          recovery_target_at TEXT NOT NULL,
+          source_fenced_at TEXT NOT NULL,
+          project_snapshot_sha256 TEXT NOT NULL CHECK(length(project_snapshot_sha256) = 64),
+          artifact_snapshot_sha256 TEXT NOT NULL CHECK(length(artifact_snapshot_sha256) = 64),
+          approvers_json TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('active', 'superseded')),
+          activated_at TEXT NOT NULL,
+          activated_by TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_region_loss_dr_single_active
+          ON region_loss_dr_activations(status) WHERE status = 'active';
+
+        CREATE TABLE IF NOT EXISTS agat_cell_runtime (
+          id TEXT PRIMARY KEY CHECK(id = 'current'),
+          active_region TEXT NOT NULL,
+          residency_domain TEXT NOT NULL,
+          write_epoch INTEGER NOT NULL CHECK(write_epoch >= 1),
+          activation_id TEXT REFERENCES region_loss_dr_activations(id),
+          updated_at TEXT NOT NULL,
+          updated_by TEXT NOT NULL
+        );
         CREATE OR REPLACE FUNCTION agat_enqueue_audit_event() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -2551,6 +2605,12 @@ export class AgatStore {
         CREATE TRIGGER agat_artifacts_delete_outbox
           BEFORE DELETE ON artifacts FOR EACH ROW EXECUTE FUNCTION agat_enqueue_artifact_delete();
       `);
+      this.db.prepare(`
+        INSERT INTO agat_cell_runtime(
+          id, active_region, residency_domain, write_epoch, activation_id, updated_at, updated_by
+        ) VALUES ('current', ?, ?, 1, NULL, ?, current_user)
+        ON CONFLICT(id) DO NOTHING
+      `).run(this.region, this.residencyDomain, nowIso());
       this.installPostgresTenantPolicies();
     } else {
       this.db.exec(`
@@ -2587,7 +2647,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 23;");
+    this.db.exec("PRAGMA user_version = 24;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -2723,7 +2783,9 @@ export class AgatStore {
       SELECT
         COUNT(*) FILTER (
           WHERE class_row.relkind = 'r'
-            AND class_row.relname <> 'agat_schema_migrations'
+            AND class_row.relname NOT IN (
+              'agat_schema_migrations', 'agat_cell_runtime', 'region_loss_dr_activations'
+            )
             AND NOT (
               has_table_privilege(current_user, class_row.oid, 'SELECT')
               AND has_table_privilege(current_user, class_row.oid, 'INSERT')
@@ -2785,6 +2847,37 @@ export class AgatStore {
       || metadataPrivileges?.tenant_artifact_outbox_access === true) {
       throw new Error("PostgreSQL schema metadata grants нарушают runtime/tenant boundary");
     }
+    const drPrivileges = this.db.prepare(`
+      SELECT
+        has_table_privilege(current_user, 'agat_cell_runtime', 'SELECT') AS cell_can_read,
+        has_table_privilege(current_user, 'agat_cell_runtime', 'INSERT')
+          OR has_table_privilege(current_user, 'agat_cell_runtime', 'UPDATE')
+          OR has_table_privilege(current_user, 'agat_cell_runtime', 'DELETE') AS cell_can_write,
+        has_table_privilege(current_user, 'region_loss_dr_activations', 'SELECT') AS activation_can_read,
+        has_table_privilege(current_user, 'region_loss_dr_activations', 'INSERT')
+          OR has_table_privilege(current_user, 'region_loss_dr_activations', 'UPDATE')
+          OR has_table_privilege(current_user, 'region_loss_dr_activations', 'DELETE') AS activation_can_write,
+        has_table_privilege(?, 'agat_cell_runtime', 'SELECT')
+          OR has_table_privilege(?, 'agat_cell_runtime', 'INSERT')
+          OR has_table_privilege(?, 'agat_cell_runtime', 'UPDATE')
+          OR has_table_privilege(?, 'agat_cell_runtime', 'DELETE') AS tenant_cell_access,
+        has_table_privilege(?, 'region_loss_dr_activations', 'SELECT')
+          OR has_table_privilege(?, 'region_loss_dr_activations', 'INSERT')
+          OR has_table_privilege(?, 'region_loss_dr_activations', 'UPDATE')
+          OR has_table_privilege(?, 'region_loss_dr_activations', 'DELETE') AS tenant_activation_access
+    `).get(
+      this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!,
+      this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!,
+    ) as Record<string, unknown> | undefined;
+    if (drPrivileges?.cell_can_read !== true
+      || drPrivileges?.cell_can_write === true
+      || drPrivileges?.activation_can_read !== true
+      || drPrivileges?.activation_can_write === true
+      || drPrivileges?.tenant_cell_access === true
+      || drPrivileges?.tenant_activation_access === true) {
+      throw new Error("PostgreSQL region-loss DR grants нарушают migration/runtime/tenant boundary");
+    }
+    this.validatePostgresCellRuntime();
     if (requireAdmission && (
       marker.admission_status !== "passed"
       || typeof marker.admission_report_sha256 !== "string"
@@ -2792,6 +2885,47 @@ export class AgatStore {
       || typeof marker.admission_checked_at !== "string"
     )) {
       throw new Error("PostgreSQL connection admission/load gate не завершён");
+    }
+  }
+
+  private validatePostgresCellRuntime(): void {
+    const marker = this.db.prepare(`
+      SELECT c.active_region, c.residency_domain, c.write_epoch, c.activation_id,
+        a.status AS activation_status, a.target_region, a.residency_domain AS activation_residency_domain,
+        a.write_epoch AS activation_write_epoch, a.target_bucket
+      FROM agat_cell_runtime c
+      LEFT JOIN region_loss_dr_activations a ON a.id = c.activation_id
+      WHERE c.id = 'current'
+    `).get() as Row | undefined;
+    if (!marker) throw new Error("PostgreSQL cell runtime marker отсутствует");
+    if (marker.active_region !== this.region || marker.residency_domain !== this.residencyDomain) {
+      throw new Error("PostgreSQL cell runtime marker не совпадает с configured region/residency");
+    }
+    const writeEpoch = Number(marker.write_epoch);
+    if (writeEpoch !== this.regionLossDrWriteEpoch) {
+      throw new Error("PostgreSQL cell write epoch не совпадает с configured region-loss DR epoch");
+    }
+    const activationId = typeof marker.activation_id === "string" ? marker.activation_id : "";
+    if (!activationId) {
+      if (this.regionLossDrActivationId || writeEpoch !== 1) {
+        throw new Error("Primary cell marker не допускает region-loss DR activation config");
+      }
+      return;
+    }
+    if (!this.regionLossDrActivationId || activationId !== this.regionLossDrActivationId) {
+      throw new Error("Region-loss recovered cell требует exact activation ID");
+    }
+    if (marker.activation_status !== "active"
+      || marker.target_region !== this.region
+      || marker.activation_residency_domain !== this.residencyDomain
+      || Number(marker.activation_write_epoch) !== writeEpoch) {
+      throw new Error("Region-loss DR activation marker повреждён или superseded");
+    }
+    if (this.artifactStoreDriver !== "s3") {
+      throw new Error("Recovered cell требует S3 Artifact Store из DR activation");
+    }
+    if (marker.target_bucket !== this.artifactObjectBucket) {
+      throw new Error("Recovered cell настроена на object bucket, не совпадающий с DR activation");
     }
   }
 
@@ -2899,8 +3033,16 @@ export class AgatStore {
 
       GRANT USAGE ON SCHEMA ${schema} TO ${runtimeRole}, ${tenantRole};
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${runtimeRole};
-      REVOKE INSERT, UPDATE, DELETE ON TABLE ${schema}.agat_schema_migrations FROM ${runtimeRole};
-      GRANT SELECT ON TABLE ${schema}.agat_schema_migrations TO ${runtimeRole};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE
+        ${schema}.agat_schema_migrations,
+        ${schema}.agat_cell_runtime,
+        ${schema}.region_loss_dr_activations
+      FROM ${runtimeRole};
+      GRANT SELECT ON TABLE
+        ${schema}.agat_schema_migrations,
+        ${schema}.agat_cell_runtime,
+        ${schema}.region_loss_dr_activations
+      TO ${runtimeRole};
       GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${runtimeRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${runtimeRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_enqueue_audit_event() TO ${runtimeRole};

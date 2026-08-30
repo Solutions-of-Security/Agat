@@ -2460,6 +2460,8 @@ async function main(): Promise<void> {
     coordinatorInstanceId: config.coordinatorInstanceId,
     region: config.region,
     residencyDomain: config.residencyDomain,
+    regionLossDrActivationId: config.regionLossDrActivationId,
+    regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
     workerReleasePublicKeys: config.workerReleasePublicKeys,
     requireSignedWorkerReleases: config.requireSignedWorkerReleases,
     artifactStoreDriver: config.artifactStoreDriver,

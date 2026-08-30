@@ -145,6 +145,8 @@ export function runArtifactStoreAdmin(argv: string[]): Record<string, unknown> {
     coordinatorInstanceId: `artifact-admin-${process.pid}`,
     region: config.region,
     residencyDomain: config.residencyDomain,
+    regionLossDrActivationId: config.regionLossDrActivationId,
+    regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
     artifactStoreDriver: "s3",
     artifactRetentionDays: config.artifactRetentionDays,
     artifactS3: s3Options(config),

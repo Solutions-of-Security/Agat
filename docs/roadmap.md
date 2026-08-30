@@ -266,9 +266,9 @@ Web/PWA остаётся control surface и не обещает надёжный
 
 - **Готово, этап 1:** canonical offline SQLite→PostgreSQL migrator, artifact backfill, reconciliation/verify report и rehearsal rollback;
 - **Готово, этап 2:** отдельная migration Job/role, catalog drift gate, DDL-free runtime role и connection admission/load testing;
-- **Готово, этап 3:** managed multi-AZ/PITR evidence gate, DR canaries (введены в v22, текущая schema v23), фактический physical restore/failover rehearsal и HMAC-sealed RPO/RTO/SLO evaluation; каждый production cluster всё равно обязан пройти собственную provider qualification;
+- **Готово, этап 3:** managed multi-AZ/PITR evidence gate, DR canaries (введены в v22, текущая schema v24), фактический physical restore/failover rehearsal и HMAC-sealed RPO/RTO/SLO evaluation; каждый production cluster всё равно обязан пройти собственную provider qualification;
 - **Готово, этап 4:** versioned S3-compatible artifact authority, conditional PUT/HEAD reconciliation, cross-replica verified cache, retention/legal hold, exact-version delete outbox, safe lifecycle merge и bounded BYTEA backfill;
-- residency-aware region-loss runbook без active-active payload writes;
+- **Готово, этап 5:** residency-aware whole-cell region-loss DR без active-active writes: sealed PostgreSQL/S3/Temporal evidence, residency policy, four-eyes, snapshot-bound activation, monotonic write epoch и safe failback;
 - OCI provenance/runtime attestation для обычных workers и SIEM retention/DLQ conformance.
 
 ## Рекомендуемый порядок
@@ -289,4 +289,4 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
 | P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
-| P1 | Этапы 1–4 готовы | Production Fleet readiness и DR | Offline migration, DDL-free Job boundary, managed PostgreSQL resilience и S3 artifact lifecycle закрыты; region-loss DR, runtime attestation и SIEM DLQ остаются |
+| P1 | Этапы 1–5 готовы | Production Fleet readiness и DR | Offline migration, DDL-free Job boundary, managed PostgreSQL resilience, S3 lifecycle и residency-aware region-loss activation закрыты; OCI/runtime attestation и SIEM retention/DLQ остаются |
