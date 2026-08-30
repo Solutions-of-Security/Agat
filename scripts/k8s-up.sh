@@ -7,7 +7,7 @@ readonly expected_context="docker-desktop"
 readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly repo_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly manifests_dir="${repo_root}/deploy/k8s/docker-desktop"
-readonly image_tag="${AGAT_K8S_IMAGE_TAG:-1.6.0}"
+readonly image_tag="${AGAT_K8S_IMAGE_TAG:-1.7.0}"
 readonly coordinator_image="agat-local/coordinator:${image_tag}"
 readonly worker_image="agat-local/worker:${image_tag}"
 readonly temporal_worker_image="agat-local/temporal-worker:${image_tag}"
@@ -117,6 +117,21 @@ kubectl get deployment/agat-search --namespace "${namespace}" >/dev/null 2>&1 &&
 kubectl get deployment/agat-gateway --namespace "${namespace}" >/dev/null 2>&1 && gateway_existed=true
 kubectl get deployment/agat-keycloak --namespace "${namespace}" >/dev/null 2>&1 && keycloak_existed=true
 kubectl get deployment/agat-temporal-worker --namespace "${namespace}" >/dev/null 2>&1 && temporal_worker_existed=true
+
+if ${coordinator_existed}; then
+  existing_state_store_driver="$(kubectl get configmap/agat-coordinator-config \
+    --namespace "${namespace}" \
+    --output='jsonpath={.data.AGAT_STATE_STORE_DRIVER}' \
+    2>/dev/null || true)"
+  if [[ "${existing_state_store_driver:-sqlite}" != "postgresql" ]]; then
+    if ! is_true "${AGAT_K8S_ALLOW_POSTGRES_CUTOVER:-false}"; then
+      die "существующий coordinator использует SQLite; автоматической миграции в PostgreSQL нет. Сначала выполните offline export/import и reconciliation либо осознанно разрешите пустой cutover через AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true"
+    fi
+    printf '%s\n' \
+      'Внимание: разрешён SQLite→PostgreSQL cutover без автоматического переноса данных; прежний PVC сохранится до удаления namespace.'
+  fi
+  unset existing_state_store_driver
+fi
 
 kubectl apply --filename "${manifests_dir}/namespace.yaml" >/dev/null
 
@@ -258,6 +273,77 @@ ensure_secret_key "keycloak-bootstrap-password" "${AGAT_KEYCLOAK_BOOTSTRAP_PASSW
 ensure_secret_key "keycloak-demo-password" "${AGAT_KEYCLOAK_DEMO_PASSWORD:-}"
 ensure_secret_key "temporal-internal-token" "${AGAT_TEMPORAL_INTERNAL_TOKEN:-}"
 
+postgres_secret_exists=false
+kubectl get secret/agat-postgres-secrets --namespace "${namespace}" >/dev/null 2>&1 && postgres_secret_exists=true
+
+read_postgres_secret_value() {
+  local key="$1"
+  local encoded
+  encoded="$(kubectl get secret/agat-postgres-secrets \
+    --namespace "${namespace}" \
+    --output="jsonpath={.data.${key}}")" || die "не удалось прочитать ${key} из agat-postgres-secrets"
+  if [[ -n "${encoded}" ]]; then
+    printf '%s' "${encoded}" | base64 --decode
+  fi
+}
+
+if ${postgres_secret_exists}; then
+  postgres_admin_password="$(read_postgres_secret_value "admin-password")"
+  postgres_system_password="$(read_postgres_secret_value "system-password")"
+  postgres_tenant_password="$(read_postgres_secret_value "tenant-password")"
+  [[ -n "${postgres_admin_password}" && -n "${postgres_system_password}" && -n "${postgres_tenant_password}" ]] || \
+    die "agat-postgres-secrets неполон; восстановите Secret из backup"
+  if [[ -n "${AGAT_POSTGRES_ADMIN_PASSWORD:-}" && "${AGAT_POSTGRES_ADMIN_PASSWORD}" != "${postgres_admin_password}" ]]; then
+    die "пароль persistent coordinator PostgreSQL нельзя менять без отдельной ротации ролей"
+  fi
+  if [[ -n "${AGAT_POSTGRES_SYSTEM_PASSWORD:-}" && "${AGAT_POSTGRES_SYSTEM_PASSWORD}" != "${postgres_system_password}" ]]; then
+    die "пароль роли agat_system нельзя менять этим скриптом"
+  fi
+  if [[ -n "${AGAT_POSTGRES_TENANT_PASSWORD:-}" && "${AGAT_POSTGRES_TENANT_PASSWORD}" != "${postgres_tenant_password}" ]]; then
+    die "пароль роли agat_tenant нельзя менять этим скриптом"
+  fi
+else
+  postgres_admin_password="${AGAT_POSTGRES_ADMIN_PASSWORD:-$(openssl rand -hex 24)}"
+  postgres_system_password="${AGAT_POSTGRES_SYSTEM_PASSWORD:-$(openssl rand -hex 24)}"
+  postgres_tenant_password="${AGAT_POSTGRES_TENANT_PASSWORD:-$(openssl rand -hex 24)}"
+fi
+
+postgres_system_url="$(node --input-type=module -e '
+  const [username, password] = process.argv.slice(1);
+  const url = new URL("postgresql://agat-coordinator-postgres:5432/agat");
+  url.username = username;
+  url.password = password;
+  process.stdout.write(url.toString());
+' "agat_system" "${postgres_system_password}")"
+postgres_tenant_url="$(node --input-type=module -e '
+  const [username, password] = process.argv.slice(1);
+  const url = new URL("postgresql://agat-coordinator-postgres:5432/agat");
+  url.username = username;
+  url.password = password;
+  process.stdout.write(url.toString());
+' "agat_tenant" "${postgres_tenant_password}")"
+[[ -n "${postgres_system_url}" && -n "${postgres_tenant_url}" ]] || die \
+  "не удалось сформировать PostgreSQL connection URLs"
+
+kubectl create secret generic agat-postgres-secrets \
+  --namespace "${namespace}" \
+  --from-literal="admin-password=${postgres_admin_password}" \
+  --from-literal="system-password=${postgres_system_password}" \
+  --from-literal="tenant-password=${postgres_tenant_password}" \
+  --from-literal="system-url=${postgres_system_url}" \
+  --from-literal="tenant-url=${postgres_tenant_url}" \
+  --dry-run=client \
+  --output=yaml | kubectl apply --filename - >/dev/null
+unset postgres_admin_password postgres_system_password postgres_tenant_password
+unset postgres_system_url postgres_tenant_url
+if ! ${postgres_secret_exists}; then
+  printf '%s\n' 'Kubernetes Secret agat-postgres-secrets создан отдельно от application secrets.'
+fi
+
+if [[ -n "${AGAT_SIEM_BEARER_TOKEN:-}" ]]; then
+  ensure_secret_key "siem-bearer-token" "${AGAT_SIEM_BEARER_TOKEN}"
+fi
+
 if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
   printf 'Собираю %s для %s...\n' "${coordinator_image}" "${platform}"
   docker buildx build \
@@ -343,6 +429,15 @@ kubectl set env deployment/agat-coordinator \
   "AGAT_LOCAL_MODEL_BASE_URL=${model_base_url}" \
   "AGAT_LOCAL_WORKER_EMBEDDING_MODELS=${AGAT_LOCAL_WORKER_EMBEDDING_MODELS:-${embedding_models}}" \
   "AGAT_LOCAL_WORKER_WEB_ENABLED=${web_enabled}" \
+  "AGAT_REGION=${AGAT_REGION:-local}" \
+  "AGAT_RESIDENCY_DOMAIN=${AGAT_RESIDENCY_DOMAIN:-${AGAT_REGION:-local}}" \
+  "AGAT_WORKER_RELEASE_PUBLIC_KEYS=${AGAT_WORKER_RELEASE_PUBLIC_KEYS:-{}}" \
+  "AGAT_REQUIRE_SIGNED_WORKER_RELEASES=${AGAT_REQUIRE_SIGNED_WORKER_RELEASES:-false}" \
+  "AGAT_SIEM_ENABLED=${AGAT_SIEM_ENABLED:-false}" \
+  "AGAT_SIEM_URL=${AGAT_SIEM_URL:-}" \
+  "AGAT_SIEM_BATCH_SIZE=${AGAT_SIEM_BATCH_SIZE:-100}" \
+  "AGAT_SIEM_INTERVAL_SECONDS=${AGAT_SIEM_INTERVAL_SECONDS:-5}" \
+  "AGAT_SIEM_TIMEOUT_SECONDS=${AGAT_SIEM_TIMEOUT_SECONDS:-10}" \
   "AGAT_OTEL_ENABLED=${otel_enabled}" \
   "OTEL_EXPORTER_OTLP_ENDPOINT=${otel_exporter_endpoint}" \
   "OTEL_SERVICE_NAME=${AGAT_OTEL_COORDINATOR_SERVICE_NAME:-agat-coordinator}" >/dev/null
@@ -354,6 +449,12 @@ kubectl set env deployment/agat-worker \
   "AGAT_MODEL_BASE_URL=${model_base_url}" \
   "AGAT_WORKER_CONCURRENCY=${AGAT_WORKER_CONCURRENCY:-1}" \
   "AGAT_WORKER_LABELS=${AGAT_WORKER_LABELS:-runtime=kubernetes,cluster=docker-desktop}" \
+  "AGAT_REGION=${AGAT_REGION:-local}" \
+  "AGAT_RESIDENCY_DOMAIN=${AGAT_RESIDENCY_DOMAIN:-${AGAT_REGION:-local}}" \
+  "AGAT_WORKER_RELEASE_ID=${AGAT_WORKER_RELEASE_ID:-}" \
+  "AGAT_WORKER_ARTIFACT_DIGEST=${AGAT_WORKER_ARTIFACT_DIGEST:-}" \
+  "AGAT_WORKER_RELEASE_KEY_ID=${AGAT_WORKER_RELEASE_KEY_ID:-}" \
+  "AGAT_WORKER_RELEASE_SIGNATURE=${AGAT_WORKER_RELEASE_SIGNATURE:-}" \
   "AGAT_WEB_ENABLED=${web_enabled}" \
   "AGAT_WEB_SEARCH_URL=${web_search_url}" \
   "AGAT_WEB_TIMEOUT=${AGAT_WEB_TIMEOUT:-12}" \
@@ -376,8 +477,9 @@ ${keycloak_existed} && kubectl rollout restart deployment/agat-keycloak --namesp
 
 kubectl scale deployment/agat-keycloak-postgres --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-keycloak --namespace "${namespace}" --replicas=1 >/dev/null
+kubectl scale deployment/agat-coordinator-postgres --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-temporal --namespace "${namespace}" --replicas=1 >/dev/null
-kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas=1 >/dev/null
+kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas="${AGAT_K8S_COORDINATOR_REPLICAS:-2}" >/dev/null
 kubectl scale deployment/agat-temporal-worker --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-gateway --namespace "${namespace}" --replicas=1 >/dev/null
 if is_true "${web_enabled}"; then
@@ -393,6 +495,7 @@ fi
 
 kubectl rollout status deployment/agat-keycloak-postgres --namespace "${namespace}" --timeout=180s
 kubectl rollout status deployment/agat-keycloak --namespace "${namespace}" --timeout=240s
+kubectl rollout status deployment/agat-coordinator-postgres --namespace "${namespace}" --timeout=240s
 kubectl rollout status deployment/agat-temporal --namespace "${namespace}" --timeout=180s
 kubectl rollout status deployment/agat-coordinator --namespace "${namespace}" --timeout=180s
 kubectl rollout status deployment/agat-temporal-worker --namespace "${namespace}" --timeout=180s
@@ -424,6 +527,10 @@ for _attempt in $(seq 1 20); do
 done
 
 printf '\nАГАТ запущен в namespace %s.\n' "${namespace}"
+printf 'Fleet HA-cell: %s/%s · coordinator replicas: %s · PostgreSQL state store.\n' \
+  "${AGAT_REGION:-local}" \
+  "${AGAT_RESIDENCY_DOMAIN:-${AGAT_REGION:-local}}" \
+  "${AGAT_K8S_COORDINATOR_REPLICAS:-2}"
 if is_true "${web_enabled}"; then
   printf '%s\n' 'Web-инструменты: включены (внутренний SearXNG + безопасное чтение публичных страниц).'
 else

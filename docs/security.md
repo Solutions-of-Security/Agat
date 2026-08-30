@@ -4,8 +4,8 @@
 
 - coordinator отказывается слушать non-loopback адрес без admin token;
 - стандартный enrollment token запрещён при non-loopback bind;
-- node token случайный, в SQLite хранится только SHA-256 hash;
-- native edge token выдаётся только после одноразового challenge и server-side Play Integrity/App Attest verdict; raw evidence и raw challenge в audit/SQLite не сохраняются;
+- node token случайный, в authoritative state store хранится только SHA-256 hash;
+- native edge token выдаётся только после одноразового challenge и server-side Play Integrity/App Attest verdict; raw evidence и raw challenge в audit/state store не сохраняются;
 - hardware-attested node credential ограничен worker/control API, не получает MCP/HTTP/embedding work и хранится в Android Keystore либо ThisDeviceOnly Keychain;
 - admin remote wipe немедленно блокирует scheduling/work API, возвращает leases в recovery и оставляет pending token только для получения/acknowledgement wipe command;
 - wiped/revoked attestation key нельзя повторно активировать новым bootstrap enrollment;
@@ -16,7 +16,7 @@
 - роли `admin/designer/operator/viewer/auditor` проверяются на каждом маршруте, а project claim — повторно на backend;
 - agents, runs, processes, credentials, events и artifacts изолированы по project ID;
 - HTTP credentials зашифрованы AES-256-GCM с отдельным `AGAT_CREDENTIALS_KEY`; secret values никогда не возвращаются list API;
-- process webhook использует отдельный project-scoped bearer token, показываемый только при create/rotation; в SQLite хранится SHA-256, а start receipt требует `Idempotency-Key`;
+- process webhook использует отдельный project-scoped bearer token, показываемый только при create/rotation; в state store хранится SHA-256, а start receipt требует `Idempotency-Key`;
 - non-GET process HTTP автоматически получает deterministic per-instance/node/visit idempotency key; compensation регистрируется только после подтверждённого source success и использует отдельный стабильный key;
 - signal delivery ограничена process/project/name и optional instance/correlation key; payload и correlation проходят bounded validation;
 - BPMN import ограничен 1 MiB, запрещает DTD/entities и создаёт только draft, который повторно проходит backend validation при публикации;
@@ -30,7 +30,7 @@
 - MCP arguments/results шифруются AES-256-GCM, operator preview/diff редактирует sensitive keys, а audit хранит policy version/hash/rule, approvers и result hash/size;
 - MCP credentials ограничиваются namespace/tool/risk/catalog/expiry, а глобальный persisted emergency deny повторно проверяется непосредственно перед upstream side effect;
 - повтор MCP-вызова дедуплицируется по `lease_id + client_call_id`; retry stage блокируется после потенциального non-read side effect;
-- A2A task API аутентифицируется отдельным project-scoped endpoint bearer до поиска task; token показывается один раз, а в SQLite хранится только SHA-256 hash;
+- A2A task API аутентифицируется отдельным project-scoped endpoint bearer до поиска task; token показывается один раз, а в state store хранится только SHA-256 hash;
 - публичный A2A Agent Card минимален и не содержит system prompt, memory, model pin, tools или credentials; text/JSON/files, SSE и push доступны только по явной endpoint policy;
 - A2A `messageId` дедуплицирует запрос внутри endpoint, лимиты размера/files/активных tasks применяются до dispatch, а protocol messages, push и peer credentials шифруются `AGAT_CREDENTIALS_KEY`;
 - outbound A2A использует exact 1.0 discovery, HTTPS без redirects, DNS/IP pinning и deny private/link-local/mapped ranges; delegated OIDC token обменивается по RFC 8693 только в памяти вызова;
@@ -57,14 +57,19 @@
 - Temporal internal tick дополнительно защищён отдельным случайным token и недоступен через Gateway;
 - LangGraph не импортируется в Temporal Workflow и не использует отдельный durable checkpointer, поэтому graph/team state не создаёт ещё один backup/trust boundary;
 - Keycloak PostgreSQL, Temporal, coordinator и workers запускаются non-root; root init используется только для одноразовой установки владельца конкретного PostgreSQL PVC с capabilities `CHOWN/FOWNER`.
+- Fleet/HA mode использует отдельные PostgreSQL system и tenant credentials; tenant role не имеет `BYPASSRLS`, project-owned tables включают `FORCE ROW LEVEL SECURITY`, а request-scoped project context сбрасывается вместе с транзакцией;
+- tenant role получает только DML для RLS-защищённых таблиц и read-only доступ к разрешённым global справочникам; изменение settings, migrations, release registry и SIEM delivery state остаётся system/admin boundary;
+- signed worker release admission проверяет Ed25519 manifest, configured trust root, digest, expiry/revoke, region/platform/ring и deterministic rollout cohort перед выдачей нового lease;
+- SIEM outbox экспортирует только allowlisted/redacted metadata и hash исходного event payload; Bearer sink credential не входит в event, log или batch ID.
 
 ## Production checklist
 
 - [ ] Сгенерированы разные `AGAT_ADMIN_TOKEN` и `AGAT_ENROLLMENT_TOKEN` длиной не менее 32 случайных байт.
 - [ ] Coordinator доступен только по HTTPS или внутри authenticated overlay-сети.
-- [ ] SQLite volume шифруется средствами диска/хоста.
-- [ ] Каталог `AGAT_ARTIFACTS_DIR` находится на шифруемом томе, имеет ограниченные права и входит в backup.
-- [ ] SQLite knowledge store и JSON exports классифицированы как внутренние данные; export хранится и передаётся по защищённому каналу.
+- [ ] Выбран ровно один authoritative backend: SQLite только для single-process development либо PostgreSQL для Fleet/HA; dual-write отсутствует.
+- [ ] SQLite volume и `AGAT_ARTIFACTS_DIR` шифруются и backup-ятся вместе, если используется developer backend.
+- [ ] Production PostgreSQL использует TLS `verify-full`, разные system/tenant roles, multi-AZ/PITR и проверенный restore; runtime role не получает лишний DDL.
+- [ ] Knowledge store, PostgreSQL artifact bytes и JSON exports классифицированы как внутренние данные; export хранится и передаётся по защищённому каналу.
 - [ ] Golden inputs, references, prompt versions, human rationale и judge outputs классифицированы как trace data; доступ и retention проверены.
 - [ ] `.env`, worker credentials и model API keys не попадают в Git или logs.
 - [ ] Reverse proxy ограничивает request rate и размер body.
@@ -75,6 +80,11 @@
 - [ ] Kong опубликован по TLS; при нескольких replicas rate limit использует Redis.
 - [ ] `AGAT_ALLOWED_ORIGINS` содержит только реальные адреса панели.
 - [ ] Enrollment token ротируется после подключения парка.
+- [ ] Для shared-token server workers задан `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; private release key хранится вне coordinator, trust roots ротируются с overlap, baseline rollout имеет проверенный fallback, revoke отрепетирован. Native edge отдельно проверяется Play Integrity/App Attest.
+- [ ] Project `homeRegion/allowedRegions/residencyDomain`, queue и quotas утверждены владельцем данных; online cross-residency relocation запрещён.
+- [ ] Startup role-profile gate подтверждает разные фактические system/tenant users; tenant не имеет powerful attributes/membership, database/schema `CREATE`, DDL/global write; negative cross-project read/write тест запускается после каждой privilege migration.
+- [ ] System database credential рассматривается как cell-wide secret, доступен только coordinator/migration job и имеет отдельную rotation/incident procedure.
+- [ ] SIEM sink использует HTTPS, scoped Bearer, дедупликацию `idempotencyKey`, мониторинг oldest pending/retries и утверждённые retention/poison-event правила.
 - [ ] Обычные неиспользуемые node credentials отзываются повторной регистрацией/ротацией; потерянные native edge devices проходят admin remote wipe.
 - [ ] Edge включён только с отдельным HTTPS attestation broker, egress allowlist, secret rotation и проверкой Google/Apple evidence на server side.
 - [ ] `AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION=false`; package/bundle/App IDs и required verdicts совпадают с production signing configuration.
@@ -99,7 +109,7 @@
 - [ ] Push callback использует уникальный Bearer, идемпотентно обрабатывает дубликаты и не указывает на private/link-local service; production не включает loopback policy.
 - [ ] Дежурная смена умеет независимо отключить `AGAT_A2A_OUTBOUND_ENABLED` либо весь inbound/push adapter через `AGAT_A2A_ENABLED`.
 - [ ] Если оператор вручную включил LangSmith/сторонний tracing, настроены egress, redaction, retention и договорные основания передачи данных.
-- [ ] Backup SQLite регулярно проверяется восстановлением.
+- [ ] Backup выбранного state store регулярно проверяется восстановлением; PostgreSQL restore включает reconciliation events/artifacts/outbox и timed RPO/RTO exercise.
 - [ ] `agat-coordinator` RoleBinding не расширен за пределы локального namespace и необходимых Deployments/Jobs/Pods-log/Secrets/NetworkPolicies.
 - [ ] `AGAT_CREDENTIALS_KEY`, пароль Keycloak PostgreSQL и imported user passwords не «ротируются» заменой Secret без миграции данных.
 
@@ -133,7 +143,7 @@ Artifact Store разрешает только UTF-8 text artifacts через �
 
 Worker получает вход задачи и результаты предыдущих этапов, поэтому worker-host должен считаться доверенным для соответствующих данных. Local-first означает, что inference не уходит к внешнему model provider, но не означает автоматическую изоляцию разных внутренних команд.
 
-Projects дают логическую backend-изоляцию и RBAC, но все проекты пока разделяют один процесс coordinator, SQLite-файл, Artifact Store, ключ шифрования и пул доверенных workers. Для жёсткого multi-tenant сценария нужны отдельные очереди/ключи/storage boundaries, scoped node labels, quotas и шифрование payload на уровне tenant.
+В PostgreSQL Fleet/HA mode project boundary защищают одновременно OIDC/RBAC, request-scoped tenant role, `FORCE RLS`, project queues/quotas и residency placement. Cross-project read/mutation через tenant credential возвращает пустой результат либо permission error даже при ошибке application filter. Coordinator scheduler/migrations и system credential остаются trusted computing base всей HA-cell; компрометация system role имеет cell-wide blast radius. Для tenants, которым требуется отдельный cryptographic key, worker pool, backup lifecycle или regulatory boundary, используйте dedicated cell/database/keys: RLS не превращает общую БД и общий system process в физически раздельные системы.
 
 Hardware attestation подтверждает разрешённое приложение и состояние устройства на момент enrollment, но не делает mobile host доверенным для данных всех проектов и не доказывает корректность модели. Поэтому native edge получает только agent stages без MCP/HTTP side effects. Attestation broker входит в trusted computing base: `hardwareBacked=true` в его JSON нельзя принимать без реальной provider verification. Threat model, canonical binding и provider checks описаны в [Native edge worker 1.6](./native-edge-worker.md).
 
@@ -147,7 +157,7 @@ Indirect prompt injection остаётся возможным: системна�
 
 ## Golden eval и prompt registry
 
-Prompt versions, golden inputs, reference outputs, candidate outputs и reviewer rationale хранятся в project-scoped SQLite и возвращаются только authenticated API. Они не экспортируются в OpenTelemetry, но имеют ту же чувствительность, что полный run trace. `viewer` и `auditor` могут читать eval data; создание versions/promotion ограничено `admin/designer`, запуск — `admin/designer/operator`, append-only human review — также `auditor`.
+Prompt versions, golden inputs, reference outputs, candidate outputs и reviewer rationale хранятся в project-scoped state store и возвращаются только authenticated API. Они не экспортируются в OpenTelemetry, но имеют ту же чувствительность, что полный run trace. `viewer` и `auditor` могут читать eval data; создание versions/promotion ограничено `admin/designer`, запуск — `admin/designer/operator`, append-only human review — также `auditor`.
 
 Model judge выполняется обычным worker run. Это не создаёт cloud egress в coordinator, но выбранный model endpoint должен быть действительно локальным и доверенным. Judge получает candidate/reference content; не используйте внешний OpenAI-compatible endpoint без отдельного legal/security решения. Его score не является независимой истиной и уступает последней human review.
 
@@ -194,9 +204,17 @@ Egress NetworkPolicy/firewall, полная schema validation arguments на с�
 - health snapshot и rollout argv не содержат secrets;
 - production worker требует immutable build ID и Worker Deployment Versioning;
 - replay fixtures проходят sanitization: пользовательские payloads и credentials не коммитятся в repository;
-- SQLite ограничивает deployment одним coordinator; попытка включить незавершённый PostgreSQL driver отклоняется.
+- SQLite mode ограничивает deployment одним coordinator. Fleet/HA mode использует PostgreSQL authority; несколько coordinator replicas не дают HA без отдельной multi-AZ database, backup/restore и failover проверки.
 
 Runbook и список параметров: [Production hardening durable runtime](./production-durable-runtime.md).
+
+## Fleet/HA boundary
+
+Одна HA-cell имеет фиксированную пару `AGAT_REGION/AGAT_RESIDENCY_DOMAIN` и одну PostgreSQL authority. Project payload не реплицируется приложением между cells; `allowedRegions` не является разрешением произвольной replica забрать данные другого residency domain. Изменение home cell требует остановки writes, offline migration и reconciliation.
+
+Release signature доказывает, что canonical manifest подписан доверенным Ed25519 key, но не доказывает, что недоверенный host реально исполняет заявленные bytes. Digest/release identity, staged cohort и revoke являются admission controls; stronger supply-chain guarantee требует проверенной OCI provenance и runtime/hardware attestation.
+
+SIEM delivery имеет at-least-once семантику. Истёкший exporter lease или неясный HTTP outcome приводит к повтору, поэтому sink обязан дедуплицировать `agat-audit-<eventId>`. Redirect запрещён; raw prompt/output/tool arguments и secrets в export не включаются. Полная модель и открытые production gates: [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Web tools
 

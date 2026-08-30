@@ -12,6 +12,7 @@ const items: Array<{ id: ViewId; label: string; icon: IconName }> = [
   { id: "agents", label: "Агенты", icon: "agents" },
   { id: "nodes", label: "Узлы", icon: "nodes" },
   { id: "models", label: "Модели", icon: "models" },
+  { id: "fleet", label: "Fleet", icon: "shield" },
 ];
 
 export function BottomNav({ activeView, onNavigate }: { activeView: ViewId; onNavigate: (view: ViewId) => void }) {

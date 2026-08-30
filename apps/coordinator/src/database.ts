@@ -1,7 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createPublicKey, randomUUID, verify as verifySignature } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+
+import { PostgresDatabaseSync, type PostgresDatabaseOptions } from "./postgres-database.js";
+import type { SyncDatabase } from "./sync-database.js";
 
 import {
   defaultProcessGraph,
@@ -117,6 +120,7 @@ import type {
   ModelRouterStrategy,
   ModelRoutingDecision,
   ProcessBranch,
+  ProjectFleetPolicyInput,
   ProcessGraph,
   ProcessGraphNode,
   ProcessVersionDiff,
@@ -141,6 +145,10 @@ import type {
   WorkerMetrics,
   WorkerModelProfile,
   WorkerRegistration,
+  WorkerReleaseIdentity,
+  WorkerReleaseManifest,
+  WorkerRolloutInput,
+  RegisterWorkerReleaseInput,
 } from "./types.js";
 
 type SqlScalar = string | number | bigint | Uint8Array | null;
@@ -181,6 +189,62 @@ function parseJson<T>(value: unknown, fallback: T): T {
 
 function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, field]) => field !== undefined)
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+  return `{${entries.map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`).join(",")}}`;
+}
+
+function fleetIdentifier(value: unknown, field: string, fallback?: string): string {
+  const normalized = typeof value === "string" && value.trim() ? value.trim().toLowerCase() : fallback ?? "";
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(normalized)) {
+    throw new Error(`${field} должен содержать 1..63 символа [a-z0-9._-]`);
+  }
+  return normalized;
+}
+
+function postgresRoleIdentifier(value: string, field: string): string {
+  const normalized = decodeURIComponent(value).trim();
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(normalized)) {
+    throw new Error(`${field} должен быть lowercase PostgreSQL role identifier`);
+  }
+  return normalized;
+}
+
+function quotePostgresIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
+  if (value === undefined) return [homeRegion];
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) {
+    throw new Error("allowedRegions должен содержать от 1 до 16 регионов");
+  }
+  const regions = [...new Set(value.map((region) => fleetIdentifier(region, "Регион")))].sort();
+  if (!regions.includes(homeRegion)) throw new Error("homeRegion должен входить в allowedRegions");
+  return regions;
+}
+
+function workerArtifactDigest(value: unknown): string {
+  const digest = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error("Worker artifact digest должен иметь формат sha256:<64 hex>");
+  return digest;
+}
+
+function canonicalBase64(value: unknown, field: string, maxBytes = 8_192): Buffer {
+  if (typeof value !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new Error(`${field} должен быть canonical base64`);
+  }
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length === 0 || bytes.length > maxBytes || bytes.toString("base64") !== value) {
+    throw new Error(`${field} должен быть canonical base64 размером 1..${maxBytes} байт`);
+  }
+  return bytes;
 }
 
 const MCP_SENSITIVE_KEY = /(authorization|credential|password|secret|token|api[_-]?key|private[_-]?key)/i;
@@ -909,46 +973,95 @@ export interface StoreOptions {
   temporalProcesses?: boolean;
   edgeChallengeTtlSeconds?: number;
   telemetry?: CoordinatorTelemetry;
+  stateStoreDriver?: "sqlite" | "postgresql";
+  postgres?: PostgresDatabaseOptions;
+  coordinatorInstanceId?: string;
+  region?: string;
+  residencyDomain?: string;
+  workerReleasePublicKeys?: Record<string, string>;
+  requireSignedWorkerReleases?: boolean;
 }
 
 export class AgatStore {
-  readonly db: DatabaseSync;
+  readonly db: SyncDatabase;
+  readonly stateStoreDriver: "sqlite" | "postgresql";
   private readonly leaseTtlSeconds: number;
   private readonly artifactsDir: string;
   private readonly credentialsKey: string;
   private readonly temporalProcesses: boolean;
   private readonly edgeChallengeTtlSeconds: number;
   private readonly telemetry: CoordinatorTelemetry;
+  private readonly coordinatorInstanceId: string;
+  private readonly region: string;
+  private readonly residencyDomain: string;
+  private readonly workerReleasePublicKeys: ReadonlyMap<string, string>;
+  private readonly requireSignedWorkerReleases: boolean;
+  private readonly postgresTenantRole: string | null;
 
   constructor(dbPath: string, options: StoreOptions = {}) {
-    if (dbPath !== ":memory:") {
+    this.stateStoreDriver = options.stateStoreDriver ?? "sqlite";
+    if (this.stateStoreDriver === "postgresql" && !options.postgres?.tenantUrl) {
+      throw new Error("PostgreSQL state store требует tenant URL");
+    }
+    this.postgresTenantRole = this.stateStoreDriver === "postgresql"
+      ? postgresRoleIdentifier(new URL(options.postgres!.tenantUrl).username, "PostgreSQL tenant role")
+      : null;
+    if (this.stateStoreDriver === "sqlite" && dbPath !== ":memory:") {
       fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
     }
 
-    this.db = new DatabaseSync(dbPath);
+    if (this.stateStoreDriver === "postgresql") {
+      if (!options.postgres?.systemUrl) throw new Error("PostgreSQL state store требует system URL");
+      this.db = new PostgresDatabaseSync(options.postgres);
+    } else {
+      this.db = new DatabaseSync(dbPath) as unknown as SyncDatabase;
+      Object.defineProperty(this.db, "dialect", { value: "sqlite", enumerable: true });
+    }
     this.leaseTtlSeconds = options.leaseTtlSeconds ?? 180;
     this.artifactsDir = path.resolve(options.artifactsDir ?? "./data/artifacts");
     this.credentialsKey = options.credentialsKey ?? "agat-local-credentials-key";
     this.temporalProcesses = options.temporalProcesses ?? false;
     this.edgeChallengeTtlSeconds = Math.max(30, Math.min(600, options.edgeChallengeTtlSeconds ?? 180));
+    this.coordinatorInstanceId = options.coordinatorInstanceId ?? `coordinator-${process.pid}`;
+    this.region = options.region ?? "local";
+    this.residencyDomain = options.residencyDomain ?? this.region;
+    this.workerReleasePublicKeys = new Map(Object.entries(options.workerReleasePublicKeys ?? {}));
+    this.requireSignedWorkerReleases = options.requireSignedWorkerReleases ?? false;
     this.telemetry = options.telemetry ?? new CoordinatorTelemetry({
       enabled: false,
       serviceName: "agat-coordinator",
       exporterEndpoint: "",
     });
-    this.configure();
-    this.migrate();
+    if (this.stateStoreDriver === "postgresql") {
+      this.transaction(() => {
+        this.db.exec("SELECT pg_advisory_xact_lock(867530901);");
+        this.migrate();
+        this.migrateFleetHa();
+      });
+    } else {
+      this.configure();
+      this.migrate();
+      this.migrateFleetHa();
+    }
     this.seedAgents();
     this.ensureAllPromptRegistries();
     if (options.seedDemo) this.seedDemoData();
     else this.removeDemoData();
+    this.heartbeatCoordinatorReplica();
   }
 
   close(): void {
+    try {
+      this.db.prepare("UPDATE coordinator_replicas SET status = 'stopped', updated_at = ? WHERE instance_id = ?")
+        .run(nowIso(), this.coordinatorInstanceId);
+    } catch {
+      // Shutdown must still release the database connection if the backend is unavailable.
+    }
     this.db.close();
   }
 
   maintenanceTick(): void {
+    this.heartbeatCoordinatorReplica();
     this.completeAutomaticWaitStages();
     this.cleanupExpiredMcpCalls();
     this.cleanupExpiredKnowledgeLeases();
@@ -958,6 +1071,7 @@ export class AgatStore {
   }
 
   private configure(): void {
+    if (this.stateStoreDriver !== "sqlite") return;
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec("PRAGMA busy_timeout = 5000;");
     try {
@@ -1762,14 +1876,14 @@ export class AgatStore {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_reviews_judge_run
         ON eval_reviews(run_id) WHERE run_id IS NOT NULL;
 
-      INSERT OR IGNORE INTO settings(key, value, updated_at)
-      VALUES ('scheduler_mode', 'sequential', datetime('now'));
-      INSERT OR IGNORE INTO settings(key, value, updated_at)
-      VALUES ('global_max_concurrency', '1', datetime('now'));
-      INSERT OR IGNORE INTO settings(key, value, updated_at)
-      VALUES ('model_router_policy', '${JSON.stringify(DEFAULT_MODEL_ROUTER_POLICY)}', datetime('now'));
-      INSERT OR IGNORE INTO settings(key, value, updated_at)
-      VALUES ('mcp_emergency_deny', '{"enabled":false,"reason":"","actor":null,"changedAt":null,"pendingCallsDenied":0}', datetime('now'));
+      INSERT INTO settings(key, value, updated_at)
+      VALUES ('scheduler_mode', 'sequential', CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING;
+      INSERT INTO settings(key, value, updated_at)
+      VALUES ('global_max_concurrency', '1', CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING;
+      INSERT INTO settings(key, value, updated_at)
+      VALUES ('model_router_policy', '${JSON.stringify(DEFAULT_MODEL_ROUTER_POLICY)}', CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING;
+      INSERT INTO settings(key, value, updated_at)
+      VALUES ('mcp_emergency_deny', '{"enabled":false,"reason":"","actor":null,"changedAt":null,"pendingCallsDenied":0}', CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING;
     `);
 
     const nodeColumns = this.db.prepare("PRAGMA table_info(nodes)").all() as Row[];
@@ -2019,7 +2133,7 @@ export class AgatStore {
       this.db.exec("ALTER TABLE process_instances ADD COLUMN compensation_error TEXT;");
     }
     const timestamp = nowIso();
-    this.db.prepare("INSERT OR IGNORE INTO projects(id, name, created_at, updated_at) VALUES ('default', 'Основной проект', ?, ?)")
+    this.db.prepare("INSERT INTO projects(id, name, created_at, updated_at) VALUES ('default', 'Основной проект', ?, ?) ON CONFLICT(id) DO NOTHING")
       .run(timestamp, timestamp);
     this.db.exec("UPDATE agents SET is_builtin = 1 WHERE id IN ('collector', 'analyst', 'editor');");
     this.db.exec("UPDATE agents SET project_id = '__system__' WHERE is_builtin = 1 OR id = '__agat_system__';");
@@ -2075,11 +2189,333 @@ export class AgatStore {
     this.db.exec("PRAGMA user_version = 19;");
   }
 
+  private migrateFleetHa(): void {
+    const projectColumns = this.db.prepare("PRAGMA table_info(projects)").all() as Row[];
+    if (!projectColumns.some((column) => column.name === "home_region")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN home_region TEXT NOT NULL DEFAULT 'local';");
+    }
+    if (!projectColumns.some((column) => column.name === "allowed_regions_json")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN allowed_regions_json TEXT NOT NULL DEFAULT '[\"local\"]';");
+    }
+    if (!projectColumns.some((column) => column.name === "residency_domain")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN residency_domain TEXT NOT NULL DEFAULT 'local';");
+    }
+    if (!projectColumns.some((column) => column.name === "queue_name")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN queue_name TEXT NOT NULL DEFAULT 'default';");
+    }
+    if (!projectColumns.some((column) => column.name === "max_queued_tasks")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN max_queued_tasks INTEGER NOT NULL DEFAULT 1000;");
+    }
+    if (!projectColumns.some((column) => column.name === "max_running_tasks")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN max_running_tasks INTEGER NOT NULL DEFAULT 8;");
+    }
+    if (!projectColumns.some((column) => column.name === "fleet_revision")) {
+      this.db.exec("ALTER TABLE projects ADD COLUMN fleet_revision INTEGER NOT NULL DEFAULT 1;");
+    }
+
+    const runColumns = this.db.prepare("PRAGMA table_info(runs)").all() as Row[];
+    if (!runColumns.some((column) => column.name === "queue_name")) {
+      this.db.exec("ALTER TABLE runs ADD COLUMN queue_name TEXT NOT NULL DEFAULT 'default';");
+    }
+    if (!runColumns.some((column) => column.name === "region")) {
+      this.db.exec("ALTER TABLE runs ADD COLUMN region TEXT NOT NULL DEFAULT 'local';");
+    }
+    if (!runColumns.some((column) => column.name === "residency_domain")) {
+      this.db.exec("ALTER TABLE runs ADD COLUMN residency_domain TEXT NOT NULL DEFAULT 'local';");
+    }
+
+    const nodeColumns = this.db.prepare("PRAGMA table_info(nodes)").all() as Row[];
+    const nodeAdditions = [
+      ["region", "TEXT NOT NULL DEFAULT 'local'"],
+      ["residency_domain", "TEXT NOT NULL DEFAULT 'local'"],
+      ["release_id", "TEXT"],
+      ["release_digest", "TEXT"],
+      ["release_key_id", "TEXT"],
+      ["release_signature", "TEXT"],
+      ["release_verified", "INTEGER NOT NULL DEFAULT 0"],
+      ["rollout_ring", "TEXT NOT NULL DEFAULT 'stable'"],
+    ] as const;
+    for (const [name, definition] of nodeAdditions) {
+      if (!nodeColumns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE nodes ADD COLUMN ${name} ${definition};`);
+      }
+    }
+
+    const artifactColumns = this.db.prepare("PRAGMA table_info(artifacts)").all() as Row[];
+    if (!artifactColumns.some((column) => column.name === "content_blob")) {
+      this.db.exec("ALTER TABLE artifacts ADD COLUMN content_blob BLOB;");
+    }
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS coordinator_replicas (
+        instance_id TEXT PRIMARY KEY,
+        region TEXT NOT NULL,
+        residency_domain TEXT NOT NULL,
+        state_store_driver TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worker_releases (
+        id TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        artifact_digest TEXT NOT NULL UNIQUE,
+        manifest_json TEXT NOT NULL,
+        manifest_sha256 TEXT NOT NULL UNIQUE,
+        key_id TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by TEXT NOT NULL,
+        issued_at TEXT NOT NULL,
+        expires_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worker_rollouts (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        release_id TEXT NOT NULL REFERENCES worker_releases(id),
+        fallback_release_id TEXT REFERENCES worker_releases(id),
+        region TEXT NOT NULL,
+        ring TEXT NOT NULL,
+        percentage INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(project_id, region, ring)
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_export_outbox (
+        event_id BIGINT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        available_at TEXT NOT NULL,
+        locked_by TEXT,
+        lock_expires_at TEXT,
+        last_error TEXT,
+        delivered_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_runs_project_queue_status
+        ON runs(project_id, region, queue_name, status, priority, created_at);
+      CREATE INDEX IF NOT EXISTS idx_stages_claimable
+        ON stages(status, available_at, run_id, position)
+        WHERE status = 'queued';
+      CREATE INDEX IF NOT EXISTS idx_nodes_region_release
+        ON nodes(region, residency_domain, status, release_verified, rollout_ring);
+      CREATE INDEX IF NOT EXISTS idx_rollouts_project_region
+        ON worker_rollouts(project_id, region, status, ring);
+      CREATE INDEX IF NOT EXISTS idx_audit_outbox_delivery
+        ON audit_export_outbox(status, available_at, event_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_ci ON projects(LOWER(name));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_project_name_ci
+        ON agents(project_id, LOWER(name)) WHERE is_builtin = 0;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_processes_project_name_ci ON processes(project_id, LOWER(name));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_credentials_project_name_ci ON credentials(project_id, LOWER(name));
+    `);
+    const rolloutColumns = this.db.prepare("PRAGMA table_info(worker_rollouts)").all() as Row[];
+    if (!rolloutColumns.some((column) => column.name === "fallback_release_id")) {
+      this.db.exec("ALTER TABLE worker_rollouts ADD COLUMN fallback_release_id TEXT REFERENCES worker_releases(id);");
+    }
+
+    const timestamp = nowIso();
+    this.db.prepare(`
+      UPDATE projects SET home_region = ?, allowed_regions_json = ?, residency_domain = ?, updated_at = ?
+      WHERE id = 'default' AND home_region = 'local' AND residency_domain = 'local'
+    `).run(this.region, JSON.stringify([this.region]), this.residencyDomain, timestamp);
+    this.db.exec(`
+      UPDATE runs SET
+        queue_name = COALESCE((SELECT p.queue_name FROM projects p WHERE p.id = runs.project_id), queue_name),
+        region = COALESCE((SELECT p.home_region FROM projects p WHERE p.id = runs.project_id), region),
+        residency_domain = COALESCE((SELECT p.residency_domain FROM projects p WHERE p.id = runs.project_id), residency_domain);
+    `);
+    this.db.prepare(`
+      UPDATE nodes SET region = ?, residency_domain = ?
+      WHERE region = 'local' AND residency_domain = 'local'
+    `).run(this.region, this.residencyDomain);
+
+    if (this.stateStoreDriver === "postgresql") {
+      this.db.exec(`
+        CREATE OR REPLACE FUNCTION agat_enqueue_audit_event() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          INSERT INTO audit_export_outbox(
+            event_id, project_id, status, attempts, available_at, created_at, updated_at
+          ) VALUES (NEW.id, NEW.project_id, 'pending', 0, NEW.created_at, NEW.created_at, NEW.created_at)
+          ON CONFLICT(event_id) DO NOTHING;
+          RETURN NEW;
+        END;
+        $$;
+        DROP TRIGGER IF EXISTS agat_events_audit_outbox ON events;
+        CREATE TRIGGER agat_events_audit_outbox
+          AFTER INSERT ON events FOR EACH ROW EXECUTE FUNCTION agat_enqueue_audit_event();
+      `);
+      this.installPostgresTenantPolicies();
+    } else {
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS agat_events_audit_outbox
+        AFTER INSERT ON events
+        BEGIN
+          INSERT INTO audit_export_outbox(
+            event_id, project_id, status, attempts, available_at, created_at, updated_at
+          ) VALUES (NEW.id, NEW.project_id, 'pending', 0, NEW.created_at, NEW.created_at, NEW.created_at)
+          ON CONFLICT(event_id) DO NOTHING;
+        END;
+      `);
+    }
+    this.db.exec(`
+      INSERT INTO audit_export_outbox(
+        event_id, project_id, status, attempts, available_at, created_at, updated_at
+      ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
+      ON CONFLICT(event_id) DO NOTHING;
+    `);
+    this.db.exec("PRAGMA user_version = 20;");
+  }
+
+  private installPostgresTenantPolicies(): void {
+    this.db.exec(`
+      CREATE OR REPLACE FUNCTION agat_current_project() RETURNS text
+      LANGUAGE sql STABLE PARALLEL SAFE AS $$
+        SELECT NULLIF(current_setting('agat.current_project_id', true), '')
+      $$;
+    `);
+    const directPolicies: Record<string, string> = {
+      projects: "id = agat_current_project()",
+      runs: "project_id = agat_current_project()",
+      events: "project_id = agat_current_project()",
+      processes: "project_id = agat_current_project()",
+      process_signal_waits: "project_id = agat_current_project()",
+      process_webhooks: "project_id = agat_current_project()",
+      credentials: "project_id = agat_current_project()",
+      mcp_servers: "project_id = agat_current_project()",
+      mcp_tool_calls: "project_id = agat_current_project()",
+      mcp_policy_versions: "project_id = agat_current_project()",
+      a2a_endpoints: "project_id = agat_current_project()",
+      a2a_tasks: "project_id = agat_current_project()",
+      a2a_push_configs: "project_id = agat_current_project()",
+      a2a_push_deliveries: "project_id = agat_current_project()",
+      a2a_remotes: "project_id = agat_current_project()",
+      a2a_outbound_tasks: "project_id = agat_current_project()",
+      knowledge_collections: "project_id = agat_current_project()",
+      knowledge_embedding_jobs: "project_id = agat_current_project()",
+      knowledge_retrievals: "project_id = agat_current_project()",
+      memory_entries: "project_id = agat_current_project()",
+      prompt_registry: "project_id = agat_current_project()",
+      eval_datasets: "project_id = agat_current_project()",
+      eval_experiments: "project_id = agat_current_project()",
+      worker_rollouts: "project_id = agat_current_project()",
+      audit_export_outbox: "project_id = agat_current_project()",
+    };
+    const childPolicies: Record<string, string> = {
+      stages: "EXISTS (SELECT 1 FROM runs r WHERE r.id = stages.run_id AND r.project_id = agat_current_project())",
+      artifacts: "EXISTS (SELECT 1 FROM runs r WHERE r.id = artifacts.run_id AND r.project_id = agat_current_project())",
+      process_versions: "EXISTS (SELECT 1 FROM processes p WHERE p.id = process_versions.process_id AND p.project_id = agat_current_project())",
+      process_instances: "EXISTS (SELECT 1 FROM runs r WHERE r.id = process_instances.run_id AND r.project_id = agat_current_project())",
+      process_tokens: "EXISTS (SELECT 1 FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.id = process_tokens.instance_id AND r.project_id = agat_current_project())",
+      process_join_arrivals: "EXISTS (SELECT 1 FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.id = process_join_arrivals.instance_id AND r.project_id = agat_current_project())",
+      process_subprocess_links: "EXISTS (SELECT 1 FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.id = process_subprocess_links.parent_instance_id AND r.project_id = agat_current_project())",
+      process_compensations: "EXISTS (SELECT 1 FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.id = process_compensations.instance_id AND r.project_id = agat_current_project())",
+      process_webhook_receipts: "EXISTS (SELECT 1 FROM process_webhooks w WHERE w.id = process_webhook_receipts.webhook_id AND w.project_id = agat_current_project())",
+      mcp_tool_policies: "EXISTS (SELECT 1 FROM mcp_servers s WHERE s.id = mcp_tool_policies.server_id AND s.project_id = agat_current_project())",
+      mcp_tool_call_approvals: "EXISTS (SELECT 1 FROM mcp_tool_calls c WHERE c.id = mcp_tool_call_approvals.call_id AND c.project_id = agat_current_project())",
+      knowledge_documents: "EXISTS (SELECT 1 FROM knowledge_collections c WHERE c.id = knowledge_documents.collection_id AND c.project_id = agat_current_project())",
+      knowledge_chunks: "EXISTS (SELECT 1 FROM knowledge_collections c WHERE c.id = knowledge_chunks.collection_id AND c.project_id = agat_current_project())",
+      prompt_versions: "EXISTS (SELECT 1 FROM prompt_registry p WHERE p.id = prompt_versions.prompt_id AND p.project_id = agat_current_project())",
+      eval_dataset_versions: "EXISTS (SELECT 1 FROM eval_datasets d WHERE d.id = eval_dataset_versions.dataset_id AND d.project_id = agat_current_project())",
+      eval_examples: "EXISTS (SELECT 1 FROM eval_datasets d WHERE d.id = eval_examples.dataset_id AND d.project_id = agat_current_project())",
+      eval_experiment_items: "EXISTS (SELECT 1 FROM eval_experiments e WHERE e.id = eval_experiment_items.experiment_id AND e.project_id = agat_current_project())",
+      eval_reviews: "EXISTS (SELECT 1 FROM eval_experiment_items i JOIN eval_experiments e ON e.id = i.experiment_id WHERE i.id = eval_reviews.item_id AND e.project_id = agat_current_project())",
+    };
+    for (const [table, predicate] of Object.entries({ ...directPolicies, ...childPolicies })) {
+      this.db.exec(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY; ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      const existing = this.db.prepare(`
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = current_schema() AND tablename = ? AND policyname = 'agat_tenant_isolation'
+      `).get(table);
+      if (!existing) {
+        this.db.exec(`CREATE POLICY agat_tenant_isolation ON ${table} USING (${predicate}) WITH CHECK (${predicate});`);
+      }
+    }
+    this.db.exec("ALTER TABLE agents ENABLE ROW LEVEL SECURITY; ALTER TABLE agents FORCE ROW LEVEL SECURITY;");
+    if (!this.db.prepare(`
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = current_schema() AND tablename = 'agents' AND policyname = 'agat_agent_read'
+    `).get()) {
+      this.db.exec(`
+        CREATE POLICY agat_agent_read ON agents FOR SELECT
+          USING (project_id = agat_current_project() OR is_builtin = 1);
+        CREATE POLICY agat_agent_write ON agents FOR ALL
+          USING (project_id = agat_current_project())
+          WITH CHECK (project_id = agat_current_project());
+      `);
+    }
+    this.installPostgresTenantPrivileges([
+      ...Object.keys(directPolicies),
+      ...Object.keys(childPolicies),
+      "agents",
+    ]);
+  }
+
+  private installPostgresTenantPrivileges(projectTables: string[]): void {
+    if (!this.postgresTenantRole) throw new Error("PostgreSQL tenant role не настроена");
+    const schemaRow = this.db.prepare("SELECT current_schema() AS name").get() as Row | undefined;
+    const schemaName = typeof schemaRow?.name === "string" ? schemaRow.name : "public";
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) throw new Error("PostgreSQL schema имеет небезопасное имя");
+    const schema = quotePostgresIdentifier(schemaName);
+    const role = quotePostgresIdentifier(this.postgresTenantRole);
+    const isolated = [...new Set(projectTables)].sort().map(quotePostgresIdentifier).join(", ");
+    const readOnly = ["settings", "nodes", "model_benchmarks"].map(quotePostgresIdentifier).join(", ");
+    this.db.exec(`
+      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${role};
+      REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${role};
+      GRANT USAGE ON SCHEMA ${schema} TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${isolated} TO ${role};
+      GRANT SELECT ON TABLE ${readOnly} TO ${role};
+      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${role};
+      GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${role};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON TABLES FROM ${role};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON SEQUENCES FROM ${role};
+    `);
+  }
+
+  private heartbeatCoordinatorReplica(): void {
+    const timestamp = nowIso();
+    this.db.prepare(`
+      INSERT INTO coordinator_replicas(
+        instance_id, region, residency_domain, state_store_driver,
+        status, started_at, last_seen, updated_at
+      ) VALUES (?, ?, ?, ?, 'ready', ?, ?, ?)
+      ON CONFLICT(instance_id) DO UPDATE SET
+        region = excluded.region,
+        residency_domain = excluded.residency_domain,
+        state_store_driver = excluded.state_store_driver,
+        status = 'ready',
+        last_seen = excluded.last_seen,
+        updated_at = excluded.updated_at
+    `).run(
+      this.coordinatorInstanceId,
+      this.region,
+      this.residencyDomain,
+      this.stateStoreDriver,
+      timestamp,
+      timestamp,
+      timestamp,
+    );
+  }
+
   private seedAgents(): void {
     const timestamp = nowIso();
     const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO agents(id, name, role, system_prompt, model, is_builtin, created_at, updated_at)
-      VALUES (?, ?, ?, ?, NULL, 1, ?, ?)
+      INSERT INTO agents(id, name, role, system_prompt, model, is_builtin, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NULL, 1, ?, ?) ON CONFLICT(id) DO NOTHING
     `);
 
     const agents = [
@@ -2146,9 +2582,10 @@ export class AgatStore {
       ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     `);
     const insertVersion = this.db.prepare(`
-      INSERT OR IGNORE INTO prompt_versions(
+      INSERT INTO prompt_versions(
         prompt_id, version, content, content_sha256, change_note, created_by, created_at
       ) VALUES (?, 1, ?, ?, 'Импорт активного prompt агента', 'migration', ?)
+      ON CONFLICT(prompt_id, version) DO NOTHING
     `);
     for (const agent of agents) {
       const existing = find.get(project, String(agent.id)) as Row | undefined;
@@ -2373,6 +2810,7 @@ export class AgatStore {
         name: row.name,
         processCount: Number(row.process_count),
         agentCount: Number(row.agent_count),
+        fleet: this.projectFleetPolicyDto(row),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));
@@ -2389,10 +2827,38 @@ export class AgatStore {
         .slice(0, 64);
     const id = normalizeProjectId(requested || `project-${randomUUID().slice(0, 8)}`);
     if (id === "__system__") throw new Error("Этот идентификатор проекта зарезервирован");
+    const homeRegion = fleetIdentifier(input.homeRegion, "homeRegion", this.region);
+    const residencyDomain = fleetIdentifier(input.residencyDomain, "residencyDomain", this.residencyDomain);
+    if (homeRegion !== this.region || residencyDomain !== this.residencyDomain) {
+      throw new Error(`Проект должен находиться в HA-cell ${this.region}/${this.residencyDomain}`);
+    }
+    const allowedRegions = normalizeFleetRegions(input.allowedRegions, homeRegion);
+    if (allowedRegions.some((region) => region !== this.region)) {
+      throw new Error("Эта HA-cell принимает данные только своего региона; создайте отдельную cell для другого региона");
+    }
+    const queueName = fleetIdentifier(input.queueName, "queueName", id);
+    const maxQueuedTasks = clampInteger(input.maxQueuedTasks, 1, 100_000, 1_000);
+    const maxRunningTasks = clampInteger(input.maxRunningTasks, 1, 10_000, 8);
     const timestamp = nowIso();
     try {
-      this.db.prepare("INSERT INTO projects(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)")
-        .run(id, name, timestamp, timestamp);
+      this.db.prepare(`
+        INSERT INTO projects(
+          id, name, home_region, allowed_regions_json, residency_domain,
+          queue_name, max_queued_tasks, max_running_tasks, fleet_revision,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        id,
+        name,
+        homeRegion,
+        JSON.stringify(allowedRegions),
+        residencyDomain,
+        queueName,
+        maxQueuedTasks,
+        maxRunningTasks,
+        timestamp,
+        timestamp,
+      );
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
         throw new Error("Проект с таким названием или ID уже существует");
@@ -2402,6 +2868,499 @@ export class AgatStore {
     this.ensurePromptRegistry(id);
     this.addEvent(null, null, null, "info", "project.created", `Создан проект «${name}»`, { projectId: id });
     return this.listProjects().find((project) => project.id === id)!;
+  }
+
+  getProjectFleetPolicy(projectId = "default"): Record<string, unknown> {
+    const project = this.requireProject(projectId);
+    const row = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(project) as Row;
+    return this.projectFleetPolicyDto(row);
+  }
+
+  updateProjectFleetPolicy(
+    input: ProjectFleetPolicyInput,
+    projectId = "default",
+    actor = "system",
+  ): Record<string, unknown> {
+    const project = this.requireProject(projectId);
+    const homeRegion = fleetIdentifier(input.homeRegion, "homeRegion");
+    const residencyDomain = fleetIdentifier(input.residencyDomain, "residencyDomain");
+    if (homeRegion !== this.region || residencyDomain !== this.residencyDomain) {
+      throw new Error(`Проект нельзя перенести из HA-cell ${this.region}/${this.residencyDomain} online-изменением policy`);
+    }
+    const allowedRegions = normalizeFleetRegions(input.allowedRegions, homeRegion);
+    if (allowedRegions.some((region) => region !== this.region)) {
+      throw new Error("Межрегиональный failover требует отдельной HA-cell и проверенной offline migration");
+    }
+    const queueName = fleetIdentifier(input.queueName, "queueName");
+    const maxQueuedTasks = clampInteger(input.maxQueuedTasks, 1, 100_000, 1_000);
+    const maxRunningTasks = clampInteger(input.maxRunningTasks, 1, 10_000, 8);
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new Error("expectedRevision должен быть положительным целым числом");
+    }
+    const timestamp = nowIso();
+    const result = this.db.prepare(`
+      UPDATE projects SET
+        home_region = ?, allowed_regions_json = ?, residency_domain = ?, queue_name = ?,
+        max_queued_tasks = ?, max_running_tasks = ?, fleet_revision = fleet_revision + 1,
+        updated_at = ?
+      WHERE id = ? AND fleet_revision = ?
+    `).run(
+      homeRegion,
+      JSON.stringify(allowedRegions),
+      residencyDomain,
+      queueName,
+      maxQueuedTasks,
+      maxRunningTasks,
+      timestamp,
+      project,
+      input.expectedRevision,
+    );
+    if (result.changes !== 1) throw new Error("Fleet policy изменилась; обновите данные и повторите optimistic update");
+    this.db.prepare(`
+      UPDATE runs SET queue_name = ?, region = ?, residency_domain = ?, updated_at = ?
+      WHERE project_id = ? AND status IN ('queued', 'waiting_approval', 'waiting_external')
+    `).run(queueName, homeRegion, residencyDomain, timestamp, project);
+    this.addEvent(null, null, null, "warn", "fleet.project_policy.updated", "Fleet policy проекта обновлена", {
+      projectId: project,
+      actor: actor.slice(0, 200),
+      region: homeRegion,
+      residencyDomain,
+      queueName,
+      maxQueuedTasks,
+      maxRunningTasks,
+    });
+    return this.getProjectFleetPolicy(project);
+  }
+
+  private projectFleetPolicyDto(row: Row): Record<string, unknown> {
+    return {
+      homeRegion: String(row.home_region ?? this.region),
+      allowedRegions: normalizeFleetRegions(parseJson<unknown>(row.allowed_regions_json, [this.region]), String(row.home_region ?? this.region)),
+      residencyDomain: String(row.residency_domain ?? this.residencyDomain),
+      queueName: String(row.queue_name ?? "default"),
+      maxQueuedTasks: Number(row.max_queued_tasks ?? 1_000),
+      maxRunningTasks: Number(row.max_running_tasks ?? 8),
+      revision: Number(row.fleet_revision ?? 1),
+    };
+  }
+
+  private assertProjectQueueCapacity(projectId: string, additional = 1): Row {
+    const lockClause = this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : "";
+    const project = this.db.prepare(`SELECT * FROM projects WHERE id = ?${lockClause}`).get(projectId) as Row | undefined;
+    if (!project) throw new Error("Проект не найден");
+    if (project.home_region !== this.region || project.residency_domain !== this.residencyDomain) {
+      throw new Error("Project data residency не совпадает с текущей HA-cell");
+    }
+    const outstanding = Number((this.db.prepare(`
+      SELECT COUNT(*) AS count FROM runs
+      WHERE project_id = ? AND status IN ('queued', 'running', 'waiting_approval', 'waiting_external', 'compensating')
+    `).get(projectId) as Row).count);
+    if (outstanding + Math.max(1, additional) > Number(project.max_queued_tasks)) {
+      throw new Error(`Project queue quota exceeded: максимум ${Number(project.max_queued_tasks)} незавершённых задач`);
+    }
+    return project;
+  }
+
+  registerWorkerRelease(input: RegisterWorkerReleaseInput, actor = "system"): Record<string, unknown> {
+    const manifest = this.normalizeWorkerReleaseManifest(input.manifest);
+    const keyId = fleetIdentifier(input.keyId, "Worker release keyId");
+    const signature = canonicalBase64(input.signature, "Worker release signature", 128);
+    if (signature.byteLength !== 64) throw new Error("Ed25519 worker release signature должна содержать 64 байта");
+    const publicKey = this.workerReleasePublicKeys.get(keyId);
+    if (!publicKey) throw new Error(`Worker release key ${keyId} не входит в configured trust roots`);
+    const key = createPublicKey(publicKey.includes("BEGIN PUBLIC KEY")
+      ? publicKey
+      : { key: canonicalBase64(publicKey, `Public key ${keyId}`), format: "der", type: "spki" });
+    if (key.asymmetricKeyType !== "ed25519") throw new Error(`Worker release key ${keyId} не является Ed25519`);
+    const serialized = canonicalJson(manifest);
+    if (!verifySignature(null, Buffer.from(serialized, "utf8"), key, signature)) {
+      throw new Error("Worker release signature не прошла Ed25519 verification");
+    }
+    const timestamp = nowIso();
+    try {
+      this.db.prepare(`
+        INSERT INTO worker_releases(
+          id, version, artifact_digest, manifest_json, manifest_sha256,
+          key_id, signature, status, created_by, issued_at, expires_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+      `).run(
+        manifest.releaseId,
+        manifest.version,
+        manifest.artifactDigest,
+        serialized,
+        sha256Text(serialized),
+        keyId,
+        input.signature,
+        actor.slice(0, 200),
+        manifest.issuedAt,
+        manifest.expiresAt ?? null,
+        timestamp,
+        timestamp,
+      );
+    } catch (error) {
+      const code = error && typeof error === "object" ? (error as { code?: unknown }).code : null;
+      if (code === "23505" || (error instanceof Error && error.message.includes("UNIQUE constraint failed"))) {
+        throw new Error("Worker release с таким ID, digest или manifest hash уже существует");
+      }
+      throw error;
+    }
+    this.addEvent(null, null, null, "info", "fleet.worker_release.registered", "Подписанный worker release зарегистрирован", {
+      actor: actor.slice(0, 200),
+      releaseId: manifest.releaseId,
+      version: manifest.version,
+      artifactDigest: manifest.artifactDigest,
+      keyId,
+      manifestSha256: sha256Text(serialized),
+    });
+    return this.getWorkerRelease(manifest.releaseId)!;
+  }
+
+  listWorkerReleases(): Array<Record<string, unknown>> {
+    return (this.db.prepare("SELECT * FROM worker_releases ORDER BY issued_at DESC, id").all() as Row[])
+      .map((row) => this.workerReleaseDto(row));
+  }
+
+  getWorkerRelease(releaseId: string): Record<string, unknown> | null {
+    const row = this.db.prepare("SELECT * FROM worker_releases WHERE id = ?").get(releaseId) as Row | undefined;
+    return row ? this.workerReleaseDto(row) : null;
+  }
+
+  revokeWorkerRelease(releaseId: string, reason: string, actor = "system"): boolean {
+    const normalizedReason = requiredAgentText(reason, "Причина revoke worker release", 500);
+    const timestamp = nowIso();
+    return this.transaction(() => {
+      const result = this.db.prepare(`
+        UPDATE worker_releases SET status = 'revoked', updated_at = ?
+        WHERE id = ? AND status = 'active'
+      `).run(timestamp, releaseId);
+      if (result.changes !== 1) return false;
+      this.db.prepare(`
+        UPDATE nodes SET release_verified = 0, status = 'offline', updated_at = ?
+        WHERE release_id = ?
+      `).run(timestamp, releaseId);
+      this.addEvent(null, null, null, "warn", "fleet.worker_release.revoked", "Worker release отозван", {
+        actor: actor.slice(0, 200),
+        releaseId,
+        reason: normalizedReason,
+      });
+      return true;
+    });
+  }
+
+  updateWorkerRollout(
+    input: WorkerRolloutInput,
+    projectId = "default",
+    actor = "system",
+  ): Record<string, unknown> {
+    const project = this.requireProject(projectId);
+    const releaseId = fleetIdentifier(input.releaseId, "releaseId");
+    const region = fleetIdentifier(input.region, "region");
+    const ring = fleetIdentifier(input.ring, "rollout ring");
+    if (region !== this.region) throw new Error("Rollout можно изменять только внутри текущей regional HA-cell");
+    if (!Number.isInteger(input.percentage) || input.percentage < 0 || input.percentage > 100) {
+      throw new Error("Rollout percentage должен быть целым числом 0..100");
+    }
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      throw new Error("expectedRevision rollout должен быть целым числом >= 0");
+    }
+    const release = this.db.prepare("SELECT id, status, expires_at FROM worker_releases WHERE id = ?")
+      .get(releaseId) as Row | undefined;
+    if (!release || release.status !== "active") throw new Error("Активный подписанный worker release не найден");
+    if (typeof release.expires_at === "string" && release.expires_at <= nowIso()) {
+      throw new Error("Worker release истёк и не может участвовать в rollout");
+    }
+    const timestamp = nowIso();
+    const rollout = this.transaction(() => {
+      const lockClause = this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : "";
+      const current = this.db.prepare(`
+        SELECT * FROM worker_rollouts WHERE project_id = ? AND region = ? AND ring = ?${lockClause}
+      `).get(project, region, ring) as Row | undefined;
+      if (!current) {
+        if (input.expectedRevision !== 0) throw new Error("Rollout ещё не существует; expectedRevision должен быть 0");
+        if (input.percentage !== 100) {
+          throw new Error("Первый release для ring должен быть развёрнут на 100%; staged rollout требует fallback release");
+        }
+        const id = randomUUID();
+        this.db.prepare(`
+          INSERT INTO worker_rollouts(
+            id, project_id, release_id, fallback_release_id, region, ring,
+            percentage, revision, status, created_by, created_at, updated_at
+          ) VALUES (?, ?, ?, NULL, ?, ?, ?, 1, 'active', ?, ?, ?)
+        `).run(id, project, releaseId, region, ring, input.percentage, actor.slice(0, 200), timestamp, timestamp);
+      } else {
+        if (Number(current.revision) !== input.expectedRevision) {
+          throw new Error("Rollout изменился; обновите данные и повторите optimistic update");
+        }
+        const fallback = current.release_id === releaseId
+          ? current.fallback_release_id
+          : current.release_id;
+        this.db.prepare(`
+          UPDATE worker_rollouts SET
+            release_id = ?, fallback_release_id = ?, percentage = ?, revision = revision + 1,
+            status = 'active', created_by = ?, updated_at = ?
+          WHERE id = ? AND revision = ?
+        `).run(
+          releaseId,
+          fallback ?? null,
+          input.percentage,
+          actor.slice(0, 200),
+          timestamp,
+          String(current.id),
+          input.expectedRevision,
+        );
+      }
+      const row = this.db.prepare(`
+        SELECT wr.*, r.version, r.artifact_digest,
+          fr.version AS fallback_version, fr.artifact_digest AS fallback_artifact_digest
+        FROM worker_rollouts wr
+        JOIN worker_releases r ON r.id = wr.release_id
+        LEFT JOIN worker_releases fr ON fr.id = wr.fallback_release_id
+        WHERE wr.project_id = ? AND wr.region = ? AND wr.ring = ?
+      `).get(project, region, ring) as Row;
+      this.addEvent(null, null, null, "warn", "fleet.worker_rollout.updated", "Staged worker rollout обновлён", {
+        projectId: project,
+        actor: actor.slice(0, 200),
+        releaseId,
+        fallbackReleaseId: row.fallback_release_id,
+        region,
+        ring,
+        percentage: input.percentage,
+        revision: Number(row.revision),
+      });
+      return this.workerRolloutDto(row);
+    });
+    return rollout;
+  }
+
+  listWorkerRollouts(projectId = "default"): Array<Record<string, unknown>> {
+    const project = this.requireProject(projectId);
+    return (this.db.prepare(`
+      SELECT wr.*, r.version, r.artifact_digest,
+        fr.version AS fallback_version, fr.artifact_digest AS fallback_artifact_digest
+      FROM worker_rollouts wr
+      JOIN worker_releases r ON r.id = wr.release_id
+      LEFT JOIN worker_releases fr ON fr.id = wr.fallback_release_id
+      WHERE wr.project_id = ? ORDER BY wr.region, wr.ring
+    `).all(project) as Row[]).map((row) => this.workerRolloutDto(row));
+  }
+
+  setNodeRolloutRing(nodeId: string, ringValue: string, actor = "system"): Record<string, unknown> | null {
+    const ring = fleetIdentifier(ringValue, "rollout ring");
+    const timestamp = nowIso();
+    const result = this.db.prepare("UPDATE nodes SET rollout_ring = ?, updated_at = ? WHERE id = ?")
+      .run(ring, timestamp, nodeId);
+    if (result.changes !== 1) return null;
+    this.addEvent(null, null, nodeId, "warn", "fleet.node_ring.updated", "Rollout ring worker-узла обновлён", {
+      actor: actor.slice(0, 200),
+      nodeId,
+      ring,
+      region: this.region,
+    });
+    const row = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row;
+    return this.nodeDto(row);
+  }
+
+  getFleetSnapshot(projectId = "default"): Record<string, unknown> {
+    const project = this.requireProject(projectId);
+    const staleBefore = new Date(Date.now() - 15_000).toISOString();
+    const replicas = (this.db.prepare(`
+      SELECT * FROM coordinator_replicas
+      WHERE region = ? AND residency_domain = ?
+      ORDER BY instance_id
+    `).all(this.region, this.residencyDomain) as Row[]).map((row) => ({
+      instanceId: String(row.instance_id),
+      region: String(row.region),
+      residencyDomain: String(row.residency_domain),
+      stateStoreDriver: String(row.state_store_driver),
+      status: row.status === "ready" && String(row.last_seen) >= staleBefore ? "ready" : "stale",
+      startedAt: String(row.started_at),
+      lastSeen: String(row.last_seen),
+    }));
+    const queues = (this.db.prepare(`
+      SELECT queue_name, region, status, COUNT(*) AS count
+      FROM runs WHERE project_id = ?
+      GROUP BY queue_name, region, status
+      ORDER BY queue_name, region, status
+    `).all(project) as Row[]).map((row) => ({
+      queueName: String(row.queue_name),
+      region: String(row.region),
+      status: String(row.status),
+      count: Number(row.count),
+    }));
+    const outbox = this.auditExportStatus(project);
+    return {
+      generatedAt: nowIso(),
+      cell: {
+        instanceId: this.coordinatorInstanceId,
+        region: this.region,
+        residencyDomain: this.residencyDomain,
+        stateStoreDriver: this.stateStoreDriver,
+        haReady: this.stateStoreDriver === "postgresql" && replicas.filter((replica) => replica.status === "ready").length >= 2,
+      },
+      projectId: project,
+      policy: this.getProjectFleetPolicy(project),
+      queues,
+      replicas,
+      releases: this.listWorkerReleases(),
+      rollouts: this.listWorkerRollouts(project),
+      auditExport: outbox,
+    };
+  }
+
+  stateStoreSnapshot(): Record<string, unknown> {
+    const probe = this.db.prepare("SELECT 1 AS healthy").get() as Row | undefined;
+    if (Number(probe?.healthy) !== 1) throw new Error("State store health probe failed");
+    const staleBefore = new Date(Date.now() - 15_000).toISOString();
+    const replicaRow = this.db.prepare(`
+      SELECT COUNT(*) AS ready_replicas
+      FROM coordinator_replicas
+      WHERE region = ? AND residency_domain = ?
+        AND state_store_driver = ? AND status = 'ready' AND last_seen >= ?
+    `).get(this.region, this.residencyDomain, this.stateStoreDriver, staleBefore) as Row | undefined;
+    const readyReplicas = Number(replicaRow?.ready_replicas ?? 0);
+    return {
+      driver: this.stateStoreDriver,
+      instanceId: this.coordinatorInstanceId,
+      region: this.region,
+      residencyDomain: this.residencyDomain,
+      reachable: true,
+      readyReplicas,
+      haReady: this.stateStoreDriver === "postgresql" && readyReplicas >= 2,
+    };
+  }
+
+  private normalizeWorkerReleaseManifest(input: WorkerReleaseManifest): WorkerReleaseManifest {
+    if (!input || input.schemaVersion !== 1) throw new Error("Worker release manifest schemaVersion должен быть 1");
+    const releaseId = fleetIdentifier(input.releaseId, "releaseId");
+    const version = requiredAgentText(input.version, "Worker release version", 80);
+    if (!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}$/.test(version)) throw new Error("Worker release version имеет недопустимый формат");
+    const artifactDigest = workerArtifactDigest(input.artifactDigest);
+    if (!Array.isArray(input.platforms) || input.platforms.length === 0 || input.platforms.length > 16) {
+      throw new Error("Worker release platforms должен содержать 1..16 platform family");
+    }
+    const platforms = [...new Set(input.platforms.map((platform) => fleetIdentifier(platform, "Worker platform")))].sort();
+    const issuedAt = new Date(input.issuedAt).toISOString();
+    if (new Date(issuedAt).getTime() > Date.now() + 300_000) throw new Error("Worker release issuedAt находится в будущем");
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt).toISOString() : null;
+    if (expiresAt && expiresAt <= nowIso()) throw new Error("Worker release уже истёк");
+    const metadataEntries = Object.entries(input.metadata ?? {});
+    if (metadataEntries.length > 32) throw new Error("Worker release metadata содержит больше 32 полей");
+    const metadata = Object.fromEntries(metadataEntries.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, value]) => {
+      const normalizedKey = fleetIdentifier(key, "Worker release metadata key");
+      if (typeof value !== "string" || value.length > 500 || /[\r\n\0]/.test(value)) {
+        throw new Error(`Worker release metadata ${normalizedKey} некорректна`);
+      }
+      return [normalizedKey, value];
+    }));
+    return { schemaVersion: 1, releaseId, version, artifactDigest, platforms, issuedAt, expiresAt, metadata };
+  }
+
+  private verifyWorkerReleaseIdentity(identity: WorkerReleaseIdentity | undefined, platform: string): Row | null {
+    if (!identity) {
+      if (this.requireSignedWorkerReleases) throw new Error("Worker должен предъявить signed release identity");
+      return null;
+    }
+    const releaseId = fleetIdentifier(identity.releaseId, "releaseId");
+    const digest = workerArtifactDigest(identity.artifactDigest);
+    const keyId = fleetIdentifier(identity.keyId, "release keyId");
+    canonicalBase64(identity.signature, "release signature", 128);
+    const release = this.db.prepare("SELECT * FROM worker_releases WHERE id = ?").get(releaseId) as Row | undefined;
+    if (!release || release.status !== "active") throw new Error("Worker release не зарегистрирован или отозван");
+    if (release.artifact_digest !== digest || release.key_id !== keyId || release.signature !== identity.signature) {
+      throw new Error("Worker release identity не совпадает с подписанным manifest");
+    }
+    if (typeof release.expires_at === "string" && release.expires_at <= nowIso()) throw new Error("Worker release истёк");
+    const manifest = parseJson<WorkerReleaseManifest | null>(release.manifest_json, null);
+    if (!manifest) throw new Error("Worker release manifest повреждён");
+    const family = this.workerPlatformFamily(platform);
+    if (!manifest.platforms.includes(family)) {
+      throw new Error(`Worker release не подписан для platform family ${family}`);
+    }
+    const publicKey = this.workerReleasePublicKeys.get(keyId);
+    if (!publicKey) throw new Error(`Worker release key ${keyId} больше не доверен`);
+    const key = createPublicKey(publicKey.includes("BEGIN PUBLIC KEY")
+      ? publicKey
+      : { key: canonicalBase64(publicKey, `Public key ${keyId}`), format: "der", type: "spki" });
+    const signature = canonicalBase64(identity.signature, "release signature", 128);
+    if (!verifySignature(null, Buffer.from(String(release.manifest_json), "utf8"), key, signature)) {
+      throw new Error("Worker release signature не прошла повторную verification");
+    }
+    return release;
+  }
+
+  private workerPlatformFamily(platform: string): string {
+    const normalized = platform.toLowerCase();
+    if (normalized.includes("android")) return "android";
+    if (normalized.includes("ios") || normalized.includes("iphone") || normalized.includes("ipad")) return "ios";
+    if (normalized.includes("darwin") || normalized.includes("macos")) return "darwin";
+    if (normalized.includes("windows")) return "windows";
+    return "linux";
+  }
+
+  private workerEligibleForRollout(node: Row, projectId: string): boolean {
+    if (node.trust_kind === "hardware_attested") return true;
+    const rollout = this.db.prepare(`
+      SELECT wr.*, target.status AS target_status, target.expires_at AS target_expires_at,
+        fallback.status AS fallback_status, fallback.expires_at AS fallback_expires_at
+      FROM worker_rollouts wr
+      JOIN worker_releases target ON target.id = wr.release_id
+      LEFT JOIN worker_releases fallback ON fallback.id = wr.fallback_release_id
+      WHERE wr.project_id = ? AND wr.region = ? AND wr.ring = ? AND wr.status = 'active'
+    `).get(projectId, String(node.region), String(node.rollout_ring ?? "stable")) as Row | undefined;
+    if (!rollout) return !this.requireSignedWorkerReleases;
+    if (Number(node.release_verified ?? 0) !== 1) return false;
+    const bucket = Number.parseInt(sha256Text(`${projectId}:${String(node.id)}:${String(rollout.id)}`).slice(0, 8), 16) % 100;
+    const targetCohort = bucket < Number(rollout.percentage);
+    const expectedRelease = targetCohort || !rollout.fallback_release_id
+      ? String(rollout.release_id)
+      : String(rollout.fallback_release_id);
+    const expectedStatus = targetCohort || !rollout.fallback_release_id
+      ? rollout.target_status
+      : rollout.fallback_status;
+    const expectedExpiry = targetCohort || !rollout.fallback_release_id
+      ? rollout.target_expires_at
+      : rollout.fallback_expires_at;
+    return node.release_id === expectedRelease
+      && expectedStatus === "active"
+      && !(typeof expectedExpiry === "string" && expectedExpiry <= nowIso());
+  }
+
+  private workerReleaseDto(row: Row): Record<string, unknown> {
+    return {
+      id: String(row.id),
+      version: String(row.version),
+      artifactDigest: String(row.artifact_digest),
+      manifest: parseJson<Record<string, unknown>>(row.manifest_json, {}),
+      manifestSha256: String(row.manifest_sha256),
+      keyId: String(row.key_id),
+      signature: String(row.signature),
+      status: String(row.status),
+      createdBy: String(row.created_by),
+      issuedAt: String(row.issued_at),
+      expiresAt: typeof row.expires_at === "string" ? row.expires_at : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private workerRolloutDto(row: Row): Record<string, unknown> {
+    return {
+      id: String(row.id),
+      projectId: String(row.project_id),
+      releaseId: String(row.release_id),
+      version: String(row.version),
+      artifactDigest: String(row.artifact_digest),
+      fallbackReleaseId: typeof row.fallback_release_id === "string" ? row.fallback_release_id : null,
+      fallbackVersion: typeof row.fallback_version === "string" ? row.fallback_version : null,
+      fallbackArtifactDigest: typeof row.fallback_artifact_digest === "string" ? row.fallback_artifact_digest : null,
+      region: String(row.region),
+      ring: String(row.ring),
+      percentage: Number(row.percentage),
+      revision: Number(row.revision),
+      status: String(row.status),
+      updatedAt: String(row.updated_at),
+    };
   }
 
   private requireProject(projectId: string): string {
@@ -4381,10 +5340,11 @@ export class AgatStore {
       ORDER BY r.updated_at, pc.created_at
     `).all() as Row[];
     const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO a2a_push_deliveries(
+      INSERT INTO a2a_push_deliveries(
         id, config_id, task_id, project_id, event_kind, task_state,
         payload_blob, status, attempts, next_attempt_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, 'status', ?, ?, 'pending', 0, ?, ?, ?)
+      ON CONFLICT DO NOTHING
     `);
     const updateConfig = this.db.prepare("UPDATE a2a_push_configs SET last_state = ?, updated_at = ? WHERE id = ?");
     for (const config of configs) {
@@ -5485,6 +6445,7 @@ export class AgatStore {
     const startedRunIds: string[] = [];
     try {
       this.transaction(() => {
+        const placement = this.assertProjectQueueCapacity(project, examples.length);
         this.db.prepare(`
           INSERT INTO eval_experiments(
             id, project_id, name, dataset_id, dataset_version, agent_id,
@@ -5512,8 +6473,8 @@ export class AgatStore {
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, project_id, trace_id, root_span_id,
             replay_of_run_id, evaluation_group_id, variant_name,
-            knowledge_collection_ids_json, created_at, updated_at
-          ) VALUES (?, ?, ?, 'queued', 'sequential', 50, 0, 'history', '', ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+            knowledge_collection_ids_json, queue_name, region, residency_domain, created_at, updated_at
+          ) VALUES (?, ?, ?, 'queued', 'sequential', 50, 0, 'history', '', ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const insertStage = this.db.prepare(`
           INSERT INTO stages(
@@ -5551,6 +6512,9 @@ export class AgatStore {
             experimentId,
             String(example.name).slice(0, 60),
             JSON.stringify(collectionIds),
+            String(placement.queue_name),
+            String(placement.home_region),
+            String(placement.residency_domain),
             timestamp,
             timestamp,
           );
@@ -5668,29 +6632,46 @@ export class AgatStore {
     } else {
       overallScore = normalizeEvalScore(input.overallScore, "Итоговая оценка");
     }
-    const timestamp = nowIso();
-    this.db.prepare(`
-      INSERT INTO eval_reviews(
-        id, item_id, kind, reviewer, model, scores_json, overall_score,
-        rationale, raw_output_sha256, run_id, created_at
-      ) VALUES (?, ?, 'human', ?, NULL, ?, ?, ?, NULL, NULL, ?)
-    `).run(
-      randomUUID(),
-      itemId,
-      actor.slice(0, 200),
-      JSON.stringify(scores),
-      overallScore,
-      rationale,
-      timestamp,
-    );
-    this.addEvent(String(item.run_id), null, null, "info", "eval.human_review.created", "Сохранена human rubric оценка", {
-      experimentId: item.experiment_id,
-      itemId,
-      reviewer: actor.slice(0, 200),
-      overallScore,
-      scores,
+    return this.transaction(() => {
+      const lockClause = this.stateStoreDriver === "postgresql" ? " FOR UPDATE OF i" : "";
+      const lockedItem = this.db.prepare(`
+        SELECT i.*, e.project_id, e.dataset_id, e.dataset_version
+        FROM eval_experiment_items i
+        JOIN eval_experiments e ON e.id = i.experiment_id
+        WHERE i.id = ? AND e.project_id = ?${lockClause}
+      `).get(itemId, project) as Row | undefined;
+      if (!lockedItem) return null;
+      const previous = this.db.prepare(`
+        SELECT created_at FROM eval_reviews
+        WHERE item_id = ? AND kind = 'human'
+        ORDER BY created_at DESC, id DESC LIMIT 1
+      `).get(itemId) as Row | undefined;
+      const currentMs = Date.now();
+      const previousMs = typeof previous?.created_at === "string" ? Date.parse(previous.created_at) : Number.NaN;
+      const timestamp = new Date(Math.max(currentMs, Number.isFinite(previousMs) ? previousMs + 1 : currentMs)).toISOString();
+      this.db.prepare(`
+        INSERT INTO eval_reviews(
+          id, item_id, kind, reviewer, model, scores_json, overall_score,
+          rationale, raw_output_sha256, run_id, created_at
+        ) VALUES (?, ?, 'human', ?, NULL, ?, ?, ?, NULL, NULL, ?)
+      `).run(
+        randomUUID(),
+        itemId,
+        actor.slice(0, 200),
+        JSON.stringify(scores),
+        overallScore,
+        rationale,
+        timestamp,
+      );
+      this.addEvent(String(lockedItem.run_id), null, null, "info", "eval.human_review.created", "Сохранена human rubric оценка", {
+        experimentId: lockedItem.experiment_id,
+        itemId,
+        reviewer: actor.slice(0, 200),
+        overallScore,
+        scores,
+      });
+      return this.getEvalExperiment(String(lockedItem.experiment_id), project);
     });
-    return this.getEvalExperiment(String(item.experiment_id), project);
   }
 
   judgeEvalExperiment(
@@ -5734,12 +6715,14 @@ export class AgatStore {
     const startedRunIds: string[] = [];
     try {
       this.transaction(() => {
+        const placement = this.assertProjectQueueCapacity(project, items.length);
         const insertRun = this.db.prepare(`
           INSERT INTO runs(
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, project_id, trace_id, root_span_id,
-            knowledge_collection_ids_json, variant_name, created_at, updated_at
-          ) VALUES (?, ?, ?, 'queued', 'sequential', 40, 0, 'history', '', ?, ?, ?, '[]', 'model judge', ?, ?)
+            knowledge_collection_ids_json, variant_name, queue_name, region, residency_domain,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, 'queued', 'sequential', 40, 0, 'history', '', ?, ?, ?, '[]', 'model judge', ?, ?, ?, ?, ?)
         `);
         const insertStage = this.db.prepare(`
           INSERT INTO stages(
@@ -5784,6 +6767,9 @@ export class AgatStore {
             project,
             trace.traceId,
             trace.spanId,
+            String(placement.queue_name),
+            String(placement.home_region),
+            String(placement.residency_domain),
             timestamp,
             timestamp,
           );
@@ -6066,7 +7052,7 @@ export class AgatStore {
     `).all(String(experiment.id)) as Row[];
     const items = rows.map((row) => {
       const reviews = (this.db.prepare(`
-        SELECT * FROM eval_reviews WHERE item_id = ? ORDER BY created_at DESC, rowid DESC
+        SELECT * FROM eval_reviews WHERE item_id = ? ORDER BY created_at DESC, id DESC
       `).all(String(row.id)) as Row[]).map((review) => ({
         id: String(review.id),
         kind: String(review.kind),
@@ -6563,7 +7549,9 @@ export class AgatStore {
       const node = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
       if (!node) throw new Error("Узел не найден");
       if (String(node.credential_state ?? "active") !== "active" || node.status !== "online") return null;
+      if (node.region !== this.region || node.residency_domain !== this.residencyDomain) return null;
       if (node.trust_kind === "hardware_attested") return null;
+      if (this.requireSignedWorkerReleases && Number(node.release_verified ?? 0) !== 1) return null;
       const embeddingModels = normalizeEmbeddingModels(parseJson<unknown>(node.embedding_models_json, []));
       if (embeddingModels.length === 0) return null;
       const used = Number((this.db.prepare(`
@@ -6587,15 +7575,29 @@ export class AgatStore {
       }
       const jobs = this.db.prepare(`
         SELECT j.*, c.name AS collection_name, c.embedding_model,
-          d.name AS document_name
+          d.name AS document_name, p.allowed_regions_json, p.max_running_tasks
         FROM knowledge_embedding_jobs j
         JOIN knowledge_collections c ON c.id = j.collection_id
         JOIN knowledge_documents d ON d.id = j.document_id
+        JOIN projects p ON p.id = j.project_id
         WHERE j.status = 'pending' AND j.failures < j.max_failures
+          AND p.home_region = ? AND p.residency_domain = ?
+          AND (
+            (SELECT COUNT(*) FROM stages active_stage
+              JOIN runs active_run ON active_run.id = active_stage.run_id
+              WHERE active_run.project_id = p.id AND active_stage.status = 'running')
+            + (SELECT COUNT(*) FROM knowledge_embedding_jobs active_job
+              WHERE active_job.project_id = p.id AND active_job.status = 'running')
+          ) < p.max_running_tasks
         ORDER BY j.created_at ASC
         LIMIT 100
-      `).all() as Row[];
-      const job = jobs.find((candidate) => embeddingModels.includes(String(candidate.embedding_model)));
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF p, j SKIP LOCKED" : ""}
+      `).all(this.region, this.residencyDomain) as Row[];
+      const job = jobs.find((candidate) =>
+        embeddingModels.includes(String(candidate.embedding_model))
+        && parseJson<string[]>(candidate.allowed_regions_json, []).includes(String(node.region))
+        && this.workerEligibleForRollout(node, String(candidate.project_id))
+      );
       if (!job) return null;
       const chunks = this.db.prepare(`
         SELECT id, ordinal, content FROM knowledge_chunks
@@ -7535,14 +8537,15 @@ export class AgatStore {
       const hasApproval = graph.nodes.some((node) =>
         node.type === "approval" || (node.type === "agent" && node.config.approvalRequired === true)
       );
+      const placement = this.assertProjectQueueCapacity(project);
 
       this.db
         .prepare(`
           INSERT INTO runs(
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, created_at, updated_at
-            , project_id, knowledge_collection_ids_json
-          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?)
+            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain
+          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           runId,
@@ -7556,6 +8559,9 @@ export class AgatStore {
           timestamp,
           project,
           JSON.stringify(knowledgeCollectionIds),
+          String(placement.queue_name),
+          String(placement.home_region),
+          String(placement.residency_domain),
         );
       this.db
         .prepare(`
@@ -7999,13 +9005,14 @@ export class AgatStore {
 
     try {
       this.transaction(() => {
+        const placement = this.assertProjectQueueCapacity(project);
         this.db
           .prepare(`
             INSERT INTO runs(
               id, name, input, status, execution_mode, priority, approval_required,
               result_destination, artifact_path, project_id, trace_id, root_span_id,
-              knowledge_collection_ids_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              knowledge_collection_ids_json, queue_name, region, residency_domain, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `)
           .run(
             runId,
@@ -8021,6 +9028,9 @@ export class AgatStore {
             runTrace.traceId,
             runTrace.spanId,
             JSON.stringify(knowledgeCollectionIds),
+            String(placement.queue_name),
+            String(placement.home_region),
+            String(placement.residency_domain),
             timestamp,
             timestamp,
           );
@@ -8183,6 +9193,11 @@ export class AgatStore {
     const models = [...new Set(registration.models.map((model) => model.trim()).filter(Boolean))];
     const modelProfiles = normalizeModelProfiles(registration.modelProfiles, models);
     const embeddingModels: string[] = [];
+    const region = fleetIdentifier(registration.region, "Worker region", this.region);
+    const residencyDomain = fleetIdentifier(registration.residencyDomain, "Worker residencyDomain", this.residencyDomain);
+    if (region !== this.region || residencyDomain !== this.residencyDomain) {
+      throw new Error(`Edge worker должен регистрироваться в своей HA-cell ${this.region}/${this.residencyDomain}`);
+    }
     const labels = {
       ...(registration.labels ?? {}),
       edge: "native",
@@ -8205,10 +9220,10 @@ export class AgatStore {
         trust_kind, attestation_provider, attestation_key_id, attestation_application_id,
         attestation_claims_json, attested_at, credential_state, wipe_generation,
         wipe_requested_at, wipe_reason, wipe_acknowledged_at, revoked_at,
-        status, metrics_json, last_seen, created_at, updated_at
+        status, metrics_json, region, residency_domain, last_seen, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '["single"]', '["tool_loop_v1"]', ?, ?, ?, ?, ?, ?, ?,
         'hardware_attested', ?, ?, ?, ?, ?, 'active', 0, NULL, NULL, NULL, NULL,
-        'online', '{}', ?, ?, ?)
+        'online', '{}', ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         platform = excluded.platform,
@@ -8240,6 +9255,8 @@ export class AgatStore {
         revoked_at = NULL,
         status = 'online',
         metrics_json = '{}',
+        region = excluded.region,
+        residency_domain = excluded.residency_domain,
         last_seen = excluded.last_seen,
         updated_at = excluded.updated_at
     `).run(
@@ -8263,6 +9280,8 @@ export class AgatStore {
       verdict.applicationId,
       JSON.stringify(claims),
       verdict.issuedAt,
+      region,
+      residencyDomain,
       timestamp,
       timestamp,
       timestamp,
@@ -8276,6 +9295,8 @@ export class AgatStore {
       verdicts: verdict.verdicts,
       models,
       maxConcurrency,
+      region,
+      residencyDomain,
     });
     return { id, token };
   }
@@ -8286,7 +9307,7 @@ export class AgatStore {
 
     const token = createToken();
     const tokenHash = hashToken(token);
-    const existing = this.db.prepare("SELECT id, trust_kind FROM nodes WHERE name = ?").get(name) as Row | undefined;
+    const existing = this.db.prepare("SELECT id, trust_kind, rollout_ring FROM nodes WHERE name = ?").get(name) as Row | undefined;
     if (existing?.trust_kind === "hardware_attested") {
       throw new Error("Hardware-attested edge-узел нельзя перерегистрировать shared enrollment token");
     }
@@ -8298,6 +9319,13 @@ export class AgatStore {
     const agentRuntimes = normalizeAgentRuntimes(registration.agentRuntimes);
     const agentRuntimeProfiles = normalizeAgentRuntimeProfiles(registration.agentRuntimeProfiles);
     const embeddingModels = normalizeEmbeddingModels(registration.embeddingModels);
+    const region = fleetIdentifier(registration.region, "Worker region", this.region);
+    const residencyDomain = fleetIdentifier(registration.residencyDomain, "Worker residencyDomain", this.residencyDomain);
+    if (region !== this.region || residencyDomain !== this.residencyDomain) {
+      throw new Error(`Worker должен регистрироваться в своей HA-cell ${this.region}/${this.residencyDomain}`);
+    }
+    const release = this.verifyWorkerReleaseIdentity(registration.release, registration.platform);
+    const rolloutRing = typeof existing?.rollout_ring === "string" ? existing.rollout_ring : "stable";
 
     this.db
       .prepare(`
@@ -8306,8 +9334,10 @@ export class AgatStore {
           labels_json, agent_runtimes_json, agent_runtime_profiles_json, embedding_models_json,
           cpu_cores, memory_mb, vram_mb, gpu,
           max_concurrency, token_hash, status,
-          metrics_json, last_seen, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?)
+          metrics_json, region, residency_domain,
+          release_id, release_digest, release_key_id, release_signature, release_verified, rollout_ring,
+          last_seen, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
           platform = excluded.platform,
           architecture = excluded.architecture,
@@ -8324,6 +9354,14 @@ export class AgatStore {
           gpu = excluded.gpu,
           max_concurrency = excluded.max_concurrency,
           token_hash = excluded.token_hash,
+          region = excluded.region,
+          residency_domain = excluded.residency_domain,
+          release_id = excluded.release_id,
+          release_digest = excluded.release_digest,
+          release_key_id = excluded.release_key_id,
+          release_signature = excluded.release_signature,
+          release_verified = excluded.release_verified,
+          rollout_ring = excluded.rollout_ring,
           status = 'online',
           last_seen = excluded.last_seen,
           updated_at = excluded.updated_at
@@ -8346,6 +9384,14 @@ export class AgatStore {
         registration.gpu ?? "",
         maxConcurrency,
         tokenHash,
+        region,
+        residencyDomain,
+        release?.id ?? null,
+        release?.artifact_digest ?? null,
+        release?.key_id ?? null,
+        release?.signature ?? null,
+        release ? 1 : 0,
+        rolloutRing,
         timestamp,
         timestamp,
         timestamp,
@@ -8359,6 +9405,11 @@ export class AgatStore {
       agentRuntimes,
       agentRuntimeProfiles,
       embeddingModels,
+      region,
+      residencyDomain,
+      releaseId: release?.id ?? null,
+      releaseVerified: Boolean(release),
+      rolloutRing,
     });
     return { id, token };
   }
@@ -8366,6 +9417,9 @@ export class AgatStore {
   authenticateNode(token: string, allowWipeControl = false): Row | null {
     const row = this.db.prepare("SELECT * FROM nodes WHERE token_hash = ?").get(hashToken(token)) as Row | undefined;
     if (!row) return null;
+    if (this.requireSignedWorkerReleases
+      && row.trust_kind !== "hardware_attested"
+      && Number(row.release_verified ?? 0) !== 1) return null;
     const state = String(row.credential_state ?? "active");
     if (state === "active" || (allowWipeControl && state === "wipe_pending")) return row;
     return null;
@@ -8485,7 +9539,8 @@ export class AgatStore {
       const models = [...new Set(capabilities.models.map((model) => model.trim()).filter(Boolean))];
       const current = this.db.prepare(`
         SELECT model_profiles_json, vram_mb, embedding_models_json, agent_runtime_profiles_json,
-          labels_json, trust_kind, attestation_provider
+          labels_json, trust_kind, attestation_provider, platform, region, residency_domain,
+          release_id, release_digest, release_key_id, release_signature, release_verified
         FROM nodes WHERE id = ?
       `).get(nodeId) as Row | undefined;
       const modelProfiles = capabilities.modelProfiles === undefined
@@ -8507,6 +9562,24 @@ export class AgatStore {
         edge: "native",
         attestation: String(current?.attestation_provider ?? "hardware"),
       } : capabilities.labels ?? {};
+      const region = fleetIdentifier(capabilities.region, "Worker region", String(current?.region ?? this.region));
+      const residencyDomain = fleetIdentifier(
+        capabilities.residencyDomain,
+        "Worker residencyDomain",
+        String(current?.residency_domain ?? this.residencyDomain),
+      );
+      if (region !== this.region || residencyDomain !== this.residencyDomain) {
+        throw new Error("Worker heartbeat пытается сменить regional residency boundary");
+      }
+      const release = capabilities.release
+        ? this.verifyWorkerReleaseIdentity(capabilities.release, String(current?.platform ?? "linux"))
+        : null;
+      if (this.requireSignedWorkerReleases
+        && !hardwareAttested
+        && !release
+        && Number(current?.release_verified ?? 0) !== 1) {
+        throw new Error("Worker heartbeat не содержит verified signed release identity");
+      }
       this.db
         .prepare(`
           UPDATE nodes SET
@@ -8521,6 +9594,13 @@ export class AgatStore {
             embedding_models_json = ?,
             vram_mb = ?,
             max_concurrency = ?,
+            region = ?,
+            residency_domain = ?,
+            release_id = ?,
+            release_digest = ?,
+            release_key_id = ?,
+            release_signature = ?,
+            release_verified = ?,
             last_seen = ?,
             updated_at = ?
           WHERE id = ?
@@ -8536,6 +9616,13 @@ export class AgatStore {
           JSON.stringify(embeddingModels),
           vramMb,
           clampInteger(capabilities.maxConcurrency, 1, hardwareAttested ? 4 : 32, 1),
+          region,
+          residencyDomain,
+          release?.id ?? current?.release_id ?? null,
+          release?.artifact_digest ?? current?.release_digest ?? null,
+          release?.key_id ?? current?.release_key_id ?? null,
+          release?.signature ?? current?.release_signature ?? null,
+          release ? 1 : Number(current?.release_verified ?? 0),
           timestamp,
           timestamp,
           nodeId,
@@ -8553,8 +9640,9 @@ export class AgatStore {
       SELECT n.*,
         (SELECT COUNT(*) FROM stages s WHERE s.node_id = n.id AND s.status = 'running')
         + (SELECT COUNT(*) FROM knowledge_embedding_jobs j WHERE j.node_id = n.id AND j.status = 'running') AS used_concurrency
-      FROM nodes n WHERE n.status = 'online'
-    `).all() as Row[];
+      FROM nodes n WHERE n.status = 'online' AND n.region = ? AND n.residency_domain = ?
+        ${this.requireSignedWorkerReleases ? "AND (n.release_verified = 1 OR n.trust_kind = 'hardware_attested')" : ""}
+    `).all(this.region, this.residencyDomain) as Row[];
     return rows.flatMap((row): RoutingNode[] => {
       const ageMs = Date.now() - new Date(String(row.last_seen)).getTime();
       const freeSlots = Number(row.max_concurrency) - Number(row.used_concurrency);
@@ -8803,13 +9891,31 @@ export class AgatStore {
             ,r.trace_id
             ,r.root_span_id
             ,r.knowledge_collection_ids_json
+            ,p.allowed_regions_json
+            ,p.home_region
+            ,p.residency_domain
+            ,p.queue_name AS project_queue_name
+            ,p.max_running_tasks
           FROM stages s
           JOIN runs r ON r.id = s.run_id
           JOIN agents a ON a.id = s.agent_id
+          JOIN projects p ON p.id = r.project_id
           WHERE s.status = 'queued'
             AND s.stage_kind IN ('agent', 'http', 'compensation')
             AND (s.available_at IS NULL OR s.available_at <= ?)
             AND r.status IN ('queued', 'running', 'compensating')
+            AND r.queue_name = p.queue_name
+            AND r.region = p.home_region
+            AND r.residency_domain = p.residency_domain
+            AND p.home_region = ?
+            AND p.residency_domain = ?
+            AND (
+              (SELECT COUNT(*) FROM stages active_stage
+                JOIN runs active_run ON active_run.id = active_stage.run_id
+                WHERE active_run.project_id = p.id AND active_stage.status = 'running')
+              + (SELECT COUNT(*) FROM knowledge_embedding_jobs active_job
+                WHERE active_job.project_id = p.id AND active_job.status = 'running')
+            ) < p.max_running_tasks
             AND (s.process_node_id IS NOT NULL OR NOT EXISTS (
               SELECT 1 FROM stages previous
               WHERE previous.run_id = s.run_id
@@ -8818,15 +9924,19 @@ export class AgatStore {
             ))
           ORDER BY r.priority DESC, r.created_at ASC, s.position ASC
           LIMIT 100
+          ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF p, s SKIP LOCKED" : ""}
         `)
-        .all(nowIso()) as Row[];
+        .all(nowIso(), this.region, this.residencyDomain) as Row[];
 
       const modelRouterPolicy = this.getModelRouterPolicy();
       const routingNodes = modelRouterPolicy.enabled ? this.availableRoutingNodes() : [];
       let selectedRouting: ModelRoutingDecision | null = null;
       let selectedMcpTools: McpLeaseTool[] = [];
       const hardwareAttestedEdge = node.trust_kind === "hardware_attested";
+      const nodeRegion = String(node.region ?? this.region);
       const candidate = candidates.find((row) => {
+        if (!parseJson<string[]>(row.allowed_regions_json, []).includes(nodeRegion)) return false;
+        if (!this.workerEligibleForRollout(node, String(row.project_id))) return false;
         if (hardwareAttestedEdge && row.stage_kind !== "agent") return false;
         if (row.stage_kind !== "agent") return true;
         const snapshot = parseAgentSnapshot(row.agent_snapshot_json)
@@ -9500,7 +10610,7 @@ export class AgatStore {
           (SELECT COUNT(*) FROM stages s WHERE s.node_id = n.id AND s.status = 'running')
           + (SELECT COUNT(*) FROM knowledge_embedding_jobs j WHERE j.node_id = n.id AND j.status = 'running') AS used_concurrency
         FROM nodes n
-        ORDER BY CASE n.status WHEN 'online' THEN 0 WHEN 'sleeping' THEN 1 ELSE 2 END, n.rowid
+        ORDER BY CASE n.status WHEN 'online' THEN 0 WHEN 'sleeping' THEN 1 ELSE 2 END, n.created_at, n.id
       `)
       .all() as Row[]).map((row) => this.nodeDto(row));
 
@@ -9836,6 +10946,7 @@ export class AgatStore {
     const startedRunIds: string[] = [];
     try {
       this.transaction(() => {
+        const placement = this.assertProjectQueueCapacity(project, variants.length);
         this.db.prepare("UPDATE runs SET evaluation_group_id = ?, updated_at = ? WHERE id = ?")
           .run(evaluationGroupId, timestamp, runId);
         if (typeof source.replay_of_run_id === "string") {
@@ -9847,8 +10958,8 @@ export class AgatStore {
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, project_id, trace_id, root_span_id,
             replay_of_run_id, evaluation_group_id, variant_name, knowledge_collection_ids_json,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, 'queued', ?, ?, 0, 'history', '', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            queue_name, region, residency_domain, created_at, updated_at
+          ) VALUES (?, ?, ?, 'queued', ?, ?, 0, 'history', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const insertStage = this.db.prepare(`
           INSERT INTO stages(
@@ -9879,6 +10990,9 @@ export class AgatStore {
             evaluationGroupId,
             variant.name,
             typeof source.knowledge_collection_ids_json === "string" ? source.knowledge_collection_ids_json : "[]",
+            String(placement.queue_name),
+            String(placement.home_region),
+            String(placement.residency_domain),
             timestamp,
             timestamp,
           );
@@ -10069,15 +11183,41 @@ export class AgatStore {
     const candidate = path.resolve(this.artifactsDir, ...segments);
     const rootPrefix = `${path.resolve(this.artifactsDir)}${path.sep}`;
     if (!candidate.startsWith(rootPrefix)) throw new Error("Путь артефакта вышел за пределы хранилища");
-    if (!fs.existsSync(this.artifactsDir) || fs.lstatSync(this.artifactsDir).isSymbolicLink()) {
+    if (!fs.existsSync(this.artifactsDir)) {
+      if (row.content_blob instanceof Uint8Array) fs.mkdirSync(this.artifactsDir, { recursive: true, mode: 0o700 });
+      else throw new Error("Хранилище артефактов недоступно");
+    }
+    if (fs.lstatSync(this.artifactsDir).isSymbolicLink()) {
       throw new Error("Хранилище артефактов недоступно");
     }
     let current = this.artifactsDir;
     for (const segment of segments) {
       current = path.join(current, segment);
-      if (!fs.existsSync(current)) throw new Error("Файл артефакта не найден");
+      if (!fs.existsSync(current)) {
+        if (row.content_blob instanceof Uint8Array && current !== candidate) fs.mkdirSync(current, { mode: 0o700 });
+        else if (row.content_blob instanceof Uint8Array && current === candidate) break;
+        else throw new Error("Файл артефакта не найден");
+      }
+      if (!fs.existsSync(current)) continue;
       const status = fs.lstatSync(current);
       if (status.isSymbolicLink()) throw new Error("Путь артефакта содержит символическую ссылку");
+    }
+    if (!fs.existsSync(candidate) && row.content_blob instanceof Uint8Array) {
+      const bytes = Buffer.from(row.content_blob);
+      if (bytes.byteLength !== Number(row.size_bytes) || createHash("sha256").update(bytes).digest("hex") !== row.sha256) {
+        throw new Error("PostgreSQL artifact payload не совпадает с metadata hash/size");
+      }
+      const temporary = `${candidate}.${randomUUID()}.tmp`;
+      try {
+        fs.writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
+        try {
+          fs.linkSync(temporary, candidate);
+        } catch (error) {
+          if (!fs.existsSync(candidate)) throw error;
+        }
+      } finally {
+        if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+      }
     }
     if (!fs.lstatSync(candidate).isFile()) throw new Error("Артефакт не является обычным файлом");
     return { artifact: this.artifactDto(row), filePath: candidate };
@@ -10091,6 +11231,155 @@ export class AgatStore {
         ORDER BY e.id ASC LIMIT ?
       `)
       .all(afterId, normalizeProjectId(projectId), clampInteger(limit, 1, 1_000, 200)) as Row[]).map((row) => this.eventDto(row));
+  }
+
+  claimAuditExportBatch(limit = 100): Array<Record<string, unknown>> {
+    const batchSize = clampInteger(limit, 1, 500, 100);
+    const timestamp = nowIso();
+    const lockExpiresAt = new Date(Date.now() + 60_000).toISOString();
+    return this.transaction(() => {
+      this.db.prepare(`
+        UPDATE audit_export_outbox SET status = 'pending', locked_by = NULL, lock_expires_at = NULL,
+          last_error = COALESCE(last_error, 'Exporter lease expired'), updated_at = ?
+        WHERE status = 'delivering' AND lock_expires_at IS NOT NULL AND lock_expires_at < ?
+      `).run(timestamp, timestamp);
+      let claimed: Row[];
+      if (this.stateStoreDriver === "postgresql") {
+        claimed = this.db.prepare(`
+          WITH candidates AS (
+            SELECT event_id FROM audit_export_outbox
+            WHERE status = 'pending' AND available_at <= ?
+            ORDER BY event_id
+            LIMIT ?
+            FOR UPDATE SKIP LOCKED
+          )
+          UPDATE audit_export_outbox AS outbox SET
+            status = 'delivering', attempts = outbox.attempts + 1,
+            locked_by = ?, lock_expires_at = ?, updated_at = ?
+          FROM candidates
+          WHERE outbox.event_id = candidates.event_id
+          RETURNING outbox.event_id
+        `).all(timestamp, batchSize, this.coordinatorInstanceId, lockExpiresAt, timestamp) as Row[];
+      } else {
+        claimed = this.db.prepare(`
+          SELECT event_id FROM audit_export_outbox
+          WHERE status = 'pending' AND available_at <= ?
+          ORDER BY event_id LIMIT ?
+        `).all(timestamp, batchSize) as Row[];
+        const claim = this.db.prepare(`
+          UPDATE audit_export_outbox SET
+            status = 'delivering', attempts = attempts + 1,
+            locked_by = ?, lock_expires_at = ?, updated_at = ?
+          WHERE event_id = ? AND status = 'pending'
+        `);
+        claimed = claimed.filter((row) => claim.run(
+          this.coordinatorInstanceId,
+          lockExpiresAt,
+          timestamp,
+          row.event_id ?? 0,
+        ).changes === 1);
+      }
+      if (claimed.length === 0) return [];
+      const placeholders = claimed.map(() => "?").join(", ");
+      const rows = this.db.prepare(`
+        SELECT e.*, o.attempts FROM events e
+        JOIN audit_export_outbox o ON o.event_id = e.id
+        WHERE e.id IN (${placeholders}) AND o.locked_by = ? AND o.status = 'delivering'
+        ORDER BY e.id
+      `).all(...claimed.map((row) => row.event_id ?? 0), this.coordinatorInstanceId) as Row[];
+      return rows.map((row) => this.siemAuditEventDto(row));
+    });
+  }
+
+  completeAuditExport(eventIds: number[], errorMessage: string | null): void {
+    const ids = [...new Set(eventIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+    if (ids.length === 0) return;
+    const timestamp = nowIso();
+    const placeholders = ids.map(() => "?").join(", ");
+    if (!errorMessage) {
+      this.db.prepare(`
+        UPDATE audit_export_outbox SET status = 'delivered', delivered_at = ?,
+          locked_by = NULL, lock_expires_at = NULL, last_error = NULL, updated_at = ?
+        WHERE event_id IN (${placeholders}) AND status = 'delivering' AND locked_by = ?
+      `).run(timestamp, timestamp, ...ids, this.coordinatorInstanceId);
+      return;
+    }
+    const rows = this.db.prepare(`
+      SELECT event_id, attempts FROM audit_export_outbox
+      WHERE event_id IN (${placeholders}) AND status = 'delivering' AND locked_by = ?
+    `).all(...ids, this.coordinatorInstanceId) as Row[];
+    const retry = this.db.prepare(`
+      UPDATE audit_export_outbox SET status = 'pending', available_at = ?,
+        locked_by = NULL, lock_expires_at = NULL, last_error = ?, updated_at = ?
+      WHERE event_id = ? AND locked_by = ?
+    `);
+    for (const row of rows) {
+      const backoffSeconds = Math.min(300, 2 ** Math.min(8, Number(row.attempts)));
+      retry.run(
+        new Date(Date.now() + backoffSeconds * 1_000).toISOString(),
+        errorMessage.slice(0, 2_000),
+        timestamp,
+        row.event_id ?? 0,
+        this.coordinatorInstanceId,
+      );
+    }
+  }
+
+  auditExportStatus(projectId?: string): Record<string, unknown> {
+    const params: SqlScalar[] = [];
+    const projectFilter = projectId ? " WHERE project_id = ?" : "";
+    if (projectId) params.push(normalizeProjectId(projectId));
+    const counts = this.db.prepare(`
+      SELECT status, COUNT(*) AS count, MIN(available_at) AS oldest_at
+      FROM audit_export_outbox${projectFilter}
+      GROUP BY status
+    `).all(...params) as Row[];
+    const byStatus = Object.fromEntries(counts.map((row) => [String(row.status), Number(row.count)]));
+    const oldestPending = counts
+      .filter((row) => row.status === "pending" || row.status === "delivering")
+      .map((row) => typeof row.oldest_at === "string" ? row.oldest_at : null)
+      .filter((value): value is string => Boolean(value))
+      .sort()[0] ?? null;
+    return {
+      pending: byStatus.pending ?? 0,
+      delivering: byStatus.delivering ?? 0,
+      delivered: byStatus.delivered ?? 0,
+      oldestPendingAt: oldestPending,
+    };
+  }
+
+  private siemAuditEventDto(row: Row): Record<string, unknown> {
+    const rawData = parseJson<Record<string, unknown>>(row.data_json, {});
+    const allowedKeys = new Set([
+      "actor", "decision", "risk", "riskTier", "policyVersion", "policySha256",
+      "releaseId", "version", "artifactDigest", "manifestSha256", "keyId", "region",
+      "residencyDomain", "queueName", "projectId", "provider", "environment", "generation",
+      "status", "ring", "percentage", "revision",
+    ]);
+    const metadata: Record<string, string | number | boolean | null> = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      if (!allowedKeys.has(key)) continue;
+      if (typeof value === "string") metadata[key] = value.slice(0, 500);
+      else if (typeof value === "number" || typeof value === "boolean" || value === null) metadata[key] = value;
+    }
+    return {
+      schemaVersion: 1,
+      id: Number(row.id),
+      idempotencyKey: `agat-audit-${Number(row.id)}`,
+      projectId: String(row.project_id),
+      occurredAt: String(row.created_at),
+      level: String(row.level),
+      type: String(row.type),
+      message: "Agat audit event",
+      messageSha256: sha256Text(String(row.message)),
+      runId: typeof row.run_id === "string" ? row.run_id : null,
+      stageId: typeof row.stage_id === "string" ? row.stage_id : null,
+      nodeId: typeof row.node_id === "string" ? row.node_id : null,
+      metadata,
+      reasonSha256: typeof rawData.reason === "string" ? sha256Text(rawData.reason) : null,
+      dataSha256: typeof row.data_json === "string" ? sha256Text(row.data_json) : null,
+      exportAttempt: Number(row.attempts ?? 1),
+    };
   }
 
   recordPlatformEvent(
@@ -10993,9 +12282,10 @@ export class AgatStore {
         }
         const timestamp = nowIso();
         this.db.prepare(`
-          INSERT OR IGNORE INTO process_join_arrivals(
+          INSERT INTO process_join_arrivals(
             instance_id, join_node_id, token_id, fork_node_id, branch_edge_id, output, arrived_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(instance_id, join_node_id, token_id) DO NOTHING
         `).run(instanceId, node.id, tokenId, forkId, String(currentToken.branch_edge_id), lastOutput, timestamp);
         this.db.prepare(`UPDATE process_tokens SET status = 'waiting_join', current_node_id = ?, last_output = ?, updated_at = ? WHERE id = ?`)
           .run(node.id, lastOutput, timestamp, tokenId);
@@ -12067,8 +13357,8 @@ export class AgatStore {
         .prepare(`
           INSERT INTO artifacts(
             id, run_id, stage_id, name, kind, media_type, relative_path,
-            size_bytes, sha256, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            size_bytes, sha256, content_blob, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           artifactId,
@@ -12080,6 +13370,7 @@ export class AgatStore {
           relativePath,
           buffer.byteLength,
           sha256,
+          buffer,
           createdAt,
         );
       this.addEvent(
@@ -12154,6 +13445,15 @@ export class AgatStore {
       gpu: row.gpu,
       maxConcurrency: row.max_concurrency,
       usedConcurrency: row.used_concurrency,
+      region: String(row.region ?? this.region),
+      residencyDomain: String(row.residency_domain ?? this.residencyDomain),
+      release: {
+        id: typeof row.release_id === "string" ? row.release_id : null,
+        artifactDigest: typeof row.release_digest === "string" ? row.release_digest : null,
+        keyId: typeof row.release_key_id === "string" ? row.release_key_id : null,
+        verified: Number(row.release_verified ?? 0) === 1,
+        rolloutRing: String(row.rollout_ring ?? "stable"),
+      },
       trustKind: String(row.trust_kind ?? "shared_token"),
       credentialState,
       attestation: row.trust_kind === "hardware_attested" ? {
@@ -12305,10 +13605,11 @@ export class AgatStore {
       .prepare(`
         INSERT INTO events(run_id, stage_id, node_id, level, type, message, data_json, project_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
       `)
-      .run(runId, stageId, nodeId, level, type, message, data ? JSON.stringify(data) : null, projectId, createdAt);
+      .get(runId, stageId, nodeId, level, type, message, data ? JSON.stringify(data) : null, projectId, createdAt) as Row;
     return {
-      id: Number(result.lastInsertRowid),
+      id: Number(result.id),
       runId,
       stageId,
       nodeId,

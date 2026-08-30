@@ -18,7 +18,7 @@ if ! kubectl get namespace "${namespace}" >/dev/null 2>&1; then
 fi
 
 deployments=()
-for deployment in agat-gateway agat-coordinator agat-temporal-worker agat-temporal agat-worker agat-search agat-keycloak agat-keycloak-postgres; do
+for deployment in agat-gateway agat-coordinator agat-temporal-worker agat-temporal agat-worker agat-search agat-keycloak agat-keycloak-postgres agat-coordinator-postgres; do
   if kubectl get "deployment/${deployment}" --namespace "${namespace}" >/dev/null 2>&1; then
     deployments+=("deployment/${deployment}")
   fi

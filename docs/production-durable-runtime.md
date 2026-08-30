@@ -1,6 +1,6 @@
 # Production hardening durable runtime
 
-Релиз 1.0 закрывает эксплуатационный риск Temporal-контура, не включая преждевременно HA coordinator. Локальный `temporal server start-dev` остаётся удобным профилем разработки; production-профиль теперь fail-closed требует TLS, аутентификацию, immutable build ID и Worker Deployment Versioning.
+Этот документ фиксирует Temporal hardening релиза 1.0. Локальный `temporal server start-dev` остаётся удобным профилем разработки; production-профиль fail-closed требует TLS, аутентификацию, immutable build ID и Worker Deployment Versioning. Ограничение single-coordinator из 1.0 снято PostgreSQL Fleet/HA backend в 1.7, но HA state store имеет отдельные production gates в [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Что изменилось
 
@@ -10,7 +10,7 @@
 - долгоживущий process workflow по умолчанию закреплён за совместимой версией worker;
 - изменение процесса отправляется как подтверждаемая Workflow Update; старые histories получают совместимый Signal fallback;
 - интервальные Temporal Schedules запускают parent workflow, который создаёт экземпляр в coordinator и вызывает отдельный child process workflow;
-- PostgreSQL выбран как следующий state-store, но его незавершённый driver намеренно не может быть включён.
+- на момент 1.0 PostgreSQL был только спроектирован и fail-closed; реализованный 1.7 adapter описан отдельно.
 
 Официальная модель Worker Deployment Versioning и ограничения версий описаны в [Temporal Worker Versioning](https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning). Для self-hosted установки нужны как минимум Temporal Server 1.29.1, Temporal CLI 1.4.1 и TypeScript SDK 1.12; АГАТ закрепляет SDK 1.22.
 
@@ -159,12 +159,12 @@ Worker имеет явные границы:
 
 При rollout сначала прекратить подачу новых задач, дождаться graceful shutdown и только затем завершать pod. Нельзя одновременно останавливать все worker builds с pinned executions.
 
-## Границы релиза 1.0
+## Границы на момент релиза 1.0 и текущий статус
 
-- SQLite и один coordinator остаются production-ограничением; StatefulSet/replica count нельзя увеличивать выше одного.
-- Temporal обеспечивает durable orchestration, но не превращает SQLite в распределённую БД.
+- SQLite и один coordinator были production-ограничением 1.0; этот backend по-прежнему допускает только одну replica.
+- Temporal обеспечивает durable orchestration, но не превращает любой application state store в распределённую БД.
 - Встроенный Docker Desktop Temporal и `start-dev` не являются production deployment.
-- PostgreSQL driver сейчас намеренно fail-closed. План перехода: [PostgreSQL state-store design](./postgresql-state-store-design.md).
+- PostgreSQL driver реализован в 1.7 и допускает несколько coordinator replicas. Production всё ещё требует multi-AZ/PITR, restore/failover/load evidence, DDL-free runtime role и migration procedure: [PostgreSQL state-store](./postgresql-state-store-design.md).
 
 ## Приёмка
 
@@ -174,5 +174,5 @@ Worker имеет явные границы:
 - [x] replay fixtures выполняются в обычном `npm test` и CI;
 - [x] Workflow Update подтверждается, Signal fallback сохраняет старые executions;
 - [x] interval Schedule создаёт parent и отдельный child workflow;
-- [x] SQLite/one-coordinator boundary явно сохранена;
-- [x] PostgreSQL activation до реализации заблокирована.
+- [x] SQLite/one-coordinator boundary 1.0 была явно сохранена;
+- [x] PostgreSQL activation оставалась заблокирована до реализации и была заменена проверенным 1.7 backend без dual-write.

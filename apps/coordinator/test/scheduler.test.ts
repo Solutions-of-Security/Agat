@@ -1084,7 +1084,7 @@ describe("scheduler", () => {
       "SELECT value FROM settings WHERE key = 'model_router_policy'",
     ).get() as { value?: string } | undefined;
     inspection.close();
-    assert.equal(userVersion.user_version, 19);
+    assert.equal(userVersion.user_version, 20);
     assert.equal(benchmarkTable?.name, "model_benchmarks");
     assert.equal(knowledgeTable?.name, "knowledge_collections");
     assert.equal(a2aEndpointTable?.name, "a2a_endpoints");

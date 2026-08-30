@@ -19,6 +19,7 @@ function integerFromEnv(value: string | undefined, fallback: number): number {
 export type TemporalTarget = "local" | "cloud" | "self-hosted";
 export type StateStoreDriver = "sqlite" | "postgresql";
 export type EdgeAttestationMode = "disabled" | "broker";
+export type PostgresSslMode = "disable" | "require" | "verify-full";
 
 function temporalTargetFromEnv(value: string | undefined): TemporalTarget {
   const normalized = (value ?? "local").trim().toLowerCase();
@@ -36,6 +37,31 @@ function edgeAttestationModeFromEnv(value: string | undefined): EdgeAttestationM
   const normalized = (value ?? "disabled").trim().toLowerCase();
   if (normalized === "disabled" || normalized === "broker") return normalized;
   throw new Error("AGAT_EDGE_ATTESTATION_MODE должен быть disabled или broker");
+}
+
+function postgresSslModeFromEnv(value: string | undefined): PostgresSslMode {
+  const normalized = (value ?? "disable").trim().toLowerCase();
+  if (normalized === "disable" || normalized === "require" || normalized === "verify-full") return normalized;
+  throw new Error("AGAT_POSTGRES_SSL_MODE должен быть disable, require или verify-full");
+}
+
+function safeJsonStringMap(value: string | undefined, field: string): Record<string, string> {
+  if (!value?.trim()) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`${field} должен быть JSON object`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${field} должен быть JSON object`);
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length > 32) throw new Error(`${field} содержит больше 32 ключей`);
+  return Object.fromEntries(entries.map(([key, item]) => {
+    if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(key) || typeof item !== "string" || item.length > 16_384) {
+      throw new Error(`${field} содержит некорректный key или public key`);
+    }
+    return [key, item];
+  }));
 }
 
 function safeListFromEnv(value: string | undefined, fallback: string[], field: string): string[] {
@@ -85,6 +111,27 @@ export interface CoordinatorConfig {
   temporalClientKeyPath: string;
   temporalServerNameOverride: string;
   stateStoreDriver: StateStoreDriver;
+  postgresUrl: string;
+  postgresTenantUrl: string;
+  postgresPoolMax: number;
+  postgresConnectTimeoutMs: number;
+  postgresIdleTimeoutMs: number;
+  postgresStatementTimeoutMs: number;
+  postgresSslMode: PostgresSslMode;
+  postgresCaCertPath: string;
+  postgresClientCertPath: string;
+  postgresClientKeyPath: string;
+  coordinatorInstanceId: string;
+  region: string;
+  residencyDomain: string;
+  workerReleasePublicKeys: Record<string, string>;
+  requireSignedWorkerReleases: boolean;
+  siemEnabled: boolean;
+  siemUrl: string;
+  siemBearerToken: string;
+  siemBatchSize: number;
+  siemIntervalSeconds: number;
+  siemTimeoutSeconds: number;
   seedDemo: boolean;
   serveWeb: boolean;
   webDistPath: string;
@@ -138,6 +185,8 @@ export function loadConfig(): CoordinatorConfig {
   const otelExporterEndpoint = otelTracesEndpoint || (otelBaseEndpoint ? `${otelBaseEndpoint}/v1/traces` : "");
   const port = integerFromEnv(process.env.AGAT_PORT, 8787);
   const temporalTarget = temporalTargetFromEnv(process.env.AGAT_TEMPORAL_TARGET);
+  const stateStoreDriver = stateStoreDriverFromEnv(process.env.AGAT_STATE_STORE_DRIVER);
+  const region = optionalSafeText(process.env.AGAT_REGION ?? "local", "AGAT_REGION", 63).toLowerCase();
   return {
     host: process.env.AGAT_HOST ?? "127.0.0.1",
     port,
@@ -176,7 +225,42 @@ export function loadConfig(): CoordinatorConfig {
       "AGAT_TEMPORAL_SERVER_NAME_OVERRIDE",
       253,
     ),
-    stateStoreDriver: stateStoreDriverFromEnv(process.env.AGAT_STATE_STORE_DRIVER),
+    stateStoreDriver,
+    postgresUrl: optionalSafeText(process.env.AGAT_POSTGRES_URL, "AGAT_POSTGRES_URL", 8_192),
+    postgresTenantUrl: optionalSafeText(process.env.AGAT_POSTGRES_TENANT_URL, "AGAT_POSTGRES_TENANT_URL", 8_192),
+    postgresPoolMax: Math.max(1, Math.min(32, integerFromEnv(process.env.AGAT_POSTGRES_POOL_MAX, 4))),
+    postgresConnectTimeoutMs: Math.max(500, Math.min(60_000, integerFromEnv(process.env.AGAT_POSTGRES_CONNECT_TIMEOUT_MS, 5_000))),
+    postgresIdleTimeoutMs: Math.max(1_000, Math.min(600_000, integerFromEnv(process.env.AGAT_POSTGRES_IDLE_TIMEOUT_MS, 30_000))),
+    postgresStatementTimeoutMs: Math.max(1_000, Math.min(600_000, integerFromEnv(process.env.AGAT_POSTGRES_STATEMENT_TIMEOUT_MS, 30_000))),
+    postgresSslMode: postgresSslModeFromEnv(process.env.AGAT_POSTGRES_SSL_MODE),
+    postgresCaCertPath: optionalResolvedPath(process.env.AGAT_POSTGRES_CA_CERT_PATH, "AGAT_POSTGRES_CA_CERT_PATH"),
+    postgresClientCertPath: optionalResolvedPath(process.env.AGAT_POSTGRES_CLIENT_CERT_PATH, "AGAT_POSTGRES_CLIENT_CERT_PATH"),
+    postgresClientKeyPath: optionalResolvedPath(process.env.AGAT_POSTGRES_CLIENT_KEY_PATH, "AGAT_POSTGRES_CLIENT_KEY_PATH"),
+    coordinatorInstanceId: optionalSafeText(
+      process.env.AGAT_COORDINATOR_INSTANCE_ID ?? process.env.HOSTNAME ?? `coordinator-${process.pid}`,
+      "AGAT_COORDINATOR_INSTANCE_ID",
+      120,
+    ),
+    region,
+    residencyDomain: optionalSafeText(
+      process.env.AGAT_RESIDENCY_DOMAIN ?? region,
+      "AGAT_RESIDENCY_DOMAIN",
+      63,
+    ).toLowerCase(),
+    workerReleasePublicKeys: safeJsonStringMap(
+      process.env.AGAT_WORKER_RELEASE_PUBLIC_KEYS,
+      "AGAT_WORKER_RELEASE_PUBLIC_KEYS",
+    ),
+    requireSignedWorkerReleases: booleanFromEnv(
+      process.env.AGAT_REQUIRE_SIGNED_WORKER_RELEASES,
+      stateStoreDriver === "postgresql",
+    ),
+    siemEnabled: booleanFromEnv(process.env.AGAT_SIEM_ENABLED, false),
+    siemUrl: optionalSafeText(process.env.AGAT_SIEM_URL, "AGAT_SIEM_URL", 2_048),
+    siemBearerToken: optionalSafeText(process.env.AGAT_SIEM_BEARER_TOKEN, "AGAT_SIEM_BEARER_TOKEN", 8_192),
+    siemBatchSize: Math.max(1, Math.min(500, integerFromEnv(process.env.AGAT_SIEM_BATCH_SIZE, 100))),
+    siemIntervalSeconds: Math.max(1, Math.min(300, integerFromEnv(process.env.AGAT_SIEM_INTERVAL_SECONDS, 5))),
+    siemTimeoutSeconds: Math.max(1, Math.min(60, integerFromEnv(process.env.AGAT_SIEM_TIMEOUT_SECONDS, 10))),
     seedDemo: booleanFromEnv(process.env.AGAT_SEED_DEMO, false),
     serveWeb: booleanFromEnv(process.env.AGAT_SERVE_WEB, true),
     webDistPath: path.resolve(currentDir, "../../web/dist"),
@@ -187,7 +271,7 @@ export function loadConfig(): CoordinatorConfig {
       .filter(Boolean),
     localWorkerLauncherEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_LAUNCHER, false),
     localWorkerNamespace: process.env.AGAT_LOCAL_WORKER_NAMESPACE ?? "agat",
-    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.6.0",
+    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.7.0",
     localWorkerConfigMap: process.env.AGAT_LOCAL_WORKER_CONFIG_MAP ?? "agat-worker-config",
     localWorkerSecret: process.env.AGAT_LOCAL_WORKER_SECRET ?? "agat-secrets",
     localWorkerModelBaseUrl: process.env.AGAT_LOCAL_MODEL_BASE_URL ?? "http://host.docker.internal:11434/v1",
@@ -244,7 +328,7 @@ export function loadConfig(): CoordinatorConfig {
     sandboxEnabled: booleanFromEnv(process.env.AGAT_SANDBOX_ENABLED, false),
     sandboxNamespace: optionalSafeText(process.env.AGAT_SANDBOX_NAMESPACE ?? "agat", "AGAT_SANDBOX_NAMESPACE", 63),
     sandboxWasiImage: optionalSafeText(
-      process.env.AGAT_SANDBOX_WASI_IMAGE ?? "agat-local/sandbox-wasi:1.6.0",
+      process.env.AGAT_SANDBOX_WASI_IMAGE ?? "agat-local/sandbox-wasi:1.7.0",
       "AGAT_SANDBOX_WASI_IMAGE",
       512,
     ),
@@ -260,10 +344,72 @@ export function loadConfig(): CoordinatorConfig {
 }
 
 export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): void {
-  if (config.stateStoreDriver !== "sqlite") {
-    throw new Error(
-      "PostgreSQL state-store ещё не активирован: используйте AGAT_STATE_STORE_DRIVER=sqlite до завершения adapter migration",
-    );
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(config.region)) {
+    throw new Error("AGAT_REGION должен содержать 1..63 символа [a-z0-9._-]");
+  }
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(config.residencyDomain)) {
+    throw new Error("AGAT_RESIDENCY_DOMAIN должен содержать 1..63 символа [a-z0-9._-]");
+  }
+  if (config.stateStoreDriver === "postgresql") {
+    if (!config.postgresUrl || !config.postgresTenantUrl) {
+      throw new Error("PostgreSQL state store требует AGAT_POSTGRES_URL и отдельный AGAT_POSTGRES_TENANT_URL");
+    }
+    let systemUrl: URL;
+    let tenantUrl: URL;
+    try {
+      systemUrl = new URL(config.postgresUrl);
+      tenantUrl = new URL(config.postgresTenantUrl);
+    } catch {
+      throw new Error("PostgreSQL connection URL некорректен");
+    }
+    if (!["postgres:", "postgresql:"].includes(systemUrl.protocol)
+      || !["postgres:", "postgresql:"].includes(tenantUrl.protocol)) {
+      throw new Error("PostgreSQL connection URL должен использовать postgresql://");
+    }
+    if (systemUrl.username === tenantUrl.username) {
+      throw new Error("System и tenant PostgreSQL URL должны использовать разные least-privilege roles");
+    }
+    const rolePattern = /^[a-z_][a-z0-9_]{0,62}$/;
+    if (!rolePattern.test(decodeURIComponent(systemUrl.username)) || !rolePattern.test(decodeURIComponent(tenantUrl.username))) {
+      throw new Error("PostgreSQL URLs должны использовать lowercase role identifiers");
+    }
+    if (!systemUrl.password || !tenantUrl.password) {
+      throw new Error("PostgreSQL system и tenant roles должны аутентифицироваться отдельными credentials");
+    }
+    if (systemUrl.hostname !== tenantUrl.hostname
+      || systemUrl.port !== tenantUrl.port
+      || systemUrl.pathname !== tenantUrl.pathname) {
+      throw new Error("PostgreSQL system и tenant URLs должны указывать на одну HA-cell database");
+    }
+    const localPostgres = config.region === "local"
+      || ["localhost", "127.0.0.1", "::1", "postgres", "agat-coordinator-postgres"].includes(systemUrl.hostname);
+    if (config.postgresSslMode === "disable" && !localPostgres) {
+      throw new Error("Удалённый PostgreSQL требует AGAT_POSTGRES_SSL_MODE=require или verify-full");
+    }
+    if (config.requireSignedWorkerReleases && Object.keys(config.workerReleasePublicKeys).length === 0) {
+      throw new Error("Signed worker releases требуют хотя бы один AGAT_WORKER_RELEASE_PUBLIC_KEYS trust root");
+    }
+  }
+  const hasPostgresClientCert = Boolean(config.postgresClientCertPath);
+  const hasPostgresClientKey = Boolean(config.postgresClientKeyPath);
+  if (hasPostgresClientCert !== hasPostgresClientKey) {
+    throw new Error("AGAT_POSTGRES_CLIENT_CERT_PATH и AGAT_POSTGRES_CLIENT_KEY_PATH должны задаваться вместе");
+  }
+  if (config.postgresSslMode === "disable" && (config.postgresCaCertPath || hasPostgresClientCert)) {
+    throw new Error("PostgreSQL TLS-файлы нельзя использовать при AGAT_POSTGRES_SSL_MODE=disable");
+  }
+  if (config.siemEnabled) {
+    if (!config.siemUrl) throw new Error("AGAT_SIEM_URL обязателен при AGAT_SIEM_ENABLED=true");
+    let siem: URL;
+    try {
+      siem = new URL(config.siemUrl);
+    } catch {
+      throw new Error("AGAT_SIEM_URL должен быть корректным абсолютным URL");
+    }
+    const loopbackSiem = ["localhost", "127.0.0.1", "::1"].includes(siem.hostname);
+    if (siem.protocol !== "https:" && !(loopbackSiem && siem.protocol === "http:")) {
+      throw new Error("SIEM exporter требует HTTPS (HTTP разрешён только для loopback test sink)");
+    }
   }
   if (!config.temporalEnabled) return;
   if (!config.temporalInternalToken) {

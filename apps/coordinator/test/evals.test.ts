@@ -144,22 +144,30 @@ describe("golden eval and prompt registry", () => {
     assert.equal((scoring.gates as { quality: string }).quality, "pending");
     const item = (scoring.items as Array<{ id: string }>)[0]!;
 
-    const passed = store.reviewEvalItem(item.id, {
-      scores: { correctness: 90, clarity: 80 },
-      rationale: "Проверено по reference",
-    }, "default", "human@example.test")!;
-    assert.equal(passed.qualityScore, 86.67);
-    assert.equal((passed.gates as { overall: string }).overall, "pass");
+    const realDateNow = Date.now;
+    const reviewTime = realDateNow();
+    try {
+      Date.now = () => reviewTime;
+      const passed = store.reviewEvalItem(item.id, {
+        scores: { correctness: 90, clarity: 80 },
+        rationale: "Проверено по reference",
+      }, "default", "human@example.test")!;
+      assert.equal(passed.qualityScore, 86.67);
+      assert.equal((passed.gates as { overall: string }).overall, "pass");
 
-    const failed = store.reviewEvalItem(item.id, {
-      scores: { correctness: 60, clarity: 70 },
-      rationale: "Повторная проверка нашла ошибку",
-    }, "default", "reviewer-2@example.test")!;
-    assert.equal(failed.qualityScore, 63.33);
-    assert.equal((failed.gates as { quality: string }).quality, "fail");
-    const detailedItem = (failed.items as Array<{ reviews: unknown[]; qualitySource: string }>)[0]!;
-    assert.equal(detailedItem.reviews.length, 2);
-    assert.equal(detailedItem.qualitySource, "human");
+      const failed = store.reviewEvalItem(item.id, {
+        scores: { correctness: 60, clarity: 70 },
+        rationale: "Повторная проверка нашла ошибку",
+      }, "default", "reviewer-2@example.test")!;
+      assert.equal(failed.qualityScore, 63.33);
+      assert.equal((failed.gates as { quality: string }).quality, "fail");
+      const detailedItem = (failed.items as Array<{ reviews: Array<{ createdAt: string }>; qualitySource: string }>)[0]!;
+      assert.equal(detailedItem.reviews.length, 2);
+      assert.ok(detailedItem.reviews[0]!.createdAt > detailedItem.reviews[1]!.createdAt);
+      assert.equal(detailedItem.qualitySource, "human");
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
   it("runs an optional local model judge and audits its parsed score", () => {

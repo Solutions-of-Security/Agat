@@ -13,6 +13,7 @@ const navItems: Array<{ id: ViewId; label: string; icon: IconName }> = [
   { id: "a2a", label: "A2A", icon: "network" },
   { id: "nodes", label: "Узлы", icon: "nodes" },
   { id: "models", label: "Модели", icon: "models" },
+  { id: "fleet", label: "Fleet / HA", icon: "shield" },
 ];
 
 interface SidebarProps {
@@ -42,7 +43,7 @@ export function Sidebar({ activeView, health, onNavigate }: SidebarProps) {
       <div className="sidebar__footer">
         <div className="health-line"><span className={`status-dot status-dot--${health.status}`} />{health.label}</div>
         <p>АГАТ · локальный контур</p>
-        <span className="version">v1.6.0</span>
+        <span className="version">v1.7.0</span>
       </div>
     </aside>
   );

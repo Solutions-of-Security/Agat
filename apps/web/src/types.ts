@@ -299,6 +299,15 @@ export interface ComputeNode {
   gpu: string;
   maxConcurrency: number;
   usedConcurrency: number;
+  region: string;
+  residencyDomain: string;
+  release: {
+    id: string | null;
+    artifactDigest: string | null;
+    keyId: string | null;
+    verified: boolean;
+    rolloutRing: string;
+  };
   trustKind: "shared_token" | "hardware_attested";
   credentialState: "active" | "wipe_pending" | "wiped" | "revoked";
   attestation: {
@@ -518,6 +527,104 @@ export interface ProjectSummary {
   agentCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectFleetPolicy {
+  homeRegion: string;
+  allowedRegions: string[];
+  residencyDomain: string;
+  queueName: string;
+  maxQueuedTasks: number;
+  maxRunningTasks: number;
+  revision: number;
+}
+
+export interface FleetQueueStat {
+  queueName: string;
+  region: string;
+  status: RunStatus;
+  count: number;
+}
+
+export interface CoordinatorReplica {
+  instanceId: string;
+  region: string;
+  residencyDomain: string;
+  stateStoreDriver: "sqlite" | "postgresql";
+  status: "ready" | "stale";
+  startedAt: string;
+  lastSeen: string;
+}
+
+export interface WorkerRelease {
+  id: string;
+  version: string;
+  artifactDigest: string;
+  manifest: Record<string, unknown>;
+  manifestSha256: string;
+  keyId: string;
+  signature: string;
+  status: "active" | "revoked";
+  createdBy: string;
+  issuedAt: string;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkerRollout {
+  id: string;
+  projectId: string;
+  releaseId: string;
+  version: string;
+  artifactDigest: string;
+  fallbackReleaseId: string | null;
+  fallbackVersion: string | null;
+  fallbackArtifactDigest: string | null;
+  region: string;
+  ring: string;
+  percentage: number;
+  revision: number;
+  status: "active";
+  updatedAt: string;
+}
+
+export interface FleetSnapshot {
+  generatedAt: string;
+  cell: {
+    instanceId: string;
+    region: string;
+    residencyDomain: string;
+    stateStoreDriver: "sqlite" | "postgresql";
+    haReady: boolean;
+  };
+  projectId: string;
+  policy: ProjectFleetPolicy;
+  queues: FleetQueueStat[];
+  replicas: CoordinatorReplica[];
+  releases: WorkerRelease[];
+  rollouts: WorkerRollout[];
+  auditExport: {
+    pending: number;
+    delivering: number;
+    delivered: number;
+    oldestPendingAt: string | null;
+  };
+}
+
+export interface RegisterWorkerReleaseRequest {
+  manifest: {
+    schemaVersion: 1;
+    releaseId: string;
+    version: string;
+    artifactDigest: string;
+    platforms: string[];
+    issuedAt: string;
+    expiresAt?: string | null;
+    metadata?: Record<string, string>;
+  };
+  keyId: string;
+  signature: string;
 }
 
 export interface CreateCredentialRequest {
@@ -1579,4 +1686,4 @@ export interface A2AOutboundInvocationResponse {
   response: Record<string, unknown>;
 }
 
-export type ViewId = "overview" | "agents" | "runs" | "processes" | "knowledge" | "evals" | "tools" | "a2a" | "nodes" | "models";
+export type ViewId = "overview" | "agents" | "runs" | "processes" | "knowledge" | "evals" | "tools" | "a2a" | "nodes" | "models" | "fleet";

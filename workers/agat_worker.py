@@ -10,6 +10,7 @@ import json
 import math
 import os
 import platform
+import re
 import signal
 import socket
 import subprocess
@@ -40,7 +41,7 @@ from web_tools import (
 )
 
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
 
 WEB_SYSTEM_PROMPT = """
@@ -133,6 +134,9 @@ class WorkerConfig:
     web_max_tool_rounds: int
     mcp_approval_timeout: float
     vram_mb: int
+    region: str
+    residency_domain: str
+    release_identity: dict[str, str] | None
     dry_run: bool
     once: bool
 
@@ -206,7 +210,11 @@ class CoordinatorClient:
             "agentRuntimes": supported_agent_runtimes(),
             "agentRuntimeProfiles": supported_agent_runtime_profiles(),
             "modelProfiles": list(config.model_profiles),
+            "region": config.region,
+            "residencyDomain": config.residency_domain,
         }
+        if config.release_identity is not None:
+            payload["release"] = config.release_identity
         return self.request("POST", "/api/v1/workers/register", payload, authenticated=False)
 
     def heartbeat(self, config: WorkerConfig) -> None:
@@ -225,6 +233,9 @@ class CoordinatorClient:
                     "agentRuntimes": supported_agent_runtimes(),
                     "agentRuntimeProfiles": supported_agent_runtime_profiles(),
                     "modelProfiles": list(config.model_profiles),
+                    "region": config.region,
+                    "residencyDomain": config.residency_domain,
+                    **({"release": config.release_identity} if config.release_identity else {}),
                 },
             },
         )
@@ -2882,6 +2893,24 @@ def parse_args() -> WorkerConfig:
         type=int,
         default=int(os.getenv("AGAT_WORKER_VRAM_MB", "0")),
     )
+    parser.add_argument("--region", default=os.getenv("AGAT_REGION", "local"))
+    parser.add_argument(
+        "--residency-domain",
+        default=os.getenv("AGAT_RESIDENCY_DOMAIN", os.getenv("AGAT_REGION", "local")),
+    )
+    parser.add_argument("--release-id", default=os.getenv("AGAT_WORKER_RELEASE_ID", ""))
+    parser.add_argument(
+        "--artifact-digest",
+        default=os.getenv("AGAT_WORKER_ARTIFACT_DIGEST", ""),
+    )
+    parser.add_argument(
+        "--release-key-id",
+        default=os.getenv("AGAT_WORKER_RELEASE_KEY_ID", ""),
+    )
+    parser.add_argument(
+        "--release-signature",
+        default=os.getenv("AGAT_WORKER_RELEASE_SIGNATURE", ""),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
@@ -2921,6 +2950,34 @@ def parse_args() -> WorkerConfig:
         parser.error("MCP approval timeout must be between 30 and 86400 seconds")
     if not 0 <= args.vram_mb <= 16_777_216:
         parser.error("VRAM must be between 0 and 16777216 MiB")
+    fleet_identifier = r"^[a-z0-9][a-z0-9._-]{0,62}$"
+
+    if not re.fullmatch(fleet_identifier, args.region.strip().lower()):
+        parser.error("Region must contain 1..63 characters [a-z0-9._-]")
+    if not re.fullmatch(fleet_identifier, args.residency_domain.strip().lower()):
+        parser.error("Residency domain must contain 1..63 characters [a-z0-9._-]")
+    release_values = [
+        args.release_id.strip(),
+        args.artifact_digest.strip(),
+        args.release_key_id.strip(),
+        args.release_signature.strip(),
+    ]
+    if any(release_values) and not all(release_values):
+        parser.error("Signed release identity requires ID, artifact digest, key ID and signature")
+    release_identity = None
+    if all(release_values):
+        if not re.fullmatch(fleet_identifier, release_values[0].lower()):
+            parser.error("Release ID has invalid format")
+        if not re.fullmatch(r"^sha256:[0-9a-f]{64}$", release_values[1].lower()):
+            parser.error("Artifact digest must use sha256:<64 hex>")
+        if not re.fullmatch(fleet_identifier, release_values[2].lower()):
+            parser.error("Release key ID has invalid format")
+        release_identity = {
+            "releaseId": release_values[0].lower(),
+            "artifactDigest": release_values[1].lower(),
+            "keyId": release_values[2].lower(),
+            "signature": release_values[3],
+        }
     try:
         explicit_profiles = parse_model_profile_overrides(args.model_profiles_json, models)
     except ValueError as error:
@@ -2948,6 +3005,9 @@ def parse_args() -> WorkerConfig:
         web_max_tool_rounds=args.web_max_tool_rounds,
         mcp_approval_timeout=args.mcp_approval_timeout,
         vram_mb=args.vram_mb,
+        region=args.region.strip().lower(),
+        residency_domain=args.residency_domain.strip().lower(),
+        release_identity=release_identity,
         dry_run=args.dry_run,
         once=args.once,
     )

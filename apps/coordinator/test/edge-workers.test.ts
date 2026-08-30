@@ -21,7 +21,11 @@ afterEach(async () => {
 });
 
 function store(): AgatStore {
-  const value = new AgatStore(":memory:", { seedDemo: false, edgeChallengeTtlSeconds: 180 });
+  const value = new AgatStore(":memory:", {
+    seedDemo: false,
+    edgeChallengeTtlSeconds: 180,
+    requireSignedWorkerReleases: true,
+  });
   stores.push(value);
   return value;
 }
@@ -126,7 +130,7 @@ describe("native edge enrollment and credential lifecycle", () => {
       agentIds: ["collector"],
       approvalRequired: false,
     });
-    assert.ok(value.leaseNext(created.id, "ios/1.6.0"));
+    assert.ok(value.leaseNext(created.id, "ios/1.7.0"));
 
     const command = value.requestEdgeRemoteWipe(created.id, "Device lost", "admin-1");
     assert.equal(command.action, "wipe");

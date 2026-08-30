@@ -109,7 +109,7 @@ class CoordinatorClient(private val configuration: EdgeConfiguration) {
         val response = request(
             "POST",
             "/api/v1/workers/lease",
-            JSONObject().put("workerVersion", "android/1.6.0"),
+            JSONObject().put("workerVersion", "android/1.7.0"),
             token,
         )
         if (response.status == 204) return null
@@ -174,7 +174,7 @@ class CoordinatorClient(private val configuration: EdgeConfiguration) {
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 70_000
                 connection.setRequestProperty("Accept", "application/json")
-                connection.setRequestProperty("User-Agent", "agat-edge-android/1.6.0")
+                connection.setRequestProperty("User-Agent", "agat-edge-android/1.7.0")
                 bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                 if (body != null) {
                     connection.setRequestProperty("Content-Type", "application/json")

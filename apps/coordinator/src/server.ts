@@ -17,6 +17,7 @@ import {
   type AuthContext,
 } from "./auth.js";
 import { AgatStore } from "./database.js";
+import { enterPostgresTenantScope, runWithPostgresSystemScope } from "./postgres-database.js";
 import {
   createLocalWorkerLauncher,
   type LocalWorkerLauncher,
@@ -89,6 +90,8 @@ import type {
   HumanEvalReviewInput,
   JudgeEvalExperimentInput,
   ModelRouterPolicy,
+  ProjectFleetPolicyInput,
+  RegisterWorkerReleaseInput,
   ReplayRunInput,
   ReplayProcessInstanceInput,
   PromotePromptInput,
@@ -107,6 +110,7 @@ import type {
   WorkerExecutionMetrics,
   WorkerMetrics,
   WorkerRegistration,
+  WorkerRolloutInput,
 } from "./types.js";
 
 const JSON_LIMIT_BYTES = 1_048_576;
@@ -290,6 +294,7 @@ async function authorize(
     if (!allowProjectFallback || !(error instanceof AuthenticationError)) throw error;
     projectId = context.roles.has("admin") ? "default" : [...context.projectIds].sort()[0] ?? "default";
   }
+  enterPostgresTenantScope(projectId);
   return Object.assign(context, { projectId });
 }
 
@@ -589,7 +594,8 @@ export function createCoordinatorServer(
     timeoutMs: config.a2aOutboundTimeoutSeconds * 1_000,
     maxResponseBytes: config.a2aMaxResponseBytes,
   };
-  const server = http.createServer(async (request, response) => {
+  const server = http.createServer((request, response) => {
+    const requestTask = runWithPostgresSystemScope(async () => {
     setSecurityHeaders(response, config);
     const corsAllowed = setCors(request, response, config);
     if (request.method === "OPTIONS") {
@@ -609,7 +615,8 @@ export function createCoordinatorServer(
         json(response, 200, {
           status: "ok",
           time: new Date().toISOString(),
-          version: "1.6.0",
+          version: "1.7.0",
+          stateStore: runWithPostgresSystemScope(() => store.stateStoreSnapshot()),
           processRuntime: processRuntime.snapshot(),
           sandbox: mcpGateway.sandboxSnapshot(),
           edge: {
@@ -924,7 +931,8 @@ export function createCoordinatorServer(
 
       if (request.method === "GET" && pathname === "/api/v1/auth/me") {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false, true);
-        const availableProjects = store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds);
+        const availableProjects = runWithPostgresSystemScope(() =>
+          store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds));
         const activeProjectId = availableProjects.some((project) => project.id === auth.projectId)
           ? auth.projectId
           : availableProjects[0]?.id ?? auth.projectId;
@@ -1141,7 +1149,8 @@ export function createCoordinatorServer(
 
       if (request.method === "GET" && pathname === "/api/v1/projects") {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false, true);
-        const projects = store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds);
+        const projects = runWithPostgresSystemScope(() =>
+          store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds));
         json(response, 200, {
           projects,
           activeProjectId: projects.some((project) => project.id === auth.projectId)
@@ -1154,7 +1163,58 @@ export function createCoordinatorServer(
       if (request.method === "POST" && pathname === "/api/v1/projects") {
         await authorize(request, config, oidcVerifier, ["admin"], true);
         const body = await readJson<CreateProjectInput>(request);
-        json(response, 201, store.createProject(body));
+        json(response, 201, runWithPostgresSystemScope(() => store.createProject(body)));
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/v1/fleet") {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        json(response, 200, runWithPostgresSystemScope(() => store.getFleetSnapshot(auth.projectId)));
+        return;
+      }
+
+      if (request.method === "PATCH" && pathname === "/api/v1/fleet/project-policy") {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<ProjectFleetPolicyInput>(request);
+        json(response, 200, store.updateProjectFleetPolicy(body, auth.projectId, auth.username));
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/fleet/releases") {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<RegisterWorkerReleaseInput>(request);
+        json(response, 201, runWithPostgresSystemScope(() => store.registerWorkerRelease(body, auth.username)));
+        return;
+      }
+
+      const revokeReleaseId = routeParam(pathname, /^\/api\/v1\/fleet\/releases\/([^/]+)\/revoke$/);
+      if (request.method === "POST" && revokeReleaseId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<{ reason?: string }>(request);
+        if (!body.reason?.trim()) throw new HttpError(400, "Причина revoke release обязательна");
+        const revoked = runWithPostgresSystemScope(() =>
+          store.revokeWorkerRelease(revokeReleaseId, body.reason!, auth.username));
+        if (!revoked) throw new HttpError(404, "Активный worker release не найден");
+        noContent(response);
+        return;
+      }
+
+      if (request.method === "PUT" && pathname === "/api/v1/fleet/rollouts") {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<WorkerRolloutInput>(request);
+        json(response, 200, runWithPostgresSystemScope(() =>
+          store.updateWorkerRollout(body, auth.projectId, auth.username)));
+        return;
+      }
+
+      const nodeRingId = routeParam(pathname, /^\/api\/v1\/fleet\/nodes\/([^/]+)\/ring$/);
+      if (request.method === "PATCH" && nodeRingId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<{ ring?: string }>(request);
+        if (!body.ring) throw new HttpError(400, "rollout ring обязателен");
+        const node = runWithPostgresSystemScope(() => store.setNodeRolloutRing(nodeRingId, body.ring!, auth.username));
+        if (!node) throw new HttpError(404, "Worker-узел не найден");
+        json(response, 200, node);
         return;
       }
 
@@ -1943,7 +2003,7 @@ export function createCoordinatorServer(
         await authorize(request, config, oidcVerifier, ["admin"], true);
         const body = await readJson<{ mode?: unknown; globalMaxConcurrency?: number }>(request);
         const mode = parseSchedulerMode(body.mode);
-        store.updateScheduler(mode, body.globalMaxConcurrency);
+        runWithPostgresSystemScope(() => store.updateScheduler(mode, body.globalMaxConcurrency));
         json(response, 200, { mode, globalMaxConcurrency: body.globalMaxConcurrency });
         return;
       }
@@ -1965,7 +2025,7 @@ export function createCoordinatorServer(
         if (body.allowUnknownProfiles !== undefined && typeof body.allowUnknownProfiles !== "boolean") {
           throw new HttpError(400, "allowUnknownProfiles должен быть boolean");
         }
-        json(response, 200, store.updateModelRouterPolicy(body));
+        json(response, 200, runWithPostgresSystemScope(() => store.updateModelRouterPolicy(body)));
         return;
       }
 
@@ -2348,6 +2408,11 @@ export function createCoordinatorServer(
         : 400;
       json(response, status, { error: safeMessage(error) });
     }
+    });
+    void requestTask.catch((error) => {
+      if (!response.headersSent) json(response, 500, { error: safeMessage(error) });
+      else response.end();
+    });
   });
   let pushPumpRunning = false;
   const pushTimer = setInterval(() => {
@@ -2391,6 +2456,27 @@ async function main(): Promise<void> {
     temporalProcesses: config.temporalEnabled,
     edgeChallengeTtlSeconds: config.edgeChallengeTtlSeconds,
     telemetry,
+    stateStoreDriver: config.stateStoreDriver,
+    coordinatorInstanceId: config.coordinatorInstanceId,
+    region: config.region,
+    residencyDomain: config.residencyDomain,
+    workerReleasePublicKeys: config.workerReleasePublicKeys,
+    requireSignedWorkerReleases: config.requireSignedWorkerReleases,
+    ...(config.stateStoreDriver === "postgresql" ? {
+      postgres: {
+        systemUrl: config.postgresUrl,
+        tenantUrl: config.postgresTenantUrl,
+        applicationName: `agat-${config.coordinatorInstanceId}`,
+        poolMax: config.postgresPoolMax,
+        connectTimeoutMs: config.postgresConnectTimeoutMs,
+        idleTimeoutMs: config.postgresIdleTimeoutMs,
+        statementTimeoutMs: config.postgresStatementTimeoutMs,
+        sslMode: config.postgresSslMode,
+        sslCa: config.postgresCaCertPath ? fs.readFileSync(config.postgresCaCertPath, "utf8") : "",
+        sslCert: config.postgresClientCertPath ? fs.readFileSync(config.postgresClientCertPath, "utf8") : "",
+        sslKey: config.postgresClientKeyPath ? fs.readFileSync(config.postgresClientKeyPath, "utf8") : "",
+      },
+    } : {}),
   });
   const processRuntime = await createProcessRuntime(config);
   for (const process of store.listActiveDurableProcesses()) {
@@ -2415,7 +2501,8 @@ async function main(): Promise<void> {
 
   server.listen(config.port, config.host, () => {
     console.log(`АГАТ слушает http://${config.host}:${config.port}`);
-    console.log(`SQLite: ${config.dbPath}`);
+    console.log(`State store: ${config.stateStoreDriver}`);
+    console.log(`HA-cell: ${config.region}/${config.residencyDomain} · ${config.coordinatorInstanceId}`);
     console.log(`Артефакты: ${config.artifactsDir}`);
     console.log(`Локальный worker launcher: ${config.localWorkerLauncherEnabled ? "включён" : "выключен"}`);
     console.log(`Runtime процессов: ${processRuntime.snapshot().mode}`);
@@ -2446,9 +2533,54 @@ async function main(): Promise<void> {
   }, config.mcpRefreshSeconds * 1_000);
   mcpRefreshTimer.unref();
 
+  let siemExportRunning = false;
+  const pumpSiem = async (): Promise<void> => {
+    if (!config.siemEnabled || siemExportRunning) return;
+    siemExportRunning = true;
+    let batch: Array<Record<string, unknown>> = [];
+    try {
+      batch = runWithPostgresSystemScope(() => store.claimAuditExportBatch(config.siemBatchSize));
+      if (batch.length === 0) return;
+      const firstId = Number(batch[0]?.id);
+      const lastId = Number(batch.at(-1)?.id);
+      const response = await fetch(config.siemUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-ndjson",
+          "user-agent": "agat-coordinator/1.7.0",
+          "x-agat-audit-batch": `${firstId}-${lastId}`,
+          ...(config.siemBearerToken ? { authorization: `Bearer ${config.siemBearerToken}` } : {}),
+        },
+        body: `${batch.map((event) => JSON.stringify(event)).join("\n")}\n`,
+        redirect: "error",
+        signal: AbortSignal.timeout(config.siemTimeoutSeconds * 1_000),
+      });
+      await response.body?.cancel();
+      if (!response.ok) throw new Error(`SIEM ответил HTTP ${response.status}`);
+      runWithPostgresSystemScope(() => store.completeAuditExport(
+        batch.map((event) => Number(event.id)),
+        null,
+      ));
+    } catch (error) {
+      if (batch.length > 0) {
+        runWithPostgresSystemScope(() => store.completeAuditExport(
+          batch.map((event) => Number(event.id)),
+          safeMessage(error),
+        ));
+      }
+      console.warn(`Ошибка SIEM audit export: ${safeMessage(error)}`);
+    } finally {
+      siemExportRunning = false;
+    }
+  };
+  const siemTimer = setInterval(() => void pumpSiem(), config.siemIntervalSeconds * 1_000);
+  siemTimer.unref();
+  if (config.siemEnabled) void pumpSiem();
+
   const shutdown = (): void => {
     clearInterval(maintenanceTimer);
     clearInterval(mcpRefreshTimer);
+    clearInterval(siemTimer);
     server.close(() => void (async () => {
       store.close();
       await processRuntime.close();

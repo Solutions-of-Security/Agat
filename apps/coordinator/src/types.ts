@@ -246,6 +246,9 @@ export interface WorkerRegistration {
   agentRuntimeProfiles?: AgentRuntimeProfile[];
   modelProfiles?: WorkerModelProfile[];
   embeddingModels?: string[];
+  region?: string;
+  residencyDomain?: string;
+  release?: WorkerReleaseIdentity;
 }
 
 export interface WorkerMetrics {
@@ -269,6 +272,17 @@ export interface WorkerCapabilities {
   agentRuntimeProfiles?: AgentRuntimeProfile[];
   modelProfiles?: WorkerModelProfile[];
   embeddingModels?: string[];
+  region?: string;
+  residencyDomain?: string;
+  release?: WorkerReleaseIdentity;
+}
+
+export interface WorkerReleaseIdentity {
+  releaseId: string;
+  artifactDigest: string;
+  keyId: string;
+  signature: string;
+  rolloutRing?: string;
 }
 
 export type EdgePlatform = "android" | "ios";
@@ -1009,6 +1023,47 @@ export interface A2AOutboundInvocationInput {
 export interface CreateProjectInput {
   name: string;
   id?: string;
+  homeRegion?: string;
+  allowedRegions?: string[];
+  residencyDomain?: string;
+  queueName?: string;
+  maxQueuedTasks?: number;
+  maxRunningTasks?: number;
+}
+
+export interface ProjectFleetPolicyInput {
+  homeRegion: string;
+  allowedRegions: string[];
+  residencyDomain: string;
+  queueName: string;
+  maxQueuedTasks: number;
+  maxRunningTasks: number;
+  expectedRevision: number;
+}
+
+export interface WorkerReleaseManifest {
+  schemaVersion: 1;
+  releaseId: string;
+  version: string;
+  artifactDigest: string;
+  platforms: string[];
+  issuedAt: string;
+  expiresAt?: string | null;
+  metadata?: Record<string, string>;
+}
+
+export interface RegisterWorkerReleaseInput {
+  manifest: WorkerReleaseManifest;
+  keyId: string;
+  signature: string;
+}
+
+export interface WorkerRolloutInput {
+  releaseId: string;
+  region: string;
+  ring: string;
+  percentage: number;
+  expectedRevision: number;
 }
 
 export interface CreateKnowledgeCollectionInput {

@@ -11,7 +11,32 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
-Health 1.6 дополнительно содержит `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` и безопасную причину недоступности без broker token/URL. Production readiness требует `enabled=true`, `attestationAvailable=true`, `attestationMode=broker` только если native enrollment действительно разрешён.
+Health 1.7 содержит `stateStore.driver`, `fleet.region`, `fleet.residencyDomain`, `fleet.instanceId`, число ready replicas и `fleet.haReady`. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
+
+## Rollout 1.7 Fleet и HA
+
+Schema `19 → 20` добавляет regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным authority в Fleet/HA mode. Dual-write отсутствует.
+
+1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
+2. Для существующего SQLite-контура остановите writes и выполните offline export/import с reconciliation количества строк, IDs, hashes, foreign keys и выборочного artifact download. Автоматического migrator в 1.7 нет.
+3. Поднимите PostgreSQL с отдельными system/tenant roles, TLS `verify-full`, PITR и multi-AZ; примените migration одной job/replica. Выполните cross-project RLS negative test именно tenant credential.
+4. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
+5. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
+6. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
+
+Docker Desktop 1.7 разворачивает PostgreSQL и две coordinator replicas для локальной проверки. Если namespace уже содержит SQLite coordinator, `npm run k8s:up` остановится до любых apply/build. `AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true` только подтверждает осознанный запуск нового PostgreSQL authority и **не переносит данные**; старый `agat-data` PVC остаётся до удаления namespace. Не используйте флаг вместо миграции.
+
+Минимальная проверка релиза:
+
+```bash
+node --import tsx --test apps/coordinator/test/fleet-ha.test.ts
+AGAT_TEST_POSTGRES_URL='postgresql://SYSTEM_ROLE@127.0.0.1:55432/agat' \
+AGAT_TEST_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55432/agat' \
+node --import tsx --test apps/coordinator/test/fleet-ha-postgres.integration.test.ts
+kubectl kustomize deploy/k8s/docker-desktop >/dev/null
+```
+
+Production cutover остаётся заблокирован без timed backup/restore/failover, утверждённых RPO/RTO и load test. Полный contract и риски: [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Rollout 1.6 native edge worker
 
@@ -79,7 +104,7 @@ AGAT_TEMPORAL_BUILD_ID=git-abc123 npm run temporal:promote
 
 Старый worker нельзя масштабировать в ноль, пока на нём остаются pinned executions. Полный runbook подключения, rollback и drain: [Production hardening durable runtime](./production-durable-runtime.md).
 
-Разделы панели читают один snapshot `/api/v1/overview` и обновляют его по SSE либо раз в 15 секунд. Поэтому счётчики агентов, моделей и узлов отражают SQLite и свежесть heartbeat, а не локально сгенерированное UI-состояние.
+Разделы панели читают один snapshot `/api/v1/overview` и обновляют его по SSE либо раз в 15 секунд. Поэтому счётчики агентов, моделей и узлов отражают authoritative state store и свежесть heartbeat, а не локально сгенерированное UI-состояние.
 
 При открытом запуске панель отдельно получает authenticated `/runs/:id/trace`. Вкладка показывает до 10 000 событий, а `trace.json` можно выгрузить из браузера. Если видны только краткие события overview, проверьте OIDC-сессию/роль (или legacy admin token) и ответ этого endpoint.
 
@@ -89,38 +114,35 @@ AGAT_TEMPORAL_BUILD_ID=git-abc123 npm run temporal:promote
 
 `AGAT_SEED_DEMO=false` — production-default. `true` допустим только для презентации на отдельной базе. При первом live-запуске после обновления coordinator удаляет известные demo-fixtures; пользовательские агенты, узлы и запуски сохраняются.
 
-## Backup SQLite и артефактов
+## Backup state store и артефактов
 
-Coordinator использует WAL. Для согласованного backup предпочтителен SQLite online backup или остановка container перед копированием volume. Простое копирование только `agat.db` во время записи может потерять данные из `-wal`.
+SQLite developer mode использует WAL. Для согласованного backup выполните SQLite online backup либо остановите единственный coordinator перед копированием `agat.db`, `-wal`, `-shm` и всего `AGAT_ARTIFACTS_DIR`. Простое копирование одного `agat.db` во время записи некорректно. Restore проверяется через `PRAGMA integrity_check` и выборочный authenticated artifact download со сверкой SHA-256.
 
-Artifact metadata находится в SQLite, а содержимое — в `AGAT_ARTIFACTS_DIR` (по умолчанию `./data/artifacts`, в контейнерах `/data/artifacts`). База и этот каталог должны восстанавливаться как один согласованный набор.
+В PostgreSQL Fleet/HA mode metadata, knowledge vectors, encrypted A2A/MCP state, queue/leases, audit outbox и bounded artifact bytes находятся в одной database authority HA-cell. Используйте поддерживаемые backup/PITR средства выбранного PostgreSQL deployment. File cache coordinator не является источником истины и не входит в restore set. Проверка restore должна включать:
 
-Knowledge collections, исходные chunks, embedding vectors, memory и retrieval provenance целиком находятся в SQLite. Отдельного vector volume нет. JSON export удобен для переноса содержимого и audit, но не заменяет backup: vectors в export не включаются и воспроизводятся повторной локальной индексацией.
+1. schema version `20`, constraints, RLS policies и privileges system/tenant roles;
+2. counts/foreign keys и выборочные content hashes для runs, knowledge, A2A/MCP и artifacts;
+3. отсутствие cross-project read/write под tenant role;
+4. reconciliation активных Temporal instances с application rows;
+5. повторную доставку `pending/delivering` SIEM rows и дедупликацию уже delivered event IDs;
+6. запуск двух coordinator replicas и конкурентный queue/quota smoke test.
 
-A2A endpoint/peer registry, token hashes, task mappings, encrypted outbound request/response и push outbox находятся в SQLite; input/output files — в Artifact Store. Protocol messages, peer auth и callback credentials зашифрованы `AGAT_CREDENTIALS_KEY`. После восстановления сохраните тот же encryption key, иначе history, peer auth и pending deliveries нельзя расшифровать. Полные endpoint tokens из hash восстановить невозможно: если client secret утрачен или backup откатил rotation, выполните новую rotation в панели.
+`AGAT_CREDENTIALS_KEY`, database credentials, release trust roots и sink tokens backup-ятся отдельным защищённым secret-management процессом. Без прежнего `AGAT_CREDENTIALS_KEY` encrypted protocol/credential history не расшифровывается; one-way endpoint/node token hashes восстановить в raw secret невозможно, поэтому после потери выполняйте rotation.
 
-Минимальный безопасный сценарий для небольшого локального контура:
+Локальный Kubernetes DR-набор включает:
 
-1. Остановить coordinator.
-2. Скопировать `agat.db`, `agat.db-wal`, `agat.db-shm` и весь каталог артефактов как один набор.
-3. Запустить coordinator.
-4. Периодически разворачивать копию в отдельном окружении, выполнять `PRAGMA integrity_check` и скачивать выборочные artifacts через API для сверки SHA-256.
-
-В текущей версии нет автоматического retention/garbage collector. Не удаляйте файлы вручную по glob: сначала сверяйте их с таблицей `artifacts` и делайте проверенный backup.
-
-В Kubernetes согласованный disaster-recovery набор шире:
-
-- `agat-data`: основной SQLite + Artifact Store;
-- `agat-temporal-data`: history/timers локального Temporal dev server;
-- `agat-keycloak-postgres`: users, roles, sessions и realm state;
-- Secret `agat-secrets`, сохранённый в защищённом secret manager/зашифрованном backup;
+- `agat-coordinator-postgres` PVC — основной Fleet state store 1.7;
+- сохранённый legacy `agat-data` PVC, только если ещё не завершён SQLite cutover;
+- `agat-temporal-data` — history/timers локального Temporal dev server;
+- `agat-keycloak-postgres` — users, roles, sessions и realm state;
+- Secrets `agat-secrets` и `agat-postgres-secrets` в защищённом secret manager;
 - definitions управляемых worker-пулов в Kubernetes API.
 
-Не восстанавливайте только одну из трёх state-систем в произвольную дату: SQLite instance и Temporal history могут разойтись. Для production используйте поддерживаемую внешнюю БД Temporal/Keycloak и согласованные snapshot/restore procedures.
+Не восстанавливайте application, Temporal и identity state в произвольные разные моменты: execution tokens/history и авторизация могут разойтись. После region-loss не подключайте database snapshot к coordinator другой residency cell до одобренного DR decision. В 1.7 нет автоматического retention/garbage collector, SIEM poison-event UI или cross-region failover; эти production gates перечислены в [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Восстановление durable process
 
-После рестарта coordinator перечитывает активные `runtime=temporal` instances и идемпотентно получает/запускает соответствующие Workflow IDs. Temporal worker replay-ит историю, а SQLite восстанавливает execution tokens, join arrivals, external signal waits, embedded subprocess links и compensation stack. Durable `wait` не превращается в polling-таймер coordinator. Завершение lease, approval, внешний signal и cancel отправляют подтверждаемый Update с Signal fallback; периодическая сверка остаётся fallback на случай краткого сбоя transport.
+После рестарта coordinator перечитывает активные `runtime=temporal` instances и идемпотентно получает/запускает соответствующие Workflow IDs. Temporal worker replay-ит историю, а authoritative state store восстанавливает execution tokens, join arrivals, external signal waits, embedded subprocess links и compensation stack. Durable `wait` не превращается в polling-таймер coordinator. Завершение lease, approval, внешний signal и cancel отправляют подтверждаемый Update с Signal fallback; периодическая сверка остаётся fallback на случай краткого сбоя transport.
 
 Проверка runtime:
 
@@ -147,7 +169,7 @@ Embedding job использует такой же pull lease и максиму�
 
 Повторная регистрация узла с тем же `name` и действующим enrollment token выдаёт новый node token и инвалидирует старый. Удалите локальный credentials file и перезапустите worker.
 
-Это правило относится к обычному shared-token worker. Hardware-attested edge node перерегистрируется только тем же активным attestation key; после `wipe_pending/wiped/revoked` этот key навсегда заблокирован. Для replacement device используйте новое уникальное имя либо контролируемую будущую decommission/replacement процедуру — обходить revoke ручным редактированием SQLite нельзя.
+Это правило относится к обычному shared-token worker. Hardware-attested edge node перерегистрируется только тем же активным attestation key; после `wipe_pending/wiped/revoked` этот key навсегда заблокирован. Для replacement device используйте новое уникальное имя либо контролируемую будущую decommission/replacement процедуру — обходить revoke ручным редактированием state store нельзя.
 
 В Docker Desktop Kubernetes актуальный enrollment token выводится командой `npm run --silent k8s:enrollment-token`. Он отличается от legacy admin token для режима без OIDC.
 
@@ -164,6 +186,24 @@ Embedding job использует такой же pull lease и максиму�
 Model Router использует benchmark не старше 30 дней. Если throughput выглядит устаревшим, выполните репрезентативные stages на каждом worker; synthetic warmup при старте намеренно отсутствует. Настройка capabilities, VRAM и energy описана в [руководстве Model Router](./model-router.md).
 
 Локальные worker-пулы можно создавать и останавливать в разделе **Узлы**. Остановка масштабирует управляемые Deployments до нуля; `npm run k8s:stop` делает то же самое для всех объектов с label `agat.local/managed=true`. Повторный `npm run k8s:up` сохраняет определения пулов, после чего их можно возобновить кнопкой **Запустить**.
+
+## Недоступен SIEM sink
+
+Раздел **Fleet / HA** показывает `pending`, `delivering`, `delivered` и oldest pending. При timeout/non-2xx coordinator возвращает batch в `pending` с exponential backoff; несколько replicas не должны экспортировать одну строку одновременно благодаря leased `SKIP LOCKED` claim.
+
+1. Проверьте HTTPS identity/route sink без вывода Bearer в shell/log. Redirect не поддерживается намеренно.
+2. Сопоставьте oldest pending с началом инцидента и убедитесь, что PostgreSQL доступен; не меняйте `audit_export_outbox` вручную.
+3. Проверьте, что sink дедуплицирует `idempotencyKey=agat-audit-<eventId>`: timeout после фактического приёма законно создаёт повтор.
+4. Если credential отозван, ротируйте scoped sink token во внешней системе и Kubernetes Secret согласованной процедурой, затем перезапустите coordinator replicas по очереди.
+5. После восстановления дождитесь нулевого backlog и сверяйте диапазоны `X-Agat-Audit-Batch`/event IDs, а не количество HTTP requests.
+
+Raw event message/reason, prompts, outputs, tool arguments и secrets не отправляются: экспорт содержит safe constant, hashes и allowlisted metadata. Если downstream требует больше полей, добавляйте их schema review, а не forwarding полного `data_json`. В 1.7 нет DLQ/poison-event UI и автоматической retention; длительно не доставляемое событие требует incident record и отдельного controlled remediation.
+
+## Инцидент worker release
+
+При подозрении на compromised build сначала нажмите **Revoke** в **Fleet / HA** и укажите incident ID. Coordinator помечает связанные shared-token nodes offline и запрещает им новые leases независимо от rollout percentage. Затем отзовите artifact/OCI во внешнем registry, остановите уже выполняющиеся процессы по их side-effect runbook и зарегистрируйте новый release под действующим либо ротированным trust root.
+
+Не удаляйте revoked manifest: он нужен audit и исключает повторное использование ID/digest. Rollback выполняется новым optimistic rollout update на проверенный fallback/target; private Ed25519 key в coordinator не загружается. Hardware-attested mobile release блокируется средствами Play/App Store/MDM и attestation policy, а потерянное устройство — отдельным remote wipe.
 
 ## Диагностика
 
@@ -212,7 +252,7 @@ kubectl logs -n agat deployment/agat-temporal-worker --tail=100
 3. Убедитесь, что активный stage истёк и был возвращён в очередь. Его поздний completion от старого token должен получить `401`.
 4. После следующего control poll ожидайте `credentialState=wiped`, `edge.wipe.acknowledged` и deletion flags. `localDataDeleted=false` требует MDM/device-response расследования, хотя node credential уже окончательно отозван.
 5. Если устройство остаётся offline, не снимайте инцидент: примените MDM/platform erase, отзовите physical access и оцените данные модели/storage отдельно. AGAT не может доставить команду выключенному устройству.
-6. Не переиспользуйте старый attestation key и не исправляйте state вручную в SQLite. Replacement регистрируется как отдельное устройство.
+6. Не переиспользуйте старый attestation key и не исправляйте state вручную в database. Replacement регистрируется как отдельное устройство.
 
 ## Аварийная блокировка MCP
 
@@ -240,7 +280,7 @@ kubectl logs -n agat deployment/agat-temporal-worker --tail=100
 
 8. Выполните один безопасный read-only smoke call. Отклонённые calls автоматически не возобновляются: новый вызов должен получить новый `clientCallId` и пройти актуальную policy заново.
 
-Switch хранится в SQLite и сохраняется после рестарта coordinator. Если панель недоступна, используйте тот же authenticated API через Gateway; не редактируйте таблицу `settings` вручную, иначе будет потерян actor/reason audit.
+Switch хранится в authoritative state store и сохраняется после рестарта/смены coordinator replica. Если панель недоступна, используйте тот же authenticated API через Gateway; не редактируйте таблицу `settings` вручную, иначе будет потерян actor/reason audit.
 
 Для inbound A2A сначала откройте раздел **A2A** и проверьте `enabled`, Agent Card URL, capabilities, MIME/file limits, token suffix/rotation time, active-task limit и связанный внутренний run. Затем проверьте protocol boundary:
 

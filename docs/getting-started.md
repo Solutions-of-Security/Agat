@@ -50,7 +50,7 @@ npm start
 
 Если coordinator слушает адрес, отличный от loopback, оба токена обязательны. Публикуйте его только за HTTPS reverse proxy или внутри защищённой overlay-сети.
 
-Этот вариант использует SQLite и поддерживает ровно один coordinator. Для production Temporal Cloud/self-hosted, TLS, worker versioning и canary rollout используйте [production durable runtime](./production-durable-runtime.md). PostgreSQL/несколько coordinator в 1.0 ещё не включены.
+Этот вариант по умолчанию использует SQLite и поддерживает ровно один coordinator. PostgreSQL Fleet/HA backend 1.7 настраивается отдельными system/tenant URLs; production всё равно требует managed multi-AZ database, TLS, backup/restore и несколько process replicas. См. [Fleet и HA 1.7](./fleet-ha-1.7.md) и [production durable runtime](./production-durable-runtime.md).
 
 ## Docker Compose
 
@@ -86,6 +86,15 @@ docker compose up -d --build coordinator
 По умолчанию порт привязан только к `127.0.0.1:8787`. Для доступа из сети поставьте перед ним HTTPS reverse proxy или измените bind осознанно.
 
 Именованный volume `agat-data` одновременно хранит `/data/agat.db` и `/data/artifacts`. При создании запуска выберите «Журнал + Artifact Store» и, при необходимости, относительный каталог. Результаты с любого worker будут централизованно доступны в карточке запуска.
+
+Для локальной проверки PostgreSQL backend и Fleet API используйте профиль `ha`:
+
+```bash
+AGAT_STATE_STORE_DRIVER=postgresql \
+docker compose --profile ha up -d --build coordinator postgres
+```
+
+Он поднимает один локальный PostgreSQL и не является production HA. Password defaults предназначены только для loopback development; production задаёт отдельные `AGAT_POSTGRES_SYSTEM_PASSWORD`/`AGAT_POSTGRES_TENANT_PASSWORD`, remote TLS и secret manager. Compose не переносит существующий SQLite volume автоматически.
 
 Запуск контейнерного воркера, который обращается к Ollama на host:
 

@@ -22,6 +22,7 @@
 - A2A 1.0 HTTP+JSON interoperability: inbound/outbound, delegated OAuth, SSE/push, bounded files и trace correlation.
 - production Temporal transport, replay gate, Worker Deployment Versioning, interval Schedules, Updates и parent→child workflows.
 - native Android/iOS edge workers с hardware attestation, device-scoped credentials и remote wipe.
+- Fleet/HA-cell на PostgreSQL с несколькими coordinator replicas, residency, signed rollout, FORCE RLS и SIEM outbox.
 
 ## Реализовано в 0.3
 
@@ -244,15 +245,31 @@ Web/PWA остаётся control surface и не обещает надёжный
 
 Подробности: [Native edge worker 1.6](./native-edge-worker.md).
 
-## Следующий релиз
+## Реализовано в 1.7
 
 ### Fleet и HA
 
-- PostgreSQL backend для нескольких coordinator replicas и project-scoped task queues/quotas;
-- региональные очереди и data residency;
-- signed worker releases и staged rollout;
-- hard multi-tenant isolation поверх уже реализованных OIDC/RBAC/projects;
-- audit export в SIEM.
+- PostgreSQL backend для нескольких coordinator replicas и exact project-scoped task queues/quotas;
+- одна authoritative HA-cell на `region/residencyDomain`, regional worker placement и запрет online cross-cell relocation;
+- artifact bytes в PostgreSQL для независимого download с любой replica;
+- canonical Ed25519 worker manifests, trust roots, expiry/revoke и deterministic target/fallback staged rollout;
+- отдельные system/tenant DB roles, request-scoped tenant context, FORCE RLS и exact least-privilege grants;
+- transactional audit outbox, leased `SKIP LOCKED` export, redacted NDJSON и at-least-once SIEM delivery;
+- Fleet/HA UI, Docker Compose PostgreSQL profile и Docker Desktop Kubernetes с двумя coordinator replicas, rolling update и PDB;
+- schema migration v20 и отдельный disposable PostgreSQL integration suite.
+
+Подробности: [Fleet и HA 1.7](./fleet-ha-1.7.md) и [ADR-017](./adr-017-fleet-ha-cell.md).
+
+## Следующий релиз
+
+### Production Fleet readiness и DR
+
+- canonical offline SQLite→PostgreSQL migrator с reconciliation report и rehearsal rollback;
+- отдельная migration Job/role, DDL-free runtime role и connection admission/load testing;
+- managed multi-AZ PostgreSQL, PITR, фактический restore/failover и утверждённые RPO/RTO/SLO;
+- S3-compatible artifact store с lifecycle/retention вместо роста PostgreSQL/WAL;
+- residency-aware region-loss runbook без active-active payload writes;
+- OCI provenance/runtime attestation для обычных workers и SIEM retention/DLQ conformance.
 
 ## Рекомендуемый порядок
 
@@ -271,4 +288,5 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P2 | Готово в 1.4 | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и bounded files поверх существующей очереди |
 | P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
 | P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
-| P3 | Следующий шаг | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
+| P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
+| P1 | Следующий шаг | Production Fleet readiness и DR | Миграция, managed DB, restore/failover, object storage и measured SLO закрывают production exit gate |

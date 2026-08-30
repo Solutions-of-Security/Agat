@@ -6,6 +6,7 @@ import type {
   A2ASnapshot,
   Agent,
   AuthUser,
+  ComputeNode,
   CreateCredentialRequest,
   CreateEvalExperimentRequest,
   CreateGoldenDatasetRequest,
@@ -21,6 +22,7 @@ import type {
   KnowledgeDocument,
   KnowledgeSnapshot,
   EvalSnapshot,
+  FleetSnapshot,
   GoldenDataset,
   GoldenEvalExperiment,
   LocalWorkerLauncherSnapshot,
@@ -42,6 +44,8 @@ import type {
   ProcessWebhook,
   ProcessWebhookSecret,
   ProjectSummary,
+  ProjectFleetPolicy,
+  RegisterWorkerReleaseRequest,
   ReplayRunRequest,
   ReplayRunResponse,
   PromptRegistryEntry,
@@ -152,6 +156,37 @@ export const api = {
     method: "POST",
     body: JSON.stringify({ name, id }),
   }),
+  fleet: (signal?: AbortSignal) => request<FleetSnapshot>("/fleet", { signal }),
+  updateFleetPolicy: (payload: Omit<ProjectFleetPolicy, "revision"> & { expectedRevision: number }) =>
+    request<ProjectFleetPolicy>("/fleet/project-policy", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  registerWorkerRelease: (payload: RegisterWorkerReleaseRequest) =>
+    request<FleetSnapshot["releases"][number]>("/fleet/releases", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  revokeWorkerRelease: (releaseId: string, reason: string) =>
+    request<void>(`/fleet/releases/${encodeURIComponent(releaseId)}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  updateWorkerRollout: (payload: {
+    releaseId: string;
+    region: string;
+    ring: string;
+    percentage: number;
+    expectedRevision: number;
+  }) => request<FleetSnapshot["rollouts"][number]>("/fleet/rollouts", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }),
+  setNodeRolloutRing: (nodeId: string, ring: string) =>
+    request<ComputeNode>(`/fleet/nodes/${encodeURIComponent(nodeId)}/ring`, {
+      method: "PATCH",
+      body: JSON.stringify({ ring }),
+    }),
   overview: (signal?: AbortSignal) => request<Overview>("/overview", { signal }, false),
   a2a: (signal?: AbortSignal) => request<A2ASnapshot>("/a2a", { signal }),
   createA2AEndpoint: (payload: SaveA2AEndpointRequest) =>

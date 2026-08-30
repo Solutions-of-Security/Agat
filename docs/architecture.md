@@ -23,9 +23,10 @@ flowchart LR
     C -->|"ограниченный Kubernetes API"| K8S["Local worker launcher"]
     K8S --> KW["1..N локальных worker pods"]
     C -->|"one-shot Secret + NetworkPolicy + Job"| SBX["WASI / digest-pinned OCI sandbox"]
-    C --> DB[("SQLite / WAL")]
+    C --> DB[("PostgreSQL · regional HA-cell")]
     DB --> KB[("Collections / chunks / vectors / memory")]
-    C --> ART[("Artifact Store")]
+    DB --> ART[("Artifact metadata + bytes")]
+    C -->|"redacted audit outbox"| SIEM["SIEM HTTPS sink"]
     C -->|"MCP 2026-07-28 · policy proxy"| MCP["Remote/internal MCP servers"]
     C -.->|"OTLP/HTTP · optional"| OTel["OpenTelemetry Collector"]
     W1["Worker · сервер/GPU"] -->|"исходящий HTTPS poll"| C
@@ -54,11 +55,13 @@ Coordinator хранит состояние очереди, но не подкл
 
 ### Coordinator
 
-Расположен в `apps/coordinator`; доменное состояние хранится через встроенный `node:sqlite`, а Temporal client запускает durable Workflow, отправляет подтверждаемые Updates и управляет interval/cron/calendar Schedules.
+Расположен в `apps/coordinator`; в Fleet/HA mode доменное состояние хранится в residency-scoped PostgreSQL, а SQLite остаётся one-replica developer backend. Temporal client запускает durable Workflow, отправляет подтверждаемые Updates и управляет interval/cron/calendar Schedules.
 
 - HTTP API и статическая раздача собранной React-панели;
 - project-scoped таблицы `agents`, `runs`, `stages`, `events`, `artifacts`, `credentials`, `processes`, `process_versions`, `process_instances`, `process_tokens`, `process_join_arrivals`, `process_signal_waits`, `process_subprocess_links`, `process_compensations`, `process_webhooks`, `process_webhook_receipts`, `mcp_servers`, `mcp_tool_policies`, `mcp_tool_calls`, `mcp_tool_call_approvals`, `mcp_policy_versions`, `knowledge_collections`, `knowledge_documents`, `knowledge_chunks`, `knowledge_embedding_jobs`, `knowledge_retrievals`, `memory_entries`, `prompt_registry`, `prompt_versions`, `eval_datasets`, `eval_dataset_versions`, `eval_examples`, `eval_experiments`, `eval_experiment_items`, `eval_reviews`, `a2a_endpoints`, `a2a_tasks`, `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`; fleet/edge state и глобальный MCP kill switch хранятся в `nodes`, `edge_enrollment_challenges`, `model_benchmarks` и `settings`;
-- атомарная выдача работы через `BEGIN IMMEDIATE`;
+- атомарная выдача работы: SQLite использует `BEGIN IMMEDIATE`, PostgreSQL — row locks и `FOR UPDATE SKIP LOCKED`;
+- project queue/quota policy, regional/residency placement и shared state нескольких coordinator replicas;
+- отдельные system/tenant PostgreSQL roles, FORCE RLS и request-scoped project setting;
 - TTL lease и повторная постановка этапа при потере воркера;
 - максимум три попытки этапа;
 - хеширование node token через SHA-256;
@@ -66,7 +69,7 @@ Coordinator хранит состояние очереди, но не подкл
 - полный per-run execution trace и metadata файлов с SHA-256;
 - W3C trace IDs, immutable agent snapshots, execution manifest и agent-only replay/eval;
 - опциональный OTLP/HTTP export технических spans без prompt/output content;
-- безопасная запись stage outputs и финального результата в файловый Artifact Store;
+- безопасная запись stage outputs, artifact metadata и bytes в authoritative state store; filesystem replica служит только проверяемым download cache;
 - проверка графов, deterministic fork/join tokens, переходы по условиям, bounded loops, external signals, pinned subprocess и HTTP/transform/wait/approval/artifact/compensation activities;
 - неизменяемые снимки опубликованных версий процессов;
 - OIDC RS256/JWKS verifier, role/project authorization, CSP, anti-framing и CORS allowlist;
@@ -79,8 +82,10 @@ Coordinator хранит состояние очереди, но не подкл
 - A2A interoperability boundary: inbound endpoint bearer/task/SSE/push/files и outbound Agent Card discovery/send/poll/cancel с encrypted credentials, delegated RFC 8693, SSRF-safe pinned transport и redacted audit без раскрытия prompt/tools/memory.
 - hardened Temporal boundary: TLS/API key или mTLS production transport, Worker Deployment Versioning, replay fixtures и scheduled parent→child workflows.
 - native edge trust boundary: one-time hashed challenges, external Play Integrity/App Attest verification, hardware-attested device token lifecycle, control-only pending-wipe scope и immutable wipe audit.
+- Fleet release boundary: Ed25519 manifests, public trust roots, expiry/revoke, deterministic target/fallback cohorts и fail-closed worker admission.
+- SIEM boundary: transactional audit outbox, leased batches, redacted NDJSON, idempotency key и retry/backoff.
 
-SQLite предполагает один активный экземпляр coordinator. Temporal делает процесс durable при рестартах, но сам по себе не превращает SQLite state store в HA: незавершённый PostgreSQL driver fail-closed, а проект перехода описан в [PostgreSQL state-store design](./postgresql-state-store-design.md).
+PostgreSQL является единственным source of truth внутри Fleet HA-cell; dual-write с SQLite отсутствует. Каждая cell принимает только свой `region/residencyDomain`, а online cross-cell relocation отклоняется. SQLite по-прежнему требует один coordinator. Реализация, ограничения local/staging и production exit gates описаны в [Fleet и HA 1.7](./fleet-ha-1.7.md) и [PostgreSQL state-store](./postgresql-state-store-design.md).
 
 В Docker Desktop coordinator использует namespace-scoped service account. Launcher управляет Deployments; sandbox executor — только Jobs, Pods/log, Secrets и NetworkPolicies того же namespace. Пользователь launcher передаёт только модель, число workers, concurrency и флаг web-tools; isolated image/module/command меняет только `admin`. Подробнее: [локальный запуск нескольких workers](./local-workers.md) и [изолированное выполнение tools](./isolated-tool-execution.md).
 
@@ -102,6 +107,7 @@ SQLite предполагает один активный экземпляр coo
 - сообщает наблюдаемые model/tool calls и redacted handoff metadata; provider-specific hidden reasoning, raw assignment и specialist output в audit намеренно не записываются;
 - продолжает W3C trace через agent/model/tool spans и возвращает token/time metrics;
 - умеет `--once --dry-run` для сквозной проверки без модели.
+- публикует region/residency и optional signed release identity; coordinator повторно проверяет release при registration/heartbeat/claim.
 
 Web-инструменты работают на стороне конкретного worker. В Kubernetes поиск выполняет внутренний SearXNG, а чтение публичной страницы — worker с проверкой DNS/IP, redirect, content type, размера и таймаута. Поэтому удалённая машина не должна открывать model endpoint; ей нужен исходящий доступ к coordinator, локальному/общему SearXNG и выбранным публичным сайтам. Подробности: [web-доступ локальных агентов](./web-access.md).
 
@@ -117,8 +123,8 @@ Remote wipe сначала меняет server state: credential станови�
 
 React + Vite в `apps/web`.
 
-- отдельные live-разделы обзора, агентов, запусков, процессов, Knowledge, Golden eval, MCP gateway, A2A adapter, узлов и моделей;
-- реальные счётчики из SQLite и worker heartbeat вместо статических карточек;
+- отдельные live-разделы обзора, агентов, запусков, процессов, Knowledge, Golden eval, MCP gateway, A2A adapter, узлов, моделей и Fleet/HA;
+- реальные счётчики из state store и worker heartbeat вместо статических карточек;
 - создание и редактирование конфигураций агентов и bounded specialist teams;
 - создание проектов и выбор project context;
 - создание зашифрованных credentials без возврата secret values;
@@ -133,6 +139,7 @@ React + Vite в `apps/web`.
 - SSE-инвалидация с одним повторным запросом overview;
 - вкладки полного trace, входов/outputs и артефактов со скачиванием по ID;
 - desktop layout и отдельная мобильная компоновка.
+- Fleet snapshot, project queue/residency policy, coordinator replicas, SIEM lag, signed releases, rollout cohorts и worker rings.
 
 ### A2A boundary
 
@@ -203,12 +210,12 @@ stateDiagram-v2
 
 ## Доставка и согласованность
 
-Модель доставки — **at least once**. Если worker завершил inference, но не успел отправить `complete`, lease истечёт и этап может выполниться повторно. Поэтому будущие tools с внешними эффектами должны использовать idempotency key `stage.id` или требовать approval непосредственно перед side effect.
+Модель доставки — **at least once**. Если worker завершил inference, но не успел отправить `complete`, lease истечёт и этап может выполниться повторно. MCP/process side effects используют существующие approval/idempotency controls. SIEM sink также обязан дедуплицировать по `agat-audit-ID`, потому что network timeout не доказывает отсутствие delivery.
 
 ## Trace и Artifact Store
 
 `events` — append-only наблюдаемый журнал. При создании/постановке stage coordinator фиксирует immutable agent snapshot; при выдаче lease — точный run input, outputs предыдущих этапов, worker snapshot и W3C trace context. Worker добавляет progress, model/tool calls и метрики, а coordinator — переходы, approval, retry, output и создание файлов. Скрытая chain-of-thought не является частью модели данных.
 
-Stage output всегда хранится в SQLite, поэтому UI не зависит от файлового хранилища. При `resultDestination=artifacts` coordinator дополнительно записывает файлы под `AGAT_ARTIFACTS_DIR`, а в SQLite оставляет относительный путь, размер, media type и SHA-256. Центральное хранилище выбрано вместо локального каталога worker, чтобы результат с любой машины можно было одинаково увидеть и скачать через coordinator.
+Stage output всегда хранится в state store, поэтому UI не зависит от worker filesystem. В PostgreSQL HA mode metadata, SHA-256 и bytes artifact находятся в БД; replica при authenticated download проверяет hash/size и создаёт локальный cache под `AGAT_ARTIFACTS_DIR`. Это обеспечивает одинаковый download с любой replica, но рост DB/WAL делает S3-compatible object store обязательным следующим production plateau для крупных artifacts.
 
 Подробности и границы: [журнал выполнения и артефакты](./execution-traces-and-artifacts.md), [OpenTelemetry, manifest, replay/eval](./observability-replay-evals.md) и [Golden eval/prompt registry](./golden-eval-prompt-registry.md).

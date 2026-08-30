@@ -41,7 +41,8 @@ const ModelsPage = lazy(() => import("./components/ModelsPage").then((module) =>
 const KnowledgePage = lazy(() => import("./components/KnowledgePage").then((module) => ({ default: module.KnowledgePage })));
 const EvalsPage = lazy(() => import("./components/EvalsPage").then((module) => ({ default: module.EvalsPage })));
 const A2APage = lazy(() => import("./components/A2APage").then((module) => ({ default: module.A2APage })));
-const views = new Set<ViewId>(["overview", "agents", "runs", "processes", "knowledge", "evals", "tools", "a2a", "nodes", "models"]);
+const FleetPage = lazy(() => import("./components/FleetPage").then((module) => ({ default: module.FleetPage })));
+const views = new Set<ViewId>(["overview", "agents", "runs", "processes", "knowledge", "evals", "tools", "a2a", "nodes", "models", "fleet"]);
 
 function viewFromLocation(): ViewId {
   const candidate = window.location.hash.replace(/^#/, "") as ViewId;
@@ -555,6 +556,15 @@ export default function App() {
                 modelRouter={overview.modelRouter}
                 busy={busy}
                 onSavePolicy={saveModelRouter}
+              />
+            </Suspense>
+          ) : null}
+          {activeView === "fleet" ? (
+            <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем Fleet HA-cell</strong></div>}>
+              <FleetPage
+                projectId={currentProjectId}
+                nodes={overview.nodes}
+                roles={user?.roles ?? []}
               />
             </Suspense>
           ) : null}

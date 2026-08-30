@@ -7,9 +7,12 @@ metadata:
     app.kubernetes.io/component: coordinator
     app.kubernetes.io/part-of: agat
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   revisionHistoryLimit: 2
   progressDeadlineSeconds: 180
   selector:
@@ -35,6 +38,25 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: wait-for-postgres
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec", "until pg_isready -h agat-coordinator-postgres -U agat_system -d agat; do sleep 2; done"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
         - name: wait-for-temporal
           image: temporalio/temporal:1.8.1@sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6
           imagePullPolicy: IfNotPresent
@@ -75,7 +97,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: coordinator
-          image: agat-local/coordinator:1.6.0
+          image: agat-local/coordinator:1.7.0
           # Docker Desktop's kind registry mirror resolves this mutable local tag.
           # Always is intentional so a rebuild with the same tag is not served from node cache.
           imagePullPolicy: Always
@@ -98,6 +120,26 @@ spec:
                 secretKeyRef:
                   name: agat-secrets
                   key: credentials-key
+            - name: AGAT_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-url
+            - name: AGAT_POSTGRES_TENANT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: tenant-url
+            - name: AGAT_COORDINATOR_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: AGAT_SIEM_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: siem-bearer-token
+                  optional: true
             - name: AGAT_TEMPORAL_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -154,8 +196,19 @@ spec:
               mountPath: /tmp
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: agat-data
+          emptyDir:
+            sizeLimit: 1Gi
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agat-coordinator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: coordinator

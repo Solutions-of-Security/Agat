@@ -30,7 +30,7 @@ describe("Temporal production hardening", () => {
     }
   });
 
-  it("fails closed for incomplete production transport and an unimplemented PostgreSQL driver", () => {
+  it("fails closed for incomplete production transport and unsafe PostgreSQL roles", () => {
     const base = loadConfig();
     assert.throws(
       () => validateTemporalCoordinatorConfig({
@@ -45,7 +45,26 @@ describe("Temporal production hardening", () => {
     );
     assert.throws(
       () => validateTemporalCoordinatorConfig({ ...base, stateStoreDriver: "postgresql" }),
-      /PostgreSQL state-store ещё не активирован/,
+      /AGAT_POSTGRES_URL.*AGAT_POSTGRES_TENANT_URL/,
+    );
+    assert.throws(
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        stateStoreDriver: "postgresql",
+        postgresUrl: "postgresql://agat:system@127.0.0.1:5432/agat",
+        postgresTenantUrl: "postgresql://agat:tenant@127.0.0.1:5432/agat",
+        requireSignedWorkerReleases: false,
+      }),
+      /разные least-privilege roles/,
+    );
+    assert.doesNotThrow(
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        stateStoreDriver: "postgresql",
+        postgresUrl: "postgresql://agat_system:system@127.0.0.1:5432/agat",
+        postgresTenantUrl: "postgresql://agat_tenant:tenant@127.0.0.1:5432/agat",
+        requireSignedWorkerReleases: false,
+      }),
     );
   });
 

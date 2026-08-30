@@ -36,8 +36,8 @@ android {
         applicationId = "io.agat.edge"
         minSdk = 28
         targetSdk = 36
-        versionCode = 160
-        versionName = "1.6.0"
+        versionCode = 170
+        versionName = "1.7.0"
 
         buildConfigField("long", "PLAY_INTEGRITY_CLOUD_PROJECT", "${cloudProjectNumber}L")
         buildConfigField("boolean", "LLAMA_RUNTIME_PACKAGED", (llamaCppDir.isNotBlank()).toString())

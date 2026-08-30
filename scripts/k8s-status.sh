@@ -25,12 +25,15 @@ kubectl get deployments,pods,services,persistentvolumeclaims --namespace "${name
 status=0
 health_body="$(curl --fail --silent --show-error --max-time 3 \
   "http://127.0.0.1:8787/api/v1/health" 2>/dev/null || true)"
-if [[ -n "${health_body}" ]] && gateway_is_ready && [[ "${health_body}" == *'"mode":"temporal"'* ]]; then
+if [[ -n "${health_body}" ]] \
+  && gateway_is_ready \
+  && [[ "${health_body}" == *'"mode":"temporal"'* ]] \
+  && [[ "${health_body}" == *'"driver":"postgresql"'* ]]; then
   printf '%s' "${health_body}"
   printf '\nAPI Gateway: доступен на http://127.0.0.1:8787\n'
 else
   printf '%s\n' \
-    'Kong/Temporal health через localhost:8787 недоступен; проверьте конфликт порта или используйте npm run k8s:forward.' >&2
+    'Kong/Temporal/PostgreSQL health через localhost:8787 недоступен; проверьте pods или используйте npm run k8s:forward.' >&2
   status=1
 fi
 unset health_body

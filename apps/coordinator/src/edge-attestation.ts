@@ -132,7 +132,7 @@ export class BrokerEdgeAttestationVerifier implements EdgeAttestationVerifier {
           accept: "application/json",
           authorization: `Bearer ${this.options.token}`,
           "content-type": "application/json",
-          "user-agent": "agat-coordinator/1.6.0",
+          "user-agent": "agat-coordinator/1.7.0",
         },
         body: JSON.stringify({
           schemaVersion: 1,

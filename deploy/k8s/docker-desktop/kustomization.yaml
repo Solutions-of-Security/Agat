@@ -8,6 +8,7 @@ resources:
   - persistent-volume-claims.yaml
   - keycloak-realm-configmap.yaml
   - keycloak.yaml
+  - coordinator-postgres.yaml
   - temporal.yaml
   - local-worker-launcher-rbac.yaml
   - coordinator-deployment.yaml
@@ -15,3 +16,9 @@ resources:
   - gateway.yaml
   - search.yaml
   - worker-deployment.yaml
+configMapGenerator:
+  - name: agat-postgres-init
+    files:
+      - init-agat.sh=postgres-init.sh
+generatorOptions:
+  disableNameSuffixHash: true

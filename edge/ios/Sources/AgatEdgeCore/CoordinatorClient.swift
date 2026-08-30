@@ -131,7 +131,7 @@ public actor CoordinatorClient {
     }
 
     public func lease(token: String) async throws -> EdgeLease? {
-        struct Body: Encodable { let workerVersion = "ios/1.6.0" }
+        struct Body: Encodable { let workerVersion = "ios/1.7.0" }
         let result = try await rawRequest(path: "/api/v1/workers/lease", method: "POST", body: Body(), bearer: token)
         if result.status == 204 { return nil }
         guard result.status == 200 else { throw httpError(status: result.status, data: result.data) }
@@ -212,7 +212,7 @@ public actor CoordinatorClient {
         request.httpBody = try encoder.encode(body)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("agat-edge-ios/1.6.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("agat-edge-ios/1.7.0", forHTTPHeaderField: "User-Agent")
         if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await session.data(for: request)
         guard data.count <= 1_048_576 else { throw CoordinatorClientError.responseTooLarge }

@@ -1,7 +1,7 @@
 {
   "name": "agat-platform",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "type": "module",
   "workspaces": [
     "apps/*"
@@ -10,6 +10,7 @@
     "build": "npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web && npm run build --workspace @agat/temporal-worker",
     "dev:api": "npm run dev --workspace @agat/coordinator",
     "dev:web": "npm run dev --workspace @agat/web",
+    "fleet:sign-worker": "node scripts/sign-worker-release.mjs",
     "k8s:admin-token": "bash scripts/k8s-admin-token.sh",
     "k8s:enrollment-token": "bash scripts/k8s-enrollment-token.sh",
     "k8s:forward": "bash scripts/k8s-port-forward.sh",

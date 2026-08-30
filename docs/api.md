@@ -26,6 +26,12 @@ Node token возвращается один раз при регистраци�
 | `GET` | `/auth/me` | Профиль, роли и доступные проекты |
 | `GET` | `/projects` | Проекты пользователя и активный project ID |
 | `POST` | `/projects` | Создать проект (`admin`) |
+| `GET` | `/fleet` | HA-cell, project policy/queues, replicas, releases, rollouts и SIEM backlog |
+| `PATCH` | `/fleet/project-policy` | Изменить residency/queue/quotas с optimistic revision (`admin`) |
+| `POST` | `/fleet/releases` | Проверить подпись и зарегистрировать worker release (`admin`) |
+| `POST` | `/fleet/releases/:id/revoke` | Немедленно отозвать worker release с причиной (`admin`) |
+| `PUT` | `/fleet/rollouts` | Изменить staged rollout по region/ring (`admin`) |
+| `PATCH` | `/fleet/nodes/:id/ring` | Назначить worker rollout ring (`admin`) |
 | `GET` | `/overview` | Runs, stages, nodes, approvals, события и счётчики |
 | `GET` | `/agents` | Каталог агентов |
 | `GET` | `/credentials` | Metadata credentials без secret values (`admin/designer`) |
@@ -96,7 +102,7 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/approvals/:stageId` | `approve` или `reject` |
 | `GET` | `/events` | SSE с `Last-Event-ID` |
 
-Управление `/local-workers`, scheduler, Model Router, MCP emergency deny и создание проекта требуют роли `admin`. Agents/process definitions/credentials и MCP policy доступны `admin` и `designer`; запуск/отмена — также `operator`; approval — `admin/operator`; чтение — любой роли АГАТ. В legacy mode те же mutating endpoints требуют admin token, но один субъект `local-admin` не может выполнить обязательный MCP four-eyes.
+Управление `/fleet`, `/local-workers`, scheduler, Model Router, MCP emergency deny и создание проекта требуют роли `admin`. Agents/process definitions/credentials и MCP policy доступны `admin` и `designer`; запуск/отмена — также `operator`; approval — `admin/operator`; чтение — любой роли АГАТ. В legacy mode те же mutating endpoints требуют admin token, но один субъект `local-admin` не может выполнить обязательный MCP four-eyes.
 
 Создание локального worker-пула:
 
@@ -128,7 +134,7 @@ Node token возвращается один раз при регистраци�
 }
 ```
 
-`resultDestination` принимает `history` или `artifacts`. В обоих случаях input, события и stage outputs остаются в SQLite. `artifacts` дополнительно записывает stage outputs и `result.md` в настроенный `AGAT_ARTIFACTS_DIR`. `artifactPath` — только безопасный относительный каталог; UUID запуска добавляется автоматически.
+`resultDestination` принимает `history` или `artifacts`. В обоих случаях input, события и stage outputs остаются в authoritative state store: SQLite в single-process developer mode либо PostgreSQL в Fleet/HA mode. `artifacts` дополнительно создаёт metadata и содержимое артефактов. В SQLite mode bytes находятся в `AGAT_ARTIFACTS_DIR`; PostgreSQL mode сохраняет bounded bytes в БД, чтобы download работал с любой coordinator replica. `artifactPath` — только безопасный относительный каталог; UUID запуска добавляется автоматически.
 
 Создание агента:
 
@@ -195,6 +201,67 @@ Scheduler сопоставляет модель, runtime и профиль. Дл
   "globalMaxConcurrency": 1
 }
 ```
+
+## Fleet и HA
+
+`GET /fleet` возвращает project-scoped snapshot. `cell.haReady=true` означает, что backend — PostgreSQL и heartbeat видит минимум две ready coordinator replicas; это не доказывает HA самой БД или успешный disaster restore.
+
+Project policy задаёт единственную разрешённую residency-cell и bounded очереди:
+
+```json
+{
+  "homeRegion": "ru-central1",
+  "allowedRegions": ["ru-central1"],
+  "residencyDomain": "ru",
+  "queueName": "critical",
+  "maxQueuedTasks": 500,
+  "maxRunningTasks": 20,
+  "expectedRevision": 4
+}
+```
+
+`PATCH /fleet/project-policy` требует текущий `expectedRevision`; stale revision отклоняется. Online-перенос проекта в другую `homeRegion` или `residencyDomain` запрещён: это отдельная offline migration с остановкой writes и reconciliation.
+
+Release manifest подписывается Ed25519 вне coordinator. Вход для `POST /fleet/releases`:
+
+```json
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "releaseId": "worker-1.7.0-linux-amd64",
+    "version": "1.7.0",
+    "artifactDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "platforms": ["linux"],
+    "issuedAt": "2026-08-30T09:00:00.000Z",
+    "expiresAt": "2027-08-30T09:00:00.000Z",
+    "metadata": { "channel": "stable" }
+  },
+  "keyId": "release-prod-2026",
+  "signature": "BASE64_ED25519_SIGNATURE"
+}
+```
+
+Canonical payload и подпись можно сформировать без передачи private key приложению:
+
+```bash
+npm run fleet:sign-worker -- manifest.json release-private-key.pem release-prod-2026
+```
+
+Public trust roots задаются оператором через `AGAT_WORKER_RELEASE_PUBLIC_KEYS`. Private key не должен попадать в coordinator, Kubernetes Secret приложения или repository.
+
+Staged rollout имеет независимый revision для project/region/ring:
+
+```json
+{
+  "releaseId": "worker-1.7.0-linux-amd64",
+  "region": "ru-central1",
+  "ring": "canary",
+  "percentage": 10,
+  "expectedRevision": 0
+}
+```
+
+При следующем изменении новый release становится target, а прежний target — fallback. Coordinator использует стабильный cohort worker ID; `0` допускает только fallback, `100` — только target. Revoke release имеет приоритет над rollout и немедленно запрещает новые leases этому release.
 
 ## Процессы
 
@@ -395,6 +462,15 @@ Wipe acknowledgement:
   "vramMb": 24576,
   "gpu": "RTX 4090",
   "maxConcurrency": 1,
+  "region": "ru-central1",
+  "residencyDomain": "ru",
+  "release": {
+    "releaseId": "worker-1.7.0-linux-amd64",
+    "artifactDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "keyId": "release-prod-2026",
+    "signature": "BASE64_ED25519_SIGNATURE",
+    "rolloutRing": "canary"
+  },
   "labels": { "zone": "office", "trust": "internal" },
   "modelProfiles": [{
     "name": "qwen3:8b",
@@ -410,8 +486,10 @@ Wipe acknowledgement:
 Worker запрашивает lease с собственной версией:
 
 ```json
-{ "workerVersion": "1.6.0" }
+{ "workerVersion": "1.7.0" }
 ```
+
+При `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true` регистрация и heartbeat обычного shared-token worker fail-closed требуют полного `release`, совпадающего с активной signed registry записью, region/platform и rollout admission. Незнакомый, просроченный, отозванный или не попавший в cohort release не получает новый lease. Hardware-attested Android/iOS nodes используют отдельный enrollment/attestation contract и не входят в эти server-worker cohorts.
 
 Lease содержит run input, immutable agent snapshot, ordered `agent.specialists` для team, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator. Team целиком исполняется на одном lease/worker; specialist prompts и models берутся только из pinned snapshots.
 

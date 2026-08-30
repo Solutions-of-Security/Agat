@@ -11,6 +11,23 @@ services:
       AGAT_PORT: 8787
       AGAT_DB_PATH: /data/agat.db
       AGAT_STATE_STORE_DRIVER: ${AGAT_STATE_STORE_DRIVER:-sqlite}
+      AGAT_POSTGRES_URL: ${AGAT_POSTGRES_URL:-postgresql://agat_system:agat-local-system-only@postgres:5432/agat}
+      AGAT_POSTGRES_TENANT_URL: ${AGAT_POSTGRES_TENANT_URL:-postgresql://agat_tenant:agat-local-tenant-only@postgres:5432/agat}
+      AGAT_POSTGRES_POOL_MAX: ${AGAT_POSTGRES_POOL_MAX:-4}
+      AGAT_POSTGRES_CONNECT_TIMEOUT_MS: ${AGAT_POSTGRES_CONNECT_TIMEOUT_MS:-5000}
+      AGAT_POSTGRES_IDLE_TIMEOUT_MS: ${AGAT_POSTGRES_IDLE_TIMEOUT_MS:-30000}
+      AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: ${AGAT_POSTGRES_STATEMENT_TIMEOUT_MS:-30000}
+      AGAT_POSTGRES_SSL_MODE: ${AGAT_POSTGRES_SSL_MODE:-disable}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+      AGAT_WORKER_RELEASE_PUBLIC_KEYS: ${AGAT_WORKER_RELEASE_PUBLIC_KEYS:-{}}
+      AGAT_REQUIRE_SIGNED_WORKER_RELEASES: ${AGAT_REQUIRE_SIGNED_WORKER_RELEASES:-false}
+      AGAT_SIEM_ENABLED: ${AGAT_SIEM_ENABLED:-false}
+      AGAT_SIEM_URL: ${AGAT_SIEM_URL:-}
+      AGAT_SIEM_BEARER_TOKEN: ${AGAT_SIEM_BEARER_TOKEN:-}
+      AGAT_SIEM_BATCH_SIZE: ${AGAT_SIEM_BATCH_SIZE:-100}
+      AGAT_SIEM_INTERVAL_SECONDS: ${AGAT_SIEM_INTERVAL_SECONDS:-5}
+      AGAT_SIEM_TIMEOUT_SECONDS: ${AGAT_SIEM_TIMEOUT_SECONDS:-10}
       AGAT_ARTIFACTS_DIR: /data/artifacts
       AGAT_ADMIN_TOKEN: ${AGAT_ADMIN_TOKEN:?Set AGAT_ADMIN_TOKEN in .env}
       AGAT_ENROLLMENT_TOKEN: ${AGAT_ENROLLMENT_TOKEN:?Set AGAT_ENROLLMENT_TOKEN in .env}
@@ -30,7 +47,7 @@ services:
       AGAT_MCP_APPROVAL_TTL_SECONDS: ${AGAT_MCP_APPROVAL_TTL_SECONDS:-600}
       AGAT_SANDBOX_ENABLED: ${AGAT_SANDBOX_ENABLED:-false}
       AGAT_SANDBOX_NAMESPACE: ${AGAT_SANDBOX_NAMESPACE:-agat}
-      AGAT_SANDBOX_WASI_IMAGE: ${AGAT_SANDBOX_WASI_IMAGE:-agat-local/sandbox-wasi:1.6.0}
+      AGAT_SANDBOX_WASI_IMAGE: ${AGAT_SANDBOX_WASI_IMAGE:-agat-local/sandbox-wasi:1.7.0}
       AGAT_SANDBOX_RUNTIME_CLASS: ${AGAT_SANDBOX_RUNTIME_CLASS:-}
       AGAT_SANDBOX_NETWORK_POLICY_ENFORCED: ${AGAT_SANDBOX_NETWORK_POLICY_ENFORCED:-false}
       AGAT_A2A_ENABLED: ${AGAT_A2A_ENABLED:-true}
@@ -75,6 +92,12 @@ services:
       AGAT_COORDINATOR_URL: http://coordinator:8787
       AGAT_ENROLLMENT_TOKEN: ${AGAT_ENROLLMENT_TOKEN:?Set AGAT_ENROLLMENT_TOKEN in .env}
       AGAT_WORKER_NAME: ${AGAT_WORKER_NAME:-docker-worker}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+      AGAT_WORKER_RELEASE_ID: ${AGAT_WORKER_RELEASE_ID:-}
+      AGAT_WORKER_ARTIFACT_DIGEST: ${AGAT_WORKER_ARTIFACT_DIGEST:-}
+      AGAT_WORKER_RELEASE_KEY_ID: ${AGAT_WORKER_RELEASE_KEY_ID:-}
+      AGAT_WORKER_RELEASE_SIGNATURE: ${AGAT_WORKER_RELEASE_SIGNATURE:-}
       AGAT_WORKER_MODELS: ${AGAT_WORKER_MODELS:-qwen3:8b}
       AGAT_EMBEDDING_MODELS: ${AGAT_EMBEDDING_MODELS:-embeddinggemma}
       AGAT_MODEL_BASE_URL: ${AGAT_MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
@@ -106,6 +129,31 @@ services:
     volumes:
       - agat-worker-state:/state
 
+  postgres:
+    profiles: ["ha"]
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGAT_POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: agat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${AGAT_POSTGRES_ADMIN_PASSWORD:-agat-local-admin-only}
+      AGAT_POSTGRES_SYSTEM_PASSWORD: ${AGAT_POSTGRES_SYSTEM_PASSWORD:-agat-local-system-only}
+      AGAT_POSTGRES_TENANT_PASSWORD: ${AGAT_POSTGRES_TENANT_PASSWORD:-agat-local-tenant-only}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agat"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - agat-postgres-data:/var/lib/postgresql/data
+      - ./deploy/k8s/docker-desktop/postgres-init.sh:/docker-entrypoint-initdb.d/10-agat-roles.sh:ro
+
   search:
     profiles: ["worker", "web-search"]
     image: ${AGAT_SEARCH_IMAGE:-docker.io/searxng/searxng:2026.8.12-cdfdaa5a8@sha256:c2dc2d9e6b910653e8628361c23443222490e4cabbb9e02667b7847143db843b}
@@ -135,3 +183,4 @@ volumes:
   agat-data:
   agat-worker-state:
   agat-search-cache:
+  agat-postgres-data:

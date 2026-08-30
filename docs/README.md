@@ -1,12 +1,12 @@
 # АГАТ
 
-АГАТ 1.6 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
+АГАТ 1.7 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
 
 MVP уже включает:
 
 - глобальный последовательный режим для слабого железа;
 - параллельный и автоматический режимы с лимитами каждого узла;
-- coordinator с SQLite, очередью, lease TTL, повторными попытками и возвратом потерянной задачи;
+- coordinator с SQLite developer mode или PostgreSQL Fleet/HA mode, очередью, lease TTL, повторными попытками и возвратом потерянной задачи;
 - переносимый Python-воркер: `single` работает без сторонних зависимостей, Docker image также включает LangGraph runtime;
 - поддержку OpenAI-совместимых локальных API: Ollama, LM Studio, vLLM и llama.cpp server;
 - удалённые узлы, которым нужен только исходящий HTTPS-доступ к coordinator;
@@ -42,6 +42,7 @@ MVP уже включает:
 - Production Temporal runtime: TLS/auth fail-closed profiles, immutable versioned worker builds, canary rollout, history replay в CI, acknowledged Updates и interval Schedules через parent→child workflows.
 - Process Builder 1.2: deterministic parallel fork/join, cron/calendar и idempotent webhooks, внешний signal, version-pinned subprocess/templates, structural diff, safe/live instance replay, BPMN 2.0 integration и reverse-order compensation.
 - Native edge workers: Android llama.cpp/Vulkan service и iOS Core ML/Metal app, Play Integrity/App Attest broker verification, hardware-attested scoped credentials и admin remote wipe.
+- Fleet/HA 1.7: несколько coordinator replicas на PostgreSQL, exact project queues/quotas, residency cells, FORCE RLS tenant role, signed worker releases/staged rollout и durable SIEM audit outbox.
 
 ## Быстрый запуск
 
@@ -100,6 +101,8 @@ python3 workers/agat_worker.py
 - [Risk-tier approvals и emergency deny](./mcp-risk-tier-approvals.md)
 - [Изолированное выполнение MCP tools](./isolated-tool-execution.md)
 - [Native edge worker 1.6](./native-edge-worker.md)
+- [Fleet и HA 1.7](./fleet-ha-1.7.md)
+- [ADR-017: PostgreSQL HA-cell](./adr-017-fleet-ha-cell.md)
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
@@ -114,7 +117,7 @@ python3 workers/agat_worker.py
 - [Process Builder 1.2](./process-builder-1.2.md)
 - [Durable runtime процессов](./durable-runtime.md)
 - [Production hardening durable runtime](./production-durable-runtime.md)
-- [Проект PostgreSQL state-store adapter](./postgresql-state-store-design.md)
+- [PostgreSQL state-store: реализация и дальнейший переход](./postgresql-state-store-design.md)
 - [Identity, проекты и API Gateway](./identity-and-gateway.md)
 - [HTTP API](./api.md)
 - [Безопасность](./security.md)
@@ -139,4 +142,4 @@ PYTHONPATH=workers python3 -m unittest discover -s workers -p 'test_*.py'
 
 Обычный `npm test` не требует запущенной модели. `npm run test:ollama-rag` — отдельный реальный интеграционный тест через локальные Ollama, coordinator и Python-worker; его prerequisites и гарантии описаны в разделе [Local RAG](./local-rag-and-memory.md#реальный-ollama-e2e).
 
-Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/task/trace boundaries, SSE lifecycle, push/outbox, bounded files, outbound discovery/RFC 8693/SSRF и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop, MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries, Kubernetes WASI/OCI sandbox manifests/cleanup и native edge challenge/attestation/revocation/wipe lifecycle.
+Тесты покрывают последовательную и параллельную выдачу, PostgreSQL multi-replica claims/quotas/RLS/cross-replica artifacts/SIEM outbox, Ed25519 releases/rollout/revoke, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/task/trace boundaries, SSE lifecycle, push/outbox, bounded files, outbound discovery/RFC 8693/SSRF и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop, MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries, Kubernetes WASI/OCI sandbox manifests/cleanup и native edge challenge/attestation/revocation/wipe lifecycle.

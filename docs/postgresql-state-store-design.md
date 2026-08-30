@@ -1,171 +1,101 @@
-# Проект PostgreSQL state-store adapter
+# PostgreSQL state-store: реализация и дальнейший переход
 
-## Решение
+## Статус
 
-PostgreSQL — целевой state-store для нескольких coordinator, но релиз 1.0 не включает ни driver, ни HA. `AGAT_STATE_STORE_DRIVER=postgresql` сейчас намеренно завершает coordinator с ошибкой: это не feature flag для незаконченного пути и не обещание безопасной dual-write миграции.
+PostgreSQL adapter активирован в релизе 1.7. `AGAT_STATE_STORE_DRIVER=postgresql` больше не является заглушкой: coordinator создаёт bounded `pg` pools, сериализует schema migration advisory lock, поддерживает несколько replicas и использует PostgreSQL как единственный source of truth.
 
-Цель проекта — заменить локальные SQLite-транзакции на проверяемый repository boundary, сохранив project isolation, leases, idempotency, immutable versions и audit trail.
+Реализация закрывает release contract Fleet/HA, но не все production gates прежнего проекта. Полная модель, риски и acceptance evidence: [Fleet и HA 1.7](./fleet-ha-1.7.md); решение по cell/data authority: [ADR-017](./adr-017-fleet-ha-cell.md).
 
-## Текущие ограничения
+## Реализованный plateau
 
-- один процесс coordinator владеет SQLite-файлом и scheduler loop;
-- PVC и backup файла подходят для локального/одиночного deployment, но не для нескольких replicas;
-- Temporal хранит workflow history, однако catalog, runs, leases, approvals, knowledge metadata и audit остаются в state-store АГАТ;
-- увеличение replicas до реализации PostgreSQL создаст конкурирующие scheduler loops и недостоверное состояние;
-- artifacts пока лежат в локальном filesystem/PVC и требуют отдельного object-store этапа.
-
-## Целевая граница
-
-```mermaid
-flowchart TB
-  API["Coordinator API"] --> U["Application services"]
-  SCH["Scheduler / lease recovery"] --> U
-  U --> R["StateStore repositories"]
-  R --> PG["PostgreSQL"]
-  U --> O["Transactional outbox"]
-  O --> T["Temporal client"]
-  U --> AS["ArtifactStore interface"]
-  AS --> OBJ["Будущий S3-compatible object store"]
-```
-
-Application layer не должен импортировать SQL driver. Предлагаемый минимальный набор интерфейсов:
-
-- `CatalogRepository`: projects, agents, prompts, models, processes и immutable versions;
-- `ExecutionRepository`: runs, stages, process instances/transitions, approvals и replay lineage;
-- `FleetRepository`: nodes, models, leases, heartbeats и benchmark observations;
-- `KnowledgeRepository`: collections, documents/chunks metadata и memory lifecycle;
-- `IntegrationRepository`: credentials metadata, MCP, A2A и endpoint policy;
-- `AuditRepository`: append-only events и export cursor;
-- `OutboxRepository`: committed state changes, которые ещё не доставлены Temporal/OTel;
-- `ArtifactStore`: metadata в PostgreSQL, bytes вне SQL.
-
-Это логические границы, а не требование создать восемь сетевых сервисов.
+- `SyncDatabase` отделяет существующий domain store от конкретного SQLite API.
+- `PostgresDatabaseSync` использует отдельный worker thread и `pg` 8.23.0, чтобы сохранить совместимость синхронного `AgatStore`.
+- System и tenant connection URLs обязательны, имеют разные roles и указывают на одну database cell.
+- Каждая replica имеет bounded pools, connect/idle/statement timeouts и transaction client pinning.
+- SQLite placeholders/небольшой dialect subset нормализуются в bridge; migration 20 устанавливает fleet schema, indexes, RLS и audit trigger.
+- Stage, embedding и audit claims используют `FOR UPDATE SKIP LOCKED`.
+- Project row lock сериализует quota check и run creation; optimistic revisions защищают policy/rollout updates.
+- Artifact metadata и bytes находятся в PostgreSQL; local filesystem является только проверяемым download cache.
+- SQLite остаётся поддерживаемым one-replica developer backend. Dual-write отсутствует.
 
 ## Транзакционные правила
 
 ### Выдача stage lease
 
-Одна транзакция выбирает готовые stages через `SELECT … FOR UPDATE SKIP LOCKED`, проверяет online/capability/budget policy, создаёт lease и меняет status. Уникальное ограничение не допускает более одного активного lease на stage. Worker completion обновляет stage только при совпадении `lease_id` и `lease_generation`.
+Одна transaction блокирует project/run/stage candidates, проверяет queue, residency, project running quota, node capabilities и rollout eligibility, затем создаёт lease. `SKIP LOCKED` позволяет другой replica взять следующий candidate, не выдавая тот же stage.
+
+### Queue quota
+
+Создание run сначала выполняет `SELECT project ... FOR UPDATE`, затем считает non-terminal runs и вставляет новый run в той же transaction. Это делает `maxQueuedTasks` точным между replicas, а не eventually consistent counter.
 
 ### Recovery
 
-Просроченные leases выбираются небольшими batches через `SKIP LOCKED`. Recovery увеличивает generation, пишет audit event и либо возвращает stage в очередь, либо завершает run по retry policy. Операция идемпотентна: повторный recovery старой generation ничего не меняет.
+Expired lease меняется только при совпадающем lease ID/generation/state. Повторный completion старого lease отклоняется. Maintenance loops могут выполняться на каждой replica, потому что mutations условные и транзакционные.
 
-### Optimistic concurrency
+### RLS
 
-Изменяемые aggregates получают integer `revision`. API update имеет условие `WHERE id = $1 AND project_id = $2 AND revision = $3`; ноль обновлённых строк означает conflict, а не silent overwrite. Immutable published versions никогда не обновляются.
+Tenant query выполняется на отдельной non-BYPASSRLS role. Transaction-local `agat.current_project_id` используется direct и parent-derived policies; таблицы имеют `FORCE ROW LEVEL SECURITY`. System role выполняет scheduler/worker/admin paths явно, а не наследуется от предыдущего HTTP request.
 
-### Project isolation
+### Audit outbox
 
-Каждый tenant-owned primary/unique key включает либо проверяет `project_id`. Repository methods требуют project ID отдельным аргументом; super-admin cross-project операции отделены. Дополнительный RLS можно включить после repository migration, но он не заменяет application authorization.
+Trigger создаёт outbox row вместе с event commit. Exporter claim/complete используют lease owner и idempotency key; timeout возвращает row в pending с backoff.
 
-### Outbox
+## Что изменилось относительно проекта 1.0
 
-Изменение DB и запись outbox event происходят в одной транзакции. Dispatcher захватывает события `FOR UPDATE SKIP LOCKED`, отправляет Update/Signal/telemetry и отмечает delivery. У каждого события стабильный idempotency key; network timeout не трактуется как доказанная недоставка. Dual write «commit в БД, затем best-effort Temporal call» в HA-профиле запрещён.
+Первоначальный проект предполагал до активации driver полностью выделить async repository interfaces и вынести artifact bytes в object store. Для 1.7 выбран более узкий совместимый plateau:
 
-### Locks
+- repository boundary представлен общим sync adapter, а не набором async repositories;
+- artifact bytes временно перенесены в PostgreSQL, чтобы реально обеспечить cross-replica availability;
+- migrations пока выполняются coordinator startup под advisory lock, а не отдельной Job;
+- Temporal notification outbox не добавлен: существующие idempotent Updates/Signals остаются отдельным durable boundary.
 
-Row locks используются для бизнес-состояния. PostgreSQL advisory lock допустим только для singleton maintenance jobs — schema maintenance, retention и редких reconciliations. Он не должен быть основным механизмом stage scheduling.
+Эти расхождения не скрываются: они записаны как `RISK-1702/1703/1704` и являются production scale gates.
 
-## Схема и индексы
+## Оставшиеся этапы
 
-Семантика текущих таблиц сохраняется, но миграция обязана добавить или проверить:
+### Offline migration
 
-- composite indexes `(project_id, id)` для project-scoped lookup;
-- partial indexes queued/leased stages и non-terminal runs;
-- unique active-lease constraint;
-- уникальные idempotency keys для start/replay/A2A/outbox;
-- `TIMESTAMPTZ` в UTC и server-side timestamps;
-- `JSONB` только для bounded snapshots; поля маршрутизации и lifecycle остаются typed columns;
-- foreign keys с осознанными delete policies, без неограниченного cascade на audit/history;
-- append-only published versions, manifests, eval results и audit events;
-- partition/retention план для событий и traces до включения большой нагрузки.
+Нужен canonical SQLite exporter/importer, который:
 
-Credentials и sensitive payloads остаются application-encrypted. PostgreSQL TLS, disk encryption и backup encryption обязательны, но не заменяют field-level boundary.
+1. работает только при остановленных writes;
+2. сохраняет исходный SQLite backup;
+3. загружает tables в dependency order;
+4. сверяет counts, stable IDs, immutable JSON hashes и foreign keys;
+5. не переносит expired leases как активные;
+6. формирует подписываемый reconciliation report.
 
-## Этапы реализации
+Dual-write не планируется.
 
-### 0. Зафиксировать contract
+### Разделение migration/runtime roles
 
-- создать contract tests на текущем SQLite store для project isolation, leases, approvals, retries, migrations и idempotency;
-- записать query/transaction semantics, а не копировать SQLite SQL буквально;
-- определить SLO, RPO/RTO, retention и ожидаемый peak concurrency.
+Отдельная migration Job должна владеть DDL и advisory lock. Runtime system role должна сохранить DML/BYPASSRLS для trusted scheduler/admin paths, но лишиться schema alteration. Tenant role остаётся RLS-only.
 
-### 1. Выделить interfaces
+### Async repositories и capacity
 
-- перенести HTTP/scheduler orchestration из прямых SQL-вызовов на repositories;
-- оставить SQLite единственной реализацией;
-- сравнить API snapshots и существующий полный test suite.
+Worker-thread bridge блокирует event loop одной replica на время sync DB call. До высокой нагрузки нужны async repositories, pool acquisition metrics, query budgets и load test по целевому project/run mix.
 
-### 2. Реализовать PostgreSQL в shadow test environment
+### Artifact object store
 
-- migrations выполняются отдельной job под advisory migration lock;
-- application role не имеет DDL и cross-database privileges;
-- contract suite запускается для обоих drivers;
-- concurrency tests доказывают single lease, recovery и optimistic conflicts.
+PostgreSQL `BYTEA` обеспечивает correctness plateau, но крупные artifacts увеличивают DB/WAL/backup. Следующий этап вводит S3-compatible bytes authority с transactionally consistent metadata/outbox и lifecycle policy.
 
-### 3. Перенос данных
+### Production database
 
-- остановить writes на согласованном maintenance window;
-- сделать проверенный SQLite backup;
-- экспортировать canonical records, загрузить PostgreSQL в dependency order;
-- сверить row counts, IDs, hashes immutable JSON и referential integrity;
-- не переносить ephemeral expired leases как активные;
-- включить coordinator только после независимой reconciliation.
+Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Обязательны TLS `verify-full`, connection admission, replication/WAL/backup monitoring, PITR и фактические restore/failover exercises с утверждёнными RPO/RTO.
 
-Dual-write migration не планируется: она увеличивает число failure modes и усложняет rollback.
+## Acceptance matrix
 
-### 4. Canary одного coordinator
-
-- запустить одну replica на PostgreSQL;
-- оставить Temporal workers совместимыми и наблюдать scheduler, outbox lag, API/error latency;
-- выполнить backup и фактический restore test;
-- rollback означает stop writes, возврат на сохранённый SQLite snapshot либо новый обратный export по заранее проверенной процедуре — не переключение на stale DB.
-
-### 5. HA activation отдельным релизом
-
-- минимум две stateless coordinator replicas;
-- readiness зависит от DB и migration compatibility;
-- scheduler/recovery concurrency soak test;
-- shared object storage для artifacts;
-- connection pool и database admission limits;
-- rolling deploy, failure injection, PITR/restore и region-loss runbook.
-
-Только после этого `AGAT_STATE_STORE_DRIVER=postgresql` становится поддерживаемым production mode, а replica count может быть больше одного.
+| Проверка | 1.7 | Production gate |
+|---|---|---|
+| Две coordinator replicas, shared committed state | выполнено integration test | soak/failure injection |
+| Single lease и exact project quotas | выполнено | target-load test |
+| RLS/cross-project/global mutation deny | выполнено | property/fuzz test и security review |
+| Cross-replica artifact download | выполнено | object-store lifecycle/DR |
+| SIEM disjoint claim/retry/redaction | выполнено | sink conformance, retention/DLQ |
+| SQLite→PostgreSQL reconciliation | manual procedure only | canonical migrator required |
+| Backup restore | local DB не является evidence | timed clean-environment restore required |
+| Multi-AZ failover | не входит | required |
+| DDL-free runtime role | не выполнено | required |
 
 ## Наблюдаемость
 
-До canary обязательны metrics:
-
-- pool saturation и connection acquisition latency;
-- transaction duration, deadlocks и serialization retries;
-- queued stages, lease age, duplicate completion rejection;
-- outbox oldest age, attempts и dead letters;
-- scheduler batch latency;
-- DB size, WAL/replication lag, backup age и last restore verification;
-- project-boundary authorization denials.
-
-Ни SQL parameters, ни encrypted credential payloads, ни Temporal API keys не пишутся в logs.
-
-## Acceptance gate
-
-- [ ] один contract suite проходит на SQLite и PostgreSQL;
-- [ ] конкурентная выдача не создаёт двойной активный lease;
-- [ ] lost coordinator восстанавливается другой replica без потери committed state;
-- [ ] duplicate API/worker/Temporal delivery идемпотентна;
-- [ ] cross-project property tests не находят чтение или mutation чужих данных;
-- [ ] миграционная reconciliation совпадает по counts, IDs и hashes;
-- [ ] backup restore проверен на чистом окружении;
-- [ ] outbox выдерживает недоступность Temporal и доставляет после восстановления;
-- [ ] artifacts доступны всем replicas;
-- [ ] runbook rollout/rollback выполнен в staging;
-- [ ] только после всех проверок снят fail-closed guard для `postgresql`.
-
-## Не входит в 1.0
-
-- реализация PostgreSQL driver;
-- несколько coordinator replicas;
-- автоматическая SQLite→PostgreSQL миграция;
-- dual writes;
-- S3-compatible Artifact Store;
-- multi-region consensus или active-active deployment.
+Release snapshot уже показывает driver, cell, replicas, queue counts и audit outbox lag. Production telemetry должна дополнительно включать pool saturation/acquisition latency, statement/transaction duration, deadlocks, DB/WAL size, replication lag, backup age, restore verification age и RLS denials. SQL parameters, credentials URLs и encrypted payloads в logs запрещены.
