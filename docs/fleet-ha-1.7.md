@@ -215,6 +215,8 @@ Production SLO, RPO и RTO не утверждены этим релизом. Д
 
 Автоматического import tool в 1.7 нет. Поэтому существующий stateful контур нельзя переключать одной переменной без maintenance procedure. Rollback после начала PostgreSQL writes не означает возврат на stale SQLite; требуется stop writes и проверенный обратный export либо восстановление последнего согласованного snapshot.
 
+Post-1.7 production-readiness этап добавил canonical offline migrator с reconciliation, verify и rehearsal rollback: [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md). Абзац выше сохраняет историческую границу самого релиза 1.7.
+
 ## Риски и открытые вопросы
 
 | ID | Риск / открытая работа | Текущий контроль | Production gate |

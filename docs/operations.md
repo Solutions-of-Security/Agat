@@ -18,7 +18,7 @@ Health 1.7 содержит `stateStore.driver`, `fleet.region`, `fleet.residenc
 Schema `19 → 20` добавляет regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным authority в Fleet/HA mode. Dual-write отсутствует.
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
-2. Для существующего SQLite-контура остановите writes и выполните offline export/import с reconciliation количества строк, IDs, hashes, foreign keys и выборочного artifact download. Автоматического migrator в 1.7 нет.
+2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
 3. Поднимите PostgreSQL с отдельными system/tenant roles, TLS `verify-full`, PITR и multi-AZ; примените migration одной job/replica. Выполните cross-project RLS negative test именно tenant credential.
 4. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
 5. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
@@ -37,6 +37,10 @@ kubectl kustomize deploy/k8s/docker-desktop >/dev/null
 ```
 
 Production cutover остаётся заблокирован без timed backup/restore/failover, утверждённых RPO/RTO и load test. Полный contract и риски: [Fleet и HA 1.7](./fleet-ha-1.7.md).
+
+### Offline SQLite → PostgreSQL
+
+Исполняемый migrator требует остановленных writers, новую target database и явное подтверждение `SOURCE_AND_WRITERS_STOPPED`. Сначала выполните rehearsal rollback, затем apply и независимый verify. Команды, report schema, failure semantics и запрет возврата на stale SQLite приведены в [отдельном runbook](./sqlite-postgresql-migration.md).
 
 ## Rollout 1.6 native edge worker
 
