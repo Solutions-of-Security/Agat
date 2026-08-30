@@ -11,6 +11,7 @@ import type {
   CreateGoldenDatasetRequest,
   CreateKnowledgeCollectionRequest,
   CredentialSummary,
+  EdgeControlCommand,
   CreateAgentRequest,
   CreateProcessRequest,
   CreateRunRequest,
@@ -284,6 +285,11 @@ export const api = {
     }),
   deleteCredential: (credentialId: string) =>
     request<void>(`/credentials/${encodeURIComponent(credentialId)}`, { method: "DELETE" }),
+  remoteWipeNode: (nodeId: string, reason: string) =>
+    request<EdgeControlCommand>(`/nodes/${encodeURIComponent(nodeId)}/remote-wipe`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
   createMcpServer: (payload: SaveMcpServerRequest) =>
     request<McpServer>("/mcp/servers", { method: "POST", body: JSON.stringify(payload) }),
   updateMcpServer: (serverId: string, payload: SaveMcpServerRequest) =>

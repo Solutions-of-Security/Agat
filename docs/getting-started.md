@@ -233,11 +233,16 @@ Endpoint token не заменяет OIDC/dashboard token и не даёт до�
 
 ## Смартфоны
 
-Панель адаптирована под телефон и может быть установлена как PWA через меню браузера. Это рекомендуемый режим: запускать, подтверждать и наблюдать за агентами с телефона, а inference оставлять серверу или ноутбуку.
+Панель адаптирована под телефон и может быть установлена как PWA через меню браузера. PWA остаётся рекомендуемым control surface: запускать, подтверждать и наблюдать за агентами с телефона, не ожидая надёжного background inference от браузера.
 
-Android с Termux может быть worker для небольших моделей, если на устройстве доступен Python и OpenAI-совместимый локальный server. Установите `AGAT_WORKER_CONCURRENCY=1` и используйте `auto`, чтобы не брать работу на низком заряде.
+Для on-device inference в 1.6 добавлены нативные клиенты:
 
-iOS жёстко ограничивает фоновые процессы браузера. Для надёжного on-device worker понадобится отдельное нативное приложение; оно запланировано отдельно и не имитируется веб-панелью.
+- Android foreground service с pinned llama.cpp, Vulkan/CPU, Play Integrity и managed GGUF;
+- iOS app с Core ML/Metal, App Attest и opportunistic `BGProcessingTask`.
+
+Они выключены, пока оператор не настроит HTTPS attestation broker и точные application IDs. Оба принимают только `single/tool_loop_v1` agent stages без MCP/HTTP/embedding side effects, хранят отдельный device credential в OS storage и поддерживают admin remote wipe. Сборка, enrollment и ограничения ОС описаны в [Native edge worker 1.6](./native-edge-worker.md).
+
+Python worker через Termux остаётся development/compatibility вариантом без hardware-attested identity и native remote-wipe lifecycle; не подменяйте им production edge client.
 
 ## Сквозной тест без модели
 

@@ -18,6 +18,7 @@ function integerFromEnv(value: string | undefined, fallback: number): number {
 
 export type TemporalTarget = "local" | "cloud" | "self-hosted";
 export type StateStoreDriver = "sqlite" | "postgresql";
+export type EdgeAttestationMode = "disabled" | "broker";
 
 function temporalTargetFromEnv(value: string | undefined): TemporalTarget {
   const normalized = (value ?? "local").trim().toLowerCase();
@@ -29,6 +30,21 @@ function stateStoreDriverFromEnv(value: string | undefined): StateStoreDriver {
   const normalized = (value ?? "sqlite").trim().toLowerCase();
   if (normalized === "sqlite" || normalized === "postgresql") return normalized;
   throw new Error("AGAT_STATE_STORE_DRIVER должен быть sqlite или postgresql");
+}
+
+function edgeAttestationModeFromEnv(value: string | undefined): EdgeAttestationMode {
+  const normalized = (value ?? "disabled").trim().toLowerCase();
+  if (normalized === "disabled" || normalized === "broker") return normalized;
+  throw new Error("AGAT_EDGE_ATTESTATION_MODE должен быть disabled или broker");
+}
+
+function safeListFromEnv(value: string | undefined, fallback: string[], field: string): string[] {
+  if (value === undefined || value.trim() === "") return fallback;
+  const items = [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+  if (items.length === 0 || items.length > 16 || items.some((item) => item.length > 120 || /[\r\n\0]/.test(item))) {
+    throw new Error(`${field} содержит недопустимый список`);
+  }
+  return items;
 }
 
 function optionalSafeText(value: string | undefined, field: string, maxLength: number): string {
@@ -84,6 +100,17 @@ export interface CoordinatorConfig {
   localWorkerEmbeddingModels: string;
   localWorkerDefaultWebEnabled: boolean;
   localWorkerMaxPerLaunch: number;
+  edgeEnabled: boolean;
+  edgeAttestationMode: EdgeAttestationMode;
+  edgeAttestationBrokerUrl: string;
+  edgeAttestationBrokerToken: string;
+  edgeAttestationTimeoutSeconds: number;
+  edgeChallengeTtlSeconds: number;
+  edgeAndroidApplicationId: string;
+  edgeIosApplicationId: string;
+  edgeAllowDevelopmentAttestation: boolean;
+  edgeAndroidRequiredVerdicts: string[];
+  edgeIosRequiredVerdicts: string[];
   otelEnabled: boolean;
   otelServiceName: string;
   otelExporterEndpoint: string;
@@ -160,7 +187,7 @@ export function loadConfig(): CoordinatorConfig {
       .filter(Boolean),
     localWorkerLauncherEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_LAUNCHER, false),
     localWorkerNamespace: process.env.AGAT_LOCAL_WORKER_NAMESPACE ?? "agat",
-    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.5.0",
+    localWorkerImage: process.env.AGAT_LOCAL_WORKER_IMAGE ?? "agat-local/worker:1.6.0",
     localWorkerConfigMap: process.env.AGAT_LOCAL_WORKER_CONFIG_MAP ?? "agat-worker-config",
     localWorkerSecret: process.env.AGAT_LOCAL_WORKER_SECRET ?? "agat-secrets",
     localWorkerModelBaseUrl: process.env.AGAT_LOCAL_MODEL_BASE_URL ?? "http://host.docker.internal:11434/v1",
@@ -168,6 +195,44 @@ export function loadConfig(): CoordinatorConfig {
     localWorkerEmbeddingModels: process.env.AGAT_LOCAL_WORKER_EMBEDDING_MODELS ?? "",
     localWorkerDefaultWebEnabled: booleanFromEnv(process.env.AGAT_LOCAL_WORKER_WEB_ENABLED, true),
     localWorkerMaxPerLaunch: Math.max(1, Math.min(16, integerFromEnv(process.env.AGAT_LOCAL_WORKER_MAX_PER_LAUNCH, 8))),
+    edgeEnabled: booleanFromEnv(process.env.AGAT_EDGE_ENABLED, false),
+    edgeAttestationMode: edgeAttestationModeFromEnv(process.env.AGAT_EDGE_ATTESTATION_MODE),
+    edgeAttestationBrokerUrl: optionalSafeText(
+      process.env.AGAT_EDGE_ATTESTATION_BROKER_URL,
+      "AGAT_EDGE_ATTESTATION_BROKER_URL",
+      2_048,
+    ),
+    edgeAttestationBrokerToken: optionalSafeText(
+      process.env.AGAT_EDGE_ATTESTATION_BROKER_TOKEN,
+      "AGAT_EDGE_ATTESTATION_BROKER_TOKEN",
+      8_192,
+    ),
+    edgeAttestationTimeoutSeconds: Math.max(
+      1,
+      Math.min(60, integerFromEnv(process.env.AGAT_EDGE_ATTESTATION_TIMEOUT_SECONDS, 10)),
+    ),
+    edgeChallengeTtlSeconds: Math.max(30, Math.min(600, integerFromEnv(process.env.AGAT_EDGE_CHALLENGE_TTL_SECONDS, 180))),
+    edgeAndroidApplicationId: optionalSafeText(
+      process.env.AGAT_EDGE_ANDROID_APPLICATION_ID,
+      "AGAT_EDGE_ANDROID_APPLICATION_ID",
+      255,
+    ),
+    edgeIosApplicationId: optionalSafeText(
+      process.env.AGAT_EDGE_IOS_APPLICATION_ID,
+      "AGAT_EDGE_IOS_APPLICATION_ID",
+      255,
+    ),
+    edgeAllowDevelopmentAttestation: booleanFromEnv(process.env.AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION, false),
+    edgeAndroidRequiredVerdicts: safeListFromEnv(
+      process.env.AGAT_EDGE_ANDROID_REQUIRED_VERDICTS,
+      ["MEETS_DEVICE_INTEGRITY", "PLAY_RECOGNIZED"],
+      "AGAT_EDGE_ANDROID_REQUIRED_VERDICTS",
+    ),
+    edgeIosRequiredVerdicts: safeListFromEnv(
+      process.env.AGAT_EDGE_IOS_REQUIRED_VERDICTS,
+      ["APP_ATTEST_VALID"],
+      "AGAT_EDGE_IOS_REQUIRED_VERDICTS",
+    ),
     otelEnabled: booleanFromEnv(process.env.AGAT_OTEL_ENABLED, Boolean(otelExporterEndpoint)),
     otelServiceName: process.env.OTEL_SERVICE_NAME ?? "agat-coordinator",
     otelExporterEndpoint,
@@ -179,7 +244,7 @@ export function loadConfig(): CoordinatorConfig {
     sandboxEnabled: booleanFromEnv(process.env.AGAT_SANDBOX_ENABLED, false),
     sandboxNamespace: optionalSafeText(process.env.AGAT_SANDBOX_NAMESPACE ?? "agat", "AGAT_SANDBOX_NAMESPACE", 63),
     sandboxWasiImage: optionalSafeText(
-      process.env.AGAT_SANDBOX_WASI_IMAGE ?? "agat-local/sandbox-wasi:1.5.0",
+      process.env.AGAT_SANDBOX_WASI_IMAGE ?? "agat-local/sandbox-wasi:1.6.0",
       "AGAT_SANDBOX_WASI_IMAGE",
       512,
     ),

@@ -7,7 +7,8 @@
 - Kubernetes dashboard: `Authorization: Bearer <Keycloak access token>`; поддерживается только проверенный RS256 JWT для issuer/client АГАТ.
 - Активный проект: `X-Agat-Project-Id`; backend проверяет роль и claim `agat_projects`.
 - Legacy local mode без OIDC: чувствительные/mutating запросы используют `X-Agat-Admin-Token`.
-- Worker registration: `enrollmentToken` в JSON body.
+- Обычная worker registration: `enrollmentToken` в JSON body.
+- Native edge enrollment: тот же bootstrap token только для одноразового challenge, затем Play Integrity/App Attest evidence; raw evidence не сохраняется.
 - Worker calls: `Authorization: Bearer <node token>`.
 - Public process webhook: отдельный `Authorization: Bearer <webhook token>`; start также требует `Idempotency-Key`.
 - Temporal Activity: отдельный `X-Agat-Temporal-Token` только внутри ClusterIP-контура.
@@ -39,6 +40,7 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/local-workers/:poolId/start` | Запустить остановленный worker-пул |
 | `POST` | `/local-workers/:poolId/stop` | Остановить worker-пул, сохранив конфигурацию |
 | `DELETE` | `/local-workers/:poolId` | Удалить Deployments управляемого worker-пула |
+| `POST` | `/nodes/:id/remote-wipe` | Немедленно отозвать work scope edge credential и поставить wipe command (`admin`) |
 | `POST` | `/agents` | Создать агента |
 | `PATCH` | `/agents/:id` | Обновить metadata/runtime; prompt/model меняются только через eval promotion |
 | `GET` | `/evals` | Prompt registries, golden datasets и experiment summaries |
@@ -305,6 +307,61 @@ Content-Type: application/json
 
 `POST /process-instances/:id/replay` принимает `{ "mode": "safe" | "live", "priority"?: 0..100 }`. Diff принимает `from`/`to` как номер либо `draft`. BPMN import принимает XML body до 1 MiB; export возвращает attachment `application/xml`. Полный контракт и security invariants: [Process Builder 1.2](./process-builder-1.2.md).
 
+## Native edge enrollment и control
+
+| Метод | Путь | Авторизация и назначение |
+|---|---|---|
+| `POST` | `/edge/enrollment/challenges` | Bootstrap `enrollmentToken` в body; выдать один bound challenge |
+| `POST` | `/edge/enroll` | Challenge + hardware evidence; выдать device token после broker verdict |
+| `GET` | `/edge/control` | Edge Bearer token; получить `none/wipe` command |
+| `POST` | `/edge/control/wipe-ack` | Pending edge Bearer token; подтвердить локальное удаление и окончательно revoke token |
+
+Challenge request:
+
+```json
+{
+  "enrollmentToken": "...",
+  "name": "iphone-field-01",
+  "platform": "ios",
+  "applicationId": "TEAMID.io.agat.edge"
+}
+```
+
+Ответ `201` содержит `schemaVersion`, UUID `id`, raw `challenge`, `expiresAt`, platform и application ID. Challenge хранится в SQLite только как SHA-256, действует один раз и связывается с именем/platform/application ID.
+
+Enrollment передаёт обычные model capabilities и:
+
+```json
+{
+  "challengeId": "...",
+  "challenge": "...",
+  "name": "iphone-field-01",
+  "platform": "ios",
+  "models": ["edge-coreml"],
+  "maxConcurrency": 1,
+  "attestation": {
+    "provider": "app_attest",
+    "token": "base64url-cbor-object",
+    "keyId": "apple-app-attest-key-id",
+    "applicationId": "TEAMID.io.agat.edge"
+  }
+}
+```
+
+Android использует provider `play_integrity`. Ответ `201` возвращает node `id`, секретный `token` один раз и trust metadata. Edge heartbeat отвечает `200` с control command, тогда как обычный worker heartbeat сохраняет `204`.
+
+Wipe acknowledgement:
+
+```json
+{
+  "generation": 1,
+  "credentialsDeleted": true,
+  "localDataDeleted": true
+}
+```
+
+`credentialsDeleted=false`, повторное generation или любой work endpoint с `wipe_pending/wiped` token отклоняются. Полный broker contract и ограничения клиентов: [Native edge worker 1.6](./native-edge-worker.md).
+
 ## Worker
 
 | Метод | Путь | Назначение |
@@ -353,7 +410,7 @@ Content-Type: application/json
 Worker запрашивает lease с собственной версией:
 
 ```json
-{ "workerVersion": "1.5.0" }
+{ "workerVersion": "1.6.0" }
 ```
 
 Lease содержит run input, immutable agent snapshot, ordered `agent.specialists` для team, outputs уже завершённых этапов, `routing` с requested/selected model и объясняющими signals, `knowledge.groups`/активную memory, а также `traceContext` с `traceId`/W3C `traceparent`. Model API key никогда не передаётся coordinator. Team целиком исполняется на одном lease/worker; specialist prompts и models берутся только из pinned snapshots.

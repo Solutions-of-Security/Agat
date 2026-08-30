@@ -1,0 +1,49 @@
+name: AgatEdge
+options:
+  minimumXcodeGenVersion: 2.42.0
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  AgatEdgeCore:
+    path: .
+targets:
+  AgatEdge:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: AgatEdgeCore
+        product: AgatEdgeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.agat.edge
+        PRODUCT_NAME: АГАТ Edge
+        MARKETING_VERSION: 1.6.0
+        CURRENT_PROJECT_VERSION: 160
+        SWIFT_VERSION: 6.0
+        CODE_SIGN_ENTITLEMENTS: App/AgatEdge.entitlements
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Debug:
+          APP_ATTEST_ENVIRONMENT: development
+        Release:
+          APP_ATTEST_ENVIRONMENT: production
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: АГАТ Edge
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        BGTaskSchedulerPermittedIdentifiers:
+          - io.agat.edge.processing
+        UIBackgroundModes:
+          - processing
+        UIApplicationSupportsIndirectInputEvents: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

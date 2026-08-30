@@ -5,6 +5,10 @@
 - coordinator отказывается слушать non-loopback адрес без admin token;
 - стандартный enrollment token запрещён при non-loopback bind;
 - node token случайный, в SQLite хранится только SHA-256 hash;
+- native edge token выдаётся только после одноразового challenge и server-side Play Integrity/App Attest verdict; raw evidence и raw challenge в audit/SQLite не сохраняются;
+- hardware-attested node credential ограничен worker/control API, не получает MCP/HTTP/embedding work и хранится в Android Keystore либо ThisDeviceOnly Keychain;
+- admin remote wipe немедленно блокирует scheduling/work API, возвращает leases в recovery и оставляет pending token только для получения/acknowledgement wipe command;
+- wiped/revoked attestation key нельзя повторно активировать новым bootstrap enrollment;
 - сравнение секретов выполняется constant-time;
 - dashboard mutation отделена от worker authorization;
 - Kubernetes-панель использует Keycloak Authorization Code + PKCE S256; implicit и password grants отключены;
@@ -71,7 +75,11 @@
 - [ ] Kong опубликован по TLS; при нескольких replicas rate limit использует Redis.
 - [ ] `AGAT_ALLOWED_ORIGINS` содержит только реальные адреса панели.
 - [ ] Enrollment token ротируется после подключения парка.
-- [ ] Неиспользуемые node credentials отзываются пересозданием записи/ротацией token.
+- [ ] Обычные неиспользуемые node credentials отзываются повторной регистрацией/ротацией; потерянные native edge devices проходят admin remote wipe.
+- [ ] Edge включён только с отдельным HTTPS attestation broker, egress allowlist, secret rotation и проверкой Google/Apple evidence на server side.
+- [ ] `AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION=false`; package/bundle/App IDs и required verdicts совпадают с production signing configuration.
+- [ ] Android foreground-service policy проверена в Play Console; iOS background mode не используется как SLA.
+- [ ] Для offline mobile storage действует MDM/device encryption procedure: AGAT не обещает физическое remote erase до следующего control poll.
 - [ ] Tools с внешними эффектами идемпотентны по `stage.id`.
 - [ ] Process HTTP и compensation endpoints реально дедуплицируют переданный `Idempotency-Key`; обратная операция проверена на staging.
 - [ ] Process webhook tokens сохранены в secret manager, ротируются и не присутствуют в logs/URL; producer повторяет один source event с тем же key.
@@ -107,7 +115,7 @@ WASI runner не preopen-ит directories и не предоставляет net
 
 При `AGAT_OIDC_ENABLED=true` все dashboard API, включая overview, SSE, trace и artifact download, требуют Bearer access token. Browser adapter использует Authorization Code flow с PKCE, обновляет token до истечения и не кладёт access token в URL. CSP разрешает `connect-src` только same-origin и точный origin OIDC issuer.
 
-`admin` управляет projects/scheduler/local workers и исполняемыми WASI/OCI profiles; `designer` — agents, credentials, definitions, HTTP MCP и policy-as-code; `operator` — launches, cancel и approvals; `viewer/auditor` — read-only. Точная матрица приведена в [identity и gateway](./identity-and-gateway.md).
+`admin` управляет projects/scheduler/local workers, native edge remote wipe и исполняемыми WASI/OCI profiles; `designer` — agents, credentials, definitions, HTTP MCP и policy-as-code; `operator` — launches, cancel и approvals; `viewer/auditor` — read-only. Точная матрица приведена в [identity и gateway](./identity-and-gateway.md).
 
 При `AGAT_OIDC_ENABLED=false` сохраняется legacy local mode: изменяющие/чувствительные запросы используют `X-Agat-Admin-Token`. Этот режим предназначен для loopback/разработки и не заменяет SSO при сетевой публикации.
 
@@ -126,6 +134,8 @@ Artifact Store разрешает только UTF-8 text artifacts через �
 Worker получает вход задачи и результаты предыдущих этапов, поэтому worker-host должен считаться доверенным для соответствующих данных. Local-first означает, что inference не уходит к внешнему model provider, но не означает автоматическую изоляцию разных внутренних команд.
 
 Projects дают логическую backend-изоляцию и RBAC, но все проекты пока разделяют один процесс coordinator, SQLite-файл, Artifact Store, ключ шифрования и пул доверенных workers. Для жёсткого multi-tenant сценария нужны отдельные очереди/ключи/storage boundaries, scoped node labels, quotas и шифрование payload на уровне tenant.
+
+Hardware attestation подтверждает разрешённое приложение и состояние устройства на момент enrollment, но не делает mobile host доверенным для данных всех проектов и не доказывает корректность модели. Поэтому native edge получает только agent stages без MCP/HTTP side effects. Attestation broker входит в trusted computing base: `hardwareBacked=true` в его JSON нельзя принимать без реальной provider verification. Threat model, canonical binding и provider checks описаны в [Native edge worker 1.6](./native-edge-worker.md).
 
 ## Local RAG и memory
 

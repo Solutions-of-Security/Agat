@@ -30,7 +30,7 @@ import type {
 } from "./types.js";
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
-const MCP_CLIENT_VERSION = "1.5.0";
+const MCP_CLIENT_VERSION = "1.6.0";
 
 export interface McpGatewayOptions {
   enabled: boolean;

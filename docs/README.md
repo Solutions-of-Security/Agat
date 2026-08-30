@@ -1,6 +1,6 @@
 # АГАТ
 
-АГАТ 1.5 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
+АГАТ 1.6 — local-first платформа для запуска внутренних AI-агентов и визуальных процессов на локальных моделях с управлением вычислительными узлами с одного экрана.
 
 MVP уже включает:
 
@@ -41,6 +41,7 @@ MVP уже включает:
 - A2A 1.0 interoperability: inbound/outbound HTTP+JSON, project endpoint bearer, Agent Card discovery, RFC 8693 delegation, SSE, durable push outbox, bounded files, SSRF-safe transport и redacted audit mirrors.
 - Production Temporal runtime: TLS/auth fail-closed profiles, immutable versioned worker builds, canary rollout, history replay в CI, acknowledged Updates и interval Schedules через parent→child workflows.
 - Process Builder 1.2: deterministic parallel fork/join, cron/calendar и idempotent webhooks, внешний signal, version-pinned subprocess/templates, structural diff, safe/live instance replay, BPMN 2.0 integration и reverse-order compensation.
+- Native edge workers: Android llama.cpp/Vulkan service и iOS Core ML/Metal app, Play Integrity/App Attest broker verification, hardware-attested scoped credentials и admin remote wipe.
 
 ## Быстрый запуск
 
@@ -98,6 +99,7 @@ python3 workers/agat_worker.py
 - [MCP gateway и risk policy](./mcp-gateway.md)
 - [Risk-tier approvals и emergency deny](./mcp-risk-tier-approvals.md)
 - [Изолированное выполнение MCP tools](./isolated-tool-execution.md)
+- [Native edge worker 1.6](./native-edge-worker.md)
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
@@ -137,4 +139,4 @@ PYTHONPATH=workers python3 -m unittest discover -s workers -p 'test_*.py'
 
 Обычный `npm test` не требует запущенной модели. `npm run test:ollama-rag` — отдельный реальный интеграционный тест через локальные Ollama, coordinator и Python-worker; его prerequisites и гарантии описаны в разделе [Local RAG](./local-rag-and-memory.md#реальный-ollama-e2e).
 
-Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/task/trace boundaries, SSE lifecycle, push/outbox, bounded files, outbound discovery/RFC 8693/SSRF и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop, MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries и Kubernetes WASI/OCI sandbox manifests/cleanup.
+Тесты покрывают последовательную и параллельную выдачу, benchmark-aware routing и retry fallback, локальную embedding-очередь/RAG provenance/project isolation, immutable prompt/dataset versions, batch eval, human/model-judge audit, knowledge drift и promotion gate, A2A Agent Card/token/project/task/trace boundaries, SSE lifecycle, push/outbox, bounded files, outbound discovery/RFC 8693/SSRF и реальный HTTP+JSON contract, Kubernetes worker launcher, OIDC/JWKS, шифрование credentials, изоляцию и масштабирование worker-пулов, порядок цепочки, создание/обновление агентов, model/runtime/profile routing, реальный LangGraph StateGraph, immutable specialist snapshots, bounded supervisor handoffs, validated team state и legacy-worker fail-closed compatibility, approval gate, live-migration, восстановление просроченного lease, fork/join tokens, signals/webhooks, subprocess pinning/templates, version diff/replay, BPMN round-trip, HTTP idempotency/compensation, Temporal interval/cron/calendar Schedules, Updates/child workflow boundaries, production config validation, history replay, W3C trace propagation, OTel span export, immutable manifest/replay, SSRF-фильтрацию, model tool loop, MCP catalog/risk/policy preview/four-eyes/scoped-secret/emergency-deny/idempotency boundaries, Kubernetes WASI/OCI sandbox manifests/cleanup и native edge challenge/attestation/revocation/wipe lifecycle.

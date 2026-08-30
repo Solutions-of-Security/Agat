@@ -33,6 +33,11 @@ import { CoordinatorTelemetry } from "./telemetry.js";
 import { McpGateway } from "./mcp.js";
 import { createSandboxExecutor } from "./sandbox.js";
 import {
+  createEdgeAttestationVerifier,
+  EdgeAttestationError,
+  type EdgeAttestationVerifier,
+} from "./edge-attestation.js";
+import {
   A2A_MEDIA_TYPE,
   A2A_PROTOCOL_VERSION,
   A2AProtocolError,
@@ -66,6 +71,9 @@ import type {
   CreateEvalDatasetInput,
   CreateEvalDatasetVersionInput,
   CreateEvalExperimentInput,
+  EdgeEnrollmentChallengeInput,
+  EdgeWipeAcknowledgement,
+  EdgeWorkerRegistration,
   CreateKnowledgeCollectionInput,
   CreatePromptInput,
   CreatePromptVersionInput,
@@ -285,10 +293,14 @@ async function authorize(
   return Object.assign(context, { projectId });
 }
 
-function requireWorker(request: IncomingMessage, store: AgatStore): Record<string, unknown> {
+function requireWorker(
+  request: IncomingMessage,
+  store: AgatStore,
+  allowWipeControl = false,
+): Record<string, unknown> {
   const token = bearerToken(request.headers.authorization);
   if (!token) throw new HttpError(401, "Нужен токен узла");
-  const node = store.authenticateNode(token);
+  const node = store.authenticateNode(token, allowWipeControl);
   if (!node) throw new HttpError(401, "Токен узла недействителен");
   return node;
 }
@@ -500,6 +512,19 @@ function serveStatic(config: CoordinatorConfig, pathname: string, response: Serv
 
 function validateRemoteBinding(config: CoordinatorConfig): void {
   validateTemporalCoordinatorConfig(config);
+  if (config.edgeEnabled) {
+    if (config.edgeAttestationMode !== "broker") {
+      throw new Error("Native edge workers требуют AGAT_EDGE_ATTESTATION_MODE=broker");
+    }
+    if (!config.edgeAttestationBrokerUrl || !config.edgeAttestationBrokerToken) {
+      throw new Error("Native edge workers требуют URL и token attestation broker");
+    }
+    if (!config.edgeAndroidApplicationId || !config.edgeIosApplicationId) {
+      throw new Error("Native edge workers требуют Android application ID и iOS App ID");
+    }
+    const brokerUrl = new URL(config.edgeAttestationBrokerUrl);
+    if (brokerUrl.protocol !== "https:") throw new Error("Attestation broker должен использовать HTTPS");
+  }
   const a2aPublicBaseUrl = config.a2aEnabled
     ? normalizeA2APublicBaseUrl(config.a2aPublicBaseUrl, `http://127.0.0.1:${config.port}`)
     : "";
@@ -546,6 +571,7 @@ export function createCoordinatorServer(
     maxResponseBytes: config.mcpMaxResponseBytes,
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
   }, undefined, createSandboxExecutor(config)),
+  edgeAttestation: EdgeAttestationVerifier = createEdgeAttestationVerifier(config),
 ): http.Server {
   const a2aPublicBaseUrl = normalizeA2APublicBaseUrl(
     config.a2aPublicBaseUrl,
@@ -583,9 +609,15 @@ export function createCoordinatorServer(
         json(response, 200, {
           status: "ok",
           time: new Date().toISOString(),
-          version: "1.5.0",
+          version: "1.6.0",
           processRuntime: processRuntime.snapshot(),
           sandbox: mcpGateway.sandboxSnapshot(),
+          edge: {
+            enabled: config.edgeEnabled,
+            attestationAvailable: edgeAttestation.available,
+            attestationMode: edgeAttestation.mode,
+            reason: edgeAttestation.reason,
+          },
         });
         return;
       }
@@ -1950,6 +1982,107 @@ export function createCoordinatorServer(
         return;
       }
 
+      if (request.method === "POST" && pathname === "/api/v1/edge/enrollment/challenges") {
+        if (!config.edgeEnabled || !edgeAttestation.available) {
+          throw new HttpError(503, edgeAttestation.reason ?? "Native edge enrollment выключен");
+        }
+        const body = await readJson<EdgeEnrollmentChallengeInput>(request);
+        if (!body.enrollmentToken || !tokensEqual(body.enrollmentToken, config.enrollmentToken)) {
+          throw new HttpError(403, "Токен регистрации недействителен");
+        }
+        if (body.platform !== "android" && body.platform !== "ios") {
+          throw new HttpError(400, "platform должен быть android или ios");
+        }
+        const expectedApplicationId = body.platform === "android"
+          ? config.edgeAndroidApplicationId
+          : config.edgeIosApplicationId;
+        if (!body.applicationId || body.applicationId !== expectedApplicationId) {
+          throw new HttpError(403, "Application ID не разрешён edge policy");
+        }
+        json(response, 201, store.issueEdgeEnrollmentChallenge({
+          name: body.name,
+          platform: body.platform,
+          applicationId: body.applicationId,
+        }));
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/edge/enroll") {
+        if (!config.edgeEnabled || !edgeAttestation.available) {
+          throw new HttpError(503, edgeAttestation.reason ?? "Native edge enrollment выключен");
+        }
+        const body = await readJson<EdgeWorkerRegistration>(request);
+        if (body.platform !== "android" && body.platform !== "ios") {
+          throw new HttpError(400, "platform должен быть android или ios");
+        }
+        if (!Array.isArray(body.models)) throw new HttpError(400, "models должен быть массивом");
+        if (typeof body.challengeId !== "string" || !body.challengeId
+          || body.challengeId.length > 120
+          || typeof body.challenge !== "string" || !body.challenge
+          || body.challenge.length > 512
+          || typeof body.name !== "string" || !body.name.trim()
+          || body.name.length > 120) {
+          throw new HttpError(400, "Challenge или имя edge-узла заданы некорректно");
+        }
+        if (body.modelProfiles !== undefined && !Array.isArray(body.modelProfiles)) {
+          throw new HttpError(400, "modelProfiles должен быть массивом");
+        }
+        if (body.embeddingModels !== undefined && !Array.isArray(body.embeddingModels)) {
+          throw new HttpError(400, "embeddingModels должен быть массивом");
+        }
+        if (!body.attestation || typeof body.attestation !== "object"
+          || (body.attestation.provider !== "play_integrity" && body.attestation.provider !== "app_attest")
+          || typeof body.attestation.token !== "string" || !body.attestation.token
+          || body.attestation.token.length > 256_000
+          || typeof body.attestation.keyId !== "string" || !body.attestation.keyId
+          || body.attestation.keyId.length > 1_024
+          || typeof body.attestation.applicationId !== "string") {
+          throw new HttpError(400, "Attestation evidence неполна или слишком велика");
+        }
+        const expectedApplicationId = body.platform === "android"
+          ? config.edgeAndroidApplicationId
+          : config.edgeIosApplicationId;
+        if (body.attestation.applicationId !== expectedApplicationId) {
+          throw new HttpError(403, "Application ID не разрешён edge policy");
+        }
+        const challenge = store.claimEdgeEnrollmentChallenge({
+          id: body.challengeId,
+          challenge: body.challenge,
+          name: body.name,
+          platform: body.platform,
+          applicationId: body.attestation.applicationId,
+        });
+        if (!challenge) throw new HttpError(409, "Edge enrollment challenge истёк, использован или не совпадает");
+        try {
+          const verdict = await edgeAttestation.verify({ challenge, registration: body });
+          const registered = store.registerEdgeNode(body, verdict);
+          store.finishEdgeEnrollmentChallenge(challenge.id, true);
+          json(response, 201, {
+            ...registered,
+            trust: {
+              kind: "hardware_attested",
+              provider: verdict.provider,
+              applicationId: verdict.applicationId,
+              attestedAt: verdict.issuedAt,
+              environment: verdict.environment,
+            },
+          });
+        } catch (error) {
+          store.finishEdgeEnrollmentChallenge(challenge.id, false, safeMessage(error));
+          throw error;
+        }
+        return;
+      }
+
+      const remoteWipeNodeId = routeParam(pathname, /^\/api\/v1\/nodes\/([^/]+)\/remote-wipe$/);
+      if (request.method === "POST" && remoteWipeNodeId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<{ reason?: string }>(request);
+        if (!body.reason?.trim()) throw new HttpError(400, "Причина remote wipe обязательна");
+        json(response, 202, store.requestEdgeRemoteWipe(remoteWipeNodeId, body.reason, auth.subject));
+        return;
+      }
+
       if (request.method === "POST" && pathname === "/api/v1/workers/register") {
         const body = await readJson<WorkerRegistration>(request);
         if (!body.enrollmentToken || !tokensEqual(body.enrollmentToken, config.enrollmentToken)) {
@@ -1971,7 +2104,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/workers/heartbeat") {
-        const node = requireWorker(request, store);
+        const node = requireWorker(request, store, true);
         const body = await readJson<{ metrics?: WorkerMetrics; capabilities?: WorkerCapabilities }>(request);
         if (body.capabilities && !Array.isArray(body.capabilities.models)) {
           throw new HttpError(400, "capabilities.models должен быть массивом");
@@ -1986,7 +2119,26 @@ export function createCoordinatorServer(
           throw new HttpError(400, "capabilities.embeddingModels должен быть массивом");
         }
         store.heartbeatNode(String(node.id), body.metrics ?? {}, body.capabilities);
-        noContent(response);
+        if (node.trust_kind === "hardware_attested") json(response, 200, store.edgeControl(String(node.id)));
+        else noContent(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/v1/edge/control") {
+        const node = requireWorker(request, store, true);
+        if (node.trust_kind !== "hardware_attested") throw new HttpError(403, "Control channel доступен только edge-узлам");
+        json(response, 200, store.edgeControl(String(node.id)));
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/edge/control/wipe-ack") {
+        const node = requireWorker(request, store, true);
+        if (node.trust_kind !== "hardware_attested") throw new HttpError(403, "Control channel доступен только edge-узлам");
+        const body = await readJson<EdgeWipeAcknowledgement>(request);
+        if (typeof body.credentialsDeleted !== "boolean" || typeof body.localDataDeleted !== "boolean") {
+          throw new HttpError(400, "wipe acknowledgement должен содержать boolean deletion flags");
+        }
+        json(response, 200, store.acknowledgeEdgeRemoteWipe(String(node.id), body));
         return;
       }
 
@@ -2186,7 +2338,10 @@ export function createCoordinatorServer(
         a2aJson(response, protocolError.httpStatus, a2aErrorBody(protocolError), headers);
         return;
       }
-      const status = error instanceof HttpError || error instanceof WorkerLauncherError || error instanceof AuthenticationError
+      const status = error instanceof HttpError
+        || error instanceof WorkerLauncherError
+        || error instanceof AuthenticationError
+        || error instanceof EdgeAttestationError
         ? error.status
         : error instanceof A2ATransportError
           ? error.httpStatus
@@ -2234,6 +2389,7 @@ async function main(): Promise<void> {
     artifactsDir: config.artifactsDir,
     credentialsKey: config.credentialsKey,
     temporalProcesses: config.temporalEnabled,
+    edgeChallengeTtlSeconds: config.edgeChallengeTtlSeconds,
     telemetry,
   });
   const processRuntime = await createProcessRuntime(config);
@@ -2268,6 +2424,7 @@ async function main(): Promise<void> {
     const sandbox = mcpGateway.sandboxSnapshot();
     console.log(`Tool sandbox: ${sandbox?.available ? "доступен" : sandbox?.reason ?? "не настроен"}`);
     console.log(`A2A adapter: ${config.a2aEnabled ? `включён · ${config.a2aPublicBaseUrl}` : "выключен"}`);
+    console.log(`Native edge workers: ${config.edgeEnabled ? `включены · attestation ${config.edgeAttestationMode}` : "выключены"}`);
   });
 
   const maintenanceTimer = setInterval(() => {

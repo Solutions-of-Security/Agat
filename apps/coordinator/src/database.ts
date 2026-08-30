@@ -89,6 +89,11 @@ import type {
   CreateMcpServerInput,
   DurableProcessStart,
   DurableProcessState,
+  EdgeAttestationVerdict,
+  EdgeControlCommand,
+  EdgeEnrollmentChallenge,
+  EdgePlatform,
+  EdgeWorkerRegistration,
   EventRecord,
   HttpMethod,
   LeasePayload,
@@ -902,6 +907,7 @@ export interface StoreOptions {
   artifactsDir?: string;
   credentialsKey?: string;
   temporalProcesses?: boolean;
+  edgeChallengeTtlSeconds?: number;
   telemetry?: CoordinatorTelemetry;
 }
 
@@ -911,6 +917,7 @@ export class AgatStore {
   private readonly artifactsDir: string;
   private readonly credentialsKey: string;
   private readonly temporalProcesses: boolean;
+  private readonly edgeChallengeTtlSeconds: number;
   private readonly telemetry: CoordinatorTelemetry;
 
   constructor(dbPath: string, options: StoreOptions = {}) {
@@ -923,6 +930,7 @@ export class AgatStore {
     this.artifactsDir = path.resolve(options.artifactsDir ?? "./data/artifacts");
     this.credentialsKey = options.credentialsKey ?? "agat-local-credentials-key";
     this.temporalProcesses = options.temporalProcesses ?? false;
+    this.edgeChallengeTtlSeconds = Math.max(30, Math.min(600, options.edgeChallengeTtlSeconds ?? 180));
     this.telemetry = options.telemetry ?? new CoordinatorTelemetry({
       enabled: false,
       serviceName: "agat-coordinator",
@@ -945,6 +953,7 @@ export class AgatStore {
     this.cleanupExpiredMcpCalls();
     this.cleanupExpiredKnowledgeLeases();
     this.cleanupExpiredMemory();
+    this.cleanupEdgeEnrollmentChallenges();
     this.cleanupExpiredLeases();
   }
 
@@ -984,11 +993,36 @@ export class AgatStore {
         gpu TEXT NOT NULL DEFAULT '',
         max_concurrency INTEGER NOT NULL DEFAULT 1,
         token_hash TEXT NOT NULL UNIQUE,
+        trust_kind TEXT NOT NULL DEFAULT 'shared_token',
+        attestation_provider TEXT,
+        attestation_key_id TEXT,
+        attestation_application_id TEXT,
+        attestation_claims_json TEXT NOT NULL DEFAULT '{}',
+        attested_at TEXT,
+        credential_state TEXT NOT NULL DEFAULT 'active',
+        wipe_generation INTEGER NOT NULL DEFAULT 0,
+        wipe_requested_at TEXT,
+        wipe_reason TEXT,
+        wipe_acknowledged_at TEXT,
+        revoked_at TEXT,
         status TEXT NOT NULL DEFAULT 'online',
         metrics_json TEXT NOT NULL DEFAULT '{}',
         last_seen TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS edge_enrollment_challenges (
+        id TEXT PRIMARY KEY,
+        platform TEXT NOT NULL,
+        application_id TEXT NOT NULL,
+        node_name TEXT NOT NULL,
+        challenge_hash TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'issued',
+        failure_reason TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        consumed_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS agents (
@@ -1754,6 +1788,47 @@ export class AgatStore {
     if (!nodeColumns.some((column) => column.name === "embedding_models_json")) {
       this.db.exec("ALTER TABLE nodes ADD COLUMN embedding_models_json TEXT NOT NULL DEFAULT '[]';");
     }
+    if (!nodeColumns.some((column) => column.name === "trust_kind")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN trust_kind TEXT NOT NULL DEFAULT 'shared_token';");
+    }
+    if (!nodeColumns.some((column) => column.name === "attestation_provider")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN attestation_provider TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "attestation_key_id")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN attestation_key_id TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "attestation_application_id")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN attestation_application_id TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "attestation_claims_json")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN attestation_claims_json TEXT NOT NULL DEFAULT '{}';");
+    }
+    if (!nodeColumns.some((column) => column.name === "attested_at")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN attested_at TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "credential_state")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN credential_state TEXT NOT NULL DEFAULT 'active';");
+    }
+    if (!nodeColumns.some((column) => column.name === "wipe_generation")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN wipe_generation INTEGER NOT NULL DEFAULT 0;");
+    }
+    if (!nodeColumns.some((column) => column.name === "wipe_requested_at")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN wipe_requested_at TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "wipe_reason")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN wipe_reason TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "wipe_acknowledged_at")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN wipe_acknowledged_at TEXT;");
+    }
+    if (!nodeColumns.some((column) => column.name === "revoked_at")) {
+      this.db.exec("ALTER TABLE nodes ADD COLUMN revoked_at TEXT;");
+    }
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_attestation_key
+      ON nodes(attestation_provider, attestation_key_id)
+      WHERE attestation_provider IS NOT NULL AND attestation_key_id IS NOT NULL
+    `);
     const agentColumns = this.db.prepare("PRAGMA table_info(agents)").all() as Row[];
     if (!agentColumns.some((column) => column.name === "is_builtin")) {
       this.db.exec("ALTER TABLE agents ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0;");
@@ -1997,7 +2072,7 @@ export class AgatStore {
       this.db.prepare("UPDATE stages SET process_token_id = ? WHERE run_id = (SELECT run_id FROM process_instances WHERE id = ?) AND process_token_id IS NULL")
         .run(tokenId, String(instance.id));
     }
-    this.db.exec("PRAGMA user_version = 18;");
+    this.db.exec("PRAGMA user_version = 19;");
   }
 
   private seedAgents(): void {
@@ -6487,6 +6562,8 @@ export class AgatStore {
     return this.transaction(() => {
       const node = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
       if (!node) throw new Error("Узел не найден");
+      if (String(node.credential_state ?? "active") !== "active" || node.status !== "online") return null;
+      if (node.trust_kind === "hardware_attested") return null;
       const embeddingModels = normalizeEmbeddingModels(parseJson<unknown>(node.embedding_models_json, []));
       if (embeddingModels.length === 0) return null;
       const used = Number((this.db.prepare(`
@@ -6895,6 +6972,11 @@ export class AgatStore {
 
   private cleanupExpiredMemory(): void {
     this.db.prepare("DELETE FROM memory_entries WHERE expires_at IS NOT NULL AND expires_at <= ?").run(nowIso());
+  }
+
+  private cleanupEdgeEnrollmentChallenges(): void {
+    const retentionCutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    this.db.prepare("DELETE FROM edge_enrollment_challenges WHERE expires_at < ?").run(retentionCutoff);
   }
 
   private knowledgeDocumentDto(row: Row): Record<string, unknown> {
@@ -7992,13 +8074,222 @@ export class AgatStore {
     return { id: runId, status: initialRunStatus };
   }
 
+  issueEdgeEnrollmentChallenge(input: {
+    name: string;
+    platform: EdgePlatform;
+    applicationId: string;
+  }): EdgeEnrollmentChallenge {
+    const name = requiredAgentText(input.name, "Имя edge-узла", 120);
+    const applicationId = requiredAgentText(input.applicationId, "Application ID", 255);
+    if (input.platform !== "android" && input.platform !== "ios") throw new Error("Неизвестная edge-платформа");
+    this.cleanupEdgeEnrollmentChallenges();
+    const id = randomUUID();
+    const challenge = createToken(32);
+    const timestamp = nowIso();
+    const expiresAt = futureIso(this.edgeChallengeTtlSeconds);
+    this.db.prepare(`
+      INSERT INTO edge_enrollment_challenges(
+        id, platform, application_id, node_name, challenge_hash, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, 'issued', ?, ?)
+    `).run(id, input.platform, applicationId, name, hashToken(challenge), expiresAt, timestamp);
+    this.addEvent(null, null, null, "info", "edge.enrollment.challenge_issued", "Выдан одноразовый edge enrollment challenge", {
+      challengeId: id,
+      platform: input.platform,
+      applicationId,
+      nodeName: name,
+      expiresAt,
+    });
+    return { schemaVersion: 1, id, challenge, expiresAt, platform: input.platform, applicationId };
+  }
+
+  claimEdgeEnrollmentChallenge(input: {
+    id: string;
+    challenge: string;
+    name: string;
+    platform: EdgePlatform;
+    applicationId: string;
+  }): {
+    id: string;
+    challenge: string;
+    challengeSha256: string;
+    platform: EdgePlatform;
+    applicationId: string;
+    nodeName: string;
+    expiresAt: string;
+  } | null {
+    const timestamp = nowIso();
+    return this.transaction(() => {
+      const row = this.db.prepare(`
+        SELECT * FROM edge_enrollment_challenges
+        WHERE id = ? AND status = 'issued' AND expires_at > ?
+      `).get(input.id, timestamp) as Row | undefined;
+      if (!row
+        || !tokensEqual(hashToken(input.challenge), String(row.challenge_hash))
+        || String(row.node_name) !== input.name.trim()
+        || String(row.platform) !== input.platform
+        || String(row.application_id) !== input.applicationId) return null;
+      const claimed = this.db.prepare(`
+        UPDATE edge_enrollment_challenges SET status = 'claimed', consumed_at = ?
+        WHERE id = ? AND status = 'issued'
+      `).run(timestamp, input.id);
+      if (claimed.changes !== 1) return null;
+      return {
+        id: String(row.id),
+        challenge: input.challenge,
+        challengeSha256: hashToken(input.challenge),
+        platform: String(row.platform) as EdgePlatform,
+        applicationId: String(row.application_id),
+        nodeName: String(row.node_name),
+        expiresAt: String(row.expires_at),
+      };
+    });
+  }
+
+  finishEdgeEnrollmentChallenge(id: string, accepted: boolean, failureReason?: string): void {
+    const normalizedReason = failureReason?.replace(/[\r\n\0]/g, " ").slice(0, 500) || null;
+    this.db.prepare(`
+      UPDATE edge_enrollment_challenges
+      SET status = ?, failure_reason = ?
+      WHERE id = ? AND status = 'claimed'
+    `).run(accepted ? "accepted" : "rejected", normalizedReason, id);
+  }
+
+  registerEdgeNode(
+    registration: EdgeWorkerRegistration,
+    verdict: EdgeAttestationVerdict,
+  ): { id: string; token: string } {
+    const name = requiredAgentText(registration.name, "Имя edge-узла", 120);
+    if (registration.platform !== verdict.platform
+      || registration.attestation.provider !== verdict.provider
+      || registration.attestation.keyId !== verdict.keyId
+      || registration.attestation.applicationId !== verdict.applicationId) {
+      throw new Error("Регистрация edge-узла не соответствует attestation verdict");
+    }
+    const existingByKey = this.db.prepare(`
+      SELECT id, name, credential_state FROM nodes WHERE attestation_provider = ? AND attestation_key_id = ?
+    `).get(verdict.provider, verdict.keyId) as Row | undefined;
+    if (existingByKey && String(existingByKey.credential_state ?? "active") !== "active") {
+      throw new Error("Отозванный attestation key нельзя использовать повторно");
+    }
+    const existingByName = this.db.prepare("SELECT id, trust_kind FROM nodes WHERE name = ?").get(name) as Row | undefined;
+    if (existingByName && (!existingByKey || String(existingByName.id) !== String(existingByKey.id))) {
+      throw new Error("Имя узла уже занято другим worker");
+    }
+    const id = existingByKey ? String(existingByKey.id) : randomUUID();
+    const token = createToken();
+    const tokenHash = hashToken(token);
+    const timestamp = nowIso();
+    const maxConcurrency = clampInteger(registration.maxConcurrency, 1, 4, 1);
+    const models = [...new Set(registration.models.map((model) => model.trim()).filter(Boolean))];
+    const modelProfiles = normalizeModelProfiles(registration.modelProfiles, models);
+    const embeddingModels: string[] = [];
+    const labels = {
+      ...(registration.labels ?? {}),
+      edge: "native",
+      attestation: verdict.provider,
+    };
+    const claims = {
+      schemaVersion: verdict.schemaVersion,
+      environment: verdict.environment,
+      hardwareBacked: verdict.hardwareBacked,
+      verdicts: verdict.verdicts,
+      issuedAt: verdict.issuedAt,
+      expiresAt: verdict.expiresAt,
+      challengeSha256: verdict.challengeSha256,
+    };
+    this.db.prepare(`
+      INSERT INTO nodes(
+        id, name, platform, architecture, endpoint, models_json, model_profiles_json,
+        labels_json, agent_runtimes_json, agent_runtime_profiles_json, embedding_models_json,
+        cpu_cores, memory_mb, vram_mb, gpu, max_concurrency, token_hash,
+        trust_kind, attestation_provider, attestation_key_id, attestation_application_id,
+        attestation_claims_json, attested_at, credential_state, wipe_generation,
+        wipe_requested_at, wipe_reason, wipe_acknowledged_at, revoked_at,
+        status, metrics_json, last_seen, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '["single"]', '["tool_loop_v1"]', ?, ?, ?, ?, ?, ?, ?,
+        'hardware_attested', ?, ?, ?, ?, ?, 'active', 0, NULL, NULL, NULL, NULL,
+        'online', '{}', ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        platform = excluded.platform,
+        architecture = excluded.architecture,
+        endpoint = excluded.endpoint,
+        models_json = excluded.models_json,
+        model_profiles_json = excluded.model_profiles_json,
+        labels_json = excluded.labels_json,
+        agent_runtimes_json = '["single"]',
+        agent_runtime_profiles_json = '["tool_loop_v1"]',
+        embedding_models_json = excluded.embedding_models_json,
+        cpu_cores = excluded.cpu_cores,
+        memory_mb = excluded.memory_mb,
+        vram_mb = excluded.vram_mb,
+        gpu = excluded.gpu,
+        max_concurrency = excluded.max_concurrency,
+        token_hash = excluded.token_hash,
+        trust_kind = 'hardware_attested',
+        attestation_provider = excluded.attestation_provider,
+        attestation_key_id = excluded.attestation_key_id,
+        attestation_application_id = excluded.attestation_application_id,
+        attestation_claims_json = excluded.attestation_claims_json,
+        attested_at = excluded.attested_at,
+        credential_state = 'active',
+        wipe_generation = 0,
+        wipe_requested_at = NULL,
+        wipe_reason = NULL,
+        wipe_acknowledged_at = NULL,
+        revoked_at = NULL,
+        status = 'online',
+        metrics_json = '{}',
+        last_seen = excluded.last_seen,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      name,
+      registration.platform,
+      registration.architecture ?? "",
+      registration.endpoint ?? "",
+      JSON.stringify(models),
+      JSON.stringify(modelProfiles),
+      JSON.stringify(labels),
+      JSON.stringify(embeddingModels),
+      clampInteger(registration.cpuCores, 1, 64, 1),
+      clampInteger(registration.memoryMb, 0, 1_048_576, 0),
+      clampInteger(registration.vramMb, 0, 1_048_576, 0),
+      registration.gpu ?? "",
+      maxConcurrency,
+      tokenHash,
+      verdict.provider,
+      verdict.keyId,
+      verdict.applicationId,
+      JSON.stringify(claims),
+      verdict.issuedAt,
+      timestamp,
+      timestamp,
+      timestamp,
+    );
+    this.pruneNodeBenchmarks(id, models);
+    this.addEvent(null, null, id, "info", "edge.node.attested", `Edge-узел ${name} прошёл аппаратную attestation`, {
+      platform: registration.platform,
+      provider: verdict.provider,
+      applicationId: verdict.applicationId,
+      environment: verdict.environment,
+      verdicts: verdict.verdicts,
+      models,
+      maxConcurrency,
+    });
+    return { id, token };
+  }
+
   registerNode(registration: WorkerRegistration): { id: string; token: string } {
     const name = registration.name.trim();
     if (!name) throw new Error("Имя узла обязательно");
 
     const token = createToken();
     const tokenHash = hashToken(token);
-    const existing = this.db.prepare("SELECT id FROM nodes WHERE name = ?").get(name) as Row | undefined;
+    const existing = this.db.prepare("SELECT id, trust_kind FROM nodes WHERE name = ?").get(name) as Row | undefined;
+    if (existing?.trust_kind === "hardware_attested") {
+      throw new Error("Hardware-attested edge-узел нельзя перерегистрировать shared enrollment token");
+    }
     const id = existing ? String(existing.id) : randomUUID();
     const timestamp = nowIso();
     const maxConcurrency = clampInteger(registration.maxConcurrency, 1, 32, 1);
@@ -8072,17 +8363,129 @@ export class AgatStore {
     return { id, token };
   }
 
-  authenticateNode(token: string): Row | null {
+  authenticateNode(token: string, allowWipeControl = false): Row | null {
     const row = this.db.prepare("SELECT * FROM nodes WHERE token_hash = ?").get(hashToken(token)) as Row | undefined;
-    return row ?? null;
+    if (!row) return null;
+    const state = String(row.credential_state ?? "active");
+    if (state === "active" || (allowWipeControl && state === "wipe_pending")) return row;
+    return null;
+  }
+
+  edgeControl(nodeId: string): EdgeControlCommand {
+    const row = this.db.prepare(`
+      SELECT trust_kind, credential_state, wipe_generation, wipe_requested_at, wipe_reason
+      FROM nodes WHERE id = ?
+    `).get(nodeId) as Row | undefined;
+    if (!row || row.trust_kind !== "hardware_attested") throw new Error("Edge-узел не найден");
+    if (row.credential_state === "wipe_pending") {
+      return {
+        schemaVersion: 1,
+        action: "wipe",
+        generation: Number(row.wipe_generation),
+        requestedAt: typeof row.wipe_requested_at === "string" ? row.wipe_requested_at : null,
+        reason: typeof row.wipe_reason === "string" ? row.wipe_reason : null,
+      };
+    }
+    return { schemaVersion: 1, action: "none", generation: Number(row.wipe_generation), requestedAt: null, reason: null };
+  }
+
+  requestEdgeRemoteWipe(nodeId: string, reason: string, actor: string): EdgeControlCommand {
+    const normalizedReason = requiredAgentText(reason, "Причина remote wipe", 500);
+    const timestamp = nowIso();
+    const command = this.transaction(() => {
+      const row = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
+      if (!row || row.trust_kind !== "hardware_attested") throw new Error("Hardware-attested edge-узел не найден");
+      if (row.credential_state === "wiped" || row.credential_state === "revoked") {
+        throw new Error("Credentials узла уже отозваны");
+      }
+      if (row.credential_state !== "wipe_pending") {
+        this.db.prepare(`
+          UPDATE nodes SET credential_state = 'wipe_pending', status = 'offline',
+            wipe_generation = wipe_generation + 1, wipe_requested_at = ?, wipe_reason = ?, updated_at = ?
+          WHERE id = ? AND credential_state = 'active'
+        `).run(timestamp, normalizedReason, timestamp, nodeId);
+        this.db.prepare(`
+          UPDATE stages SET lease_expires_at = ? WHERE node_id = ? AND status = 'running'
+        `).run("1970-01-01T00:00:00.000Z", nodeId);
+        this.db.prepare(`
+          UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE node_id = ? AND status = 'running'
+        `).run("1970-01-01T00:00:00.000Z", nodeId);
+      }
+      const current = this.db.prepare(`
+        SELECT wipe_generation, wipe_requested_at, wipe_reason FROM nodes WHERE id = ?
+      `).get(nodeId) as Row;
+      this.addEvent(null, null, nodeId, "warn", "edge.wipe.requested", "Remote wipe credentials edge-узла запрошен", {
+        actor,
+        generation: Number(current.wipe_generation),
+        reason: String(current.wipe_reason),
+      });
+      return {
+        schemaVersion: 1 as const,
+        action: "wipe" as const,
+        generation: Number(current.wipe_generation),
+        requestedAt: String(current.wipe_requested_at),
+        reason: String(current.wipe_reason),
+      };
+    });
+    this.cleanupExpiredKnowledgeLeases();
+    this.cleanupExpiredLeases();
+    return command;
+  }
+
+  acknowledgeEdgeRemoteWipe(
+    nodeId: string,
+    acknowledgement: { generation: number; credentialsDeleted: boolean; localDataDeleted: boolean },
+  ): EdgeControlCommand {
+    if (!Number.isInteger(acknowledgement.generation) || acknowledgement.generation < 1) {
+      throw new Error("Некорректное поколение remote wipe");
+    }
+    if (acknowledgement.credentialsDeleted !== true) {
+      throw new Error("Устройство не подтвердило удаление credentials");
+    }
+    return this.transaction(() => {
+      const row = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
+      if (!row || row.trust_kind !== "hardware_attested" || row.credential_state !== "wipe_pending") {
+        throw new Error("Ожидающая remote wipe команда не найдена");
+      }
+      if (Number(row.wipe_generation) !== acknowledgement.generation) {
+        throw new Error("Поколение remote wipe устарело");
+      }
+      const timestamp = nowIso();
+      this.db.prepare(`
+        UPDATE nodes SET token_hash = ?, credential_state = 'wiped', status = 'offline',
+          wipe_acknowledged_at = ?, revoked_at = ?, updated_at = ?
+        WHERE id = ? AND credential_state = 'wipe_pending'
+      `).run(hashToken(createToken()), timestamp, timestamp, timestamp, nodeId);
+      this.addEvent(null, null, nodeId, "warn", "edge.wipe.acknowledged", "Edge-узел подтвердил удаление credentials", {
+        generation: acknowledgement.generation,
+        credentialsDeleted: true,
+        localDataDeleted: acknowledgement.localDataDeleted === true,
+      });
+      return {
+        schemaVersion: 1,
+        action: "none",
+        generation: acknowledgement.generation,
+        requestedAt: null,
+        reason: null,
+      };
+    });
   }
 
   heartbeatNode(nodeId: string, metrics: WorkerMetrics, capabilities?: WorkerCapabilities): void {
     const timestamp = nowIso();
+    const credential = this.db.prepare("SELECT credential_state FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
+    if (!credential) throw new Error("Узел не найден");
+    if (String(credential.credential_state ?? "active") !== "active") {
+      this.db.prepare(`
+        UPDATE nodes SET status = 'offline', metrics_json = ?, last_seen = ?, updated_at = ? WHERE id = ?
+      `).run(JSON.stringify(metrics ?? {}), timestamp, timestamp, nodeId);
+      return;
+    }
     if (capabilities) {
       const models = [...new Set(capabilities.models.map((model) => model.trim()).filter(Boolean))];
       const current = this.db.prepare(`
-        SELECT model_profiles_json, vram_mb, embedding_models_json, agent_runtime_profiles_json
+        SELECT model_profiles_json, vram_mb, embedding_models_json, agent_runtime_profiles_json,
+          labels_json, trust_kind, attestation_provider
         FROM nodes WHERE id = ?
       `).get(nodeId) as Row | undefined;
       const modelProfiles = capabilities.modelProfiles === undefined
@@ -8091,13 +8494,19 @@ export class AgatStore {
       const vramMb = capabilities.vramMb === undefined
         ? Number(current?.vram_mb ?? 0)
         : clampInteger(capabilities.vramMb, 0, 16_777_216, 0);
-      const agentRuntimes = normalizeAgentRuntimes(capabilities.agentRuntimes);
+      const hardwareAttested = current?.trust_kind === "hardware_attested";
+      const agentRuntimes = hardwareAttested ? ["single"] as AgentRuntime[] : normalizeAgentRuntimes(capabilities.agentRuntimes);
       const agentRuntimeProfiles = capabilities.agentRuntimeProfiles === undefined
         ? normalizeAgentRuntimeProfiles(parseJson<unknown>(current?.agent_runtime_profiles_json, ["tool_loop_v1"]))
         : normalizeAgentRuntimeProfiles(capabilities.agentRuntimeProfiles);
-      const embeddingModels = capabilities.embeddingModels === undefined
+      const embeddingModels = hardwareAttested ? [] : capabilities.embeddingModels === undefined
         ? normalizeEmbeddingModels(parseJson<unknown>(current?.embedding_models_json, []))
         : normalizeEmbeddingModels(capabilities.embeddingModels);
+      const labels = hardwareAttested ? {
+        ...(capabilities.labels ?? {}),
+        edge: "native",
+        attestation: String(current?.attestation_provider ?? "hardware"),
+      } : capabilities.labels ?? {};
       this.db
         .prepare(`
           UPDATE nodes SET
@@ -8121,12 +8530,12 @@ export class AgatStore {
           capabilities.endpoint ?? "",
           JSON.stringify(models),
           JSON.stringify(modelProfiles),
-          JSON.stringify(capabilities.labels ?? {}),
+          JSON.stringify(labels),
           JSON.stringify(agentRuntimes),
-          JSON.stringify(agentRuntimeProfiles),
+          JSON.stringify(hardwareAttested ? ["tool_loop_v1"] : agentRuntimeProfiles),
           JSON.stringify(embeddingModels),
           vramMb,
-          clampInteger(capabilities.maxConcurrency, 1, 32, 1),
+          clampInteger(capabilities.maxConcurrency, 1, hardwareAttested ? 4 : 32, 1),
           timestamp,
           timestamp,
           nodeId,
@@ -8330,6 +8739,7 @@ export class AgatStore {
       this.cleanupExpiredLeases();
       const node = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
       if (!node) throw new Error("Узел не найден");
+      if (String(node.credential_state ?? "active") !== "active" || node.status !== "online") return null;
 
       const nodeActive = Number(
         (this.db.prepare(`
@@ -8415,7 +8825,9 @@ export class AgatStore {
       const routingNodes = modelRouterPolicy.enabled ? this.availableRoutingNodes() : [];
       let selectedRouting: ModelRoutingDecision | null = null;
       let selectedMcpTools: McpLeaseTool[] = [];
+      const hardwareAttestedEdge = node.trust_kind === "hardware_attested";
       const candidate = candidates.find((row) => {
+        if (hardwareAttestedEdge && row.stage_kind !== "agent") return false;
         if (row.stage_kind !== "agent") return true;
         const snapshot = parseAgentSnapshot(row.agent_snapshot_json)
           ?? agentSnapshot({
@@ -8435,6 +8847,7 @@ export class AgatStore {
           || agentRuntimeProfiles.has(snapshot.runtimeConfig.profile);
         if (!modelCompatible || !agentRuntimes.has(requestedRuntime) || !profileCompatible) return false;
         selectedMcpTools = this.mcpLeaseTools(String(row.project_id));
+        if (hardwareAttestedEdge && selectedMcpTools.length > 0) return false;
         if (!modelRouterPolicy.enabled) return true;
         const routing = this.routeAgentStage(
           row,
@@ -11698,7 +12111,10 @@ export class AgatStore {
     const lastSeen = new Date(String(row.last_seen)).getTime();
     const ageSeconds = Math.max(0, (Date.now() - lastSeen) / 1_000);
     let status = String(row.status);
+    const credentialState = String(row.credential_state ?? "active");
+    if (credentialState !== "active") status = "offline";
     if (!String(row.id).startsWith("demo-") && ageSeconds > 90) status = ageSeconds > 300 ? "offline" : "sleeping";
+    if (credentialState !== "active") status = "offline";
 
     const models = parseJson<string[]>(row.models_json, []);
     const reportedProfiles = normalizeModelProfiles(
@@ -11738,6 +12154,22 @@ export class AgatStore {
       gpu: row.gpu,
       maxConcurrency: row.max_concurrency,
       usedConcurrency: row.used_concurrency,
+      trustKind: String(row.trust_kind ?? "shared_token"),
+      credentialState,
+      attestation: row.trust_kind === "hardware_attested" ? {
+        provider: typeof row.attestation_provider === "string" ? row.attestation_provider : null,
+        applicationId: typeof row.attestation_application_id === "string" ? row.attestation_application_id : null,
+        attestedAt: typeof row.attested_at === "string" ? row.attested_at : null,
+        environment: parseJson<Record<string, unknown>>(row.attestation_claims_json, {}).environment ?? null,
+        hardwareBacked: parseJson<Record<string, unknown>>(row.attestation_claims_json, {}).hardwareBacked === true,
+      } : null,
+      wipe: {
+        generation: Number(row.wipe_generation ?? 0),
+        requestedAt: typeof row.wipe_requested_at === "string" ? row.wipe_requested_at : null,
+        reason: typeof row.wipe_reason === "string" ? row.wipe_reason : null,
+        acknowledgedAt: typeof row.wipe_acknowledged_at === "string" ? row.wipe_acknowledged_at : null,
+        revokedAt: typeof row.revoked_at === "string" ? row.revoked_at : null,
+      },
       status,
       metrics: parseJson<WorkerMetrics>(row.metrics_json, {}),
       lastSeen: row.last_seen,

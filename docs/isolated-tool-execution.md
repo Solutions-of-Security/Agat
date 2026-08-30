@@ -22,7 +22,7 @@ Audit сохраняет `transport`, `sandboxProfileSha256`, policy version/has
 
 ## Профиль WASI
 
-Встроенный image `agat-local/sandbox-wasi:1.5.0` закрепляет официальный Python binding `wasmtime==48.0.0` и SHA-256 его Linux wheel artifacts из [PyPI release metadata](https://pypi.org/project/wasmtime/48.0.0/). Runner принимает core WebAssembly module с WASI Preview 1 `_start`, включает fuel metering и запускается внутри ограниченного Job. Host не вызывает `preopen_dir`, поэтому guest не получает filesystem capability. WASI Preview 1 network imports также не предоставляются.
+Встроенный image `agat-local/sandbox-wasi:1.6.0` закрепляет официальный Python binding `wasmtime==48.0.0` и SHA-256 его Linux wheel artifacts из [PyPI release metadata](https://pypi.org/project/wasmtime/48.0.0/). Runner принимает core WebAssembly module с WASI Preview 1 `_start`, включает fuel metering и запускается внутри ограниченного Job. Host не вызывает `preopen_dir`, поэтому guest не получает filesystem capability. WASI Preview 1 network imports также не предоставляются.
 
 Контракт guest:
 
@@ -67,7 +67,7 @@ Coordinator выступает минимальным broker: после scope c
 |---|---:|---|
 | `AGAT_SANDBOX_ENABLED` | `false` | Включить Kubernetes executor; Docker Compose остаётся fail-closed |
 | `AGAT_SANDBOX_NAMESPACE` | `agat` | Namespace одноразовых объектов |
-| `AGAT_SANDBOX_WASI_IMAGE` | `agat-local/sandbox-wasi:1.5.0` | Доверенный fixed runner image |
+| `AGAT_SANDBOX_WASI_IMAGE` | `agat-local/sandbox-wasi:1.6.0` | Доверенный fixed runner image |
 | `AGAT_SANDBOX_RUNTIME_CLASS` | пусто | Опциональный установленный gVisor/Kata RuntimeClass |
 | `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED` | `false` | Явное подтверждение CNI enforcement для OCI |
 
@@ -77,7 +77,7 @@ Coordinator выступает минимальным broker: после scope c
 
 ```bash
 node --import tsx --test apps/coordinator/test/mcp.test.ts apps/coordinator/test/sandbox.test.ts
-docker buildx build --load --tag agat-local/sandbox-wasi:1.5.0 --file sandbox/Dockerfile .
+docker buildx build --load --tag agat-local/sandbox-wasi:1.6.0 --file sandbox/Dockerfile .
 kubectl auth can-i create jobs --as=system:serviceaccount:agat:agat-coordinator -n agat
 kubectl auth can-i create secrets --as=system:serviceaccount:agat:agat-coordinator -n agat
 kubectl auth can-i create networkpolicies.networking.k8s.io --as=system:serviceaccount:agat:agat-coordinator -n agat

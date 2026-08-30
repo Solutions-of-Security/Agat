@@ -11,11 +11,36 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
+Health 1.6 дополнительно содержит `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` и безопасную причину недоступности без broker token/URL. Production readiness требует `enabled=true`, `attestationAvailable=true`, `attestationMode=broker` только если native enrollment действительно разрешён.
+
+## Rollout 1.6 native edge worker
+
+Coordinator мигрирует SQLite schema `18 → 19`: расширяет `nodes` trust/attestation/credential/wipe полями и добавляет `edge_enrollment_challenges`. Перед rollout сделайте согласованный backup SQLite/WAL и Artifact Store. Старый binary после записи schema v19 не является поддерживаемым rollback-путём без восстановления backup.
+
+1. Обновите coordinator/dashboard до `1.6.0`, оставив `AGAT_EDGE_ENABLED=false`; проверьте обычные workers и schema migration.
+2. Разверните отдельный HTTPS attestation broker и выполните provider negative tests: неверный challenge hash, package/App ID, key ID, environment, expired verdict и отсутствующий required verdict должны отклоняться.
+3. Сохраните broker bearer в secret manager. В Kubernetes ключ называется `edge-attestation-broker-token` внутри `agat-secrets`; URL/application IDs/verdict policy задаются ConfigMap.
+4. Включите edge и перезапустите coordinator. `/api/v1/health` должен показать доступный broker mode.
+5. Подпишите Android/iOS builds, зарегистрируйте по одному canary device и убедитесь, что карточка узла показывает `hardware_attested/active`, точного provider и production environment.
+6. Запустите agent-only stage без MCP, затем negative stages с MCP/HTTP/embedding. Они не должны выдаваться mobile node.
+7. На canary запросите remote wipe. Сразу после `202` work token должен получить `401`, stage — вернуться в очередь, а после device poll state стать `wiped` с `acknowledgedAt/revokedAt`.
+
+Минимальные control-plane проверки:
+
+```bash
+node --import tsx --test apps/coordinator/test/edge-workers.test.ts
+npm run typecheck
+npm run build
+kubectl kustomize deploy/k8s/docker-desktop >/dev/null
+```
+
+Android/iOS prerequisites, pinned runtime и полный broker contract: [Native edge worker 1.6](./native-edge-worker.md).
+
 ## Rollout 1.5 isolated MCP tools
 
 Coordinator мигрирует SQLite schema `17 → 18`: `mcp_servers` получает transport и encrypted/redacted sandbox profile, `mcp_tool_calls` — transport и immutable profile hash. Перед rollout сделайте согласованный backup SQLite/WAL, Artifact Store и `AGAT_CREDENTIALS_KEY`; старый binary после записи schema v18 не является поддерживаемым rollback-путём без восстановления backup.
 
-Обновите coordinator/dashboard до `1.5.0`, примените namespace Role и соберите `agat-local/sandbox-wasi:1.5.0`. Docker Compose оставляет `AGAT_SANDBOX_ENABLED=false`. Kubernetes profile включает WASI, но намеренно держит `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=false`: native OCI tools не запускаются, пока оператор не установит enforcing CNI и не подтвердит negative egress test. Не выставляйте этот флаг только ради прохождения smoke test.
+Для текущего bundle обновите coordinator/dashboard до `1.6.0`, примените namespace Role и соберите `agat-local/sandbox-wasi:1.6.0`. Docker Compose оставляет `AGAT_SANDBOX_ENABLED=false`. Kubernetes profile включает WASI, но намеренно держит `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=false`: native OCI tools не запускаются, пока оператор не установит enforcing CNI и не подтвердит negative egress test. Не выставляйте этот флаг только ради прохождения smoke test.
 
 Первый smoke test выполняйте read-only WASI module без credential, затем с истекающим `kind=mcp` scope. Проверьте two-person destructive approval отдельным test profile, emergency deny во время long-running Job и cleanup:
 
@@ -122,6 +147,8 @@ Embedding job использует такой же pull lease и максиму�
 
 Повторная регистрация узла с тем же `name` и действующим enrollment token выдаёт новый node token и инвалидирует старый. Удалите локальный credentials file и перезапустите worker.
 
+Это правило относится к обычному shared-token worker. Hardware-attested edge node перерегистрируется только тем же активным attestation key; после `wipe_pending/wiped/revoked` этот key навсегда заблокирован. Для replacement device используйте новое уникальное имя либо контролируемую будущую decommission/replacement процедуру — обходить revoke ручным редактированием SQLite нельзя.
+
 В Docker Desktop Kubernetes актуальный enrollment token выводится командой `npm run --silent k8s:enrollment-token`. Он отличается от legacy admin token для режима без OIDC.
 
 При включённом OIDC браузер использует Keycloak, а legacy admin token не является login password. Пароль локального `agat-admin` выводится `npm run --silent k8s:keycloak-password` и меняется через Keycloak. Не заменяйте Secret вручную: импортированный пользователь от этого не обновится.
@@ -177,6 +204,15 @@ kubectl logs -n agat deployment/agat-temporal-worker --tail=100
 ```
 
 Для MCP сначала проверьте `lastError`, transport/profile hash и время catalog sync в разделе **MCP**, затем coordinator log. Worker никогда не соединяется с MCP endpoint или sandbox Pod напрямую. `waiting_approval` требует решения в карточке запуска; `expired` означает, что lease или approval TTL закончился. Для OCI ошибка про NetworkPolicy означает fail-closed operator gate, а не сбой image. Полные arguments/results в logs и overview намеренно отсутствуют — сверяйте `callId`, status, transport, profile/result SHA-256 и размер.
+
+## Потерянный native edge device
+
+1. `admin` открывает **Узлы**, выбирает hardware-attested device, указывает incident ID/причину и вводит имя узла для подтверждения remote wipe.
+2. Сразу после ответа `202` проверьте `credentialState=wipe_pending`, `status=offline` и событие `edge.wipe.requested`. Это server-side revoke и не зависит от доставки команды устройству.
+3. Убедитесь, что активный stage истёк и был возвращён в очередь. Его поздний completion от старого token должен получить `401`.
+4. После следующего control poll ожидайте `credentialState=wiped`, `edge.wipe.acknowledged` и deletion flags. `localDataDeleted=false` требует MDM/device-response расследования, хотя node credential уже окончательно отозван.
+5. Если устройство остаётся offline, не снимайте инцидент: примените MDM/platform erase, отзовите physical access и оцените данные модели/storage отдельно. AGAT не может доставить команду выключенному устройству.
+6. Не переиспользуйте старый attestation key и не исправляйте state вручную в SQLite. Replacement регистрируется как отдельное устройство.
 
 ## Аварийная блокировка MCP
 

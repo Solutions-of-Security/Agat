@@ -30,11 +30,12 @@ flowchart LR
     C -.->|"OTLP/HTTP · optional"| OTel["OpenTelemetry Collector"]
     W1["Worker · сервер/GPU"] -->|"исходящий HTTPS poll"| C
     W2["Worker · ноутбук"] -->|"исходящий HTTPS poll"| C
-    W3["Worker · Android/Termux"] -->|"исходящий HTTPS poll"| C
+    W3["Native edge · Android/iOS"] -->|"attested HTTPS poll + control"| C
+    C -->|"bounded HTTPS verify"| ATTEST["Play Integrity / App Attest broker"]
     W1 --> M1["Ollama / vLLM"]
     W1 -->|"локальные /v1/embeddings"| M1
     W2 --> M2["LM Studio / llama.cpp"]
-    W3 --> M3["малая локальная модель"]
+    W3 --> M3["llama.cpp Vulkan / Core ML Metal"]
     W1 --> LG["LangGraph · tool loop / specialist team"]
     W1 -.->|"W3C trace context + OTLP"| OTel
     LG --> M1
@@ -56,7 +57,7 @@ Coordinator хранит состояние очереди, но не подкл
 Расположен в `apps/coordinator`; доменное состояние хранится через встроенный `node:sqlite`, а Temporal client запускает durable Workflow, отправляет подтверждаемые Updates и управляет interval/cron/calendar Schedules.
 
 - HTTP API и статическая раздача собранной React-панели;
-- project-scoped таблицы `agents`, `runs`, `stages`, `events`, `artifacts`, `credentials`, `processes`, `process_versions`, `process_instances`, `process_tokens`, `process_join_arrivals`, `process_signal_waits`, `process_subprocess_links`, `process_compensations`, `process_webhooks`, `process_webhook_receipts`, `mcp_servers`, `mcp_tool_policies`, `mcp_tool_calls`, `mcp_tool_call_approvals`, `mcp_policy_versions`, `knowledge_collections`, `knowledge_documents`, `knowledge_chunks`, `knowledge_embedding_jobs`, `knowledge_retrievals`, `memory_entries`, `prompt_registry`, `prompt_versions`, `eval_datasets`, `eval_dataset_versions`, `eval_examples`, `eval_experiments`, `eval_experiment_items`, `eval_reviews`, `a2a_endpoints`, `a2a_tasks`, `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`; fleet state и глобальный MCP kill switch хранятся в `nodes`, `model_benchmarks` и `settings`;
+- project-scoped таблицы `agents`, `runs`, `stages`, `events`, `artifacts`, `credentials`, `processes`, `process_versions`, `process_instances`, `process_tokens`, `process_join_arrivals`, `process_signal_waits`, `process_subprocess_links`, `process_compensations`, `process_webhooks`, `process_webhook_receipts`, `mcp_servers`, `mcp_tool_policies`, `mcp_tool_calls`, `mcp_tool_call_approvals`, `mcp_policy_versions`, `knowledge_collections`, `knowledge_documents`, `knowledge_chunks`, `knowledge_embedding_jobs`, `knowledge_retrievals`, `memory_entries`, `prompt_registry`, `prompt_versions`, `eval_datasets`, `eval_dataset_versions`, `eval_examples`, `eval_experiments`, `eval_experiment_items`, `eval_reviews`, `a2a_endpoints`, `a2a_tasks`, `a2a_push_configs`, `a2a_push_deliveries`, `a2a_remotes`, `a2a_outbound_tasks`; fleet/edge state и глобальный MCP kill switch хранятся в `nodes`, `edge_enrollment_challenges`, `model_benchmarks` и `settings`;
 - атомарная выдача работы через `BEGIN IMMEDIATE`;
 - TTL lease и повторная постановка этапа при потере воркера;
 - максимум три попытки этапа;
@@ -77,6 +78,7 @@ Coordinator хранит состояние очереди, но не подкл
 - Golden eval control plane: immutable prompt/dataset versions, batch candidate runs через обычный scheduler, append-only human/model-judge audit, knowledge fingerprint и matching promotion gate.
 - A2A interoperability boundary: inbound endpoint bearer/task/SSE/push/files и outbound Agent Card discovery/send/poll/cancel с encrypted credentials, delegated RFC 8693, SSRF-safe pinned transport и redacted audit без раскрытия prompt/tools/memory.
 - hardened Temporal boundary: TLS/API key или mTLS production transport, Worker Deployment Versioning, replay fixtures и scheduled parent→child workflows.
+- native edge trust boundary: one-time hashed challenges, external Play Integrity/App Attest verification, hardware-attested device token lifecycle, control-only pending-wipe scope и immutable wipe audit.
 
 SQLite предполагает один активный экземпляр coordinator. Temporal делает процесс durable при рестартах, но сам по себе не превращает SQLite state store в HA: незавершённый PostgreSQL driver fail-closed, а проект перехода описан в [PostgreSQL state-store design](./postgresql-state-store-design.md).
 
@@ -103,6 +105,14 @@ SQLite предполагает один активный экземпляр coo
 
 Web-инструменты работают на стороне конкретного worker. В Kubernetes поиск выполняет внутренний SearXNG, а чтение публичной страницы — worker с проверкой DNS/IP, redirect, content type, размера и таймаута. Поэтому удалённая машина не должна открывать model endpoint; ей нужен исходящий доступ к coordinator, локальному/общему SearXNG и выбранным публичным сайтам. Подробности: [web-доступ локальных агентов](./web-access.md).
 
+### Native edge worker
+
+`edge/android` и `edge/ios` используют тот же lease protocol, но получают отдельный `trustKind=hardware_attested`. Android исполняет managed GGUF через pinned llama.cpp с Vulkan/CPU; iOS — модель с bounded string contract через Core ML/Metal. Оба клиента хранят device token в OS-bound storage и не получают MCP schemas, HTTP activities, upstream credentials или embedding jobs.
+
+Enrollment сначала связывает случайный challenge с platform/application/name, затем coordinator передаёт provider evidence HTTPS broker. Broker является единственным компонентом, который обращается к Google/Apple verification boundary; coordinator сохраняет только нормализованный verdict. Scheduler повторно применяет capability floor при каждом heartbeat и исключает edge-узел из проекта, где stage получил бы MCP tools.
+
+Remote wipe сначала меняет server state: credential становится `wipe_pending`, узел offline, leases истекают и работа больше не принимается. Старый token остаётся действителен только в control channel, чтобы offline device мог получить command и подтвердить локальное удаление. После acknowledgement его hash заменяется и state становится `wiped`. Это даёт немедленный revoke control plane, но физическое стирание offline storage остаётся best effort до следующего соединения. Полный build/broker/runbook: [Native edge worker 1.6](./native-edge-worker.md).
+
 ### Web-панель
 
 React + Vite в `apps/web`.
@@ -114,6 +124,7 @@ React + Vite в `apps/web`.
 - создание зашифрованных credentials без возврата secret values;
 - совместимость `agent.model ↔ node.models` и статистика участия агента в запусках;
 - создание запуска;
+- отображение hardware attestation/credential state и admin-only typed-confirmation remote wipe;
 - создание collections/documents/memory, наблюдение индексации, удаление/export и выбор collections при старте run/process;
 - визуальный редактор процессов на React Flow с fork/join, signal, subprocess и reusable templates;
 - публикация версий, structural diff, safe/live replay, BPMN 2.0 import/export, triggers, запуск и отмена экземпляров процессов;

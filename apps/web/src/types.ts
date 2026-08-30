@@ -299,9 +299,33 @@ export interface ComputeNode {
   gpu: string;
   maxConcurrency: number;
   usedConcurrency: number;
+  trustKind: "shared_token" | "hardware_attested";
+  credentialState: "active" | "wipe_pending" | "wiped" | "revoked";
+  attestation: {
+    provider: "play_integrity" | "app_attest" | null;
+    applicationId: string | null;
+    attestedAt: string | null;
+    environment: "development" | "production" | null;
+    hardwareBacked: boolean;
+  } | null;
+  wipe: {
+    generation: number;
+    requestedAt: string | null;
+    reason: string | null;
+    acknowledgedAt: string | null;
+    revokedAt: string | null;
+  };
   status: "online" | "sleeping" | "offline";
   metrics: NodeMetrics;
   lastSeen: string;
+}
+
+export interface EdgeControlCommand {
+  schemaVersion: 1;
+  action: "none" | "wipe";
+  generation: number;
+  requestedAt: string | null;
+  reason: string | null;
 }
 
 export interface KnowledgeCollection {

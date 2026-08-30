@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { ComputeNode } from "../types";
+import { api } from "../lib/api";
 import { Icon } from "./Icon";
 import { LocalWorkerLauncherPanel } from "./LocalWorkerLauncherPanel";
 
@@ -39,8 +40,21 @@ function Meter({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function NodesPage({ nodes, models }: { nodes: ComputeNode[]; models: string[] }) {
+interface NodesPageProps {
+  nodes: ComputeNode[];
+  models: string[];
+  roles: string[];
+  onChanged: () => Promise<void>;
+}
+
+export function NodesPage({ nodes, models, roles, onChanged }: NodesPageProps) {
   const [copied, setCopied] = useState(false);
+  const [wipeNodeId, setWipeNodeId] = useState<string | null>(null);
+  const [wipeReason, setWipeReason] = useState("");
+  const [wipeConfirmation, setWipeConfirmation] = useState("");
+  const [wipeBusy, setWipeBusy] = useState(false);
+  const [wipeError, setWipeError] = useState<string | null>(null);
+  const canWipe = roles.includes("admin");
 
   async function copyCommand() {
     try {
@@ -49,6 +63,31 @@ export function NodesPage({ nodes, models }: { nodes: ComputeNode[]; models: str
       window.setTimeout(() => setCopied(false), 1_800);
     } catch {
       setCopied(false);
+    }
+  }
+
+  function armWipe(nodeId: string) {
+    setWipeNodeId(nodeId);
+    setWipeReason("");
+    setWipeConfirmation("");
+    setWipeError(null);
+  }
+
+  async function requestWipe(event: React.FormEvent, node: ComputeNode) {
+    event.preventDefault();
+    if (!canWipe || wipeConfirmation !== node.name || wipeReason.trim().length < 3) return;
+    setWipeBusy(true);
+    setWipeError(null);
+    try {
+      await api.remoteWipeNode(node.id, wipeReason.trim());
+      setWipeNodeId(null);
+      setWipeReason("");
+      setWipeConfirmation("");
+      await onChanged();
+    } catch (error) {
+      setWipeError(error instanceof Error ? error.message : "Не удалось запросить remote wipe");
+    } finally {
+      setWipeBusy(false);
     }
   }
 
@@ -93,7 +132,17 @@ export function NodesPage({ nodes, models }: { nodes: ComputeNode[]; models: str
                 <span>{node.architecture || "архитектура не указана"}</span>
                 <span>{node.cpuCores} CPU · {memory(node.memoryMb)}</span>
                 <span>{node.gpu || "GPU не указан"}</span>
+                <span>{node.trustKind === "hardware_attested" ? "hardware attested" : "shared enrollment token"}</span>
+                <span>credential: {node.credentialState}</span>
               </div>
+              {node.attestation ? (
+                <div className="fleet-card__attestation">
+                  <span>Device trust</span>
+                  <strong>{node.attestation.provider} · {node.attestation.environment}</strong>
+                  <small>{node.attestation.applicationId}</small>
+                  <small>{node.attestation.hardwareBacked ? "hardware-backed verdict" : "hardware verdict missing"}</small>
+                </div>
+              ) : null}
               <div className="fleet-card__meters">
                 <Meter label="CPU" value={node.metrics.cpuPercent ?? 0} />
                 <Meter label="RAM" value={node.metrics.memoryPercent ?? 0} />
@@ -129,6 +178,35 @@ export function NodesPage({ nodes, models }: { nodes: ComputeNode[]; models: str
                     : <em>не поддерживаются</em>}
                 </div>
               </div>
+              {node.trustKind === "hardware_attested" ? (
+                <div className="fleet-card__wipe">
+                  {node.credentialState === "active" ? (
+                    <button
+                      className="button button--danger"
+                      type="button"
+                      disabled={!canWipe || wipeBusy}
+                      title={canWipe ? "Отозвать node credential и стереть managed model" : "Требуется роль admin"}
+                      onClick={() => armWipe(node.id)}
+                    >
+                      <Icon name="trash" size={14} />Remote wipe
+                    </button>
+                  ) : (
+                    <p>Remote wipe: <strong>{node.credentialState}</strong>{node.wipe.requestedAt ? ` · ${relativeTime(node.wipe.requestedAt)}` : ""}</p>
+                  )}
+                  {wipeNodeId === node.id ? (
+                    <form onSubmit={(event) => void requestWipe(event, node)}>
+                      <p>Scheduler и work API будут заблокированы сразу. Устройство удалит credential, App Attest/Keystore reference и managed model при следующем control poll.</p>
+                      <label className="field"><span>Причина</span><input required minLength={3} maxLength={500} value={wipeReason} onChange={(event) => setWipeReason(event.target.value)} /></label>
+                      <label className="field"><span>Введите имя узла: {node.name}</span><input required autoComplete="off" value={wipeConfirmation} onChange={(event) => setWipeConfirmation(event.target.value)} /></label>
+                      {wipeError ? <div className="fleet-card__wipe-error" role="alert">{wipeError}</div> : null}
+                      <div>
+                        <button className="button button--secondary" type="button" disabled={wipeBusy} onClick={() => setWipeNodeId(null)}>Отмена</button>
+                        <button className="button button--danger" type="submit" disabled={wipeBusy || wipeConfirmation !== node.name || wipeReason.trim().length < 3}>{wipeBusy ? "Отзываем…" : "Подтвердить wipe"}</button>
+                      </div>
+                    </form>
+                  ) : null}
+                </div>
+              ) : null}
               <footer><span>Heartbeat</span><time className="mono">{relativeTime(node.lastSeen)}</time></footer>
             </article>
           ))}

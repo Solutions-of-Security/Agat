@@ -538,7 +538,14 @@ export default function App() {
               />
             </Suspense>
           ) : null}
-          {activeView === "nodes" ? <NodesPage nodes={overview.nodes} models={overview.models} /> : null}
+          {activeView === "nodes" ? (
+            <NodesPage
+              nodes={overview.nodes}
+              models={overview.models}
+              roles={user?.roles ?? []}
+              onChanged={refresh}
+            />
+          ) : null}
           {activeView === "models" ? (
             <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем Model Router</strong></div>}>
               <ModelsPage

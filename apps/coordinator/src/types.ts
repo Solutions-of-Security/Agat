@@ -271,6 +271,73 @@ export interface WorkerCapabilities {
   embeddingModels?: string[];
 }
 
+export type EdgePlatform = "android" | "ios";
+export type EdgeAttestationProvider = "play_integrity" | "app_attest";
+export type NodeTrustKind = "shared_token" | "hardware_attested";
+export type NodeCredentialState = "active" | "wipe_pending" | "wiped" | "revoked";
+
+export interface EdgeEnrollmentChallengeInput {
+  enrollmentToken: string;
+  name: string;
+  platform: EdgePlatform;
+  applicationId: string;
+}
+
+export interface EdgeEnrollmentChallenge {
+  schemaVersion: 1;
+  id: string;
+  challenge: string;
+  expiresAt: string;
+  platform: EdgePlatform;
+  applicationId: string;
+}
+
+export interface EdgeAttestationEvidence {
+  provider: EdgeAttestationProvider;
+  /** Play Integrity token or base64url-encoded App Attest attestation object. */
+  token: string;
+  /** Play Integrity installation key id or App Attest key id. */
+  keyId: string;
+  /** Explicitly bound application package/App ID. */
+  applicationId: string;
+}
+
+export interface EdgeWorkerRegistration extends Omit<WorkerRegistration, "enrollmentToken" | "platform"> {
+  challengeId: string;
+  challenge: string;
+  platform: EdgePlatform;
+  attestation: EdgeAttestationEvidence;
+}
+
+export interface EdgeAttestationVerdict {
+  schemaVersion: 1;
+  valid: true;
+  platform: EdgePlatform;
+  provider: EdgeAttestationProvider;
+  applicationId: string;
+  keyId: string;
+  challengeSha256: string;
+  hardwareBacked: true;
+  environment: "development" | "production";
+  issuedAt: string;
+  expiresAt: string;
+  verdicts: string[];
+}
+
+export interface EdgeControlCommand {
+  schemaVersion: 1;
+  action: "none" | "wipe";
+  generation: number;
+  requestedAt: string | null;
+  reason: string | null;
+}
+
+export interface EdgeWipeAcknowledgement {
+  generation: number;
+  credentialsDeleted: boolean;
+  localDataDeleted: boolean;
+}
+
 export interface WorkerModelProfile {
   name: string;
   provider?: string;

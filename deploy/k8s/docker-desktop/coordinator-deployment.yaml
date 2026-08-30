@@ -75,7 +75,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: coordinator
-          image: agat-local/coordinator:1.5.0
+          image: agat-local/coordinator:1.6.0
           # Docker Desktop's kind registry mirror resolves this mutable local tag.
           # Always is intentional so a rebuild with the same tag is not served from node cache.
           imagePullPolicy: Always
@@ -103,6 +103,12 @@ spec:
                 secretKeyRef:
                   name: agat-secrets
                   key: temporal-internal-token
+            - name: AGAT_EDGE_ATTESTATION_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: edge-attestation-broker-token
+                  optional: true
           ports:
             - name: http
               containerPort: 8787

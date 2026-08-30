@@ -21,6 +21,7 @@
 - project-scoped Local RAG с локальными embeddings, provenance, TTL working memory и явно сохраняемой episodic memory.
 - A2A 1.0 HTTP+JSON interoperability: inbound/outbound, delegated OAuth, SSE/push, bounded files и trace correlation.
 - production Temporal transport, replay gate, Worker Deployment Versioning, interval Schedules, Updates и parent→child workflows.
+- native Android/iOS edge workers с hardware attestation, device-scoped credentials и remote wipe.
 
 ## Реализовано в 0.3
 
@@ -227,18 +228,23 @@ Project-scoped adapter подключает внешние agent platforms бе�
 
 Подробности: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
 
-## Следующий релиз
+## Реализовано в 1.6
 
 ### Native edge worker
 
-- Android service с llama.cpp/NNAPI/Vulkan;
-- iOS app с Core ML/Metal и BackgroundTasks в пределах ограничений ОС;
-- аппаратная attestation;
-- remote wipe node credentials.
+- Android foreground service с pinned llama.cpp, Vulkan/CPU, legacy NNAPI capability probe и managed GGUF import;
+- iOS app с Core ML/Metal, foreground loop и opportunistic BackgroundTasks в пределах ограничений ОС;
+- one-time challenge и обязательная server-side Play Integrity/App Attest verification через HTTPS broker;
+- hardware-attested, work/control-scoped node credential в Android Keystore или ThisDeviceOnly Keychain;
+- немедленный server-side revoke/requeue и централизованный remote wipe с generation/ack audit;
+- scheduler deny для MCP/HTTP/embedding и runtime кроме bounded `single/tool_loop_v1`;
+- operator UI с admin RBAC, причиной и typed confirmation.
 
 Web/PWA остаётся control surface и не обещает надёжный background inference там, где ОС его запрещает.
 
-## После стабилизации
+Подробности: [Native edge worker 1.6](./native-edge-worker.md).
+
+## Следующий релиз
 
 ### Fleet и HA
 
@@ -264,5 +270,5 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.3 | LangGraph specialist teams | Supervisor/handoff внутри bounded agent stage без переноса durable orchestration |
 | P2 | Готово в 1.4 | Расширенная A2A interoperability | Outbound, delegated auth, streaming/push и bounded files поверх существующей очереди |
 | P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
-| P2 | Следующий шаг | Native mobile worker | Дороже PWA и полезен только для узких edge-сценариев |
-| P3 | Запланировано | HA control plane | После подтверждения нагрузки и multi-team требований |
+| P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
+| P3 | Следующий шаг | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
