@@ -56,6 +56,9 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
   const [manifestText, setManifestText] = useState(initialManifest);
   const [releaseKeyId, setReleaseKeyId] = useState("");
   const [releaseSignature, setReleaseSignature] = useState("");
+  const [provenanceText, setProvenanceText] = useState("");
+  const [provenanceKeyId, setProvenanceKeyId] = useState("");
+  const [provenanceSignature, setProvenanceSignature] = useState("");
   const [rolloutReleaseId, setRolloutReleaseId] = useState("");
   const [rolloutRing, setRolloutRing] = useState("stable");
   const [rolloutPercentage, setRolloutPercentage] = useState(100);
@@ -123,8 +126,26 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
     setError(null);
     try {
       const manifest = JSON.parse(manifestText) as RegisterWorkerReleaseRequest["manifest"];
-      await api.registerWorkerRelease({ manifest, keyId: releaseKeyId.trim(), signature: releaseSignature.trim() });
+      const provenanceConfigured = Boolean(
+        provenanceText.trim() || provenanceKeyId.trim() || provenanceSignature.trim(),
+      );
+      if (provenanceConfigured && !(provenanceText.trim() && provenanceKeyId.trim() && provenanceSignature.trim())) {
+        throw new Error("Provenance statement, trust key ID и signature задаются вместе");
+      }
+      await api.registerWorkerRelease({
+        manifest,
+        keyId: releaseKeyId.trim(),
+        signature: releaseSignature.trim(),
+        ...(provenanceConfigured ? {
+          provenance: {
+            statement: JSON.parse(provenanceText) as NonNullable<RegisterWorkerReleaseRequest["provenance"]>["statement"],
+            keyId: provenanceKeyId.trim(),
+            signature: provenanceSignature.trim(),
+          },
+        } : {}),
+      });
       setReleaseSignature("");
+      setProvenanceSignature("");
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось зарегистрировать signed worker release");
@@ -234,7 +255,9 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
             <div><dt>Pending</dt><dd>{snapshot.auditExport.pending}</dd></div>
             <div><dt>Delivering</dt><dd>{snapshot.auditExport.delivering}</dd></div>
             <div><dt>Delivered</dt><dd>{snapshot.auditExport.delivered}</dd></div>
+            <div><dt>Dead / DLQ</dt><dd>{snapshot.auditExport.dead} / {snapshot.auditExport.deadLetters}</dd></div>
             <div><dt>Oldest</dt><dd>{dateTime(snapshot.auditExport.oldestPendingAt)}</dd></div>
+            <div><dt>Retention</dt><dd>{snapshot.auditExport.retention ? `${snapshot.auditExport.retention.deliveredDays}d / ${snapshot.auditExport.retention.dlqDays}d` : "—"}</dd></div>
           </dl>
         </article>
       </section>
@@ -266,6 +289,7 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
                 <div><strong>{release.version}</strong><code>{release.id}</code></div>
                 <span>{release.keyId}</span>
                 <code title={release.artifactDigest}>{shortId(release.artifactDigest)}</code>
+                <span className={release.provenanceVerified ? "is-ok" : "is-warning"}>{release.provenanceVerified ? "SLSA verified" : "no provenance"}</span>
                 <time>{dateTime(release.issuedAt)}</time>
                 {canManage && release.status === "active" ? <button className="button button--danger" type="button" disabled={busy} onClick={() => void revokeRelease(release.id)}>Revoke</button> : <em>{release.status}</em>}
               </div>
@@ -277,6 +301,8 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
               <form className="ha-register-form" onSubmit={registerRelease}>
                 <label className="field"><span>Manifest JSON</span><textarea value={manifestText} onChange={(event) => setManifestText(event.target.value)} /></label>
                 <div><label className="field"><span>Trust key ID</span><input required value={releaseKeyId} onChange={(event) => setReleaseKeyId(event.target.value)} /></label><label className="field"><span>Signature · base64</span><input required value={releaseSignature} onChange={(event) => setReleaseSignature(event.target.value)} /></label></div>
+                <label className="field"><span>Verified OCI/SLSA admission statement · JSON</span><textarea placeholder="Production gate: canonical provenance admission" value={provenanceText} onChange={(event) => setProvenanceText(event.target.value)} /></label>
+                <div><label className="field"><span>Provenance key ID</span><input value={provenanceKeyId} onChange={(event) => setProvenanceKeyId(event.target.value)} /></label><label className="field"><span>Provenance signature · base64</span><input value={provenanceSignature} onChange={(event) => setProvenanceSignature(event.target.value)} /></label></div>
                 <button className="button button--primary" type="submit" disabled={busy}>Verify и зарегистрировать</button>
               </form>
             </details>
@@ -308,6 +334,9 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
               <span>{node.region}/{node.residencyDomain}</span>
               <code>{node.release.id ?? "unsigned"}</code>
               <span className={node.release.verified ? "is-ok" : "is-warning"}>{node.release.verified ? "verified" : "unverified"}</span>
+              <span className={node.trustKind === "shared_token" || (node.trustKind === "runtime_attested" && !node.runtimeAttestation?.verified) ? "is-warning" : "is-ok"}>
+                {node.trustKind === "hardware_attested" ? "edge attested" : node.runtimeAttestation?.verified ? "runtime attested" : "shared token"}
+              </span>
               {canManage ? (
                 <select aria-label={`Rollout ring ${node.name}`} value={node.release.rolloutRing} disabled={busy} onChange={(event) => void setRing(node.id, event.target.value)}>
                   {[...new Set([node.release.rolloutRing, "canary", "stable"])].map((ring) => <option value={ring} key={ring}>{ring}</option>)}

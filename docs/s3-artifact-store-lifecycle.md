@@ -16,7 +16,7 @@ Schema v23 вводит `agat-s3-artifact-lifecycle-v23`, `artifact_storage_outb
 flowchart LR
   W[Worker result] --> C[Coordinator]
   C -->|1. conditional PUT + SHA-256| S3[(Versioned S3 bucket)]
-  C -->|2. metadata + audit commit| PG[(PostgreSQL v24)]
+  C -->|2. metadata + audit commit| PG[(PostgreSQL v25)]
   PG --> DL[Authenticated download]
   DL -->|GET exact version| S3
   DL --> CACHE[Replica-local verified cache]
@@ -71,7 +71,7 @@ Configuration merge заменяет только известные Agat rule I
 
 `artifacts` получает `project_id`, `storage_backend`, `storage_state`, bucket/key/version, retention/legal hold, deletion timestamp и storage error. `project_id` денормализован для безопасного cascade trigger; project access по-прежнему проверяется существующей RLS policy.
 
-`artifact_storage_outbox` является global operational table без FK на artifact: команда должна пережить cascade-delete metadata. `agat_system` получает exact DML, `agat_tenant` — ни одного privilege. Catalog manifest включает новую function/trigger/index/columns, поэтому out-of-band изменение блокирует runtime startup. Artifact contract введён v23; текущая schema применяется только Job `agat-postgres-schema-v24` владельцем `agat_migrator`.
+`artifact_storage_outbox` является global operational table без FK на artifact: команда должна пережить cascade-delete metadata. `agat_system` получает exact DML, `agat_tenant` — ни одного privilege. Catalog manifest включает function/trigger/index/columns, поэтому out-of-band изменение блокирует runtime startup. Artifact contract введён v23 и сохраняется в текущей v25; schema применяется только Job `agat-postgres-schema-v25` владельцем `agat_migrator`.
 
 ## Конфигурация
 
@@ -103,7 +103,7 @@ Required runtime permissions: `HeadBucket`, bucket versioning/encryption/lifecyc
 
 1. Provider IaC создаёт private bucket в разрешённом residency domain, включает versioning, encryption и при необходимости Object Lock до первого object.
 2. Выдайте scoped workload identity и проверьте bucket policy: запрещены public access, unencrypted transport и cross-residency replication.
-3. Примените текущую schema v24 отдельной migration Job при остановленных coordinator replicas.
+3. Примените текущую schema v25 отдельной migration Job при остановленных coordinator replicas.
 4. Запустите read-only inspect:
 
 ```bash
@@ -172,7 +172,7 @@ Reports создаются mode `0600`, не содержат credentials/endpoi
 
 ## Local Kubernetes profile
 
-Docker Desktop manifest поднимает single MinIO pod/PVC, versioned bootstrap Job `agat-artifact-store-bootstrap-v24` и выдаёт coordinator local static credentials из `agat-secrets`. Это проверочный профиль, а не HA/S3 durability claim. `npm run k8s:up` ждёт bucket bootstrap и schema v24 Job. Production overlay не должен наследовать local MinIO root credentials или single PVC.
+Docker Desktop manifest поднимает single MinIO pod/PVC, versioned bootstrap Job `agat-artifact-store-bootstrap-v25` и выдаёт coordinator local static credentials из `agat-secrets`. Это проверочный профиль, а не HA/S3 durability claim. `npm run k8s:up` ждёт bucket bootstrap и schema v25 Job. Production overlay не должен наследовать local MinIO root credentials или single PVC.
 
 ## Failure, rollback и recovery
 
@@ -186,7 +186,7 @@ Docker Desktop manifest поднимает single MinIO pod/PVC, versioned boots
 | cache corruption | cache удаляется и восстанавливается | автоматический GET + SHA-256 |
 | S3 outage | metadata и queue продолжают жить; artifact writes/download fail | восстановить S3; нет silent BYTEA fallback |
 
-Application rollback допустим только на release, понимающий текущую schema v24 и `s3` rows. Переключение обратно на `postgresql` не является rollback: reverse backfill S3→BYTEA не реализован, dual-write запрещён. При серьёзном rollout incident остановите новые artifact writes, сохраните PostgreSQL/S3 authority, откатите compatible code и восстановите доступ к bucket.
+Application rollback допустим только на release, понимающий текущую schema v25 и `s3` rows. Переключение обратно на `postgresql` не является rollback: reverse backfill S3→BYTEA не реализован, dual-write запрещён. При серьёзном rollout incident остановите новые artifact writes, сохраните PostgreSQL/S3 authority, откатите compatible code и восстановите доступ к bucket.
 
 ## Source и evidence register
 
@@ -194,7 +194,7 @@ Application rollback допустим только на release, понимаю�
 |---|---|---|
 | `apps/coordinator/src/artifact-object-store.ts` | contract v1 | synchronous bounded bridge, safe key и exact-version operations |
 | `apps/coordinator/src/artifact-object-worker.ts` | AWS SDK S3 3.1121.0 | checksum/conditional PUT, lifecycle merge, Object Lock |
-| `apps/coordinator/src/database.ts` | schema v24; artifact contract v23 | metadata state, trigger/outbox, backfill/reconcile/download |
+| `apps/coordinator/src/database.ts` | schema v25; artifact contract v23 | metadata state, trigger/outbox, backfill/reconcile/download |
 | `apps/coordinator/src/artifact-store-admin.ts` | report schema v1 | typed confirmations и mode-0600 reports |
 | `scripts/test-s3-artifact-store.sh` | PostgreSQL 17.6 + MinIO 2025-09-07 | disposable cross-replica/lifecycle/cascade acceptance |
 | [S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html) | проверено 2026-08-31 | `If-None-Match` create-if-absent semantics |
@@ -213,4 +213,4 @@ python3 /Users/mdavliatshin/.codex/skills/it-architect/scripts/architecture_audi
   --profile architecture-pack --allow-placeholders docs
 ```
 
-Disposable suite обязана подтвердить schema/admission v24, bucket versioning, lifecycle merge, BYTEA backfill с очисткой blob только после verification, cross-replica download, corrupt-cache repair, tenant outbox denial, exact-version deletion и cascade outbox под FORCE RLS.
+Disposable suite обязана подтвердить schema/admission v25, bucket versioning, lifecycle merge, BYTEA backfill с очисткой blob только после verification, cross-replica download, corrupt-cache repair, tenant outbox denial, exact-version deletion и cascade outbox под FORCE RLS.

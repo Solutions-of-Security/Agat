@@ -11,21 +11,22 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
-Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v24 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
+Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v25 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Нечувствительные policy-поля показывают, включены ли release/provenance/runtime-attestation и SIEM ack/DLQ gates; public keys, broker/sink tokens и evidence в health не возвращаются. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают отдельную native edge boundary без broker token/URL.
 
 ## Rollout 1.7 Fleet и HA
 
-Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority; текущая schema v24 добавила immutable region-loss activation ledger и monotonic cell write epoch. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
+Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, v24 добавила immutable region-loss activation ledger и monotonic cell write epoch, а текущая v25 — OCI provenance/runtime-attestation evidence и SIEM DLQ/retention state. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
 2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
-3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v24 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
+3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v25 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
 4. Для production endpoint выполните multi-AZ/PITR preflight, actual failover и isolated restore по [managed PostgreSQL runbook](./managed-postgresql-resilience.md). Сохраните HMAC reports и exact SLO policy approval; application `haReady` этот gate не заменяет.
 5. Подготовьте versioned S3-compatible bucket, примените Agat lifecycle rule без current-version expiration, выполните BYTEA backfill/reconciliation и только затем включите `AGAT_ARTIFACT_STORE_DRIVER=s3`; подробный порядок — в [artifact store runbook](./s3-artifact-store-lifecycle.md).
 6. Подготовьте dormant target в разрешённом residency domain, внешний source fencing и односторонние PostgreSQL/S3/Temporal recovery paths; выполните rehearsal по [region-loss runbook](./region-loss-dr.md). Не запускайте target runtime без exact activation ID/write epoch.
 7. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
-8. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
-9. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
+8. Для server workers проверьте exact OCI digest и SLSA v1 evidence закреплённым Sigstore pipeline, подпишите компактный provenance admission отдельным key, зарегистрируйте baseline release и настройте staged fallback/target rollout.
+9. Подключите trusted local attestor с отдельным public root и worker-only scoped broker token. После negative tests включите три gates: `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`, `AGAT_REQUIRE_WORKER_PROVENANCE=true`, `AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION=true`. Проверьте challenge replay, expiry и refresh без ротации node token. Hardware-attested mobile nodes используют отдельную app-attestation boundary.
+10. Проверьте revoke: отозванный release, удалённый provenance/runtime root и истёкшая attestation не должны пройти authentication или получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
 
 Docker Desktop 1.7 разворачивает PostgreSQL и две coordinator replicas для локальной проверки. Если namespace уже содержит SQLite coordinator, `npm run k8s:up` остановится до любых apply/build. `AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true` только подтверждает осознанный запуск нового PostgreSQL authority и **не переносит данные**; старый `agat-data` PVC остаётся до удаления namespace. Не используйте флаг вместо миграции.
 
@@ -33,12 +34,7 @@ Docker Desktop 1.7 разворачивает PostgreSQL и две coordinator r
 
 ```bash
 node --import tsx --test apps/coordinator/test/fleet-ha.test.ts
-AGAT_POSTGRES_MIGRATION_URL='postgresql://MIGRATION_ROLE@127.0.0.1:55432/agat' \
-AGAT_POSTGRES_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55432/agat' \
-AGAT_TEST_POSTGRES_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55432/agat' \
-AGAT_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55432/agat' \
-AGAT_TEST_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55432/agat' \
-node --import tsx --test apps/coordinator/test/fleet-ha-postgres.integration.test.ts
+npm run fleet:test-ha-postgres
 kubectl kustomize deploy/k8s/docker-desktop >/dev/null
 ```
 
@@ -54,7 +50,7 @@ Coordinator startup не выполняет DDL. При rollout останови
 
 ### Managed PostgreSQL resilience
 
-Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v24 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
+Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v25 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
 
 ### S3-compatible Artifact Store
 
@@ -62,7 +58,11 @@ Production Job валидирует fresh provider evidence и сам endpoint: 
 
 ### Residency-aware region-loss DR
 
-Region-loss не является обычным rollout или database failover. Сначала внешний control plane полностью fence source database/object writes, ingress, enrollment и credentials. Затем изолированные PostgreSQL/S3/Temporal targets подтверждаются fresh HMAC evidence и двумя distinct approver. Suspended Job `agat-region-loss-dr-activation-v24` атомарно меняет whole-cell placement, revokes source workers, requeues outboxes и увеличивает write epoch. Target coordinator запускается только с exact `AGAT_REGION_LOSS_DR_ACTIVATION_ID`, `AGAT_REGION_LOSS_DR_WRITE_EPOCH` и target S3 bucket. Failback проходит как новый reverse transition; полный runbook: [Residency-aware region-loss DR](./region-loss-dr.md).
+Region-loss не является обычным rollout или database failover. Сначала внешний control plane полностью fence source database/object writes, ingress, enrollment и credentials. Затем изолированные PostgreSQL/S3/Temporal targets подтверждаются fresh HMAC evidence и двумя distinct approver. Suspended Job `agat-region-loss-dr-activation-v25` атомарно меняет whole-cell placement, revokes source workers, инвалидирует issued runtime challenges, requeues delivering outboxes и увеличивает write epoch. Target coordinator запускается только с exact `AGAT_REGION_LOSS_DR_ACTIVATION_ID`, `AGAT_REGION_LOSS_DR_WRITE_EPOCH` и target S3 bucket; workers получают новую cell-bound attestation. Failback проходит как новый reverse transition; полный runbook: [Residency-aware region-loss DR](./region-loss-dr.md).
+
+### OCI provenance и runtime attestation workers
+
+Release manifest, CI provenance admission и local runtime statement имеют три разные Ed25519 trust roots. Coordinator сохраняет только public roots и hash challenge, повторно проверяет stored provenance при worker authentication и отклоняет lease после expiry/revoke/root removal. Worker получает attestation через HTTPS либо loopback sidecar без redirects и обновляет её до expiry, не меняя node token. Production rollout, signing helper, broker contract, negative tests и incident response: [Worker supply-chain attestation](./worker-supply-chain-attestation.md).
 
 ## Rollout 1.6 native edge worker
 
@@ -146,15 +146,15 @@ SQLite developer mode использует WAL. Для согласованно�
 
 В PostgreSQL Fleet/HA mode metadata, knowledge vectors, encrypted A2A/MCP state, queue/leases, audit outbox и artifact storage intents находятся в database authority HA-cell. Payload authority находится в versioned S3-compatible bucket той же residency cell; coordinator file cache не является источником истины и не входит в restore set. PostgreSQL PITR и bucket version/lifecycle retention должны иметь согласованный recovery window. Проверка restore должна включать:
 
-1. PostgreSQL schema version `24`, catalog manifest, admission marker, cell activation/write-epoch marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
+1. PostgreSQL schema version `25`, catalog manifest, admission marker, cell activation/write-epoch marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
 2. counts/foreign keys и выборочные content hashes для runs, knowledge, A2A/MCP и artifacts, включая exact bucket/key/version references;
 3. отсутствие cross-project read/write под tenant role;
 4. reconciliation активных Temporal instances с application rows;
-5. повторную доставку `pending/delivering` SIEM rows и дедупликацию уже delivered event IDs;
+5. согласованность `events`/SIEM outbox/DLQ/retention state, возврат `delivering` в retry и дедупликацию уже delivered event IDs;
 6. S3 reconciliation без missing active objects и untracked objects старше grace period;
 7. запуск двух coordinator replicas и конкурентный queue/quota/download smoke test.
 
-`AGAT_CREDENTIALS_KEY`, database credentials, release trust roots и sink tokens backup-ятся отдельным защищённым secret-management процессом. Без прежнего `AGAT_CREDENTIALS_KEY` encrypted protocol/credential history не расшифровывается; one-way endpoint/node token hashes восстановить в raw secret невозможно, поэтому после потери выполняйте rotation.
+`AGAT_CREDENTIALS_KEY`, database credentials, release/provenance/runtime public-root configuration, private signing keys вне cluster и scoped broker/sink tokens backup-ятся раздельным защищённым secret-management процессом. Без прежнего `AGAT_CREDENTIALS_KEY` encrypted protocol/credential history не расшифровывается; one-way endpoint/node token/challenge hashes восстановить в raw secret невозможно, поэтому после потери выполняйте rotation/re-enrollment.
 
 Локальный Kubernetes DR-набор включает:
 
@@ -166,7 +166,7 @@ SQLite developer mode использует WAL. Для согласованно�
 - Secrets `agat-secrets` и `agat-postgres-secrets` в защищённом secret manager;
 - definitions управляемых worker-пулов в Kubernetes API.
 
-Не восстанавливайте PostgreSQL, object store, Temporal и identity state в произвольные разные моменты: artifact references, execution tokens/history и авторизация могут разойтись. После region-loss не подключайте snapshot/bucket к target coordinator до полного source fencing, same-residency policy decision и atomic activation по [runbook](./region-loss-dr.md). Следующие production gates — OCI/runtime attestation и SIEM poison-event retention/DLQ в [roadmap](./roadmap.md).
+Не восстанавливайте PostgreSQL, object store, Temporal и identity state в произвольные разные моменты: artifact references, execution tokens/history и авторизация могут разойтись. После region-loss не подключайте snapshot/bucket к target coordinator до полного source fencing, same-residency policy decision и atomic activation по [runbook](./region-loss-dr.md). Repository capabilities закрыты; production остаётся заблокирован до qualification конкретных managed PostgreSQL/S3/CI/attestor/SIEM контуров и cross-system game day из [roadmap](./roadmap.md).
 
 ## Восстановление durable process
 
@@ -217,21 +217,22 @@ Model Router использует benchmark не старше 30 дней. Ес�
 
 ## Недоступен SIEM sink
 
-Раздел **Fleet / HA** показывает `pending`, `delivering`, `delivered` и oldest pending. При timeout/non-2xx coordinator возвращает batch в `pending` с exponential backoff; несколько replicas не должны экспортировать одну строку одновременно благодаря leased `SKIP LOCKED` claim.
+Раздел **Fleet / HA** показывает `pending`, `delivering`, `delivered`, `dead`, open DLQ, oldest pending и retention state. Успехом считается только 2xx с exact `X-Agat-Audit-Ack`, равным отправленному `X-Agat-Audit-Batch`. Retryable failure возвращает batch в `pending` с exponential backoff; permanent 4xx или исчерпанный лимит атомарно переводит event в `dead` и сохраняет redacted DLQ snapshot. Несколько replicas не экспортируют одну строку одновременно благодаря leased `SKIP LOCKED` claim.
 
 1. Проверьте HTTPS identity/route sink без вывода Bearer в shell/log. Redirect не поддерживается намеренно.
 2. Сопоставьте oldest pending с началом инцидента и убедитесь, что PostgreSQL доступен; не меняйте `audit_export_outbox` вручную.
-3. Проверьте, что sink дедуплицирует `idempotencyKey=agat-audit-<eventId>`: timeout после фактического приёма законно создаёт повтор.
+3. Проверьте exact ack и дедупликацию `idempotencyKey=agat-audit-<eventId>`: timeout после фактического приёма законно создаёт повтор. Не отключайте `AGAT_SIEM_REQUIRE_ACK`, чтобы скрыть несовместимость sink.
 4. Если credential отозван, ротируйте scoped sink token во внешней системе и Kubernetes Secret согласованной процедурой, затем перезапустите coordinator replicas по очереди.
-5. После восстановления дождитесь нулевого backlog и сверяйте диапазоны `X-Agat-Audit-Batch`/event IDs, а не количество HTTP requests.
+5. После устранения root cause admin просматривает open DLQ и bounded batches возвращает нужные events через typed-confirmed replay; auditor имеет только project-scoped read. Resolve без delivery допустим лишь с внешним доказательством и change record.
+6. Дождитесь нулевого backlog/open DLQ и сверяйте диапазоны `X-Agat-Audit-Batch`/event IDs, а не количество HTTP requests. Убедитесь, что retention maintenance выполнялась не старше двух intervals.
 
-Raw event message/reason, prompts, outputs, tool arguments и secrets не отправляются: экспорт содержит safe constant, hashes и allowlisted metadata. Если downstream требует больше полей, добавляйте их schema review, а не forwarding полного `data_json`. В 1.7 нет DLQ/poison-event UI и автоматической retention; длительно не доставляемое событие требует incident record и отдельного controlled remediation.
+Raw event message/reason, prompts, outputs, tool arguments, sink response body и secrets не отправляются: export/DLQ содержат safe constant, hashes и allowlisted metadata. Open DLQ не удаляется retention task; authoritative `events` не удаляются вместе с operational outbox. Полные failure classes, API replay/resolve и restore invariants: [SIEM retention и DLQ](./siem-retention-dlq.md).
 
 ## Инцидент worker release
 
-При подозрении на compromised build сначала нажмите **Revoke** в **Fleet / HA** и укажите incident ID. Coordinator помечает связанные shared-token nodes offline и запрещает им новые leases независимо от rollout percentage. Затем отзовите artifact/OCI во внешнем registry, остановите уже выполняющиеся процессы по их side-effect runbook и зарегистрируйте новый release под действующим либо ротированным trust root.
+При подозрении на compromised build сначала нажмите **Revoke** в **Fleet / HA** и укажите incident ID. Coordinator помечает связанные server-worker nodes offline и запрещает им новые leases независимо от rollout percentage. Затем отзовите artifact/OCI во внешнем registry, остановите уже выполняющиеся процессы по их side-effect runbook и зарегистрируйте новый release с заново проверенным provenance admission.
 
-Не удаляйте revoked manifest: он нужен audit и исключает повторное использование ID/digest. Rollback выполняется новым optimistic rollout update на проверенный fallback/target; private Ed25519 key в coordinator не загружается. Hardware-attested mobile release блокируется средствами Play/App Store/MDM и attestation policy, а потерянное устройство — отдельным remote wipe.
+Не удаляйте revoked manifest: он нужен audit и исключает повторное использование ID/digest. При компрометации provenance signer или local attestor удалите соответствующий public root, перезапустите coordinators, ротируйте private key/scoped broker token и re-enroll workers; увеличение attestation lifetime не является recovery. Rollback выполняется новым optimistic rollout update на проверенный fallback/target; private Ed25519 keys в coordinator не загружаются. Hardware-attested mobile release блокируется средствами Play/App Store/MDM и attestation policy, а потерянное устройство — отдельным remote wipe.
 
 ## Диагностика
 

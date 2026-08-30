@@ -266,10 +266,24 @@ Web/PWA остаётся control surface и не обещает надёжный
 
 - **Готово, этап 1:** canonical offline SQLite→PostgreSQL migrator, artifact backfill, reconciliation/verify report и rehearsal rollback;
 - **Готово, этап 2:** отдельная migration Job/role, catalog drift gate, DDL-free runtime role и connection admission/load testing;
-- **Готово, этап 3:** managed multi-AZ/PITR evidence gate, DR canaries (введены в v22, текущая schema v24), фактический physical restore/failover rehearsal и HMAC-sealed RPO/RTO/SLO evaluation; каждый production cluster всё равно обязан пройти собственную provider qualification;
+- **Готово, этап 3:** managed multi-AZ/PITR evidence gate, DR canaries (введены в v22, текущая schema v25), фактический physical restore/failover rehearsal и HMAC-sealed RPO/RTO/SLO evaluation; каждый production cluster всё равно обязан пройти собственную provider qualification;
 - **Готово, этап 4:** versioned S3-compatible artifact authority, conditional PUT/HEAD reconciliation, cross-replica verified cache, retention/legal hold, exact-version delete outbox, safe lifecycle merge и bounded BYTEA backfill;
 - **Готово, этап 5:** residency-aware whole-cell region-loss DR без active-active writes: sealed PostgreSQL/S3/Temporal evidence, residency policy, four-eyes, snapshot-bound activation, monotonic write epoch и safe failback;
-- OCI provenance/runtime attestation для обычных workers и SIEM retention/DLQ conformance.
+- **Готово, этап 6:** verified OCI/SLSA provenance admission с отдельным trust root, one-time SPIFFE-compatible runtime attestation и refresh; exact SIEM batch acknowledgement, bounded retry, redacted retained DLQ, RBAC replay/resolve и operational retention.
+
+Подробности: [worker supply-chain attestation](./worker-supply-chain-attestation.md), [SIEM retention/DLQ](./siem-retention-dlq.md), [ADR-020](./adr-020-worker-supply-chain-attestation.md) и [ADR-021](./adr-021-siem-retention-dlq.md).
+
+### Что осталось после этапов 1–6
+
+Запланированные repository capabilities этого блока закрыты. Перед production cutover остаётся не новый общий кодовый этап, а qualification каждого конкретного контура:
+
+- предъявить fresh provider evidence и measured restore/failover/RPO/RTO/SLO для каждой managed PostgreSQL cell;
+- выполнить production-sized offline migration rehearsal и rollback rehearsal на копии конкретных данных;
+- подтвердить version-preserving S3 replication/lifecycle/legal hold и region-loss fencing в выбранных регионах;
+- подключить реальный pinned Sigstore release pipeline, SPIRE/другой trusted local attestor и SIEM sink с exact ack/dedupe;
+- провести cross-system region-loss game day и security review trust roots/scoped secrets/RBAC.
+
+Следующий продуктовый релиз после этих qualification gates в roadmap пока не определён и требует отдельной приоритизации.
 
 ## Рекомендуемый порядок
 
@@ -289,4 +303,4 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
 | P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
-| P1 | Этапы 1–5 готовы | Production Fleet readiness и DR | Offline migration, DDL-free Job boundary, managed PostgreSQL resilience, S3 lifecycle и residency-aware region-loss activation закрыты; OCI/runtime attestation и SIEM retention/DLQ остаются |
+| P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |

@@ -306,15 +306,25 @@ export interface ComputeNode {
     artifactDigest: string | null;
     keyId: string | null;
     verified: boolean;
+    provenanceSha256: string | null;
     rolloutRing: string;
   };
-  trustKind: "shared_token" | "hardware_attested";
+  trustKind: "shared_token" | "runtime_attested" | "hardware_attested";
   credentialState: "active" | "wipe_pending" | "wiped" | "revoked";
   attestation: {
     provider: "play_integrity" | "app_attest" | null;
     applicationId: string | null;
     attestedAt: string | null;
     environment: "development" | "production" | null;
+    hardwareBacked: boolean;
+  } | null;
+  runtimeAttestation: {
+    provider: string | null;
+    keyId: string | null;
+    workloadIdentity: string | null;
+    attestedAt: string | null;
+    expiresAt: string | null;
+    verified: boolean;
     hardwareBacked: boolean;
   } | null;
   wipe: {
@@ -564,6 +574,10 @@ export interface WorkerRelease {
   manifestSha256: string;
   keyId: string;
   signature: string;
+  provenance: Record<string, unknown> | null;
+  provenanceSha256: string | null;
+  provenanceKeyId: string | null;
+  provenanceVerified: boolean;
   status: "active" | "revoked";
   createdBy: string;
   issuedAt: string;
@@ -608,7 +622,14 @@ export interface FleetSnapshot {
     pending: number;
     delivering: number;
     delivered: number;
+    dead: number;
+    deadLetters: number;
     oldestPendingAt: string | null;
+    retention: {
+      deliveredDays: number;
+      dlqDays: number;
+      lastRunAt: string | null;
+    } | null;
   };
 }
 
@@ -625,6 +646,24 @@ export interface RegisterWorkerReleaseRequest {
   };
   keyId: string;
   signature: string;
+  provenance?: {
+    statement: {
+      schemaVersion: 1;
+      policyId: string;
+      subjectDigest: string;
+      ociRepository: string;
+      predicateType: "https://slsa.dev/provenance/v1";
+      builderId: string;
+      buildType: string;
+      sourceRepository: string;
+      sourceCommit: string;
+      sigstoreBundleSha256: string;
+      verifiedAt: string;
+      expiresAt: string;
+    };
+    keyId: string;
+    signature: string;
+  };
 }
 
 export interface CreateCredentialRequest {

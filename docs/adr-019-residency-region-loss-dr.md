@@ -2,7 +2,7 @@
 
 - Статус: принят
 - Дата: 2026-08-31
-- Решение: schema v24
+- Решение: DR contract введён schema v24, сохраняется в текущей schema v25
 - Связано: [ADR-017 Fleet HA-cell](./adr-017-fleet-ha-cell.md), [ADR-018 S3 authority](./adr-018-s3-artifact-authority.md), [Region-loss DR](./region-loss-dr.md)
 
 ## Контекст
@@ -13,7 +13,7 @@ Fleet HA-cell уже имела multi-replica coordinator, managed PostgreSQL re
 
 Выбран whole-cell active/passive transition только внутри заранее разрешённого residency domain. Внешний control plane сначала полностью fence source. Затем два distinct approver подтверждают HMAC-sealed evidence из PostgreSQL restore, version-preserving S3 replica и Temporal recovery. Snapshot-bound plan активируется отдельной suspended break-glass Job одной serializable PostgreSQL transaction.
 
-Schema v24 хранит одну active activation и monotonic cell `write_epoch`. Runtime role имеет read-only admission, tenant role не видит DR control tables. Target coordinator требует exact activation ID/epoch/region/residency/S3 bucket; stale source не может пройти startup после следующей активации. Failback является новым reverse transition и снова увеличивает epoch.
+Введённая schema v24 модель хранит одну active activation и monotonic cell `write_epoch`; текущая v25 дополнительно закрывает issued runtime-attestation challenges при переходе. Runtime role имеет read-only admission, tenant role не видит DR control tables. Target coordinator требует exact activation ID/epoch/region/residency/S3 bucket; stale source не может пройти startup после следующей активации. Failback является новым reverse transition и снова увеличивает epoch.
 
 ## Рассмотренные варианты
 

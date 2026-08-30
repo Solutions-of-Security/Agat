@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -137,6 +137,9 @@ class WorkerConfig:
     region: str
     residency_domain: str
     release_identity: dict[str, str] | None
+    runtime_attestation_broker_url: str
+    runtime_attestation_broker_token: str
+    runtime_attestation_timeout: float
     dry_run: bool
     once: bool
 
@@ -150,6 +153,8 @@ class CoordinatorClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.node_token = node_token
+        self.node_id: str | None = None
+        self.attestation_expires_at: datetime | None = None
         self.telemetry = telemetry or WorkerTelemetry(enabled=False)
 
     def request(
@@ -182,7 +187,11 @@ class CoordinatorClient:
                     return None
                 return json.loads(payload.decode("utf-8"))
         except urllib.error.HTTPError as error:
-            raw = error.read().decode("utf-8", errors="replace")
+            try:
+                with error:
+                    raw = error.read().decode("utf-8", errors="replace")
+            except OSError:
+                raw = ""
             try:
                 message = json.loads(raw).get("error", raw)
             except json.JSONDecodeError:
@@ -215,7 +224,137 @@ class CoordinatorClient:
         }
         if config.release_identity is not None:
             payload["release"] = config.release_identity
+        if config.runtime_attestation_broker_url:
+            challenge_id, evidence = self._runtime_evidence(
+                config,
+                name=str(payload["name"]),
+                worker_platform=str(payload["platform"]),
+                architecture=str(payload["architecture"]),
+            )
+            payload["runtimeChallengeId"] = challenge_id
+            payload["runtimeAttestation"] = evidence
         return self.request("POST", "/api/v1/workers/register", payload, authenticated=False)
+
+    def _runtime_evidence(
+        self,
+        config: WorkerConfig,
+        *,
+        name: str,
+        worker_platform: str,
+        architecture: str,
+    ) -> tuple[str, dict[str, Any]]:
+        if config.release_identity is None:
+            raise RuntimeError(
+                "Runtime attestation requires AGAT_WORKER_RELEASE_* identity"
+            )
+        challenge = self.request(
+            "POST",
+            "/api/v1/workers/attestation/challenge",
+            {
+                "enrollmentToken": config.enrollment_token,
+                "name": name,
+                "platform": worker_platform,
+                "architecture": architecture,
+                "region": config.region,
+                "residencyDomain": config.residency_domain,
+                "release": config.release_identity,
+            },
+            authenticated=False,
+        )
+        if not isinstance(challenge, dict) or not isinstance(challenge.get("id"), str):
+            raise RuntimeError("Coordinator returned an invalid runtime challenge")
+        return challenge["id"], self._runtime_attestation(config, challenge)
+
+    def refresh_runtime_attestation(self, config: WorkerConfig) -> str:
+        if not config.runtime_attestation_broker_url:
+            raise RuntimeError("Runtime attestation refresh requires a configured broker")
+        challenge_id, evidence = self._runtime_evidence(
+            config,
+            name=config.node_name.strip(),
+            worker_platform=f"{platform.system()} {platform.release()}",
+            architecture=platform.machine() or "unknown",
+        )
+        result = self.request(
+            "POST",
+            "/api/v1/workers/attestation/refresh",
+            {
+                "runtimeChallengeId": challenge_id,
+                "runtimeAttestation": evidence,
+            },
+        )
+        expires_at = result.get("attestationExpiresAt") if isinstance(result, dict) else None
+        if not isinstance(expires_at, str):
+            raise RuntimeError("Coordinator returned invalid attestation refresh state")
+        self.attestation_expires_at = datetime.fromisoformat(
+            expires_at.replace("Z", "+00:00")
+        )
+        return expires_at
+
+    def _runtime_attestation(
+        self, config: WorkerConfig, challenge: dict[str, Any]
+    ) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": f"agat-worker/{VERSION}",
+        }
+        if config.runtime_attestation_broker_token:
+            headers["Authorization"] = (
+                f"Bearer {config.runtime_attestation_broker_token}"
+            )
+        body = json.dumps(
+            {
+                "schemaVersion": 1,
+                "challenge": challenge.get("challenge"),
+                "challengeSha256": challenge.get("challengeSha256"),
+                "expiresAt": challenge.get("expiresAt"),
+                "binding": challenge.get("binding"),
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            config.runtime_attestation_broker_url,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+                return None
+
+        try:
+            with urllib.request.build_opener(NoRedirect()).open(
+                request, timeout=config.runtime_attestation_timeout
+            ) as response:
+                raw = response.read(1_048_577)
+        except urllib.error.HTTPError as error:
+            try:
+                with error:
+                    detail = error.read(2_000).decode("utf-8", errors="replace")
+            except OSError:
+                detail = ""
+            raise RuntimeError(
+                f"Runtime attestation broker returned HTTP {error.code}: {detail}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"Runtime attestation broker unavailable: {error.reason}"
+            ) from error
+        if len(raw) > 1_048_576:
+            raise RuntimeError("Runtime attestation broker response is too large")
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError("Runtime attestation broker returned invalid JSON") from error
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("statement"), dict)
+            or not isinstance(result.get("keyId"), str)
+            or not isinstance(result.get("signature"), str)
+        ):
+            raise RuntimeError("Runtime attestation broker returned malformed evidence")
+        return result
 
     def heartbeat(self, config: WorkerConfig) -> None:
         self.request(
@@ -2268,8 +2407,21 @@ def load_credentials(path: Path) -> dict[str, str] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data.get("id"), str) and isinstance(data.get("token"), str):
-            return {"id": data["id"], "token": data["token"]}
-    except (OSError, json.JSONDecodeError, TypeError):
+            expires_at = data.get("attestationExpiresAt")
+            if isinstance(expires_at, str):
+                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if expiry <= datetime.now(timezone.utc) + timedelta(seconds=60):
+                    path.unlink(missing_ok=True)
+                    return None
+            credentials = {"id": data["id"], "token": data["token"]}
+            if isinstance(expires_at, str):
+                credentials["attestationExpiresAt"] = expires_at
+            return credentials
+    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return None
     return None
 
@@ -2283,10 +2435,22 @@ def save_credentials(path: Path, credentials: dict[str, str]) -> None:
     temporary.replace(path)
 
 
+def invalidate_credentials(config: WorkerConfig) -> None:
+    try:
+        config.credentials_path.unlink(missing_ok=True)
+    except OSError as error:
+        print(f"Could not remove stale worker credentials: {error}", file=sys.stderr)
+
+
 def register_if_needed(config: WorkerConfig, client: CoordinatorClient) -> None:
     credentials = load_credentials(config.credentials_path)
     if credentials:
         client.node_token = credentials["token"]
+        client.node_id = credentials["id"]
+        if credentials.get("attestationExpiresAt"):
+            client.attestation_expires_at = datetime.fromisoformat(
+                credentials["attestationExpiresAt"].replace("Z", "+00:00")
+            )
         return
     if not config.enrollment_token:
         raise RuntimeError(
@@ -2304,6 +2468,11 @@ def register_if_needed(config: WorkerConfig, client: CoordinatorClient) -> None:
         raise
     save_credentials(config.credentials_path, credentials)
     client.node_token = credentials["token"]
+    client.node_id = credentials["id"]
+    if credentials.get("attestationExpiresAt"):
+        client.attestation_expires_at = datetime.fromisoformat(
+            credentials["attestationExpiresAt"].replace("Z", "+00:00")
+        )
     print(f"Registered node {config.node_name} as {credentials['id']}", flush=True)
 
 
@@ -2312,9 +2481,30 @@ def heartbeat_loop(
 ) -> None:
     while not stop.wait(20):
         try:
+            if (
+                client.attestation_expires_at is not None
+                and client.attestation_expires_at
+                <= datetime.now(timezone.utc) + timedelta(seconds=120)
+            ):
+                expires_at = client.refresh_runtime_attestation(config)
+                if not client.node_id or not client.node_token:
+                    raise RuntimeError("Attested worker credentials are incomplete")
+                save_credentials(
+                    config.credentials_path,
+                    {
+                        "id": client.node_id,
+                        "token": client.node_token,
+                        "attestationExpiresAt": expires_at,
+                    },
+                )
             client.heartbeat(config)
         except ApiError as error:
             print(f"Heartbeat failed: {error}", file=sys.stderr, flush=True)
+            if error.status == 401:
+                invalidate_credentials(config)
+                stop.set()
+        except RuntimeError as error:
+            print(f"Runtime attestation refresh failed: {error}", file=sys.stderr, flush=True)
 
 
 def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Event) -> None:
@@ -2704,7 +2894,15 @@ def _worker_loop_with_telemetry(
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
-    client.heartbeat(config)
+    try:
+        client.heartbeat(config)
+    except ApiError as error:
+        if error.status == 401:
+            invalidate_credentials(config)
+            raise RuntimeError(
+                "Worker credentials or runtime attestation expired; re-enrollment required"
+            ) from error
+        raise
     heartbeat = threading.Thread(
         target=heartbeat_loop, args=(client, config, stop), daemon=True
     )
@@ -2728,10 +2926,7 @@ def _worker_loop_with_telemetry(
                 except ApiError as error:
                     print(f"Lease request failed: {error}", file=sys.stderr, flush=True)
                     if error.status == 401:
-                        print(
-                            f"Remove stale credentials file {config.credentials_path} and register again",
-                            file=sys.stderr,
-                        )
+                        invalidate_credentials(config)
                         stop.set()
                     break
                 if lease:
@@ -2758,6 +2953,7 @@ def _worker_loop_with_telemetry(
                             flush=True,
                         )
                         if error.status == 401:
+                            invalidate_credentials(config)
                             stop.set()
                         break
                     if not knowledge_lease:
@@ -2911,6 +3107,19 @@ def parse_args() -> WorkerConfig:
         "--release-signature",
         default=os.getenv("AGAT_WORKER_RELEASE_SIGNATURE", ""),
     )
+    parser.add_argument(
+        "--runtime-attestation-broker-url",
+        default=os.getenv("AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_URL", ""),
+    )
+    parser.add_argument(
+        "--runtime-attestation-broker-token",
+        default=os.getenv("AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_TOKEN", ""),
+    )
+    parser.add_argument(
+        "--runtime-attestation-timeout",
+        type=float,
+        default=float(os.getenv("AGAT_WORKER_RUNTIME_ATTESTATION_TIMEOUT_SECONDS", "10")),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
@@ -2978,6 +3187,34 @@ def parse_args() -> WorkerConfig:
             "keyId": release_values[2].lower(),
             "signature": release_values[3],
         }
+    broker_url = args.runtime_attestation_broker_url.strip()
+    if broker_url:
+        parsed_broker = urllib.parse.urlsplit(broker_url)
+        loopback = parsed_broker.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed_broker.scheme != "https" and not (
+            loopback and parsed_broker.scheme == "http"
+        ):
+            parser.error(
+                "Runtime attestation broker requires HTTPS; loopback HTTP is allowed"
+            )
+        if (
+            not parsed_broker.hostname
+            or parsed_broker.username
+            or parsed_broker.password
+            or parsed_broker.query
+            or parsed_broker.fragment
+        ):
+            parser.error(
+                "Runtime attestation broker URL cannot contain credentials, query or fragment"
+            )
+        if release_identity is None:
+            parser.error("Runtime attestation broker requires signed release identity")
+    if not 1 <= args.runtime_attestation_timeout <= 60:
+        parser.error("Runtime attestation timeout must be between 1 and 60 seconds")
+    if len(args.runtime_attestation_broker_token) > 8_192 or any(
+        character in args.runtime_attestation_broker_token for character in "\r\n\0"
+    ):
+        parser.error("Runtime attestation broker token is invalid")
     try:
         explicit_profiles = parse_model_profile_overrides(args.model_profiles_json, models)
     except ValueError as error:
@@ -3008,6 +3245,9 @@ def parse_args() -> WorkerConfig:
         region=args.region.strip().lower(),
         residency_domain=args.residency_domain.strip().lower(),
         release_identity=release_identity,
+        runtime_attestation_broker_url=broker_url,
+        runtime_attestation_broker_token=args.runtime_attestation_broker_token.strip(),
+        runtime_attestation_timeout=args.runtime_attestation_timeout,
         dry_run=args.dry_run,
         once=args.once,
     )

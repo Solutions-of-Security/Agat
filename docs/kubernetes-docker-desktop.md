@@ -9,7 +9,7 @@
 - `agat-coordinator` — две stateless replicas с RollingUpdate (`maxUnavailable=0`), PDB `minAvailable=1` и preferred pod anti-affinity;
 - `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с migration/runtime/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
 - `agat-artifact-store` — local MinIO/PVC с bucket versioning; это developer profile, а не production durability claim;
-- `agat-artifact-store-bootstrap-v24`, `agat-postgres-role-bootstrap-v24` и `agat-postgres-schema-v24` — versioned one-shot Jobs для bucket, ownership/role boundary, transactional schema, DR canaries, region-loss marker и connection admission;
+- `agat-artifact-store-bootstrap-v25`, `agat-postgres-role-bootstrap-v25` и `agat-postgres-schema-v25` — versioned one-shot Jobs для bucket, ownership/role boundary, transactional schema, DR canaries, region-loss marker, worker attestation/SIEM DLQ state и connection admission;
 - `agat-keycloak` и `agat-keycloak-postgres` — OIDC, роли, пользователи и проекты; Keycloak доступен на `http://127.0.0.1:8080`;
 - `agat-temporal` — persistent локальный dev-server с namespace `agat`, gRPC/HTTP/metrics и UI на `http://127.0.0.1:8233`;
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
@@ -54,7 +54,7 @@ npm run k8s:up
 2. создаст namespace, application Secret с отдельными Artifact Store keys и coordinator PostgreSQL Secret при первом запуске;
 3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
 4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся bucket/role-bootstrap/schema/admission Jobs;
-5. только после schema v24 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
+5. только после schema v25 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
 Чистый namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: state migrator существует, но намеренно не запускается автоматически без maintenance/reconciliation. После [offline migration](./sqlite-postgresql-migration.md) можно подтвердить authority cutover:
@@ -104,13 +104,16 @@ AGAT_K8S_COORDINATOR_REPLICAS=2 \
 npm run k8s:up
 ```
 
-Project queues, quotas, coordinator heartbeats, signed releases, rollouts и SIEM backlog видны в разделе **Fleet / HA**. Production worker signing включается только после установки public trust roots и регистрации baseline release. Private Ed25519 key остаётся вне cluster:
+Project queues, quotas, coordinator heartbeats, signed releases, provenance status, runtime-attested nodes, rollouts и SIEM backlog/DLQ summary видны в разделе **Fleet / HA**. Docker Desktop намеренно оставляет три worker trust gates выключенными. Production worker admission включается только после установки трёх независимых public trust roots, регистрации baseline release с verified OCI/SLSA admission и подключения local attestor. Private Ed25519 keys остаются вне cluster:
 
 ```bash
 npm run fleet:sign-worker -- manifest.json release-private-key.pem release-prod-2026
+npm run fleet:sign-worker-provenance -- \
+  provenance-admission.json provenance-private-key.pem provenance-prod-2026 \
+  > provenance-envelope.json
 ```
 
-Передайте JSON map public PEM keys через `AGAT_WORKER_RELEASE_PUBLIC_KEYS`, release identity server worker — через `AGAT_WORKER_RELEASE_ID`, `AGAT_WORKER_ARTIFACT_DIGEST`, `AGAT_WORKER_RELEASE_KEY_ID`, `AGAT_WORKER_RELEASE_SIGNATURE`, затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`. Значение JSON и signature удобнее передавать из защищённого environment/CI, не из shell history. Native mobile nodes остаются на отдельной Play Integrity/App Attest boundary.
+Передайте public PEM maps через `AGAT_WORKER_RELEASE_PUBLIC_KEYS`, `AGAT_WORKER_PROVENANCE_PUBLIC_KEYS`, `AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS`; release identity server worker — через прежние `AGAT_WORKER_RELEASE_*`. Worker получает только `AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_URL` и optional Secret key `worker-runtime-attestation-broker-token`. После negative tests одновременно включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`, `AGAT_REQUIRE_WORKER_PROVENANCE=true`, `AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION=true`. JSON/signatures/tokens передавайте из защищённого CI/secret manager, не из shell history. Native mobile nodes остаются на отдельной Play Integrity/App Attest boundary. Полный contract: [OCI provenance и runtime attestation](./worker-supply-chain-attestation.md).
 
 SIEM exporter включается отдельными параметрами; bearer добавляется в `agat-secrets` только если задан:
 
@@ -118,8 +121,14 @@ SIEM exporter включается отдельными параметрами; 
 AGAT_SIEM_ENABLED=true \
 AGAT_SIEM_URL=https://siem.example.internal/ingest/agat \
 AGAT_SIEM_BEARER_TOKEN='scoped-secret' \
+AGAT_SIEM_REQUIRE_ACK=true \
+AGAT_SIEM_MAX_ATTEMPTS=8 \
+AGAT_SIEM_DELIVERED_RETENTION_DAYS=30 \
+AGAT_SIEM_DLQ_RETENTION_DAYS=90 \
 npm run k8s:up
 ```
+
+Remote sink обязан возвращать exact `X-Agat-Audit-Ack`; scoped bearer обязателен. Permanent/max-attempt failure остаётся в retained redacted DLQ до admin replay/resolve. Подробности: [SIEM delivery conformance](./siem-retention-dlq.md).
 
 Локальные PostgreSQL и MinIO работают без TLS только внутри namespace. Production Artifact Store требует private HTTPS, encryption, scoped workload identity и отдельный residency/DR review: [S3 Artifact Store](./s3-artifact-store-lifecycle.md). Production resilience Job требует строго `verify-full`, private managed endpoint, multi-AZ/PITR provider evidence и реальные DR reports; Docker Desktop manifest не является production deployment template. Полный contract: [Managed PostgreSQL](./managed-postgresql-resilience.md) и [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
@@ -282,7 +291,7 @@ AGAT_K8S_IMAGE_TAG=dev npm run k8s:up
 - Две coordinator replicas проверяют shared-state semantics, но один Docker Desktop node и один `agat-coordinator-postgres` pod/PVC остаются общим failure domain. Production использует отдельный managed/multi-AZ/PITR gate и per-cluster restore/failover reports.
 - `temporal server start-dev` и Keycloak `start-dev` предназначены только для локальной разработки. Production требует полноценного Temporal/Cloud, оптимизированного Keycloak, TLS и backup каждой внешней БД.
 - PDB защищает только от части добровольных disruptions и не спасает от потери Docker Desktop node/database.
-- SQLite→PostgreSQL migration требует явного offline runbook и не запускается `k8s:up`; cross-region authority transfer, object store, runtime attestation обычного worker и SIEM poison-event/retention UI ещё отсутствуют.
+- SQLite→PostgreSQL migration требует явного offline runbook и не запускается `k8s:up`. Region-loss, OCI/SLSA/runtime attestation и SIEM DLQ/retention реализованы как production contracts, но local Docker Desktop не квалифицирует managed multi-AZ/PITR, version-preserving cross-region S3 replication, реальный Sigstore CI/SPIRE attestor или внешний SIEM sink.
 - Kong rate limit в локальном профиле хранится в памяти одного pod; несколько Gateway replicas требуют Redis-backed policy.
 - `host.docker.internal` предназначен для связи контейнера с model server на машине Docker Desktop. Для удалённых GPU-узлов используйте отдельный worker, защищённый URL coordinator и SearXNG, доступный с той машины.
 - Сброс Kubernetes-кластера в Docker Desktop удаляет workload и локальные volumes; делайте backup перед reset.

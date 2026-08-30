@@ -18,8 +18,10 @@ import {
 const systemUrl = process.env.AGAT_TEST_POSTGRES_URL ?? "";
 const migrationUrl = process.env.AGAT_POSTGRES_MIGRATION_URL ?? "";
 const tenantUrl = process.env.AGAT_TEST_POSTGRES_TENANT_URL ?? "";
+const cellRegion = process.env.AGAT_REGION ?? "local";
+const cellResidencyDomain = process.env.AGAT_RESIDENCY_DOMAIN ?? cellRegion;
 
-function store(instanceId: string, region: string, residencyDomain: string, artifactsDir: string): AgatStore {
+function store(instanceId: string, artifactsDir: string): AgatStore {
   return new AgatStore(":postgresql:", {
     stateStoreDriver: "postgresql",
     postgres: {
@@ -35,8 +37,8 @@ function store(instanceId: string, region: string, residencyDomain: string, arti
     },
     postgresSchemaMode: "runtime",
     coordinatorInstanceId: instanceId,
-    region,
-    residencyDomain,
+    region: cellRegion,
+    residencyDomain: cellResidencyDomain,
     requireSignedWorkerReleases: false,
     artifactsDir,
   });
@@ -63,7 +65,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
 
   it("keeps the runtime role DDL-free after a separate migration gate", () => {
     const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-ddl-free-"));
-    const runtime = store(`ddl-free-${randomUUID().slice(0, 8)}`, "eu-ddl", "eu-ddl", artifacts);
+    const runtime = store(`ddl-free-${randomUUID().slice(0, 8)}`, artifacts);
     try {
       const profile = runtime.db.prepare(`
         SELECT has_schema_privilege(current_user, current_schema(), 'CREATE') AS schema_create
@@ -85,7 +87,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
 
   it("rejects a schema Job while a coordinator replica is active", async () => {
     const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-active-migration-"));
-    const runtime = store(`active-migration-${randomUUID().slice(0, 8)}`, "eu-active", "eu-active", artifacts);
+    const runtime = store(`active-migration-${randomUUID().slice(0, 8)}`, artifacts);
     try {
       await assert.rejects(
         migratePostgresSchemaAndAdmit(),
@@ -105,7 +107,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-schema-drift-"));
       try {
         assert.throws(
-          () => store(`schema-drift-${randomUUID().slice(0, 8)}`, "eu-drift", "eu-drift", artifacts),
+          () => store(`schema-drift-${randomUUID().slice(0, 8)}`, artifacts),
           /schema manifest drift/i,
         );
       } finally {
@@ -119,12 +121,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
 
   it("shares state between replicas, serializes project quota and enforces RLS", () => {
     const suffix = randomUUID().slice(0, 8);
-    const region = `eu-test-${suffix}`;
-    const residencyDomain = `eu-${suffix}`;
+    const region = cellRegion;
+    const residencyDomain = cellResidencyDomain;
     const firstArtifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-a-"));
     const secondArtifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-b-"));
-    const first = store(`integration-a-${suffix}`, region, residencyDomain, firstArtifacts);
-    const second = store(`integration-b-${suffix}`, region, residencyDomain, secondArtifacts);
+    const first = store(`integration-a-${suffix}`, firstArtifacts);
+    const second = store(`integration-b-${suffix}`, secondArtifacts);
     try {
       const projectId = `fleet-${suffix}`;
       const foreignProjectId = `foreign-${suffix}`;
@@ -216,6 +218,18 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         /permission denied/i,
         "tenant role must not mutate global control-plane tables",
       );
+      for (const globalTrustTable of [
+        "audit_export_outbox",
+        "worker_runtime_attestation_challenges",
+        "audit_export_dead_letters",
+        "audit_export_retention_state",
+      ]) {
+        assert.throws(
+          () => first.db.prepare(`SELECT * FROM ${globalTrustTable} LIMIT 1`).all(),
+          /permission denied/i,
+          `tenant role must not read ${globalTrustTable}`,
+        );
+      }
       runWithPostgresSystemScope(() => {
         const foreign = first.db.prepare("SELECT name FROM projects WHERE id = ?").get(foreignProjectId);
         assert.equal(foreign?.name, `Foreign ${suffix}`);

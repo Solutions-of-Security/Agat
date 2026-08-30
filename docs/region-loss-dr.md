@@ -4,7 +4,7 @@
 
 Agat восстанавливает потерянную Fleet HA-cell только как **whole-cell active/passive transition** внутри того же `residencyDomain`. Источник должен быть полностью fenced до любой активации target: database/object writes, inbound traffic и worker enrollment выключены, credentials отозваны или ротированы, число активных writers равно нулю. Active-active payload writes, частичный перенос проектов и автоматический failover по одному health signal запрещены.
 
-Schema v24 (`agat-residency-region-loss-dr-v24`) добавляет immutable ledger `region_loss_dr_activations` и singleton marker `agat_cell_runtime`. Каждая активация увеличивает `write_epoch`; coordinator запускается только при exact совпадении configured region/residency, activation ID, epoch и target S3 bucket. Оживить старый source snapshot с устаревшим epoch нельзя.
+Schema v24 ввела immutable ledger `region_loss_dr_activations` и singleton marker `agat_cell_runtime`; текущая schema v25 (`agat-worker-attestation-siem-dlq-v25`) сохраняет этот контракт и дополнительно инвалидирует issued runtime-attestation challenges при активации. Каждая активация увеличивает `write_epoch`; coordinator запускается только при exact совпадении configured region/residency, activation ID, epoch и target S3 bucket. Оживить старый source snapshot с устаревшим epoch нельзя.
 
 Application gate проверяет HMAC-sealed evidence и атомарно меняет placement/control state в восстановленной PostgreSQL database. Он не может сам доказать, что недоступный регион физически fenced, создать provider restore, реплицировать S3 или восстановить Temporal. Эти действия выполняются provider automation и двумя ответственными людьми; их отчёты входят в evidence.
 
@@ -93,7 +93,7 @@ Provider adapter формирует bounded JSON schema v1 и не включа�
 |---|---|
 | incident/cells | incident ID/timestamps; distinct source/target cell и region; одинаковый residency domain |
 | fencing | DB и artifact writes, ingress, enrollment выключены; credentials rotated; `activeWriters=0` |
-| PostgreSQL | distinct cluster IDs; isolated target writable; recovery point/completion; exact schema v24 contract; restore report SHA-256 |
+| PostgreSQL | distinct cluster IDs; isolated target writable; recovery point/completion; exact schema v25 contract; restore report SHA-256 |
 | artifacts | distinct versioned buckets; version IDs preserved; lag; pending/failed zero; count/bytes/reference digest; latest replicated point |
 | Temporal | distinct namespaces; recovered history; recovery point и report SHA-256 |
 | approvals | distinct OIDC subjects, required roles, common change/incident record и approval timestamps |
@@ -130,7 +130,7 @@ Key не передаётся coordinator Deployment и не хранится в
 
 ### 2. Восстановить PostgreSQL в изолированном target
 
-Создайте новый target cluster из managed PITR/backup к выбранному recovery point. Не подключайте coordinator replicas. Проверьте TLS/checksums/WAL, schema v24/contract, catalog manifest, admission marker, FORCE RLS и privileges. Restore должен ссылаться на passing report из [managed PostgreSQL runbook](./managed-postgresql-resilience.md).
+Создайте новый target cluster из managed PITR/backup к выбранному recovery point. Не подключайте coordinator replicas. Проверьте TLS/checksums/WAL, schema v25/contract, catalog manifest, admission marker, FORCE RLS и privileges. Restore должен ссылаться на passing report из [managed PostgreSQL runbook](./managed-postgresql-resilience.md).
 
 PostgreSQL не содержит встроенного кросс-регионального failure detector/orchestrator: fencing, выбор target и promotion остаются обязанностью внешнего HA control plane. Новый timeline не разрешает включать старый primary обратно.
 
@@ -162,7 +162,7 @@ Review plan ID/activation ID, source/target, policy/evidence hashes, source/targ
 
 ### 6. Выполнить one-shot activation
 
-Production base содержит `agat-region-loss-dr-activation-v24` с `suspend: true`, `backoffLimit: 0`, non-root/read-only filesystem и default-deny egress. Overlay обязан:
+Production base содержит `agat-region-loss-dr-activation-v25` с `suspend: true`, `backoffLimit: 0`, non-root/read-only filesystem и default-deny egress. Overlay обязан:
 
 - заменить `registry.invalid` на approved immutable image digest;
 - задать target `artifact-bucket` и auditable `region-loss-activation-actor` в `agat-production-cell`;
@@ -174,11 +174,11 @@ Production base содержит `agat-region-loss-dr-activation-v24` с `suspen
 
 ```bash
 kubectl apply -k deploy/k8s/production
-kubectl patch --namespace agat job/agat-region-loss-dr-activation-v24 \
+kubectl patch --namespace agat job/agat-region-loss-dr-activation-v25 \
   --type merge --patch '{"spec":{"suspend":false}}'
 kubectl wait --namespace agat --for=condition=Complete \
-  job/agat-region-loss-dr-activation-v24 --timeout=5m
-kubectl logs --namespace agat job/agat-region-loss-dr-activation-v24
+  job/agat-region-loss-dr-activation-v25 --timeout=5m
+kubectl logs --namespace agat job/agat-region-loss-dr-activation-v25
 ```
 
 CLI equivalent требует typed confirmation:
@@ -246,8 +246,8 @@ npm run fleet:region-loss-dr -- verify \
 | Источник | Версия / дата проверки | Claim scope |
 |---|---|---|
 | `apps/coordinator/src/region-loss-dr.ts` | evidence/plan schema v1 | policy evaluation, snapshot binding, atomic activation и verification |
-| `apps/coordinator/src/database.ts` | PostgreSQL schema v24 | monotonic marker, immutable activation ledger, runtime/tenant grants |
-| `deploy/k8s/production/region-loss-dr-activation.yaml` | Job v24 | suspended break-glass execution boundary |
+| `apps/coordinator/src/database.ts` | PostgreSQL schema v25; DR contract introduced v24 | monotonic marker, immutable activation ledger, challenge invalidation, runtime/tenant grants |
+| `deploy/k8s/production/region-loss-dr-activation.yaml` | Job v25 | suspended break-glass execution boundary |
 | `scripts/test-region-loss-dr.sh` | PostgreSQL 17.6 | disposable activation, relocation, idempotency, admission и tenant denial |
 | [PostgreSQL 17 warm standby](https://www.postgresql.org/docs/17/warm-standby.html) | проверено 2026-08-31 | promotion/timeline и отсутствие встроенного failure orchestration |
 | [PostgreSQL 17 PITR](https://www.postgresql.org/docs/17/continuous-archiving.html) | проверено 2026-08-31 | continuous archive, recovery point и new timeline |

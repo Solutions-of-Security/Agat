@@ -31,6 +31,7 @@ flowchart LR
     C -->|"MCP 2026-07-28 · policy proxy"| MCP["Remote/internal MCP servers"]
     C -.->|"OTLP/HTTP · optional"| OTel["OpenTelemetry Collector"]
     W1["Worker · сервер/GPU"] -->|"исходящий HTTPS poll"| C
+    W1 -->|"one-time runtime challenge"| RATTEST["SPIFFE-compatible local attestor"]
     W2["Worker · ноутбук"] -->|"исходящий HTTPS poll"| C
     W3["Native edge · Android/iOS"] -->|"attested HTTPS poll + control"| C
     C -->|"bounded HTTPS verify"| ATTEST["Play Integrity / App Attest broker"]
@@ -83,11 +84,11 @@ Coordinator хранит состояние очереди, но не подкл
 - A2A interoperability boundary: inbound endpoint bearer/task/SSE/push/files и outbound Agent Card discovery/send/poll/cancel с encrypted credentials, delegated RFC 8693, SSRF-safe pinned transport и redacted audit без раскрытия prompt/tools/memory.
 - hardened Temporal boundary: TLS/API key или mTLS production transport, Worker Deployment Versioning, replay fixtures и scheduled parent→child workflows.
 - native edge trust boundary: one-time hashed challenges, external Play Integrity/App Attest verification, hardware-attested device token lifecycle, control-only pending-wipe scope и immutable wipe audit.
-- Fleet release boundary: Ed25519 manifests, public trust roots, expiry/revoke, deterministic target/fallback cohorts и fail-closed worker admission.
-- SIEM boundary: transactional audit outbox, leased batches, redacted NDJSON, idempotency key и retry/backoff.
+- Fleet release boundary: Ed25519 manifests, отдельный verified OCI/SLSA provenance root, one-time runtime challenge, SPIFFE-compatible workload identity, expiry/refresh/revoke, deterministic target/fallback cohorts и fail-closed worker admission.
+- SIEM boundary: transactional audit outbox, leased batches, redacted NDJSON, stable idempotency key, exact sink acknowledgement, bounded retry, retained DLQ и RBAC replay/resolve.
 - region-loss boundary: external source fencing, same-residency policy, sealed PostgreSQL/S3/Temporal evidence, distinct approvers, atomic whole-cell relocation и monotonic write epoch.
 
-PostgreSQL является единственным metadata/source-of-control внутри Fleet HA-cell; S3 exact version является authority artifact bytes, dual-write с SQLite отсутствует. Каждая cell принимает только свой `region/residencyDomain`, а обычный online cross-cell relocation отклоняется. SQLite по-прежнему требует один coordinator. Production endpoint проходит отдельный multi-AZ/PITR evidence gate и measured restore/failover canaries; application `haReady` не подменяет HA database. При потере региона разрешён только fully fenced whole-cell transition внутри того же residency domain: schema v24 marker требует exact activation ID и monotonic write epoch, поэтому stale source runtime не стартует. Реализация и gates описаны в [Fleet и HA 1.7](./fleet-ha-1.7.md), [Managed PostgreSQL](./managed-postgresql-resilience.md), [Region-loss DR](./region-loss-dr.md) и [PostgreSQL state-store](./postgresql-state-store-design.md).
+PostgreSQL является единственным metadata/source-of-control внутри Fleet HA-cell; S3 exact version является authority artifact bytes, dual-write с SQLite отсутствует. Каждая cell принимает только свой `region/residencyDomain`, а обычный online cross-cell relocation отклоняется. SQLite по-прежнему требует один coordinator. Production endpoint проходит отдельный multi-AZ/PITR evidence gate и measured restore/failover canaries; application `haReady` не подменяет HA database. При потере региона разрешён только fully fenced whole-cell transition внутри того же residency domain: введённый schema v24 marker сохраняется в текущей schema v25 и требует exact activation ID и monotonic write epoch, поэтому stale source runtime не стартует. Реализация и gates описаны в [Fleet и HA 1.7](./fleet-ha-1.7.md), [Managed PostgreSQL](./managed-postgresql-resilience.md), [Region-loss DR](./region-loss-dr.md), [worker supply-chain attestation](./worker-supply-chain-attestation.md), [SIEM retention/DLQ](./siem-retention-dlq.md) и [PostgreSQL state-store](./postgresql-state-store-design.md).
 
 В Docker Desktop coordinator использует namespace-scoped service account. Launcher управляет Deployments; sandbox executor — только Jobs, Pods/log, Secrets и NetworkPolicies того же namespace. Пользователь launcher передаёт только модель, число workers, concurrency и флаг web-tools; isolated image/module/command меняет только `admin`. Подробнее: [локальный запуск нескольких workers](./local-workers.md) и [изолированное выполнение tools](./isolated-tool-execution.md).
 
@@ -109,7 +110,7 @@ PostgreSQL является единственным metadata/source-of-control 
 - сообщает наблюдаемые model/tool calls и redacted handoff metadata; provider-specific hidden reasoning, raw assignment и specialist output в audit намеренно не записываются;
 - продолжает W3C trace через agent/model/tool spans и возвращает token/time metrics;
 - умеет `--once --dry-run` для сквозной проверки без модели.
-- публикует region/residency и optional signed release identity; coordinator повторно проверяет release при registration/heartbeat/claim.
+- публикует region/residency и signed release identity; в production получает one-time coordinator challenge, предъявляет fresh local runtime attestation и обновляет её без ротации node token; coordinator повторно проверяет release/provenance/attestation при registration, authentication и claim.
 
 Web-инструменты работают на стороне конкретного worker. В Kubernetes поиск выполняет внутренний SearXNG, а чтение публичной страницы — worker с проверкой DNS/IP, redirect, content type, размера и таймаута. Поэтому удалённая машина не должна открывать model endpoint; ей нужен исходящий доступ к coordinator, локальному/общему SearXNG и выбранным публичным сайтам. Подробности: [web-доступ локальных агентов](./web-access.md).
 
@@ -212,12 +213,12 @@ stateDiagram-v2
 
 ## Доставка и согласованность
 
-Модель доставки — **at least once**. Если worker завершил inference, но не успел отправить `complete`, lease истечёт и этап может выполниться повторно. MCP/process side effects используют существующие approval/idempotency controls. SIEM sink также обязан дедуплицировать по `agat-audit-ID`, потому что network timeout не доказывает отсутствие delivery.
+Модель доставки — **at least once**. Если worker завершил inference, но не успел отправить `complete`, lease истечёт и этап может выполниться повторно. MCP/process side effects используют существующие approval/idempotency controls. SIEM sink подтверждает точный batch header, но всё равно обязан дедуплицировать по `agat-audit-ID`: network timeout после sink commit не доказывает отсутствие delivery.
 
 ## Trace и Artifact Store
 
 `events` — append-only наблюдаемый журнал. При создании/постановке stage coordinator фиксирует immutable agent snapshot; при выдаче lease — точный run input, outputs предыдущих этапов, worker snapshot и W3C trace context. Worker добавляет progress, model/tool calls и метрики, а coordinator — переходы, approval, retry, output и создание файлов. Скрытая chain-of-thought не является частью модели данных.
 
-Stage output всегда хранится в authoritative storage, поэтому UI не зависит от worker filesystem. В текущей schema v24 PostgreSQL хранит project ownership, metadata, SHA-256, retention/state и durable delete outbox, а S3-compatible exact object version является authority bytes. Replica при authenticated download проверяет provider metadata, payload hash/size и локальный cache под `AGAT_ARTIFACTS_DIR`; повреждённый cache восстанавливается, silent fallback в BYTEA запрещён. Legacy PostgreSQL payload переносится bounded idempotent backfill после PUT/HEAD verification. Region-loss activation меняет bucket reference только после sealed evidence, что target replica сохранила exact versions и совпала с database reference digest.
+Stage output всегда хранится в authoritative storage, поэтому UI не зависит от worker filesystem. В текущей schema v25 PostgreSQL хранит project ownership, metadata, SHA-256, retention/state и durable delete outbox, а S3-compatible exact object version является authority bytes. Replica при authenticated download проверяет provider metadata, payload hash/size и локальный cache под `AGAT_ARTIFACTS_DIR`; повреждённый cache восстанавливается, silent fallback в BYTEA запрещён. Legacy PostgreSQL payload переносится bounded idempotent backfill после PUT/HEAD verification. Region-loss activation меняет bucket reference только после sealed evidence, что target replica сохранила exact versions и совпала с database reference digest.
 
 Подробности и границы: [S3 Artifact Store](./s3-artifact-store-lifecycle.md), [журнал выполнения и артефакты](./execution-traces-and-artifacts.md), [OpenTelemetry, manifest, replay/eval](./observability-replay-evals.md) и [Golden eval/prompt registry](./golden-eval-prompt-registry.md).

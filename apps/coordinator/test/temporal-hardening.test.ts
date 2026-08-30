@@ -74,6 +74,37 @@ describe("Temporal production hardening", () => {
     );
   });
 
+  it("fails closed for incomplete worker trust chains and remote SIEM credentials", () => {
+    const base = loadConfig();
+    assert.throws(
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        requireSignedWorkerReleases: false,
+        requireWorkerProvenance: true,
+        workerProvenancePublicKeys: { provenance: "public-key" },
+      }),
+      /AGAT_REQUIRE_SIGNED_WORKER_RELEASES/,
+    );
+    assert.throws(
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        requireWorkerProvenance: false,
+        requireWorkerRuntimeAttestation: true,
+        workerRuntimeAttestationPublicKeys: { runtime: "public-key" },
+      }),
+      /AGAT_REQUIRE_WORKER_PROVENANCE/,
+    );
+    assert.throws(
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        siemEnabled: true,
+        siemUrl: "https://siem.example.test/ingest",
+        siemBearerToken: "",
+      }),
+      /AGAT_SIEM_BEARER_TOKEN/,
+    );
+  });
+
   it("builds a secret-bearing connection descriptor without leaking it into the runtime snapshot", () => {
     const base = loadConfig();
     const config = {

@@ -235,6 +235,7 @@ function sourcePreflight(database: DatabaseSync): number {
     ["mcp_tool_calls", "status = 'executing'"],
     ["knowledge_embedding_jobs", "status = 'running'"],
     ["audit_export_outbox", "locked_by IS NOT NULL"],
+    ["worker_runtime_attestation_challenges", "status = 'issued'"],
   ] as const;
   for (const [table, predicate] of unsafeChecks) {
     const count = Number((database.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)} WHERE ${predicate}`).get() as { count: number | bigint }).count);

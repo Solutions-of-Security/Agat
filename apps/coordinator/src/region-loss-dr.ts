@@ -747,6 +747,11 @@ export async function applyRegionLossActivation(
       WHERE status = 'running'
     `, [activatedAt]);
     await client.query(`
+      UPDATE worker_runtime_attestation_challenges SET status = 'failed',
+        failure_reason = 'Region-loss activation invalidated source-cell challenge', consumed_at = $1
+      WHERE status = 'issued'
+    `, [activatedAt]);
+    await client.query(`
       UPDATE audit_export_outbox SET status = 'pending', locked_by = NULL,
         lock_expires_at = NULL, available_at = $1, updated_at = $1
       WHERE status = 'delivering'

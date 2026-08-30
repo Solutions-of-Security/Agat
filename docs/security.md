@@ -60,7 +60,10 @@
 - Fleet/HA mode использует отдельные PostgreSQL system и tenant credentials; tenant role не имеет `BYPASSRLS`, project-owned tables включают `FORCE ROW LEVEL SECURITY`, а request-scoped project context сбрасывается вместе с транзакцией;
 - tenant role получает только DML для RLS-защищённых таблиц и read-only доступ к разрешённым global справочникам; изменение settings, migrations, release registry и SIEM delivery state остаётся system/admin boundary;
 - signed worker release admission проверяет Ed25519 manifest, configured trust root, digest, expiry/revoke, region/platform/ring и deterministic rollout cohort перед выдачей нового lease;
-- SIEM outbox экспортирует только allowlisted/redacted metadata и hash исходного event payload; Bearer sink credential не входит в event, log или batch ID.
+- OCI/SLSA admission подписывается отдельным provenance root после внешней Sigstore verification и связывает exact image digest, builder/source commit и bundle hash; release key не может подменить provenance key;
+- обычный production worker получает одноразовый hash-only challenge и предъявляет fresh runtime statement отдельного local attestor: exact cell/release/provenance/image digest, allowlisted provider, SPIFFE-compatible identity и selector hash; evidence истекает и обновляется без ротации node token;
+- runtime-attestor bearer является отдельным worker-only scoped secret; coordinator хранит только public attestation roots, а неизвестный/удалённый root, replay, просрочка или несовпадение binding закрывают authentication и lease;
+- SIEM outbox экспортирует только allowlisted/redacted metadata и hash исходного event payload; Bearer sink credential не входит в event, log или batch ID; exact acknowledgement обязателен, retry ограничен, terminal failure атомарно сохраняет redacted retained DLQ evidence.
 
 ## Production checklist
 
@@ -80,12 +83,14 @@
 - [ ] Kong опубликован по TLS; при нескольких replicas rate limit использует Redis.
 - [ ] `AGAT_ALLOWED_ORIGINS` содержит только реальные адреса панели.
 - [ ] Enrollment token ротируется после подключения парка.
-- [ ] Для shared-token server workers задан `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; private release key хранится вне coordinator, trust roots ротируются с overlap, baseline rollout имеет проверенный fallback, revoke отрепетирован. Native edge отдельно проверяется Play Integrity/App Attest.
+- [ ] Для server workers одновременно включены signed release, OCI/SLSA provenance и runtime-attestation gates; три private keys находятся вне coordinator и разделены, trust roots ротируются с overlap, baseline rollout имеет fallback, revoke/expiry/broker outage отрепетированы. Native edge отдельно проверяется Play Integrity/App Attest.
+- [ ] CI проверяет digest-pinned OCI signature и SLSA v1 provenance закреплённым `cosign`, а local attestor получает workload selectors сам; worker-supplied labels не считаются evidence.
+- [ ] Runtime broker доступен worker только по HTTPS либо loopback sidecar, не следует redirects и получает отдельный ingest/attest-only token; challenge replay, wrong cell/digest/identity и expired evidence входят в negative test.
 - [ ] Project `homeRegion/allowedRegions/residencyDomain`, queue и quotas утверждены владельцем данных; online cross-residency relocation запрещён.
 - [ ] Region-loss policy содержит только same-residency transitions; source полностью fenced внешним control plane, PostgreSQL/S3/Temporal evidence свежее и согласовано, activation подтверждена двумя distinct OIDC subject, target runtime использует exact activation ID/write epoch/bucket.
 - [ ] Startup role-profile gate подтверждает разные фактические system/tenant users; tenant не имеет powerful attributes/membership, database/schema `CREATE`, DDL/global write; negative cross-project read/write тест запускается после каждой privilege migration.
 - [ ] System database credential рассматривается как cell-wide secret, доступен только coordinator/migration job и имеет отдельную rotation/incident procedure.
-- [ ] SIEM sink использует HTTPS, scoped Bearer, дедупликацию `idempotencyKey`, мониторинг oldest pending/retries и утверждённые retention/poison-event правила.
+- [ ] SIEM sink использует HTTPS, ingest-only Bearer, exact `X-Agat-Audit-Ack`, дедупликацию `idempotencyKey`, мониторинг oldest pending/open DLQ и утверждённые delivered/DLQ retention сроки; replay/resolve доступны только через audited admin procedure.
 - [ ] Обычные неиспользуемые node credentials отзываются повторной регистрацией/ротацией; потерянные native edge devices проходят admin remote wipe.
 - [ ] Edge включён только с отдельным HTTPS attestation broker, egress allowlist, secret rotation и проверкой Google/Apple evidence на server side.
 - [ ] `AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION=false`; package/bundle/App IDs и required verdicts совпадают с production signing configuration.
@@ -213,9 +218,9 @@ Runbook и список параметров: [Production hardening durable runt
 
 Одна HA-cell имеет фиксированную пару `AGAT_REGION/AGAT_RESIDENCY_DOMAIN`, одну PostgreSQL metadata authority и один S3 payload authority. Project payload не реплицируется приложением между cells; `allowedRegions` не является разрешением произвольной replica забрать данные другого residency domain. Обычное изменение home cell требует остановки writes, offline migration и reconciliation. Region-loss — отдельный break-glass whole-cell transition: source database/object/ingress/enrollment/credentials полностью fenced, target остаётся изолированным до sealed evidence и two-person approval, а runtime admission требует exact monotonic activation marker. Подробная процедура: [Region-loss DR](./region-loss-dr.md).
 
-Release signature доказывает, что canonical manifest подписан доверенным Ed25519 key, но не доказывает, что недоверенный host реально исполняет заявленные bytes. Digest/release identity, staged cohort и revoke являются admission controls; stronger supply-chain guarantee требует проверенной OCI provenance и runtime/hardware attestation.
+Release signature доказывает авторизацию canonical manifest, отдельный provenance admission — внешнюю проверку exact OCI digest/SLSA evidence, а fresh runtime statement — связь запущенного workload с этим digest и cell. Ни один root не подменяет остальные; challenge одноразовый, stored nonce hash-only, evidence ограничено lifetime и повторно проверяется на authentication/lease. Полный contract: [OCI provenance и runtime attestation](./worker-supply-chain-attestation.md).
 
-SIEM delivery имеет at-least-once семантику. Истёкший exporter lease или неясный HTTP outcome приводит к повтору, поэтому sink обязан дедуплицировать `agat-audit-<eventId>`. Redirect запрещён; raw prompt/output/tool arguments и secrets в export не включаются. Полная модель и открытые production gates: [Fleet и HA 1.7](./fleet-ha-1.7.md).
+SIEM delivery имеет at-least-once семантику даже при exact batch acknowledgement: истёкший exporter lease или timeout после sink commit приводит к повтору, поэтому sink обязан дедуплицировать `agat-audit-<eventId>`. Redirect запрещён; raw prompt/output/tool arguments, response body и secrets в export/DLQ не включаются. Permanent failure или исчерпанный retry переводит событие в retained DLQ; open evidence не удаляется без audited replay/resolve. Полная модель: [SIEM retention и DLQ](./siem-retention-dlq.md).
 
 ## Web tools
 

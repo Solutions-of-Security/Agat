@@ -249,6 +249,8 @@ export interface WorkerRegistration {
   region?: string;
   residencyDomain?: string;
   release?: WorkerReleaseIdentity;
+  runtimeChallengeId?: string;
+  runtimeAttestation?: WorkerRuntimeAttestationEnvelope;
 }
 
 export interface WorkerMetrics {
@@ -287,7 +289,7 @@ export interface WorkerReleaseIdentity {
 
 export type EdgePlatform = "android" | "ios";
 export type EdgeAttestationProvider = "play_integrity" | "app_attest";
-export type NodeTrustKind = "shared_token" | "hardware_attested";
+export type NodeTrustKind = "shared_token" | "runtime_attested" | "hardware_attested";
 export type NodeCredentialState = "active" | "wipe_pending" | "wiped" | "revoked";
 
 export interface EdgeEnrollmentChallengeInput {
@@ -1052,10 +1054,90 @@ export interface WorkerReleaseManifest {
   metadata?: Record<string, string>;
 }
 
+/**
+ * Compact admission statement produced only after the release pipeline has
+ * verified the OCI signature and SLSA provenance bundle with cosign.
+ */
+export interface WorkerProvenanceStatement {
+  schemaVersion: 1;
+  policyId: string;
+  subjectDigest: string;
+  ociRepository: string;
+  predicateType: "https://slsa.dev/provenance/v1";
+  builderId: string;
+  buildType: string;
+  sourceRepository: string;
+  sourceCommit: string;
+  sigstoreBundleSha256: string;
+  verifiedAt: string;
+  expiresAt: string;
+}
+
+export interface WorkerProvenanceEnvelope {
+  statement: WorkerProvenanceStatement;
+  keyId: string;
+  signature: string;
+}
+
+export interface WorkerRuntimeAttestationStatement {
+  schemaVersion: 1;
+  challengeSha256: string;
+  workerName: string;
+  platform: string;
+  architecture: string;
+  region: string;
+  residencyDomain: string;
+  releaseId: string;
+  artifactDigest: string;
+  provenanceSha256: string;
+  provider: string;
+  workloadIdentity: string;
+  selectorSha256: string;
+  imageDigest: string;
+  hardwareBacked: boolean;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+export interface WorkerRuntimeAttestationEnvelope {
+  statement: WorkerRuntimeAttestationStatement;
+  keyId: string;
+  signature: string;
+}
+
+export interface WorkerRuntimeAttestationChallengeInput {
+  enrollmentToken: string;
+  name: string;
+  platform: string;
+  architecture?: string;
+  region?: string;
+  residencyDomain?: string;
+  release?: WorkerReleaseIdentity;
+}
+
+export interface WorkerRuntimeAttestationChallenge {
+  schemaVersion: 1;
+  id: string;
+  challenge: string;
+  challengeSha256: string;
+  expiresAt: string;
+  binding: {
+    workerName: string;
+    platform: string;
+    architecture: string;
+    region: string;
+    residencyDomain: string;
+    releaseId: string;
+    artifactDigest: string;
+    provenanceSha256: string;
+  };
+}
+
 export interface RegisterWorkerReleaseInput {
   manifest: WorkerReleaseManifest;
   keyId: string;
   signature: string;
+  provenance?: WorkerProvenanceEnvelope;
 }
 
 export interface WorkerRolloutInput {

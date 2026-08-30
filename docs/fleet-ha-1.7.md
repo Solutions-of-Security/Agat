@@ -4,7 +4,7 @@
 
 Релиз 1.7 переводит state plane coordinator с single-writer SQLite на поддерживаемый PostgreSQL backend и разрешает несколько coordinator replicas внутри одной региональной HA-cell. В той же транзакционной границе появились project queues/quotas, residency placement, реестр подписанных worker releases, deterministic staged rollout и durable audit outbox для SIEM.
 
-Это исторический release contract для локального и staging-контура. Post-1.7 production-readiness этапы уже добавили offline migrator, DDL-free migration boundary, managed PostgreSQL evidence gates и schema v23 S3-compatible artifact authority; незакрытые пункты отражены в [roadmap](./roadmap.md). Одиночный PostgreSQL pod в Docker Desktop по-прежнему не является production HA.
+Это исторический release contract для локального и staging-контура. Post-1.7 production-readiness этапы уже добавили offline migrator, DDL-free migration boundary, managed PostgreSQL evidence gates, S3-compatible artifact authority, residency-aware region-loss DR и текущую schema v25 с OCI/SLSA/runtime attestation и SIEM retention/DLQ. Актуальные контракты и оставшиеся deployment qualifications отражены в [roadmap](./roadmap.md). Одиночный PostgreSQL pod в Docker Desktop по-прежнему не является production HA.
 
 ## Границы и scope
 
@@ -149,7 +149,7 @@ JSON из последней команды передаётся в `POST /api/v
 
 Rollout существует на `(project, region, ring)`. Первый release ring обязан быть 100%. При смене target предыдущий release становится fallback; bucket `sha256(project:node:rollout) % 100` стабильно определяет cohort. Scheduler выдаёт работу только worker с ожидаемым target/fallback release. Изменение rollout использует revision; revoke переводит связанные nodes offline и снимает verification без ожидания heartbeat.
 
-Это admission rollout, а не updater: Agat не загружает и не устанавливает бинарник. Обычный worker host может заявить чужой digest; для stronger provenance нужны OCI signature verification плюс runtime attestation. Hardware-attested Android/iOS nodes не входят в server-worker cohorts: их application release/signing контролируют Play/App Store и существующий Play Integrity/App Attest broker. Они сохраняют control/wipe и bounded agent scheduling при `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`, но не получают MCP/HTTP/embedding work.
+Это admission rollout, а не updater: Agat не загружает и не устанавливает бинарник. В базовом 1.7 обычный worker host мог заявить чужой digest; schema v25 закрывает этот production gap отдельным OCI/SLSA provenance admission и fresh runtime attestation: [актуальный contract](./worker-supply-chain-attestation.md). Hardware-attested Android/iOS nodes не входят в server-worker cohorts: их application release/signing контролируют Play/App Store и существующий Play Integrity/App Attest broker. Они сохраняют control/wipe и bounded agent scheduling при `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`, но не получают MCP/HTTP/embedding work.
 
 ## SIEM audit export contract
 
@@ -163,7 +163,7 @@ Exporter выполняет HTTPS `POST` с `Content-Type: application/x-ndjson`
 - SHA-256 исходного `data_json` и optional reason, но не raw reason/arguments/prompts/outputs/secrets;
 - delivery attempt.
 
-HTTP redirect запрещён. Timeout или non-2xx не означает недоставку: batch возвращается в pending с bounded exponential backoff. Sink обязан дедуплицировать по `idempotencyKey`. Delivered rows сохраняются для reconciliation; retention пока является открытым production решением.
+HTTP redirect запрещён. В базовом 1.7 timeout или non-2xx возвращал batch в pending с bounded exponential backoff, а sink должен был дедуплицировать по `idempotencyKey`. Schema v25 добавила exact acknowledgement, terminal DLQ и bounded operational retention; актуальный contract: [SIEM retention/DLQ](./siem-retention-dlq.md).
 
 ## Конфигурация и deployment
 
@@ -181,7 +181,7 @@ HTTP redirect запрещён. Timeout или non-2xx не означает н�
 | `AGAT_WORKER_RELEASE_PUBLIC_KEYS` | JSON map public Ed25519 trust roots |
 | `AGAT_REQUIRE_SIGNED_WORKER_RELEASES` | fail-closed worker admission |
 | `AGAT_SIEM_ENABLED`, `AGAT_SIEM_URL` | exporter switch и HTTPS sink |
-| `AGAT_SIEM_BEARER_TOKEN` | optional scoped sink credential |
+| `AGAT_SIEM_BEARER_TOKEN` | scoped sink credential; обязателен для current remote SIEM |
 
 Локальный Compose PostgreSQL profile:
 
@@ -219,18 +219,18 @@ Production SLO, RPO и RTO не утверждены этим релизом. Д
 
 Post-1.7 production-readiness этап добавил canonical offline migrator с reconciliation, verify и rehearsal rollback: [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md). Абзац выше сохраняет историческую границу самого релиза 1.7.
 
-## Риски и открытые вопросы
+## Исторические риски и текущее состояние
 
 | ID | Риск / открытая работа | Текущий контроль | Production gate |
 |---|---|---|---|
 | RISK-1701 | Local PostgreSQL — single point of failure | честная маркировка local/staging | managed multi-AZ + failover test |
 | RISK-1702 | Startup role в 1.7 выполняла DDL | post-1.7 schema v21 Job и DDL-free runtime закрыли риск | закрыто; regression gate остаётся обязательным |
 | RISK-1703 | Synchronous DB bridge ограничивает throughput replica | bounded statements/pools и scale-out | async repositories + load test |
-| RISK-1704 | PostgreSQL artifact bytes увеличивают DB/WAL | SHA-256, bounded API payloads | object store + lifecycle policy |
-| RISK-1705 | Нет автоматической SQLite migration | offline documented plateau | canonical migrator + reconciliation report |
-| RISK-1706 | Worker digest не является host attestation | signed registry + revoke | OCI provenance/runtime attestation |
-| RISK-1707 | Нет cross-region automatic failover | cell rejects online relocation | approved residency-aware DR runbook |
-| RISK-1708 | Delivered audit rows не имеют retention/DLQ UI | retry/backoff/status | retention, poison-event policy, sink-specific conformance |
+| RISK-1704 | PostgreSQL artifact bytes увеличивали DB/WAL | schema v23 S3 exact-version authority + lifecycle | закрыто; provider S3 qualification остаётся deployment gate |
+| RISK-1705 | В 1.7 не было SQLite migration | canonical offline migrator + reconciliation/rehearsal | закрыто; production-sized rehearsal обязателен |
+| RISK-1706 | Worker digest не являлся host attestation | schema v25 separate OCI/SLSA/runtime roots | закрыто; CI/local-attestor qualification обязательна |
+| RISK-1707 | Нет active-active cross-region failover | residency-aware whole-cell fencing/evidence/activation | закрыто как DR contract; provider game day обязателен |
+| RISK-1708 | В 1.7 не было SIEM retention/DLQ | schema v25 exact ack, retained DLQ, RBAC operations | закрыто; sink conformance/retention approval обязательны |
 
 ## Проверка и acceptance evidence
 

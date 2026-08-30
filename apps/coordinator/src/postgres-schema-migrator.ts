@@ -89,7 +89,7 @@ function environment(): SchemaMigrationEnvironment {
   if (Boolean(sslCert) !== Boolean(sslKey)) throw new Error("PostgreSQL client certificate и key задаются вместе");
   const common = {
     tenantUrl,
-    applicationName: "agat-postgres-schema-v24",
+    applicationName: "agat-postgres-schema-v25",
     poolMax: 1,
     connectTimeoutMs: integer(process.env.AGAT_POSTGRES_CONNECT_TIMEOUT_MS, 5_000, 500, 60_000),
     idleTimeoutMs: integer(process.env.AGAT_POSTGRES_IDLE_TIMEOUT_MS, 30_000, 1_000, 600_000),
@@ -211,7 +211,7 @@ export async function migratePostgresSchemaAndAdmit(): Promise<{
       residencyDomain: config.residencyDomain,
       regionLossDrActivationId: config.regionLossDrActivationId,
       regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
-      coordinatorInstanceId: "schema-migration-v24",
+      coordinatorInstanceId: "schema-migration-v25",
     });
     migrator.close();
 

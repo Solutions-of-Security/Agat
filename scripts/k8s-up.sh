@@ -371,6 +371,10 @@ fi
 if [[ -n "${AGAT_SIEM_BEARER_TOKEN:-}" ]]; then
   ensure_secret_key "siem-bearer-token" "${AGAT_SIEM_BEARER_TOKEN}"
 fi
+if [[ -n "${AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_TOKEN:-}" ]]; then
+  ensure_secret_key "worker-runtime-attestation-broker-token" \
+    "${AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_TOKEN}"
+fi
 
 if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
   printf 'Собираю %s для %s...\n' "${coordinator_image}" "${platform}"
@@ -411,7 +415,10 @@ if ${coordinator_existed}; then
   kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas=0 >/dev/null
   kubectl rollout status deployment/agat-coordinator --namespace "${namespace}" --timeout=120s >/dev/null
 fi
-kubectl delete job/agat-postgres-role-bootstrap-v24 \
+kubectl delete job/agat-postgres-role-bootstrap-v25 \
+  job/agat-postgres-schema-v25 \
+  job/agat-artifact-store-bootstrap-v25 \
+  job/agat-postgres-role-bootstrap-v24 \
   job/agat-postgres-schema-v24 \
   job/agat-artifact-store-bootstrap-v24 \
   job/agat-postgres-role-bootstrap-v23 \
@@ -463,13 +470,13 @@ kubectl apply --kustomize "${rendered_manifests_dir}"
 cleanup_rendered_manifests
 rendered_manifests_dir=""
 trap - EXIT
-kubectl wait --for=condition=Complete job/agat-artifact-store-bootstrap-v24 \
+kubectl wait --for=condition=Complete job/agat-artifact-store-bootstrap-v25 \
   --namespace "${namespace}" --timeout=360s >/dev/null || die \
   "Artifact Store bootstrap Job не завершилась"
-kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v24 \
+kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v25 \
   --namespace "${namespace}" --timeout=360s >/dev/null || die \
   "PostgreSQL role bootstrap Job не завершилась"
-kubectl wait --for=condition=Complete job/agat-postgres-schema-v24 \
+kubectl wait --for=condition=Complete job/agat-postgres-schema-v25 \
   --namespace "${namespace}" --timeout=960s >/dev/null || die \
   "PostgreSQL schema/admission Job не завершилась"
 coordinator_otel_patch="$(node --input-type=module -e '
@@ -526,11 +533,24 @@ kubectl set env deployment/agat-coordinator \
   "AGAT_RESIDENCY_DOMAIN=${AGAT_RESIDENCY_DOMAIN:-${AGAT_REGION:-local}}" \
   "AGAT_WORKER_RELEASE_PUBLIC_KEYS=${AGAT_WORKER_RELEASE_PUBLIC_KEYS:-{}}" \
   "AGAT_REQUIRE_SIGNED_WORKER_RELEASES=${AGAT_REQUIRE_SIGNED_WORKER_RELEASES:-false}" \
+  "AGAT_WORKER_PROVENANCE_PUBLIC_KEYS=${AGAT_WORKER_PROVENANCE_PUBLIC_KEYS:-{}}" \
+  "AGAT_REQUIRE_WORKER_PROVENANCE=${AGAT_REQUIRE_WORKER_PROVENANCE:-false}" \
+  "AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS=${AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS:-{}}" \
+  "AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION=${AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION:-false}" \
+  "AGAT_WORKER_RUNTIME_ATTESTATION_PROVIDERS=${AGAT_WORKER_RUNTIME_ATTESTATION_PROVIDERS:-spiffe}" \
+  "AGAT_WORKER_RUNTIME_IDENTITY_PREFIXES=${AGAT_WORKER_RUNTIME_IDENTITY_PREFIXES:-spiffe://agat.local/worker/}" \
+  "AGAT_WORKER_RUNTIME_CHALLENGE_TTL_SECONDS=${AGAT_WORKER_RUNTIME_CHALLENGE_TTL_SECONDS:-120}" \
+  "AGAT_WORKER_RUNTIME_MAX_LIFETIME_SECONDS=${AGAT_WORKER_RUNTIME_MAX_LIFETIME_SECONDS:-3600}" \
   "AGAT_SIEM_ENABLED=${AGAT_SIEM_ENABLED:-false}" \
   "AGAT_SIEM_URL=${AGAT_SIEM_URL:-}" \
   "AGAT_SIEM_BATCH_SIZE=${AGAT_SIEM_BATCH_SIZE:-100}" \
   "AGAT_SIEM_INTERVAL_SECONDS=${AGAT_SIEM_INTERVAL_SECONDS:-5}" \
   "AGAT_SIEM_TIMEOUT_SECONDS=${AGAT_SIEM_TIMEOUT_SECONDS:-10}" \
+  "AGAT_SIEM_REQUIRE_ACK=${AGAT_SIEM_REQUIRE_ACK:-true}" \
+  "AGAT_SIEM_MAX_ATTEMPTS=${AGAT_SIEM_MAX_ATTEMPTS:-8}" \
+  "AGAT_SIEM_DELIVERED_RETENTION_DAYS=${AGAT_SIEM_DELIVERED_RETENTION_DAYS:-30}" \
+  "AGAT_SIEM_DLQ_RETENTION_DAYS=${AGAT_SIEM_DLQ_RETENTION_DAYS:-90}" \
+  "AGAT_SIEM_RETENTION_INTERVAL_SECONDS=${AGAT_SIEM_RETENTION_INTERVAL_SECONDS:-900}" \
   "AGAT_OTEL_ENABLED=${otel_enabled}" \
   "OTEL_EXPORTER_OTLP_ENDPOINT=${otel_exporter_endpoint}" \
   "OTEL_SERVICE_NAME=${AGAT_OTEL_COORDINATOR_SERVICE_NAME:-agat-coordinator}" >/dev/null
@@ -548,6 +568,8 @@ kubectl set env deployment/agat-worker \
   "AGAT_WORKER_ARTIFACT_DIGEST=${AGAT_WORKER_ARTIFACT_DIGEST:-}" \
   "AGAT_WORKER_RELEASE_KEY_ID=${AGAT_WORKER_RELEASE_KEY_ID:-}" \
   "AGAT_WORKER_RELEASE_SIGNATURE=${AGAT_WORKER_RELEASE_SIGNATURE:-}" \
+  "AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_URL=${AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_URL:-}" \
+  "AGAT_WORKER_RUNTIME_ATTESTATION_TIMEOUT_SECONDS=${AGAT_WORKER_RUNTIME_ATTESTATION_TIMEOUT_SECONDS:-10}" \
   "AGAT_WEB_ENABLED=${web_enabled}" \
   "AGAT_WEB_SEARCH_URL=${web_search_url}" \
   "AGAT_WEB_TIMEOUT=${AGAT_WEB_TIMEOUT:-12}" \

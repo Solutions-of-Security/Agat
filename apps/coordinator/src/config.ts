@@ -166,12 +166,25 @@ export interface CoordinatorConfig {
   regionLossDrWriteEpoch: number;
   workerReleasePublicKeys: Record<string, string>;
   requireSignedWorkerReleases: boolean;
+  workerProvenancePublicKeys: Record<string, string>;
+  requireWorkerProvenance: boolean;
+  workerRuntimeAttestationPublicKeys: Record<string, string>;
+  requireWorkerRuntimeAttestation: boolean;
+  workerRuntimeAttestationProviders: string[];
+  workerRuntimeIdentityPrefixes: string[];
+  workerRuntimeChallengeTtlSeconds: number;
+  workerRuntimeMaxLifetimeSeconds: number;
   siemEnabled: boolean;
   siemUrl: string;
   siemBearerToken: string;
   siemBatchSize: number;
   siemIntervalSeconds: number;
   siemTimeoutSeconds: number;
+  siemRequireAck: boolean;
+  siemMaxAttempts: number;
+  siemDeliveredRetentionDays: number;
+  siemDlqRetentionDays: number;
+  siemRetentionIntervalSeconds: number;
   seedDemo: boolean;
   serveWeb: boolean;
   webDistPath: string;
@@ -319,12 +332,60 @@ export function loadConfig(): CoordinatorConfig {
       process.env.AGAT_REQUIRE_SIGNED_WORKER_RELEASES,
       stateStoreDriver === "postgresql",
     ),
+    workerProvenancePublicKeys: safeJsonStringMap(
+      process.env.AGAT_WORKER_PROVENANCE_PUBLIC_KEYS,
+      "AGAT_WORKER_PROVENANCE_PUBLIC_KEYS",
+    ),
+    requireWorkerProvenance: booleanFromEnv(
+      process.env.AGAT_REQUIRE_WORKER_PROVENANCE,
+      stateStoreDriver === "postgresql",
+    ),
+    workerRuntimeAttestationPublicKeys: safeJsonStringMap(
+      process.env.AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS,
+      "AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS",
+    ),
+    requireWorkerRuntimeAttestation: booleanFromEnv(
+      process.env.AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION,
+      stateStoreDriver === "postgresql",
+    ),
+    workerRuntimeAttestationProviders: safeListFromEnv(
+      process.env.AGAT_WORKER_RUNTIME_ATTESTATION_PROVIDERS,
+      ["spiffe"],
+      "AGAT_WORKER_RUNTIME_ATTESTATION_PROVIDERS",
+    ),
+    workerRuntimeIdentityPrefixes: safeListFromEnv(
+      process.env.AGAT_WORKER_RUNTIME_IDENTITY_PREFIXES,
+      ["spiffe://"],
+      "AGAT_WORKER_RUNTIME_IDENTITY_PREFIXES",
+    ),
+    workerRuntimeChallengeTtlSeconds: Math.max(
+      30,
+      Math.min(600, integerFromEnv(process.env.AGAT_WORKER_RUNTIME_CHALLENGE_TTL_SECONDS, 120)),
+    ),
+    workerRuntimeMaxLifetimeSeconds: Math.max(
+      300,
+      Math.min(86_400, integerFromEnv(process.env.AGAT_WORKER_RUNTIME_MAX_LIFETIME_SECONDS, 3_600)),
+    ),
     siemEnabled: booleanFromEnv(process.env.AGAT_SIEM_ENABLED, false),
     siemUrl: optionalSafeText(process.env.AGAT_SIEM_URL, "AGAT_SIEM_URL", 2_048),
     siemBearerToken: optionalSafeText(process.env.AGAT_SIEM_BEARER_TOKEN, "AGAT_SIEM_BEARER_TOKEN", 8_192),
     siemBatchSize: Math.max(1, Math.min(500, integerFromEnv(process.env.AGAT_SIEM_BATCH_SIZE, 100))),
     siemIntervalSeconds: Math.max(1, Math.min(300, integerFromEnv(process.env.AGAT_SIEM_INTERVAL_SECONDS, 5))),
     siemTimeoutSeconds: Math.max(1, Math.min(60, integerFromEnv(process.env.AGAT_SIEM_TIMEOUT_SECONDS, 10))),
+    siemRequireAck: booleanFromEnv(process.env.AGAT_SIEM_REQUIRE_ACK, true),
+    siemMaxAttempts: Math.max(1, Math.min(100, integerFromEnv(process.env.AGAT_SIEM_MAX_ATTEMPTS, 8))),
+    siemDeliveredRetentionDays: Math.max(
+      1,
+      Math.min(3_650, integerFromEnv(process.env.AGAT_SIEM_DELIVERED_RETENTION_DAYS, 30)),
+    ),
+    siemDlqRetentionDays: Math.max(
+      1,
+      Math.min(3_650, integerFromEnv(process.env.AGAT_SIEM_DLQ_RETENTION_DAYS, 90)),
+    ),
+    siemRetentionIntervalSeconds: Math.max(
+      60,
+      Math.min(86_400, integerFromEnv(process.env.AGAT_SIEM_RETENTION_INTERVAL_SECONDS, 900)),
+    ),
     seedDemo: booleanFromEnv(process.env.AGAT_SEED_DEMO, false),
     serveWeb: booleanFromEnv(process.env.AGAT_SERVE_WEB, true),
     webDistPath: path.resolve(currentDir, "../../web/dist"),
@@ -428,6 +489,22 @@ export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): vo
   if (!config.regionLossDrActivationId && config.regionLossDrWriteEpoch !== 1) {
     throw new Error("Write epoch > 1 требует AGAT_REGION_LOSS_DR_ACTIVATION_ID");
   }
+  if (config.requireSignedWorkerReleases && Object.keys(config.workerReleasePublicKeys).length === 0) {
+    throw new Error("Signed worker releases требуют хотя бы один AGAT_WORKER_RELEASE_PUBLIC_KEYS trust root");
+  }
+  if (config.requireWorkerProvenance && !config.requireSignedWorkerReleases) {
+    throw new Error("OCI provenance gate требует AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true");
+  }
+  if (config.requireWorkerProvenance && Object.keys(config.workerProvenancePublicKeys).length === 0) {
+    throw new Error("OCI provenance gate требует AGAT_WORKER_PROVENANCE_PUBLIC_KEYS trust root");
+  }
+  if (config.requireWorkerRuntimeAttestation && !config.requireWorkerProvenance) {
+    throw new Error("Runtime attestation gate требует AGAT_REQUIRE_WORKER_PROVENANCE=true");
+  }
+  if (config.requireWorkerRuntimeAttestation
+    && Object.keys(config.workerRuntimeAttestationPublicKeys).length === 0) {
+    throw new Error("Runtime attestation gate требует AGAT_WORKER_RUNTIME_ATTESTATION_PUBLIC_KEYS trust root");
+  }
   if (config.stateStoreDriver === "postgresql") {
     if (!config.postgresUrl || !config.postgresTenantUrl) {
       throw new Error("PostgreSQL state store требует AGAT_POSTGRES_URL и отдельный AGAT_POSTGRES_TENANT_URL");
@@ -463,9 +540,6 @@ export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): vo
       || ["localhost", "127.0.0.1", "::1", "postgres", "agat-coordinator-postgres"].includes(systemUrl.hostname);
     if (config.postgresSslMode === "disable" && !localPostgres) {
       throw new Error("Удалённый PostgreSQL требует AGAT_POSTGRES_SSL_MODE=require или verify-full");
-    }
-    if (config.requireSignedWorkerReleases && Object.keys(config.workerReleasePublicKeys).length === 0) {
-      throw new Error("Signed worker releases требуют хотя бы один AGAT_WORKER_RELEASE_PUBLIC_KEYS trust root");
     }
   }
   const hasPostgresClientCert = Boolean(config.postgresClientCertPath);
@@ -541,6 +615,12 @@ export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): vo
     const loopbackSiem = ["localhost", "127.0.0.1", "::1"].includes(siem.hostname);
     if (siem.protocol !== "https:" && !(loopbackSiem && siem.protocol === "http:")) {
       throw new Error("SIEM exporter требует HTTPS (HTTP разрешён только для loopback test sink)");
+    }
+    if (siem.username || siem.password || siem.hash) {
+      throw new Error("AGAT_SIEM_URL не должен содержать credentials или fragment");
+    }
+    if (!loopbackSiem && !config.siemBearerToken) {
+      throw new Error("Удалённый SIEM exporter требует отдельный AGAT_SIEM_BEARER_TOKEN");
     }
   }
   if (!config.temporalEnabled) return;

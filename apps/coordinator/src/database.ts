@@ -152,8 +152,12 @@ import type {
   WorkerMetrics,
   WorkerModelProfile,
   WorkerRegistration,
+  WorkerRuntimeAttestationChallenge,
+  WorkerRuntimeAttestationChallengeInput,
+  WorkerRuntimeAttestationEnvelope,
   WorkerReleaseIdentity,
   WorkerReleaseManifest,
+  WorkerProvenanceStatement,
   WorkerRolloutInput,
   RegisterWorkerReleaseInput,
 } from "./types.js";
@@ -227,8 +231,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 24;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-residency-region-loss-dr-v24";
+export const POSTGRES_SCHEMA_VERSION = 25;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-worker-attestation-siem-dlq-v25";
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -255,6 +259,24 @@ function canonicalBase64(value: unknown, field: string, maxBytes = 8_192): Buffe
     throw new Error(`${field} должен быть canonical base64 размером 1..${maxBytes} байт`);
   }
   return bytes;
+}
+
+function ed25519PublicKey(value: string, field: string) {
+  let key;
+  try {
+    key = createPublicKey(value.includes("BEGIN PUBLIC KEY")
+      ? value
+      : { key: canonicalBase64(value, field), format: "der", type: "spki" });
+  } catch {
+    throw new Error(`${field} не является корректным public key`);
+  }
+  if (key.asymmetricKeyType !== "ed25519") throw new Error(`${field} не является Ed25519`);
+  return key;
+}
+
+function ed25519PublicKeyFingerprint(value: string, field: string): string {
+  const der = ed25519PublicKey(value, field).export({ format: "der", type: "spki" });
+  return createHash("sha256").update(der).digest("hex");
 }
 
 const MCP_SENSITIVE_KEY = /(authorization|credential|password|secret|token|api[_-]?key|private[_-]?key)/i;
@@ -996,6 +1018,17 @@ export interface StoreOptions {
   regionLossDrWriteEpoch?: number;
   workerReleasePublicKeys?: Record<string, string>;
   requireSignedWorkerReleases?: boolean;
+  workerProvenancePublicKeys?: Record<string, string>;
+  requireWorkerProvenance?: boolean;
+  workerRuntimeAttestationPublicKeys?: Record<string, string>;
+  requireWorkerRuntimeAttestation?: boolean;
+  workerRuntimeAttestationProviders?: string[];
+  workerRuntimeIdentityPrefixes?: string[];
+  workerRuntimeChallengeTtlSeconds?: number;
+  workerRuntimeMaxLifetimeSeconds?: number;
+  siemMaxAttempts?: number;
+  siemDeliveredRetentionDays?: number;
+  siemDlqRetentionDays?: number;
   artifactStoreDriver?: "filesystem" | "postgresql" | "s3";
   artifactRetentionDays?: number;
   artifactS3?: ArtifactObjectStoreOptions;
@@ -1018,6 +1051,17 @@ export class AgatStore {
   private readonly regionLossDrWriteEpoch: number;
   private readonly workerReleasePublicKeys: ReadonlyMap<string, string>;
   private readonly requireSignedWorkerReleases: boolean;
+  private readonly workerProvenancePublicKeys: ReadonlyMap<string, string>;
+  private readonly requireWorkerProvenance: boolean;
+  private readonly workerRuntimeAttestationPublicKeys: ReadonlyMap<string, string>;
+  private readonly requireWorkerRuntimeAttestation: boolean;
+  private readonly workerRuntimeAttestationProviders: ReadonlySet<string>;
+  private readonly workerRuntimeIdentityPrefixes: readonly string[];
+  private readonly workerRuntimeChallengeTtlSeconds: number;
+  private readonly workerRuntimeMaxLifetimeSeconds: number;
+  private readonly siemMaxAttempts: number;
+  private readonly siemDeliveredRetentionDays: number;
+  private readonly siemDlqRetentionDays: number;
   private readonly postgresTenantRole: string | null;
   private readonly postgresRuntimeRole: string | null;
   private readonly postgresSchemaMode: "migration" | "runtime";
@@ -1117,6 +1161,63 @@ export class AgatStore {
     }
     this.workerReleasePublicKeys = new Map(Object.entries(options.workerReleasePublicKeys ?? {}));
     this.requireSignedWorkerReleases = options.requireSignedWorkerReleases ?? false;
+    this.workerProvenancePublicKeys = new Map(Object.entries(options.workerProvenancePublicKeys ?? {}));
+    this.requireWorkerProvenance = options.requireWorkerProvenance ?? false;
+    this.workerRuntimeAttestationPublicKeys = new Map(
+      Object.entries(options.workerRuntimeAttestationPublicKeys ?? {}),
+    );
+    this.requireWorkerRuntimeAttestation = options.requireWorkerRuntimeAttestation ?? false;
+    this.workerRuntimeAttestationProviders = new Set(
+      (options.workerRuntimeAttestationProviders ?? ["spiffe"])
+        .map((provider) => fleetIdentifier(provider, "Runtime attestation provider")),
+    );
+    this.workerRuntimeIdentityPrefixes = (options.workerRuntimeIdentityPrefixes ?? ["spiffe://"])
+      .map((prefix) => prefix.trim())
+      .filter(Boolean);
+    this.workerRuntimeChallengeTtlSeconds = Math.max(
+      30,
+      Math.min(600, Math.trunc(options.workerRuntimeChallengeTtlSeconds ?? 120)),
+    );
+    this.workerRuntimeMaxLifetimeSeconds = Math.max(
+      300,
+      Math.min(86_400, Math.trunc(options.workerRuntimeMaxLifetimeSeconds ?? 3_600)),
+    );
+    this.siemMaxAttempts = Math.max(1, Math.min(100, Math.trunc(options.siemMaxAttempts ?? 8)));
+    this.siemDeliveredRetentionDays = Math.max(
+      1,
+      Math.min(3_650, Math.trunc(options.siemDeliveredRetentionDays ?? 30)),
+    );
+    this.siemDlqRetentionDays = Math.max(1, Math.min(3_650, Math.trunc(options.siemDlqRetentionDays ?? 90)));
+    if (this.requireWorkerProvenance && !this.requireSignedWorkerReleases) {
+      throw new Error("OCI provenance gate требует signed worker releases");
+    }
+    if (this.requireWorkerProvenance && this.workerProvenancePublicKeys.size === 0) {
+      throw new Error("OCI provenance gate требует configured provenance trust root");
+    }
+    if (this.requireWorkerRuntimeAttestation && !this.requireWorkerProvenance) {
+      throw new Error("Runtime attestation gate требует OCI provenance gate");
+    }
+    if (this.requireWorkerRuntimeAttestation && this.workerRuntimeAttestationPublicKeys.size === 0) {
+      throw new Error("Runtime attestation gate требует configured attestation trust root");
+    }
+    const releaseRootFingerprints = new Set([...this.workerReleasePublicKeys.entries()].map(([keyId, value]) => (
+      ed25519PublicKeyFingerprint(value, `Worker release public key ${keyId}`)
+    )));
+    const provenanceRootFingerprints = new Set([...this.workerProvenancePublicKeys.entries()].map(([keyId, value]) => (
+      ed25519PublicKeyFingerprint(value, `Worker provenance public key ${keyId}`)
+    )));
+    const runtimeRootFingerprints = new Set([...this.workerRuntimeAttestationPublicKeys.entries()].map(([keyId, value]) => (
+      ed25519PublicKeyFingerprint(value, `Worker runtime attestation public key ${keyId}`)
+    )));
+    if ([...provenanceRootFingerprints].some((fingerprint) => releaseRootFingerprints.has(fingerprint))
+      || [...runtimeRootFingerprints].some((fingerprint) => (
+        releaseRootFingerprints.has(fingerprint) || provenanceRootFingerprints.has(fingerprint)
+      ))) {
+      throw new Error("Worker release, provenance и runtime attestation должны использовать разные trust roots");
+    }
+    if (this.workerRuntimeAttestationProviders.size === 0 || this.workerRuntimeIdentityPrefixes.length === 0) {
+      throw new Error("Runtime attestation policy требует provider и workload identity prefix");
+    }
     this.telemetry = options.telemetry ?? new CoordinatorTelemetry({
       enabled: false,
       serviceName: "agat-coordinator",
@@ -1180,6 +1281,7 @@ export class AgatStore {
     this.cleanupExpiredKnowledgeLeases();
     this.cleanupExpiredMemory();
     this.cleanupEdgeEnrollmentChallenges();
+    this.cleanupWorkerRuntimeAttestationChallenges();
   }
 
   private configure(): void {
@@ -1225,6 +1327,14 @@ export class AgatStore {
         attestation_application_id TEXT,
         attestation_claims_json TEXT NOT NULL DEFAULT '{}',
         attested_at TEXT,
+        runtime_attestation_provider TEXT,
+        runtime_attestation_key_id TEXT,
+        runtime_workload_identity TEXT,
+        runtime_attestation_claims_json TEXT NOT NULL DEFAULT '{}',
+        runtime_attested_at TEXT,
+        runtime_attestation_expires_at TEXT,
+        runtime_provenance_sha256 TEXT,
+        runtime_attestation_verified INTEGER NOT NULL DEFAULT 0,
         credential_state TEXT NOT NULL DEFAULT 'active',
         wipe_generation INTEGER NOT NULL DEFAULT 0,
         wipe_requested_at TEXT,
@@ -2346,6 +2456,14 @@ export class AgatStore {
       ["release_signature", "TEXT"],
       ["release_verified", "INTEGER NOT NULL DEFAULT 0"],
       ["rollout_ring", "TEXT NOT NULL DEFAULT 'stable'"],
+      ["runtime_attestation_provider", "TEXT"],
+      ["runtime_attestation_key_id", "TEXT"],
+      ["runtime_workload_identity", "TEXT"],
+      ["runtime_attestation_claims_json", "TEXT NOT NULL DEFAULT '{}'"],
+      ["runtime_attested_at", "TEXT"],
+      ["runtime_attestation_expires_at", "TEXT"],
+      ["runtime_provenance_sha256", "TEXT"],
+      ["runtime_attestation_verified", "INTEGER NOT NULL DEFAULT 0"],
     ] as const;
     for (const [name, definition] of nodeAdditions) {
       if (!nodeColumns.some((column) => column.name === name)) {
@@ -2401,12 +2519,35 @@ export class AgatStore {
         manifest_sha256 TEXT NOT NULL UNIQUE,
         key_id TEXT NOT NULL,
         signature TEXT NOT NULL,
+        provenance_json TEXT,
+        provenance_sha256 TEXT,
+        provenance_key_id TEXT,
+        provenance_signature TEXT,
+        provenance_verified INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'active',
         created_by TEXT NOT NULL,
         issued_at TEXT NOT NULL,
         expires_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worker_runtime_attestation_challenges (
+        id TEXT PRIMARY KEY,
+        challenge_hash TEXT NOT NULL UNIQUE,
+        node_name TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        architecture TEXT NOT NULL,
+        region TEXT NOT NULL,
+        residency_domain TEXT NOT NULL,
+        release_id TEXT NOT NULL REFERENCES worker_releases(id),
+        release_digest TEXT NOT NULL,
+        provenance_sha256 TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'issued',
+        failure_reason TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        consumed_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS worker_rollouts (
@@ -2434,8 +2575,43 @@ export class AgatStore {
         locked_by TEXT,
         lock_expires_at TEXT,
         last_error TEXT,
+        last_failure_code TEXT,
+        last_response_sha256 TEXT,
         delivered_at TEXT,
+        dead_at TEXT,
         created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_export_dead_letters (
+        event_id BIGINT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        payload_sha256 TEXT NOT NULL,
+        attempts INTEGER NOT NULL,
+        reason_code TEXT NOT NULL,
+        error_sha256 TEXT,
+        response_sha256 TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        first_dead_at TEXT NOT NULL,
+        last_dead_at TEXT NOT NULL,
+        retained_until TEXT NOT NULL,
+        replay_count INTEGER NOT NULL DEFAULT 0,
+        last_replayed_at TEXT,
+        last_replayed_by TEXT,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        resolution_reason_sha256 TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_export_retention_state (
+        id TEXT PRIMARY KEY,
+        delivered_retention_days INTEGER NOT NULL,
+        dlq_retention_days INTEGER NOT NULL,
+        last_run_at TEXT,
+        delivered_purged INTEGER NOT NULL DEFAULT 0,
+        dead_letters_purged INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL
       );
 
@@ -2470,6 +2646,10 @@ export class AgatStore {
         ON worker_rollouts(project_id, region, status, ring);
       CREATE INDEX IF NOT EXISTS idx_audit_outbox_delivery
         ON audit_export_outbox(status, available_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_worker_runtime_challenges_expiry
+        ON worker_runtime_attestation_challenges(status, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_audit_dead_letters_status
+        ON audit_export_dead_letters(status, retained_until, event_id);
       CREATE INDEX IF NOT EXISTS idx_artifact_storage_outbox_delivery
         ON artifact_storage_outbox(status, available_at, created_at);
       CREATE INDEX IF NOT EXISTS idx_artifacts_storage_lifecycle
@@ -2487,6 +2667,39 @@ export class AgatStore {
     if (!rolloutColumns.some((column) => column.name === "fallback_release_id")) {
       this.db.exec("ALTER TABLE worker_rollouts ADD COLUMN fallback_release_id TEXT REFERENCES worker_releases(id);");
     }
+    const releaseColumns = this.db.prepare("PRAGMA table_info(worker_releases)").all() as Row[];
+    const releaseAdditions = [
+      ["provenance_json", "TEXT"],
+      ["provenance_sha256", "TEXT"],
+      ["provenance_key_id", "TEXT"],
+      ["provenance_signature", "TEXT"],
+      ["provenance_verified", "INTEGER NOT NULL DEFAULT 0"],
+    ] as const;
+    for (const [name, definition] of releaseAdditions) {
+      if (!releaseColumns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE worker_releases ADD COLUMN ${name} ${definition};`);
+      }
+    }
+    const auditOutboxColumns = this.db.prepare("PRAGMA table_info(audit_export_outbox)").all() as Row[];
+    const auditOutboxAdditions = [
+      ["last_failure_code", "TEXT"],
+      ["last_response_sha256", "TEXT"],
+      ["dead_at", "TEXT"],
+    ] as const;
+    for (const [name, definition] of auditOutboxAdditions) {
+      if (!auditOutboxColumns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE audit_export_outbox ADD COLUMN ${name} ${definition};`);
+      }
+    }
+    this.db.prepare(`
+      INSERT INTO audit_export_retention_state(
+        id, delivered_retention_days, dlq_retention_days, updated_at
+      ) VALUES ('current', ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        delivered_retention_days = excluded.delivered_retention_days,
+        dlq_retention_days = excluded.dlq_retention_days,
+        updated_at = excluded.updated_at
+    `).run(this.siemDeliveredRetentionDays, this.siemDlqRetentionDays, nowIso());
 
     const timestamp = nowIso();
     this.db.prepare(`
@@ -2568,7 +2781,8 @@ export class AgatStore {
           updated_by TEXT NOT NULL
         );
         CREATE OR REPLACE FUNCTION agat_enqueue_audit_event() RETURNS trigger
-        LANGUAGE plpgsql AS $$
+        LANGUAGE plpgsql SECURITY DEFINER
+        SET search_path = pg_catalog, public AS $$
         BEGIN
           INSERT INTO audit_export_outbox(
             event_id, project_id, status, attempts, available_at, created_at, updated_at
@@ -2647,7 +2861,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 24;");
+    this.db.exec("PRAGMA user_version = 25;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -2830,8 +3044,22 @@ export class AgatStore {
         has_table_privilege(?, 'artifact_storage_outbox', 'SELECT')
           OR has_table_privilege(?, 'artifact_storage_outbox', 'INSERT')
           OR has_table_privilege(?, 'artifact_storage_outbox', 'UPDATE')
-          OR has_table_privilege(?, 'artifact_storage_outbox', 'DELETE') AS tenant_artifact_outbox_access
+          OR has_table_privilege(?, 'artifact_storage_outbox', 'DELETE') AS tenant_artifact_outbox_access,
+        EXISTS (
+          SELECT 1 FROM unnest(ARRAY[
+            'audit_export_outbox', 'audit_export_dead_letters', 'audit_export_retention_state',
+            'worker_runtime_attestation_challenges'
+          ]) AS sensitive(table_name)
+          WHERE has_table_privilege(?, format('%I.%I', current_schema(), sensitive.table_name), 'SELECT')
+            OR has_table_privilege(?, format('%I.%I', current_schema(), sensitive.table_name), 'INSERT')
+            OR has_table_privilege(?, format('%I.%I', current_schema(), sensitive.table_name), 'UPDATE')
+            OR has_table_privilege(?, format('%I.%I', current_schema(), sensitive.table_name), 'DELETE')
+        ) AS tenant_sensitive_fleet_access
     `).get(
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
       this.postgresTenantRole!,
       this.postgresTenantRole!,
       this.postgresTenantRole!,
@@ -2844,7 +3072,8 @@ export class AgatStore {
     if (metadataPrivileges?.can_read !== true
       || metadataPrivileges?.can_write === true
       || metadataPrivileges?.tenant_access === true
-      || metadataPrivileges?.tenant_artifact_outbox_access === true) {
+      || metadataPrivileges?.tenant_artifact_outbox_access === true
+      || metadataPrivileges?.tenant_sensitive_fleet_access === true) {
       throw new Error("PostgreSQL schema metadata grants нарушают runtime/tenant boundary");
     }
     const drPrivileges = this.db.prepare(`
@@ -2961,7 +3190,6 @@ export class AgatStore {
       eval_datasets: "project_id = agat_current_project()",
       eval_experiments: "project_id = agat_current_project()",
       worker_rollouts: "project_id = agat_current_project()",
-      audit_export_outbox: "project_id = agat_current_project()",
     };
     const childPolicies: Record<string, string> = {
       stages: "EXISTS (SELECT 1 FROM runs r WHERE r.id = stages.run_id AND r.project_id = agat_current_project())",
@@ -3006,6 +3234,10 @@ export class AgatStore {
           WITH CHECK (project_id = agat_current_project());
       `);
     }
+    this.db.exec(`
+      DROP POLICY IF EXISTS agat_tenant_isolation ON audit_export_outbox;
+      ALTER TABLE audit_export_outbox DISABLE ROW LEVEL SECURITY;
+    `);
     this.installPostgresRolePrivileges([
       ...Object.keys(directPolicies),
       ...Object.keys(childPolicies),
@@ -3541,22 +3773,21 @@ export class AgatStore {
     if (signature.byteLength !== 64) throw new Error("Ed25519 worker release signature должна содержать 64 байта");
     const publicKey = this.workerReleasePublicKeys.get(keyId);
     if (!publicKey) throw new Error(`Worker release key ${keyId} не входит в configured trust roots`);
-    const key = createPublicKey(publicKey.includes("BEGIN PUBLIC KEY")
-      ? publicKey
-      : { key: canonicalBase64(publicKey, `Public key ${keyId}`), format: "der", type: "spki" });
-    if (key.asymmetricKeyType !== "ed25519") throw new Error(`Worker release key ${keyId} не является Ed25519`);
+    const key = ed25519PublicKey(publicKey, `Worker release key ${keyId}`);
     const serialized = canonicalJson(manifest);
     if (!verifySignature(null, Buffer.from(serialized, "utf8"), key, signature)) {
       throw new Error("Worker release signature не прошла Ed25519 verification");
     }
+    const provenance = this.verifyWorkerProvenance(input.provenance, manifest);
     const timestamp = nowIso();
     try {
       this.db.prepare(`
         INSERT INTO worker_releases(
           id, version, artifact_digest, manifest_json, manifest_sha256,
-          key_id, signature, status, created_by, issued_at, expires_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+          key_id, signature, provenance_json, provenance_sha256,
+          provenance_key_id, provenance_signature, provenance_verified,
+          status, created_by, issued_at, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
       `).run(
         manifest.releaseId,
         manifest.version,
@@ -3565,6 +3796,11 @@ export class AgatStore {
         sha256Text(serialized),
         keyId,
         input.signature,
+        provenance?.serialized ?? null,
+        provenance?.sha256 ?? null,
+        provenance?.keyId ?? null,
+        provenance?.signature ?? null,
+        provenance ? 1 : 0,
         actor.slice(0, 200),
         manifest.issuedAt,
         manifest.expiresAt ?? null,
@@ -3585,6 +3821,8 @@ export class AgatStore {
       artifactDigest: manifest.artifactDigest,
       keyId,
       manifestSha256: sha256Text(serialized),
+      provenanceSha256: provenance?.sha256 ?? null,
+      provenanceVerified: Boolean(provenance),
     });
     return this.getWorkerRelease(manifest.releaseId)!;
   }
@@ -3842,6 +4080,98 @@ export class AgatStore {
     return { schemaVersion: 1, releaseId, version, artifactDigest, platforms, issuedAt, expiresAt, metadata };
   }
 
+  private verifyWorkerProvenance(
+    envelope: RegisterWorkerReleaseInput["provenance"],
+    manifest: WorkerReleaseManifest,
+  ): { serialized: string; sha256: string; keyId: string; signature: string } | null {
+    if (!envelope) {
+      if (this.requireWorkerProvenance) {
+        throw new Error("Worker release требует verified OCI/SLSA provenance admission");
+      }
+      return null;
+    }
+    const input = envelope.statement;
+    if (!input || input.schemaVersion !== 1) {
+      throw new Error("Worker provenance statement schemaVersion должен быть 1");
+    }
+    const httpsUri = (value: unknown, field: string): string => {
+      const normalized = requiredAgentText(value, field, 2_048);
+      let parsed: URL;
+      try {
+        parsed = new URL(normalized);
+      } catch {
+        throw new Error(`${field} должен быть абсолютным HTTPS URL`);
+      }
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash) {
+        throw new Error(`${field} должен быть HTTPS URL без credentials и fragment`);
+      }
+      return parsed.toString();
+    };
+    const policyId = fleetIdentifier(input.policyId, "Worker provenance policyId");
+    const subjectDigest = workerArtifactDigest(input.subjectDigest);
+    if (subjectDigest !== manifest.artifactDigest) {
+      throw new Error("Worker provenance subject digest не совпадает с release artifact digest");
+    }
+    const ociRepository = requiredAgentText(input.ociRepository, "OCI repository", 512).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._:-]*(?:\/[a-z0-9][a-z0-9._-]*)+$/.test(ociRepository)
+      || ociRepository.includes("@") || ociRepository.includes("//")) {
+      throw new Error("OCI repository должен быть immutable registry/repository reference без tag/digest");
+    }
+    if (input.predicateType !== "https://slsa.dev/provenance/v1") {
+      throw new Error("Worker provenance требует SLSA provenance/v1 predicate");
+    }
+    const builderId = httpsUri(input.builderId, "Worker provenance builderId");
+    const buildType = httpsUri(input.buildType, "Worker provenance buildType");
+    const sourceRepository = httpsUri(input.sourceRepository, "Worker provenance sourceRepository");
+    const sourceCommit = requiredAgentText(input.sourceCommit, "Worker provenance sourceCommit", 64).toLowerCase();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sourceCommit)) {
+      throw new Error("Worker provenance sourceCommit должен быть full 40/64 hex digest");
+    }
+    const sigstoreBundleSha256 = requiredAgentText(
+      input.sigstoreBundleSha256,
+      "Sigstore bundle SHA-256",
+      64,
+    ).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(sigstoreBundleSha256)) {
+      throw new Error("Sigstore bundle SHA-256 должен содержать 64 hex символа");
+    }
+    const verifiedAt = new Date(input.verifiedAt).toISOString();
+    const expiresAt = new Date(input.expiresAt).toISOString();
+    const verifiedTime = new Date(verifiedAt).getTime();
+    const expiresTime = new Date(expiresAt).getTime();
+    if (verifiedTime > Date.now() + 300_000 || expiresTime <= Date.now() || expiresTime <= verifiedTime) {
+      throw new Error("Worker provenance admission находится в будущем или уже истёк");
+    }
+    if (expiresTime - verifiedTime > 31 * 24 * 60 * 60 * 1_000) {
+      throw new Error("Worker provenance admission не может быть действителен дольше 31 дня");
+    }
+    const statement: WorkerProvenanceStatement = {
+      schemaVersion: 1,
+      policyId,
+      subjectDigest,
+      ociRepository,
+      predicateType: "https://slsa.dev/provenance/v1",
+      builderId,
+      buildType,
+      sourceRepository,
+      sourceCommit,
+      sigstoreBundleSha256,
+      verifiedAt,
+      expiresAt,
+    };
+    const keyId = fleetIdentifier(envelope.keyId, "Worker provenance keyId");
+    const publicKey = this.workerProvenancePublicKeys.get(keyId);
+    if (!publicKey) throw new Error(`Worker provenance key ${keyId} не входит в configured trust roots`);
+    const key = ed25519PublicKey(publicKey, `Worker provenance key ${keyId}`);
+    const signature = canonicalBase64(envelope.signature, "Worker provenance signature", 128);
+    if (signature.byteLength !== 64) throw new Error("Worker provenance signature должна содержать 64 байта");
+    const serialized = canonicalJson(statement);
+    if (!verifySignature(null, Buffer.from(serialized, "utf8"), key, signature)) {
+      throw new Error("Worker provenance admission signature не прошла Ed25519 verification");
+    }
+    return { serialized, sha256: sha256Text(serialized), keyId, signature: envelope.signature };
+  }
+
   private verifyWorkerReleaseIdentity(identity: WorkerReleaseIdentity | undefined, platform: string): Row | null {
     if (!identity) {
       if (this.requireSignedWorkerReleases) throw new Error("Worker должен предъявить signed release identity");
@@ -3865,14 +4195,299 @@ export class AgatStore {
     }
     const publicKey = this.workerReleasePublicKeys.get(keyId);
     if (!publicKey) throw new Error(`Worker release key ${keyId} больше не доверен`);
-    const key = createPublicKey(publicKey.includes("BEGIN PUBLIC KEY")
-      ? publicKey
-      : { key: canonicalBase64(publicKey, `Public key ${keyId}`), format: "der", type: "spki" });
+    const key = ed25519PublicKey(publicKey, `Worker release key ${keyId}`);
     const signature = canonicalBase64(identity.signature, "release signature", 128);
     if (!verifySignature(null, Buffer.from(String(release.manifest_json), "utf8"), key, signature)) {
       throw new Error("Worker release signature не прошла повторную verification");
     }
+    if (this.requireWorkerProvenance) {
+      if (Number(release.provenance_verified ?? 0) !== 1
+        || typeof release.provenance_json !== "string"
+        || typeof release.provenance_sha256 !== "string"
+        || sha256Text(release.provenance_json) !== release.provenance_sha256) {
+        throw new Error("Worker release не имеет целостной verified OCI provenance");
+      }
+      const provenance = parseJson<WorkerProvenanceStatement | null>(release.provenance_json, null);
+      if (!provenance || provenance.subjectDigest !== digest || provenance.expiresAt <= nowIso()) {
+        throw new Error("Worker release OCI provenance повреждена или истекла");
+      }
+      const provenanceKeyId = String(release.provenance_key_id ?? "");
+      const provenancePublicKey = this.workerProvenancePublicKeys.get(provenanceKeyId);
+      if (!provenancePublicKey) throw new Error(`Worker provenance key ${provenanceKeyId} больше не доверен`);
+      const provenanceKey = ed25519PublicKey(provenancePublicKey, `Worker provenance key ${provenanceKeyId}`);
+      const provenanceSignature = canonicalBase64(release.provenance_signature, "Worker provenance signature", 128);
+      if (!verifySignature(null, Buffer.from(release.provenance_json, "utf8"), provenanceKey, provenanceSignature)) {
+        throw new Error("Worker provenance signature не прошла повторную verification");
+      }
+    }
     return release;
+  }
+
+  issueWorkerRuntimeAttestationChallenge(
+    input: WorkerRuntimeAttestationChallengeInput,
+  ): WorkerRuntimeAttestationChallenge {
+    const workerName = requiredAgentText(input.name, "Worker name", 200);
+    const platform = requiredAgentText(input.platform, "Worker platform", 500);
+    const architecture = requiredAgentText(input.architecture ?? "unknown", "Worker architecture", 120);
+    const region = fleetIdentifier(input.region, "Worker region", this.region);
+    const residencyDomain = fleetIdentifier(input.residencyDomain, "Worker residencyDomain", this.residencyDomain);
+    if (region !== this.region || residencyDomain !== this.residencyDomain) {
+      throw new Error(`Worker attestation challenge принадлежит HA-cell ${this.region}/${this.residencyDomain}`);
+    }
+    const release = this.verifyWorkerReleaseIdentity(input.release, platform);
+    if (!release
+      || Number(release.provenance_verified ?? 0) !== 1
+      || typeof release.provenance_sha256 !== "string") {
+      throw new Error("Runtime attestation challenge требует release с verified OCI provenance");
+    }
+    const id = randomUUID();
+    const challenge = createToken(32);
+    const challengeSha256 = hashToken(challenge);
+    const timestamp = nowIso();
+    const expiresAt = futureIso(this.workerRuntimeChallengeTtlSeconds);
+    this.db.prepare(`
+      INSERT INTO worker_runtime_attestation_challenges(
+        id, challenge_hash, node_name, platform, architecture, region, residency_domain,
+        release_id, release_digest, provenance_sha256, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?, ?)
+    `).run(
+      id,
+      challengeSha256,
+      workerName,
+      platform,
+      architecture,
+      region,
+      residencyDomain,
+      String(release.id),
+      String(release.artifact_digest),
+      String(release.provenance_sha256),
+      expiresAt,
+      timestamp,
+    );
+    this.addEvent(null, null, null, "info", "fleet.worker_attestation.challenge_issued", "Runtime attestation challenge выдан", {
+      releaseId: String(release.id),
+      artifactDigest: String(release.artifact_digest),
+      provenanceSha256: String(release.provenance_sha256),
+      region,
+      residencyDomain,
+    });
+    return {
+      schemaVersion: 1,
+      id,
+      challenge,
+      challengeSha256,
+      expiresAt,
+      binding: {
+        workerName,
+        platform,
+        architecture,
+        region,
+        residencyDomain,
+        releaseId: String(release.id),
+        artifactDigest: String(release.artifact_digest),
+        provenanceSha256: String(release.provenance_sha256),
+      },
+    };
+  }
+
+  finishWorkerRuntimeAttestationChallenge(challengeId: string, errorMessage: string): void {
+    const normalized = errorMessage.slice(0, 500);
+    this.db.prepare(`
+      UPDATE worker_runtime_attestation_challenges
+      SET status = 'failed', failure_reason = ?, consumed_at = ?
+      WHERE id = ? AND status = 'issued'
+    `).run(normalized, nowIso(), challengeId);
+  }
+
+  private consumeWorkerRuntimeAttestation(
+    challengeId: string | undefined,
+    envelope: WorkerRuntimeAttestationEnvelope | undefined,
+    registration: WorkerRegistration,
+    release: Row | null,
+  ): {
+    provider: string;
+    keyId: string;
+    workloadIdentity: string;
+    claimsJson: string;
+    attestedAt: string;
+    expiresAt: string;
+    provenanceSha256: string;
+  } | null {
+    if (!challengeId && !envelope) {
+      if (this.requireWorkerRuntimeAttestation) {
+        throw new Error("Worker должен предъявить fresh runtime attestation");
+      }
+      return null;
+    }
+    if (!challengeId || !envelope || !release) {
+      throw new Error("Runtime attestation требует challenge, evidence и signed release");
+    }
+    const normalizedChallengeId = fleetIdentifier(challengeId, "Runtime attestation challengeId");
+    const challenge = this.db.prepare(`
+      SELECT * FROM worker_runtime_attestation_challenges WHERE id = ?
+    `).get(normalizedChallengeId) as Row | undefined;
+    if (!challenge || challenge.status !== "issued") {
+      throw new Error("Runtime attestation challenge не найден, уже использован или закрыт");
+    }
+    const timestamp = nowIso();
+    if (String(challenge.expires_at) <= timestamp) throw new Error("Runtime attestation challenge истёк");
+    const input = envelope.statement;
+    if (!input || input.schemaVersion !== 1) {
+      throw new Error("Runtime attestation statement schemaVersion должен быть 1");
+    }
+    const workerName = requiredAgentText(input.workerName, "Attested worker name", 200);
+    const platform = requiredAgentText(input.platform, "Attested worker platform", 500);
+    const architecture = requiredAgentText(input.architecture, "Attested worker architecture", 120);
+    const region = fleetIdentifier(input.region, "Attested worker region");
+    const residencyDomain = fleetIdentifier(input.residencyDomain, "Attested worker residencyDomain");
+    const releaseId = fleetIdentifier(input.releaseId, "Attested worker releaseId");
+    const artifactDigest = workerArtifactDigest(input.artifactDigest);
+    const provenanceSha256 = requiredAgentText(input.provenanceSha256, "Attested provenance SHA-256", 64).toLowerCase();
+    const challengeSha256 = requiredAgentText(input.challengeSha256, "Attestation challenge SHA-256", 64).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(challengeSha256) || !/^[0-9a-f]{64}$/.test(provenanceSha256)) {
+      throw new Error("Runtime attestation hashes должны содержать 64 hex символа");
+    }
+    if (workerName !== registration.name.trim()
+      || workerName !== challenge.node_name
+      || platform !== registration.platform
+      || platform !== challenge.platform
+      || architecture !== (registration.architecture ?? "unknown")
+      || architecture !== challenge.architecture
+      || region !== challenge.region
+      || residencyDomain !== challenge.residency_domain
+      || releaseId !== release.id
+      || releaseId !== challenge.release_id
+      || artifactDigest !== release.artifact_digest
+      || artifactDigest !== challenge.release_digest
+      || provenanceSha256 !== release.provenance_sha256
+      || provenanceSha256 !== challenge.provenance_sha256
+      || challengeSha256 !== challenge.challenge_hash) {
+      throw new Error("Runtime attestation не совпадает с одноразовым challenge/release binding");
+    }
+    const provider = fleetIdentifier(input.provider, "Runtime attestation provider");
+    if (!this.workerRuntimeAttestationProviders.has(provider)) {
+      throw new Error(`Runtime attestation provider ${provider} запрещён policy`);
+    }
+    const workloadIdentity = requiredAgentText(input.workloadIdentity, "Attested workload identity", 2_048);
+    if (!this.workerRuntimeIdentityPrefixes.some((prefix) => workloadIdentity.startsWith(prefix))) {
+      throw new Error("Runtime workload identity не входит в configured trust-domain prefixes");
+    }
+    let workloadUri: URL;
+    try {
+      workloadUri = new URL(workloadIdentity);
+    } catch {
+      throw new Error("Runtime workload identity должен быть абсолютным URI");
+    }
+    if (workloadUri.username || workloadUri.password || workloadUri.search || workloadUri.hash) {
+      throw new Error("Runtime workload identity не должен содержать credentials, query или fragment");
+    }
+    const selectorSha256 = requiredAgentText(input.selectorSha256, "Attested selector SHA-256", 64).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(selectorSha256)) {
+      throw new Error("Attested selector SHA-256 должен содержать 64 hex символа");
+    }
+    const imageDigest = workerArtifactDigest(input.imageDigest);
+    if (imageDigest !== artifactDigest) {
+      throw new Error("Runtime-attested image digest не совпадает с release OCI digest");
+    }
+    if (typeof input.hardwareBacked !== "boolean") {
+      throw new Error("Runtime attestation hardwareBacked должен быть boolean");
+    }
+    const issuedAt = new Date(input.issuedAt).toISOString();
+    const expiresAt = new Date(input.expiresAt).toISOString();
+    const issuedTime = new Date(issuedAt).getTime();
+    const expiresTime = new Date(expiresAt).getTime();
+    if (issuedTime > Date.now() + 60_000
+      || issuedTime < Date.now() - 300_000
+      || expiresTime <= Date.now()
+      || expiresTime <= issuedTime) {
+      throw new Error("Runtime attestation не fresh или уже истекла");
+    }
+    if (expiresTime - issuedTime > this.workerRuntimeMaxLifetimeSeconds * 1_000) {
+      throw new Error("Runtime attestation превышает maximum configured lifetime");
+    }
+    const statement = {
+      schemaVersion: 1 as const,
+      challengeSha256,
+      workerName,
+      platform,
+      architecture,
+      region,
+      residencyDomain,
+      releaseId,
+      artifactDigest,
+      provenanceSha256,
+      provider,
+      workloadIdentity,
+      selectorSha256,
+      imageDigest,
+      hardwareBacked: input.hardwareBacked,
+      issuedAt,
+      expiresAt,
+    };
+    const keyId = fleetIdentifier(envelope.keyId, "Runtime attestation keyId");
+    const publicKey = this.workerRuntimeAttestationPublicKeys.get(keyId);
+    if (!publicKey) throw new Error(`Runtime attestation key ${keyId} не входит в configured trust roots`);
+    const key = ed25519PublicKey(publicKey, `Runtime attestation key ${keyId}`);
+    const signature = canonicalBase64(envelope.signature, "Runtime attestation signature", 128);
+    if (signature.byteLength !== 64
+      || !verifySignature(null, Buffer.from(canonicalJson(statement), "utf8"), key, signature)) {
+      throw new Error("Runtime attestation signature не прошла Ed25519 verification");
+    }
+    const consumed = this.db.prepare(`
+      UPDATE worker_runtime_attestation_challenges
+      SET status = 'consumed', consumed_at = ?, failure_reason = NULL
+      WHERE id = ? AND status = 'issued' AND expires_at > ?
+    `).run(timestamp, normalizedChallengeId, timestamp);
+    if (consumed.changes !== 1) throw new Error("Runtime attestation challenge уже использован или истёк");
+    return {
+      provider,
+      keyId,
+      workloadIdentity,
+      claimsJson: canonicalJson(statement),
+      attestedAt: issuedAt,
+      expiresAt,
+      provenanceSha256,
+    };
+  }
+
+  private workerRuntimeAttestationFresh(node: Row): boolean {
+    if (node.trust_kind === "hardware_attested") return true;
+    if (!this.requireWorkerRuntimeAttestation) return true;
+    return Number(node.runtime_attestation_verified ?? 0) === 1
+      && node.trust_kind === "runtime_attested"
+      && typeof node.runtime_attestation_expires_at === "string"
+      && node.runtime_attestation_expires_at > nowIso();
+  }
+
+  private workerStoredReleaseFresh(node: Row): boolean {
+    if (node.trust_kind === "hardware_attested") return true;
+    if (!this.requireSignedWorkerReleases && !this.requireWorkerProvenance) return true;
+    if (Number(node.release_verified ?? 0) !== 1) return false;
+    try {
+      return Boolean(this.verifyWorkerReleaseIdentity({
+        releaseId: String(node.release_id ?? ""),
+        artifactDigest: String(node.release_digest ?? ""),
+        keyId: String(node.release_key_id ?? ""),
+        signature: String(node.release_signature ?? ""),
+      }, String(node.platform ?? "linux")));
+    } catch {
+      return false;
+    }
+  }
+
+  private cleanupWorkerRuntimeAttestationChallenges(): void {
+    const timestamp = nowIso();
+    this.db.prepare(`
+      UPDATE worker_runtime_attestation_challenges
+      SET status = 'expired', failure_reason = COALESCE(failure_reason, 'Challenge expired'), consumed_at = ?
+      WHERE status = 'issued' AND expires_at <= ?
+    `).run(timestamp, timestamp);
+    const retentionCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000).toISOString();
+    this.db.prepare(`
+      DELETE FROM worker_runtime_attestation_challenges
+      WHERE status IN ('consumed', 'failed', 'expired')
+        AND COALESCE(consumed_at, expires_at) < ?
+    `).run(retentionCutoff);
   }
 
   private workerPlatformFamily(platform: string): string {
@@ -3886,6 +4501,7 @@ export class AgatStore {
 
   private workerEligibleForRollout(node: Row, projectId: string): boolean {
     if (node.trust_kind === "hardware_attested") return true;
+    if (!this.workerStoredReleaseFresh(node) || !this.workerRuntimeAttestationFresh(node)) return false;
     const rollout = this.db.prepare(`
       SELECT wr.*, target.status AS target_status, target.expires_at AS target_expires_at,
         fallback.status AS fallback_status, fallback.expires_at AS fallback_expires_at
@@ -3921,6 +4537,12 @@ export class AgatStore {
       manifestSha256: String(row.manifest_sha256),
       keyId: String(row.key_id),
       signature: String(row.signature),
+      provenance: typeof row.provenance_json === "string"
+        ? parseJson<Record<string, unknown>>(row.provenance_json, {})
+        : null,
+      provenanceSha256: typeof row.provenance_sha256 === "string" ? row.provenance_sha256 : null,
+      provenanceKeyId: typeof row.provenance_key_id === "string" ? row.provenance_key_id : null,
+      provenanceVerified: Number(row.provenance_verified ?? 0) === 1,
       status: String(row.status),
       createdBy: String(row.created_by),
       issuedAt: String(row.issued_at),
@@ -8137,7 +8759,7 @@ export class AgatStore {
       if (String(node.credential_state ?? "active") !== "active" || node.status !== "online") return null;
       if (node.region !== this.region || node.residency_domain !== this.residencyDomain) return null;
       if (node.trust_kind === "hardware_attested") return null;
-      if (this.requireSignedWorkerReleases && Number(node.release_verified ?? 0) !== 1) return null;
+      if (!this.workerStoredReleaseFresh(node) || !this.workerRuntimeAttestationFresh(node)) return null;
       const embeddingModels = normalizeEmbeddingModels(parseJson<unknown>(node.embedding_models_json, []));
       if (embeddingModels.length === 0) return null;
       const used = Number((this.db.prepare(`
@@ -9887,7 +10509,7 @@ export class AgatStore {
     return { id, token };
   }
 
-  registerNode(registration: WorkerRegistration): { id: string; token: string } {
+  registerNode(registration: WorkerRegistration): { id: string; token: string; attestationExpiresAt?: string } {
     const name = registration.name.trim();
     if (!name) throw new Error("Имя узла обязательно");
 
@@ -9912,6 +10534,12 @@ export class AgatStore {
     }
     const release = this.verifyWorkerReleaseIdentity(registration.release, registration.platform);
     const rolloutRing = typeof existing?.rollout_ring === "string" ? existing.rollout_ring : "stable";
+    const runtimeAttestation = this.consumeWorkerRuntimeAttestation(
+      registration.runtimeChallengeId,
+      registration.runtimeAttestation,
+      registration,
+      release,
+    );
 
     this.db
       .prepare(`
@@ -9919,11 +10547,14 @@ export class AgatStore {
           id, name, platform, architecture, endpoint, models_json, model_profiles_json,
           labels_json, agent_runtimes_json, agent_runtime_profiles_json, embedding_models_json,
           cpu_cores, memory_mb, vram_mb, gpu,
-          max_concurrency, token_hash, status,
+          max_concurrency, token_hash, trust_kind, status,
           metrics_json, region, residency_domain,
           release_id, release_digest, release_key_id, release_signature, release_verified, rollout_ring,
+          runtime_attestation_provider, runtime_attestation_key_id, runtime_workload_identity,
+          runtime_attestation_claims_json, runtime_attested_at, runtime_attestation_expires_at,
+          runtime_provenance_sha256, runtime_attestation_verified,
           last_seen, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
           platform = excluded.platform,
           architecture = excluded.architecture,
@@ -9940,6 +10571,7 @@ export class AgatStore {
           gpu = excluded.gpu,
           max_concurrency = excluded.max_concurrency,
           token_hash = excluded.token_hash,
+          trust_kind = excluded.trust_kind,
           region = excluded.region,
           residency_domain = excluded.residency_domain,
           release_id = excluded.release_id,
@@ -9948,6 +10580,14 @@ export class AgatStore {
           release_signature = excluded.release_signature,
           release_verified = excluded.release_verified,
           rollout_ring = excluded.rollout_ring,
+          runtime_attestation_provider = excluded.runtime_attestation_provider,
+          runtime_attestation_key_id = excluded.runtime_attestation_key_id,
+          runtime_workload_identity = excluded.runtime_workload_identity,
+          runtime_attestation_claims_json = excluded.runtime_attestation_claims_json,
+          runtime_attested_at = excluded.runtime_attested_at,
+          runtime_attestation_expires_at = excluded.runtime_attestation_expires_at,
+          runtime_provenance_sha256 = excluded.runtime_provenance_sha256,
+          runtime_attestation_verified = excluded.runtime_attestation_verified,
           status = 'online',
           last_seen = excluded.last_seen,
           updated_at = excluded.updated_at
@@ -9970,6 +10610,7 @@ export class AgatStore {
         registration.gpu ?? "",
         maxConcurrency,
         tokenHash,
+        runtimeAttestation ? "runtime_attested" : "shared_token",
         region,
         residencyDomain,
         release?.id ?? null,
@@ -9978,6 +10619,14 @@ export class AgatStore {
         release?.signature ?? null,
         release ? 1 : 0,
         rolloutRing,
+        runtimeAttestation?.provider ?? null,
+        runtimeAttestation?.keyId ?? null,
+        runtimeAttestation?.workloadIdentity ?? null,
+        runtimeAttestation?.claimsJson ?? "{}",
+        runtimeAttestation?.attestedAt ?? null,
+        runtimeAttestation?.expiresAt ?? null,
+        runtimeAttestation?.provenanceSha256 ?? null,
+        runtimeAttestation ? 1 : 0,
         timestamp,
         timestamp,
         timestamp,
@@ -9995,17 +10644,77 @@ export class AgatStore {
       residencyDomain,
       releaseId: release?.id ?? null,
       releaseVerified: Boolean(release),
+      provenanceSha256: typeof release?.provenance_sha256 === "string" ? release.provenance_sha256 : null,
+      runtimeAttestationProvider: runtimeAttestation?.provider ?? null,
+      runtimeAttestationKeyId: runtimeAttestation?.keyId ?? null,
+      runtimeAttestationExpiresAt: runtimeAttestation?.expiresAt ?? null,
       rolloutRing,
     });
-    return { id, token };
+    return { id, token, ...(runtimeAttestation ? { attestationExpiresAt: runtimeAttestation.expiresAt } : {}) };
+  }
+
+  refreshWorkerRuntimeAttestation(
+    nodeId: string,
+    challengeId: string,
+    envelope: WorkerRuntimeAttestationEnvelope,
+  ): { attestationExpiresAt: string } {
+    const node = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
+    if (!node || node.trust_kind !== "runtime_attested") {
+      throw new Error("Runtime-attested worker не найден");
+    }
+    const releaseIdentity: WorkerReleaseIdentity = {
+      releaseId: String(node.release_id ?? ""),
+      artifactDigest: String(node.release_digest ?? ""),
+      keyId: String(node.release_key_id ?? ""),
+      signature: String(node.release_signature ?? ""),
+    };
+    const registration: WorkerRegistration = {
+      enrollmentToken: "",
+      name: String(node.name),
+      platform: String(node.platform),
+      architecture: String(node.architecture || "unknown"),
+      models: [],
+      region: String(node.region),
+      residencyDomain: String(node.residency_domain),
+      release: releaseIdentity,
+      runtimeChallengeId: challengeId,
+      runtimeAttestation: envelope,
+    };
+    const release = this.verifyWorkerReleaseIdentity(releaseIdentity, registration.platform);
+    const attestation = this.consumeWorkerRuntimeAttestation(challengeId, envelope, registration, release);
+    if (!attestation) throw new Error("Runtime attestation refresh не содержит evidence");
+    const timestamp = nowIso();
+    const updated = this.db.prepare(`
+      UPDATE nodes SET runtime_attestation_provider = ?, runtime_attestation_key_id = ?,
+        runtime_workload_identity = ?, runtime_attestation_claims_json = ?,
+        runtime_attested_at = ?, runtime_attestation_expires_at = ?, runtime_provenance_sha256 = ?,
+        runtime_attestation_verified = 1, updated_at = ?
+      WHERE id = ? AND trust_kind = 'runtime_attested' AND credential_state = 'active'
+    `).run(
+      attestation.provider,
+      attestation.keyId,
+      attestation.workloadIdentity,
+      attestation.claimsJson,
+      attestation.attestedAt,
+      attestation.expiresAt,
+      attestation.provenanceSha256,
+      timestamp,
+      nodeId,
+    );
+    if (updated.changes !== 1) throw new Error("Runtime attestation refresh потерял worker credential race");
+    this.addEvent(null, null, nodeId, "info", "fleet.worker_attestation.refreshed", "Runtime attestation worker обновлена", {
+      provider: attestation.provider,
+      keyId: attestation.keyId,
+      provenanceSha256: attestation.provenanceSha256,
+      runtimeAttestationExpiresAt: attestation.expiresAt,
+    });
+    return { attestationExpiresAt: attestation.expiresAt };
   }
 
   authenticateNode(token: string, allowWipeControl = false): Row | null {
     const row = this.db.prepare("SELECT * FROM nodes WHERE token_hash = ?").get(hashToken(token)) as Row | undefined;
     if (!row) return null;
-    if (this.requireSignedWorkerReleases
-      && row.trust_kind !== "hardware_attested"
-      && Number(row.release_verified ?? 0) !== 1) return null;
+    if (!this.workerStoredReleaseFresh(row) || !this.workerRuntimeAttestationFresh(row)) return null;
     const state = String(row.credential_state ?? "active");
     if (state === "active" || (allowWipeControl && state === "wipe_pending")) return row;
     return null;
@@ -10228,8 +10937,12 @@ export class AgatStore {
         + (SELECT COUNT(*) FROM knowledge_embedding_jobs j WHERE j.node_id = n.id AND j.status = 'running') AS used_concurrency
       FROM nodes n WHERE n.status = 'online' AND n.region = ? AND n.residency_domain = ?
         ${this.requireSignedWorkerReleases ? "AND (n.release_verified = 1 OR n.trust_kind = 'hardware_attested')" : ""}
+        ${this.requireWorkerRuntimeAttestation
+          ? "AND (n.trust_kind = 'hardware_attested' OR n.runtime_attestation_verified = 1)"
+          : ""}
     `).all(this.region, this.residencyDomain) as Row[];
     return rows.flatMap((row): RoutingNode[] => {
+      if (!this.workerStoredReleaseFresh(row) || !this.workerRuntimeAttestationFresh(row)) return [];
       const ageMs = Date.now() - new Date(String(row.last_seen)).getTime();
       const freeSlots = Number(row.max_concurrency) - Number(row.used_concurrency);
       if (!Number.isFinite(ageMs) || ageMs > 90_000 || freeSlots <= 0 || String(row.id).startsWith("demo-")) return [];
@@ -10414,6 +11127,7 @@ export class AgatStore {
       const node = this.db.prepare("SELECT * FROM nodes WHERE id = ?").get(nodeId) as Row | undefined;
       if (!node) throw new Error("Узел не найден");
       if (String(node.credential_state ?? "active") !== "active" || node.status !== "online") return null;
+      if (!this.workerStoredReleaseFresh(node) || !this.workerRuntimeAttestationFresh(node)) return null;
 
       const nodeActive = Number(
         (this.db.prepare(`
@@ -12235,38 +12949,268 @@ export class AgatStore {
     });
   }
 
-  completeAuditExport(eventIds: number[], errorMessage: string | null): void {
+  completeAuditExport(
+    eventIds: number[],
+    errorMessage: string | null,
+    outcome: { reasonCode?: string; responseSha256?: string | null; terminal?: boolean } = {},
+  ): void {
     const ids = [...new Set(eventIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
     if (ids.length === 0) return;
     const timestamp = nowIso();
     const placeholders = ids.map(() => "?").join(", ");
+    const responseSha256 = typeof outcome.responseSha256 === "string"
+      && /^[0-9a-f]{64}$/.test(outcome.responseSha256)
+      ? outcome.responseSha256
+      : null;
     if (!errorMessage) {
       this.db.prepare(`
         UPDATE audit_export_outbox SET status = 'delivered', delivered_at = ?,
-          locked_by = NULL, lock_expires_at = NULL, last_error = NULL, updated_at = ?
+          locked_by = NULL, lock_expires_at = NULL, last_error = NULL,
+          last_failure_code = NULL, last_response_sha256 = ?, dead_at = NULL, updated_at = ?
         WHERE event_id IN (${placeholders}) AND status = 'delivering' AND locked_by = ?
-      `).run(timestamp, timestamp, ...ids, this.coordinatorInstanceId);
+      `).run(timestamp, responseSha256, timestamp, ...ids, this.coordinatorInstanceId);
       return;
     }
+    const reasonCode = typeof outcome.reasonCode === "string"
+      && /^[a-z][a-z0-9_]{0,62}$/.test(outcome.reasonCode)
+      ? outcome.reasonCode
+      : "export_error";
+    const failure = errorMessage.slice(0, 2_000);
+    const failureSha256 = sha256Text(errorMessage);
     const rows = this.db.prepare(`
-      SELECT event_id, attempts FROM audit_export_outbox
-      WHERE event_id IN (${placeholders}) AND status = 'delivering' AND locked_by = ?
+      SELECT e.*, o.event_id, o.attempts FROM audit_export_outbox o
+      JOIN events e ON e.id = o.event_id
+      WHERE o.event_id IN (${placeholders}) AND o.status = 'delivering' AND o.locked_by = ?
     `).all(...ids, this.coordinatorInstanceId) as Row[];
     const retry = this.db.prepare(`
       UPDATE audit_export_outbox SET status = 'pending', available_at = ?,
-        locked_by = NULL, lock_expires_at = NULL, last_error = ?, updated_at = ?
-      WHERE event_id = ? AND locked_by = ?
+        locked_by = NULL, lock_expires_at = NULL, last_error = ?,
+        last_failure_code = ?, last_response_sha256 = ?, updated_at = ?
+      WHERE event_id = ? AND status = 'delivering' AND locked_by = ?
     `);
-    for (const row of rows) {
-      const backoffSeconds = Math.min(300, 2 ** Math.min(8, Number(row.attempts)));
-      retry.run(
-        new Date(Date.now() + backoffSeconds * 1_000).toISOString(),
-        errorMessage.slice(0, 2_000),
+    const dead = this.db.prepare(`
+      UPDATE audit_export_outbox SET status = 'dead', available_at = ?,
+        locked_by = NULL, lock_expires_at = NULL, last_error = ?,
+        last_failure_code = ?, last_response_sha256 = ?, dead_at = ?, updated_at = ?
+      WHERE event_id = ? AND status = 'delivering' AND locked_by = ?
+    `);
+    this.transaction(() => {
+      for (const row of rows) {
+        const attempts = Number(row.attempts);
+        const terminal = outcome.terminal === true || attempts >= this.siemMaxAttempts;
+        if (!terminal) {
+          const backoffSeconds = Math.min(900, 2 ** Math.min(9, attempts));
+          const retried = retry.run(
+            new Date(Date.now() + backoffSeconds * 1_000).toISOString(),
+            failure,
+            reasonCode,
+            responseSha256,
+            timestamp,
+            row.event_id ?? 0,
+            this.coordinatorInstanceId,
+          );
+          if (retried.changes !== 1) throw new Error("SIEM retry потерял delivery lease race");
+          continue;
+        }
+        const payload = canonicalJson(this.siemAuditEventDto(row));
+        const retainedUntil = new Date(
+          Date.now() + this.siemDlqRetentionDays * 24 * 60 * 60 * 1_000,
+        ).toISOString();
+        this.db.prepare(`
+          INSERT INTO audit_export_dead_letters(
+            event_id, project_id, payload_json, payload_sha256, attempts,
+            reason_code, error_sha256, response_sha256, status,
+            first_dead_at, last_dead_at, retained_until, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+          ON CONFLICT(event_id) DO UPDATE SET
+            project_id = excluded.project_id,
+            payload_json = excluded.payload_json,
+            payload_sha256 = excluded.payload_sha256,
+            attempts = excluded.attempts,
+            reason_code = excluded.reason_code,
+            error_sha256 = excluded.error_sha256,
+            response_sha256 = excluded.response_sha256,
+            status = 'open',
+            last_dead_at = excluded.last_dead_at,
+            retained_until = excluded.retained_until,
+            resolved_at = NULL,
+            resolved_by = NULL,
+            resolution_reason_sha256 = NULL,
+            updated_at = excluded.updated_at
+        `).run(
+          row.event_id ?? 0,
+          row.project_id ?? "global",
+          payload,
+          sha256Text(payload),
+          attempts,
+          reasonCode,
+          failureSha256,
+          responseSha256,
+          timestamp,
+          timestamp,
+          retainedUntil,
+          timestamp,
+        );
+        const markedDead = dead.run(
+          timestamp,
+          failure,
+          reasonCode,
+          responseSha256,
+          timestamp,
+          timestamp,
+          row.event_id ?? 0,
+          this.coordinatorInstanceId,
+        );
+        if (markedDead.changes !== 1) throw new Error("SIEM DLQ transition потерял delivery lease race");
+      }
+    });
+  }
+
+  listAuditExportDeadLetters(projectId?: string, limit = 100): Array<Record<string, unknown>> {
+    const params: SqlScalar[] = [];
+    const projectFilter = projectId ? " WHERE project_id = ?" : "";
+    if (projectId) params.push(normalizeProjectId(projectId));
+    params.push(clampInteger(limit, 1, 500, 100));
+    return (this.db.prepare(`
+      SELECT * FROM audit_export_dead_letters${projectFilter}
+      ORDER BY last_dead_at DESC, event_id DESC LIMIT ?
+    `).all(...params) as Row[]).map((row) => ({
+      eventId: Number(row.event_id),
+      projectId: String(row.project_id),
+      payload: parseJson<Record<string, unknown>>(row.payload_json, {}),
+      payloadSha256: String(row.payload_sha256),
+      attempts: Number(row.attempts),
+      reasonCode: String(row.reason_code),
+      errorSha256: typeof row.error_sha256 === "string" ? row.error_sha256 : null,
+      responseSha256: typeof row.response_sha256 === "string" ? row.response_sha256 : null,
+      status: String(row.status),
+      firstDeadAt: String(row.first_dead_at),
+      lastDeadAt: String(row.last_dead_at),
+      retainedUntil: String(row.retained_until),
+      replayCount: Number(row.replay_count),
+      lastReplayedAt: typeof row.last_replayed_at === "string" ? row.last_replayed_at : null,
+      resolvedAt: typeof row.resolved_at === "string" ? row.resolved_at : null,
+    }));
+  }
+
+  replayAuditExportDeadLetter(eventId: number, actor: string, reason: string): boolean {
+    if (!Number.isSafeInteger(eventId) || eventId < 1) throw new Error("Некорректный SIEM event ID");
+    const normalizedActor = requiredAgentText(actor, "SIEM replay actor", 200);
+    const normalizedReason = requiredAgentText(reason, "SIEM replay reason", 500);
+    const timestamp = nowIso();
+    return this.transaction(() => {
+      const letter = this.db.prepare(`
+        SELECT * FROM audit_export_dead_letters WHERE event_id = ? AND status = 'open'
+      `).get(eventId) as Row | undefined;
+      if (!letter) return false;
+      const outbox = this.db.prepare(`
+        UPDATE audit_export_outbox SET status = 'pending', attempts = 0, available_at = ?,
+          locked_by = NULL, lock_expires_at = NULL, last_error = NULL,
+          last_failure_code = NULL, last_response_sha256 = NULL, dead_at = NULL, updated_at = ?
+        WHERE event_id = ? AND status = 'dead'
+      `).run(timestamp, timestamp, eventId);
+      if (outbox.changes !== 1) throw new Error("SIEM dead-letter/outbox state расходится");
+      this.db.prepare(`
+        UPDATE audit_export_dead_letters SET status = 'replayed', replay_count = replay_count + 1,
+          last_replayed_at = ?, last_replayed_by = ?, retained_until = ?, updated_at = ?
+        WHERE event_id = ? AND status = 'open'
+      `).run(
         timestamp,
-        row.event_id ?? 0,
-        this.coordinatorInstanceId,
+        normalizedActor,
+        new Date(Date.now() + this.siemDlqRetentionDays * 24 * 60 * 60 * 1_000).toISOString(),
+        timestamp,
+        eventId,
       );
-    }
+      this.addEvent(null, null, null, "warn", "siem.dead_letter.replayed", "SIEM dead-letter возвращён в delivery queue", {
+        actor: normalizedActor,
+        eventId,
+        reason: normalizedReason,
+        projectId: String(letter.project_id),
+      });
+      return true;
+    });
+  }
+
+  resolveAuditExportDeadLetter(eventId: number, actor: string, reason: string): boolean {
+    if (!Number.isSafeInteger(eventId) || eventId < 1) throw new Error("Некорректный SIEM event ID");
+    const normalizedActor = requiredAgentText(actor, "SIEM resolve actor", 200);
+    const normalizedReason = requiredAgentText(reason, "SIEM resolve reason", 500);
+    const timestamp = nowIso();
+    return this.transaction(() => {
+      const result = this.db.prepare(`
+        UPDATE audit_export_dead_letters SET status = 'resolved', resolved_at = ?, resolved_by = ?,
+          resolution_reason_sha256 = ?, retained_until = ?, updated_at = ?
+        WHERE event_id = ? AND status = 'open'
+      `).run(
+        timestamp,
+        normalizedActor,
+        sha256Text(normalizedReason),
+        new Date(Date.now() + this.siemDlqRetentionDays * 24 * 60 * 60 * 1_000).toISOString(),
+        timestamp,
+        eventId,
+      );
+      if (result.changes !== 1) return false;
+      this.addEvent(null, null, null, "warn", "siem.dead_letter.resolved", "SIEM dead-letter закрыт оператором", {
+        actor: normalizedActor,
+        eventId,
+        reason: normalizedReason,
+      });
+      return true;
+    });
+  }
+
+  runAuditExportRetention(limit = 1_000): {
+    deliveredPurged: number;
+    deadLettersPurged: number;
+    ranAt: string;
+  } {
+    const batchSize = clampInteger(limit, 1, 10_000, 1_000);
+    const timestamp = nowIso();
+    const deliveredCutoff = new Date(
+      Date.now() - this.siemDeliveredRetentionDays * 24 * 60 * 60 * 1_000,
+    ).toISOString();
+    return this.transaction(() => {
+      const delivered = this.db.prepare(`
+        DELETE FROM audit_export_outbox WHERE event_id IN (
+          SELECT event_id FROM audit_export_outbox
+          WHERE status = 'delivered' AND delivered_at < ?
+            AND NOT EXISTS (
+              SELECT 1 FROM audit_export_dead_letters d
+              WHERE d.event_id = audit_export_outbox.event_id
+            )
+          ORDER BY delivered_at, event_id LIMIT ?
+        )
+      `).run(deliveredCutoff, batchSize);
+      const candidates = this.db.prepare(`
+        SELECT d.event_id FROM audit_export_dead_letters d
+        JOIN audit_export_outbox o ON o.event_id = d.event_id
+        WHERE d.retained_until <= ? AND (
+          (d.status = 'resolved' AND o.status = 'dead')
+          OR (d.status = 'replayed' AND o.status = 'delivered')
+        )
+        ORDER BY d.retained_until, d.event_id LIMIT ?
+      `).all(timestamp, batchSize) as Row[];
+      if (candidates.length > 0) {
+        const placeholders = candidates.map(() => "?").join(", ");
+        const ids = candidates.map((row) => row.event_id ?? 0);
+        this.db.prepare(`DELETE FROM audit_export_outbox WHERE event_id IN (${placeholders})`).run(...ids);
+        this.db.prepare(`DELETE FROM audit_export_dead_letters WHERE event_id IN (${placeholders})`).run(...ids);
+      }
+      this.db.prepare(`
+        UPDATE audit_export_retention_state SET
+          delivered_retention_days = ?, dlq_retention_days = ?, last_run_at = ?,
+          delivered_purged = ?, dead_letters_purged = ?, updated_at = ?
+        WHERE id = 'current'
+      `).run(
+        this.siemDeliveredRetentionDays,
+        this.siemDlqRetentionDays,
+        timestamp,
+        Number(delivered.changes),
+        candidates.length,
+        timestamp,
+      );
+      return { deliveredPurged: Number(delivered.changes), deadLettersPurged: candidates.length, ranAt: timestamp };
+    });
   }
 
   auditExportStatus(projectId?: string): Record<string, unknown> {
@@ -12288,7 +13232,20 @@ export class AgatStore {
       pending: byStatus.pending ?? 0,
       delivering: byStatus.delivering ?? 0,
       delivered: byStatus.delivered ?? 0,
+      dead: byStatus.dead ?? 0,
       oldestPendingAt: oldestPending,
+      deadLetters: Number((this.db.prepare(`
+        SELECT COUNT(*) AS count FROM audit_export_dead_letters
+        ${projectId ? "WHERE project_id = ? AND status = 'open'" : "WHERE status = 'open'"}
+      `).get(...(projectId ? [normalizeProjectId(projectId)] : [])) as Row | undefined)?.count ?? 0),
+      retention: (() => {
+        const row = this.db.prepare("SELECT * FROM audit_export_retention_state WHERE id = 'current'").get() as Row | undefined;
+        return row ? {
+          deliveredDays: Number(row.delivered_retention_days),
+          dlqDays: Number(row.dlq_retention_days),
+          lastRunAt: typeof row.last_run_at === "string" ? row.last_run_at : null,
+        } : null;
+      })(),
     };
   }
 
@@ -12298,7 +13255,9 @@ export class AgatStore {
       "actor", "decision", "risk", "riskTier", "policyVersion", "policySha256",
       "releaseId", "version", "artifactDigest", "manifestSha256", "keyId", "region",
       "residencyDomain", "queueName", "projectId", "provider", "environment", "generation",
-      "status", "ring", "percentage", "revision",
+      "status", "ring", "percentage", "revision", "provenanceSha256", "provenanceVerified",
+      "runtimeAttestationProvider", "runtimeAttestationKeyId", "runtimeAttestationExpiresAt",
+      "eventId", "reasonCode",
     ]);
     const metadata: Record<string, string | number | boolean | null> = {};
     for (const [key, value] of Object.entries(rawData)) {
@@ -14440,6 +15399,9 @@ export class AgatStore {
         artifactDigest: typeof row.release_digest === "string" ? row.release_digest : null,
         keyId: typeof row.release_key_id === "string" ? row.release_key_id : null,
         verified: Number(row.release_verified ?? 0) === 1,
+        provenanceSha256: typeof row.runtime_provenance_sha256 === "string"
+          ? row.runtime_provenance_sha256
+          : null,
         rolloutRing: String(row.rollout_ring ?? "stable"),
       },
       trustKind: String(row.trust_kind ?? "shared_token"),
@@ -14450,6 +15412,17 @@ export class AgatStore {
         attestedAt: typeof row.attested_at === "string" ? row.attested_at : null,
         environment: parseJson<Record<string, unknown>>(row.attestation_claims_json, {}).environment ?? null,
         hardwareBacked: parseJson<Record<string, unknown>>(row.attestation_claims_json, {}).hardwareBacked === true,
+      } : null,
+      runtimeAttestation: row.trust_kind === "runtime_attested" ? {
+        provider: typeof row.runtime_attestation_provider === "string" ? row.runtime_attestation_provider : null,
+        keyId: typeof row.runtime_attestation_key_id === "string" ? row.runtime_attestation_key_id : null,
+        workloadIdentity: typeof row.runtime_workload_identity === "string" ? row.runtime_workload_identity : null,
+        attestedAt: typeof row.runtime_attested_at === "string" ? row.runtime_attested_at : null,
+        expiresAt: typeof row.runtime_attestation_expires_at === "string" ? row.runtime_attestation_expires_at : null,
+        verified: Number(row.runtime_attestation_verified ?? 0) === 1
+          && typeof row.runtime_attestation_expires_at === "string"
+          && row.runtime_attestation_expires_at > nowIso(),
+        hardwareBacked: parseJson<Record<string, unknown>>(row.runtime_attestation_claims_json, {}).hardwareBacked === true,
       } : null,
       wipe: {
         generation: Number(row.wipe_generation ?? 0),

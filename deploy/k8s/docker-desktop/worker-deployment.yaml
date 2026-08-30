@@ -93,6 +93,12 @@ spec:
                 secretKeyRef:
                   name: agat-secrets
                   key: model-api-key
+            - name: AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: worker-runtime-attestation-broker-token
+                  optional: true
           startupProbe:
             exec:
               command:

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -33,6 +34,7 @@ import { bearerToken, tokensEqual } from "./security.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import { McpGateway } from "./mcp.js";
 import { createSandboxExecutor } from "./sandbox.js";
+import { evaluateSiemResponse } from "./siem-export.js";
 import {
   createEdgeAttestationVerifier,
   EdgeAttestationError,
@@ -110,6 +112,8 @@ import type {
   WorkerExecutionMetrics,
   WorkerMetrics,
   WorkerRegistration,
+  WorkerRuntimeAttestationChallengeInput,
+  WorkerRuntimeAttestationEnvelope,
   WorkerRolloutInput,
 } from "./types.js";
 
@@ -312,6 +316,10 @@ function requireWorker(
 
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Неизвестная ошибка";
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function parseSchedulerMode(value: unknown): SchedulerMode {
@@ -624,6 +632,17 @@ export function createCoordinatorServer(
             attestationAvailable: edgeAttestation.available,
             attestationMode: edgeAttestation.mode,
             reason: edgeAttestation.reason,
+          },
+          workerTrust: {
+            signedReleasesRequired: config.requireSignedWorkerReleases,
+            provenanceRequired: config.requireWorkerProvenance,
+            runtimeAttestationRequired: config.requireWorkerRuntimeAttestation,
+            runtimeProviders: config.workerRuntimeAttestationProviders,
+          },
+          siem: {
+            enabled: config.siemEnabled,
+            requireAck: config.siemRequireAck,
+            maxAttempts: config.siemMaxAttempts,
           },
         });
         return;
@@ -1204,6 +1223,52 @@ export function createCoordinatorServer(
         const body = await readJson<WorkerRolloutInput>(request);
         json(response, 200, runWithPostgresSystemScope(() =>
           store.updateWorkerRollout(body, auth.projectId, auth.username)));
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/v1/fleet/siem/dead-letters") {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "auditor"], true);
+        const limit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
+        json(response, 200, {
+          deadLetters: runWithPostgresSystemScope(() => store.listAuditExportDeadLetters(
+            auth.roles.has("admin") ? undefined : auth.projectId,
+            Number.isFinite(limit) ? limit : 100,
+          )),
+        });
+        return;
+      }
+
+      const replaySiemEventId = routeParam(pathname, /^\/api\/v1\/fleet\/siem\/dead-letters\/(\d+)\/replay$/);
+      if (request.method === "POST" && replaySiemEventId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<{ reason?: string; confirm?: string }>(request);
+        if (body.confirm !== "REPLAY_SIEM_DEAD_LETTER" || !body.reason?.trim()) {
+          throw new HttpError(400, "Replay требует reason и confirm=REPLAY_SIEM_DEAD_LETTER");
+        }
+        const replayed = runWithPostgresSystemScope(() => store.replayAuditExportDeadLetter(
+          Number(replaySiemEventId),
+          auth.username,
+          body.reason!,
+        ));
+        if (!replayed) throw new HttpError(404, "Открытый SIEM dead-letter не найден");
+        json(response, 202, { eventId: Number(replaySiemEventId), status: "pending" });
+        return;
+      }
+
+      const resolveSiemEventId = routeParam(pathname, /^\/api\/v1\/fleet\/siem\/dead-letters\/(\d+)\/resolve$/);
+      if (request.method === "POST" && resolveSiemEventId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const body = await readJson<{ reason?: string; confirm?: string }>(request);
+        if (body.confirm !== "RESOLVE_SIEM_DEAD_LETTER" || !body.reason?.trim()) {
+          throw new HttpError(400, "Resolve требует reason и confirm=RESOLVE_SIEM_DEAD_LETTER");
+        }
+        const resolved = runWithPostgresSystemScope(() => store.resolveAuditExportDeadLetter(
+          Number(resolveSiemEventId),
+          auth.username,
+          body.reason!,
+        ));
+        if (!resolved) throw new HttpError(404, "Открытый SIEM dead-letter не найден");
+        json(response, 200, { eventId: Number(resolveSiemEventId), status: "resolved" });
         return;
       }
 
@@ -2143,6 +2208,41 @@ export function createCoordinatorServer(
         return;
       }
 
+      if (request.method === "POST" && pathname === "/api/v1/workers/attestation/challenge") {
+        const body = await readJson<WorkerRuntimeAttestationChallengeInput>(request);
+        if (!body.enrollmentToken || !tokensEqual(body.enrollmentToken, config.enrollmentToken)) {
+          throw new HttpError(403, "Токен регистрации недействителен");
+        }
+        if (!body.release || !body.name?.trim() || !body.platform?.trim()) {
+          throw new HttpError(400, "Runtime attestation challenge требует worker binding и signed release identity");
+        }
+        json(response, 201, runWithPostgresSystemScope(() =>
+          store.issueWorkerRuntimeAttestationChallenge(body)));
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/v1/workers/attestation/refresh") {
+        const node = requireWorker(request, store);
+        const body = await readJson<{
+          runtimeChallengeId?: string;
+          runtimeAttestation?: WorkerRuntimeAttestationEnvelope;
+        }>(request);
+        if (!body.runtimeChallengeId || !body.runtimeAttestation) {
+          throw new HttpError(400, "Runtime attestation refresh требует challenge и evidence");
+        }
+        try {
+          json(response, 200, runWithPostgresSystemScope(() => store.refreshWorkerRuntimeAttestation(
+            String(node.id),
+            body.runtimeChallengeId!,
+            body.runtimeAttestation!,
+          )));
+        } catch (error) {
+          store.finishWorkerRuntimeAttestationChallenge(body.runtimeChallengeId, safeMessage(error));
+          throw error;
+        }
+        return;
+      }
+
       if (request.method === "POST" && pathname === "/api/v1/workers/register") {
         const body = await readJson<WorkerRegistration>(request);
         if (!body.enrollmentToken || !tokensEqual(body.enrollmentToken, config.enrollmentToken)) {
@@ -2158,7 +2258,15 @@ export function createCoordinatorServer(
         if (body.embeddingModels !== undefined && !Array.isArray(body.embeddingModels)) {
           throw new HttpError(400, "embeddingModels должен быть массивом");
         }
-        const registered = store.registerNode(body);
+        let registered: ReturnType<AgatStore["registerNode"]>;
+        try {
+          registered = store.registerNode(body);
+        } catch (error) {
+          if (body.runtimeChallengeId) {
+            store.finishWorkerRuntimeAttestationChallenge(body.runtimeChallengeId, safeMessage(error));
+          }
+          throw error;
+        }
         json(response, 201, registered);
         return;
       }
@@ -2464,6 +2572,17 @@ async function main(): Promise<void> {
     regionLossDrWriteEpoch: config.regionLossDrWriteEpoch,
     workerReleasePublicKeys: config.workerReleasePublicKeys,
     requireSignedWorkerReleases: config.requireSignedWorkerReleases,
+    workerProvenancePublicKeys: config.workerProvenancePublicKeys,
+    requireWorkerProvenance: config.requireWorkerProvenance,
+    workerRuntimeAttestationPublicKeys: config.workerRuntimeAttestationPublicKeys,
+    requireWorkerRuntimeAttestation: config.requireWorkerRuntimeAttestation,
+    workerRuntimeAttestationProviders: config.workerRuntimeAttestationProviders,
+    workerRuntimeIdentityPrefixes: config.workerRuntimeIdentityPrefixes,
+    workerRuntimeChallengeTtlSeconds: config.workerRuntimeChallengeTtlSeconds,
+    workerRuntimeMaxLifetimeSeconds: config.workerRuntimeMaxLifetimeSeconds,
+    siemMaxAttempts: config.siemMaxAttempts,
+    siemDeliveredRetentionDays: config.siemDeliveredRetentionDays,
+    siemDlqRetentionDays: config.siemDlqRetentionDays,
     artifactStoreDriver: config.artifactStoreDriver,
     artifactRetentionDays: config.artifactRetentionDays,
     ...(config.artifactStoreDriver === "s3" ? {
@@ -2581,29 +2700,48 @@ async function main(): Promise<void> {
       if (batch.length === 0) return;
       const firstId = Number(batch[0]?.id);
       const lastId = Number(batch.at(-1)?.id);
+      const batchAck = `${firstId}-${lastId}`;
       const response = await fetch(config.siemUrl, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/x-ndjson",
           "user-agent": "agat-coordinator/1.7.0",
-          "x-agat-audit-batch": `${firstId}-${lastId}`,
+          "x-agat-audit-batch": batchAck,
           ...(config.siemBearerToken ? { authorization: `Bearer ${config.siemBearerToken}` } : {}),
         },
         body: `${batch.map((event) => JSON.stringify(event)).join("\n")}\n`,
-        redirect: "error",
         signal: AbortSignal.timeout(config.siemTimeoutSeconds * 1_000),
       });
       await response.body?.cancel();
-      if (!response.ok) throw new Error(`SIEM ответил HTTP ${response.status}`);
+      const ack = response.headers.get("x-agat-audit-ack") ?? "";
+      const responseSha256 = sha256Text(`${response.status}\n${ack}`);
+      const decision = evaluateSiemResponse(response.status, ack, batchAck, config.siemRequireAck);
+      if (!decision.delivered) {
+        runWithPostgresSystemScope(() => store.completeAuditExport(
+          batch.map((event) => Number(event.id)),
+          decision.errorMessage,
+          {
+            reasonCode: decision.reasonCode ?? undefined,
+            responseSha256,
+            terminal: decision.terminal,
+          },
+        ));
+        console.warn(`SIEM audit export отклонён: ${decision.errorMessage}`);
+        return;
+      }
       runWithPostgresSystemScope(() => store.completeAuditExport(
         batch.map((event) => Number(event.id)),
         null,
+        { responseSha256 },
       ));
     } catch (error) {
       if (batch.length > 0) {
+        const message = safeMessage(error);
         runWithPostgresSystemScope(() => store.completeAuditExport(
           batch.map((event) => Number(event.id)),
-          safeMessage(error),
+          message,
+          { reasonCode: /timeout|timed out|abort/i.test(message) ? "timeout" : "network_error" },
         ));
       }
       console.warn(`Ошибка SIEM audit export: ${safeMessage(error)}`);
@@ -2615,11 +2753,24 @@ async function main(): Promise<void> {
   siemTimer.unref();
   if (config.siemEnabled) void pumpSiem();
 
+  const siemRetentionTimer = setInterval(() => {
+    try {
+      const result = runWithPostgresSystemScope(() => store.runAuditExportRetention());
+      if (result.deliveredPurged > 0 || result.deadLettersPurged > 0) {
+        console.log(`SIEM retention: delivered=${result.deliveredPurged} deadLetters=${result.deadLettersPurged}`);
+      }
+    } catch (error) {
+      console.warn(`Ошибка SIEM retention: ${safeMessage(error)}`);
+    }
+  }, config.siemRetentionIntervalSeconds * 1_000);
+  siemRetentionTimer.unref();
+
   const shutdown = (): void => {
     clearInterval(maintenanceTimer);
     clearInterval(artifactLifecycleTimer);
     clearInterval(mcpRefreshTimer);
     clearInterval(siemTimer);
+    clearInterval(siemRetentionTimer);
     server.close(() => void (async () => {
       store.close();
       await processRuntime.close();
