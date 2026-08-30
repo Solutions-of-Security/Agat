@@ -12,6 +12,16 @@ readonly coordinator_image="agat-local/coordinator:${image_tag}"
 readonly worker_image="agat-local/worker:${image_tag}"
 readonly temporal_worker_image="agat-local/temporal-worker:${image_tag}"
 readonly sandbox_wasi_image="agat-local/sandbox-wasi:${image_tag}"
+readonly coordinator_replicas="${AGAT_K8S_COORDINATOR_REPLICAS:-2}"
+[[ "${image_tag}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || {
+  printf 'Ошибка: AGAT_K8S_IMAGE_TAG имеет небезопасный формат\n' >&2
+  exit 1
+}
+[[ "${coordinator_replicas}" =~ ^[0-9]+$ ]] \
+  && (( coordinator_replicas >= 1 && coordinator_replicas <= 64 )) || {
+  printf 'Ошибка: AGAT_K8S_COORDINATOR_REPLICAS должен быть 1..64\n' >&2
+  exit 1
+}
 
 die() {
   printf 'Ошибка: %s\n' "$*" >&2
@@ -125,7 +135,7 @@ if ${coordinator_existed}; then
     2>/dev/null || true)"
   if [[ "${existing_state_store_driver:-sqlite}" != "postgresql" ]]; then
     if ! is_true "${AGAT_K8S_ALLOW_POSTGRES_CUTOVER:-false}"; then
-      die "существующий coordinator использует SQLite; автоматической миграции в PostgreSQL нет. Сначала выполните offline export/import и reconciliation либо осознанно разрешите пустой cutover через AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true"
+      die "существующий coordinator использует SQLite; k8s:up не переносит state автоматически. Сначала выполните fleet:migrate-state apply+verify по docs/sqlite-postgresql-migration.md либо осознанно разрешите пустой cutover через AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true"
     fi
     printf '%s\n' \
       'Внимание: разрешён SQLite→PostgreSQL cutover без автоматического переноса данных; прежний PVC сохранится до удаления namespace.'
@@ -289,12 +299,18 @@ read_postgres_secret_value() {
 
 if ${postgres_secret_exists}; then
   postgres_admin_password="$(read_postgres_secret_value "admin-password")"
+  postgres_migration_password="$(read_postgres_secret_value "migration-password")"
   postgres_system_password="$(read_postgres_secret_value "system-password")"
   postgres_tenant_password="$(read_postgres_secret_value "tenant-password")"
   [[ -n "${postgres_admin_password}" && -n "${postgres_system_password}" && -n "${postgres_tenant_password}" ]] || \
     die "agat-postgres-secrets неполон; восстановите Secret из backup"
   if [[ -n "${AGAT_POSTGRES_ADMIN_PASSWORD:-}" && "${AGAT_POSTGRES_ADMIN_PASSWORD}" != "${postgres_admin_password}" ]]; then
     die "пароль persistent coordinator PostgreSQL нельзя менять без отдельной ротации ролей"
+  fi
+  if [[ -z "${postgres_migration_password}" ]]; then
+    postgres_migration_password="${AGAT_POSTGRES_MIGRATION_PASSWORD:-$(openssl rand -hex 24)}"
+  elif [[ -n "${AGAT_POSTGRES_MIGRATION_PASSWORD:-}" && "${AGAT_POSTGRES_MIGRATION_PASSWORD}" != "${postgres_migration_password}" ]]; then
+    die "пароль роли agat_migrator нельзя менять этим скриптом"
   fi
   if [[ -n "${AGAT_POSTGRES_SYSTEM_PASSWORD:-}" && "${AGAT_POSTGRES_SYSTEM_PASSWORD}" != "${postgres_system_password}" ]]; then
     die "пароль роли agat_system нельзя менять этим скриптом"
@@ -304,6 +320,7 @@ if ${postgres_secret_exists}; then
   fi
 else
   postgres_admin_password="${AGAT_POSTGRES_ADMIN_PASSWORD:-$(openssl rand -hex 24)}"
+  postgres_migration_password="${AGAT_POSTGRES_MIGRATION_PASSWORD:-$(openssl rand -hex 24)}"
   postgres_system_password="${AGAT_POSTGRES_SYSTEM_PASSWORD:-$(openssl rand -hex 24)}"
   postgres_tenant_password="${AGAT_POSTGRES_TENANT_PASSWORD:-$(openssl rand -hex 24)}"
 fi
@@ -315,6 +332,13 @@ postgres_system_url="$(node --input-type=module -e '
   url.password = password;
   process.stdout.write(url.toString());
 ' "agat_system" "${postgres_system_password}")"
+postgres_migration_url="$(node --input-type=module -e '
+  const [username, password] = process.argv.slice(1);
+  const url = new URL("postgresql://agat-coordinator-postgres:5432/agat");
+  url.username = username;
+  url.password = password;
+  process.stdout.write(url.toString());
+' "agat_migrator" "${postgres_migration_password}")"
 postgres_tenant_url="$(node --input-type=module -e '
   const [username, password] = process.argv.slice(1);
   const url = new URL("postgresql://agat-coordinator-postgres:5432/agat");
@@ -322,20 +346,22 @@ postgres_tenant_url="$(node --input-type=module -e '
   url.password = password;
   process.stdout.write(url.toString());
 ' "agat_tenant" "${postgres_tenant_password}")"
-[[ -n "${postgres_system_url}" && -n "${postgres_tenant_url}" ]] || die \
+[[ -n "${postgres_migration_url}" && -n "${postgres_system_url}" && -n "${postgres_tenant_url}" ]] || die \
   "не удалось сформировать PostgreSQL connection URLs"
 
 kubectl create secret generic agat-postgres-secrets \
   --namespace "${namespace}" \
   --from-literal="admin-password=${postgres_admin_password}" \
+  --from-literal="migration-password=${postgres_migration_password}" \
   --from-literal="system-password=${postgres_system_password}" \
   --from-literal="tenant-password=${postgres_tenant_password}" \
+  --from-literal="migration-url=${postgres_migration_url}" \
   --from-literal="system-url=${postgres_system_url}" \
   --from-literal="tenant-url=${postgres_tenant_url}" \
   --dry-run=client \
   --output=yaml | kubectl apply --filename - >/dev/null
-unset postgres_admin_password postgres_system_password postgres_tenant_password
-unset postgres_system_url postgres_tenant_url
+unset postgres_admin_password postgres_migration_password postgres_system_password postgres_tenant_password
+unset postgres_migration_url postgres_system_url postgres_tenant_url
 if ! ${postgres_secret_exists}; then
   printf '%s\n' 'Kubernetes Secret agat-postgres-secrets создан отдельно от application secrets.'
 fi
@@ -378,7 +404,53 @@ if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
     "${repo_root}"
 fi
 
-kubectl apply --kustomize "${manifests_dir}"
+if ${coordinator_existed}; then
+  printf '%s\n' 'Останавливаю coordinator replicas перед exclusive PostgreSQL schema Job...'
+  kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas=0 >/dev/null
+  kubectl rollout status deployment/agat-coordinator --namespace "${namespace}" --timeout=120s >/dev/null
+fi
+kubectl delete job/agat-postgres-role-bootstrap-v21 \
+  job/agat-postgres-schema-v21 \
+  --namespace "${namespace}" \
+  --ignore-not-found \
+  --wait=true >/dev/null
+rendered_manifests_dir="$(mktemp -d)"
+cleanup_rendered_manifests() {
+  if [[ -n "${rendered_manifests_dir:-}" && -d "${rendered_manifests_dir}" ]]; then
+    rm -rf -- "${rendered_manifests_dir}"
+  fi
+}
+trap cleanup_rendered_manifests EXIT
+cp -R "${manifests_dir}/." "${rendered_manifests_dir}/"
+node --input-type=module -e '
+  import fs from "node:fs";
+  import path from "node:path";
+  const [directory, image, replicas] = process.argv.slice(1);
+  const manifest = path.join(directory, "coordinator-postgres-migration.yaml");
+  const source = fs.readFileSync(manifest, "utf8");
+  const expected = "image: agat-local/coordinator:1.7.0";
+  const matches = source.split(expected).length - 1;
+  if (matches !== 1) throw new Error(`ожидался ровно один schema Job image, найдено ${matches}`);
+  const expectedReplicas = `- name: AGAT_POSTGRES_EXPECTED_REPLICAS\n              value: "2"`;
+  const replicaMatches = source.split(expectedReplicas).length - 1;
+  if (replicaMatches !== 1) throw new Error(`ожидался ровно один admission replica parameter, найдено ${replicaMatches}`);
+  fs.writeFileSync(
+    manifest,
+    source
+      .replace(expected, `image: ${image}`)
+      .replace(expectedReplicas, `- name: AGAT_POSTGRES_EXPECTED_REPLICAS\n              value: "${replicas}"`),
+  );
+' "${rendered_manifests_dir}" "${coordinator_image}" "${coordinator_replicas}"
+kubectl apply --kustomize "${rendered_manifests_dir}"
+cleanup_rendered_manifests
+rendered_manifests_dir=""
+trap - EXIT
+kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v21 \
+  --namespace "${namespace}" --timeout=360s >/dev/null || die \
+  "PostgreSQL role bootstrap Job не завершилась"
+kubectl wait --for=condition=Complete job/agat-postgres-schema-v21 \
+  --namespace "${namespace}" --timeout=960s >/dev/null || die \
+  "PostgreSQL schema/admission Job не завершилась"
 coordinator_otel_patch="$(node --input-type=module -e '
   const [enabled, endpoint, serviceName] = process.argv.slice(1);
   process.stdout.write(JSON.stringify({
@@ -479,7 +551,7 @@ kubectl scale deployment/agat-keycloak-postgres --namespace "${namespace}" --rep
 kubectl scale deployment/agat-keycloak --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-coordinator-postgres --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-temporal --namespace "${namespace}" --replicas=1 >/dev/null
-kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas="${AGAT_K8S_COORDINATOR_REPLICAS:-2}" >/dev/null
+kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas="${coordinator_replicas}" >/dev/null
 kubectl scale deployment/agat-temporal-worker --namespace "${namespace}" --replicas=1 >/dev/null
 kubectl scale deployment/agat-gateway --namespace "${namespace}" --replicas=1 >/dev/null
 if is_true "${web_enabled}"; then
@@ -530,7 +602,7 @@ printf '\nАГАТ запущен в namespace %s.\n' "${namespace}"
 printf 'Fleet HA-cell: %s/%s · coordinator replicas: %s · PostgreSQL state store.\n' \
   "${AGAT_REGION:-local}" \
   "${AGAT_RESIDENCY_DOMAIN:-${AGAT_REGION:-local}}" \
-  "${AGAT_K8S_COORDINATOR_REPLICAS:-2}"
+  "${coordinator_replicas}"
 if is_true "${web_enabled}"; then
   printf '%s\n' 'Web-инструменты: включены (внутренний SearXNG + безопасное чтение публичных страниц).'
 else

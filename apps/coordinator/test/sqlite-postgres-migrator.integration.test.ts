@@ -11,14 +11,19 @@ import { AgatStore } from "../src/database.js";
 import { migrateSqliteToPostgres } from "../src/sqlite-postgres-migrator.js";
 
 const systemUrl = process.env.AGAT_TEST_MIGRATION_POSTGRES_URL ?? "";
+const runtimeUrl = process.env.AGAT_TEST_MIGRATION_RUNTIME_URL ?? "";
 const tenantUrl = process.env.AGAT_TEST_MIGRATION_POSTGRES_TENANT_URL ?? "";
 const rehearsalSystemUrl = process.env.AGAT_TEST_REHEARSAL_POSTGRES_URL ?? "";
+const rehearsalRuntimeUrl = process.env.AGAT_TEST_REHEARSAL_RUNTIME_URL ?? "";
 const rehearsalTenantUrl = process.env.AGAT_TEST_REHEARSAL_POSTGRES_TENANT_URL ?? "";
 
 describe("SQLite to PostgreSQL migration integration", {
-  skip: (!systemUrl || !tenantUrl) && (!rehearsalSystemUrl || !rehearsalTenantUrl),
+  skip: (!systemUrl || !runtimeUrl || !tenantUrl)
+    && (!rehearsalSystemUrl || !rehearsalRuntimeUrl || !rehearsalTenantUrl),
 }, () => {
-  it("copies a quiescent cell, reconciles artifacts and supports verify-only", { skip: !systemUrl || !tenantUrl }, async () => {
+  it("copies a quiescent cell, reconciles artifacts and supports verify-only", {
+    skip: !systemUrl || !runtimeUrl || !tenantUrl,
+  }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agat-state-migration-"));
     const sourcePath = path.join(root, "source.sqlite");
     const artifactsDir = path.join(root, "artifacts");
@@ -90,6 +95,7 @@ describe("SQLite to PostgreSQL migration integration", {
       sourcePath,
       artifactsDir,
       targetUrl: systemUrl,
+      targetRuntimeUrl: runtimeUrl,
       targetTenantUrl: tenantUrl,
       sslMode: "disable" as const,
       batchRows: 50,
@@ -155,7 +161,9 @@ describe("SQLite to PostgreSQL migration integration", {
     }
   });
 
-  it("proves that a rehearsal import rolls back to its bootstrap baseline", { skip: !rehearsalSystemUrl || !rehearsalTenantUrl }, async () => {
+  it("proves that a rehearsal import rolls back to its bootstrap baseline", {
+    skip: !rehearsalSystemUrl || !rehearsalRuntimeUrl || !rehearsalTenantUrl,
+  }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agat-state-rehearsal-"));
     const sourcePath = path.join(root, "source.sqlite");
     const artifactsDir = path.join(root, "artifacts");
@@ -179,6 +187,7 @@ describe("SQLite to PostgreSQL migration integration", {
         reportPath,
         mode: "rehearse",
         targetUrl: rehearsalSystemUrl,
+        targetRuntimeUrl: rehearsalRuntimeUrl,
         targetTenantUrl: rehearsalTenantUrl,
         sslMode: "disable",
         batchRows: 50,

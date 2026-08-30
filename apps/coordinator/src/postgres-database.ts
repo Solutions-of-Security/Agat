@@ -26,6 +26,7 @@ export function runWithPostgresSystemScope<T>(callback: () => T): T {
 export interface PostgresDatabaseOptions {
   systemUrl: string;
   tenantUrl: string;
+  roleMode: "migration" | "runtime";
   applicationName: string;
   poolMax: number;
   connectTimeoutMs: number;

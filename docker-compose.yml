@@ -18,6 +18,7 @@ services:
       AGAT_POSTGRES_IDLE_TIMEOUT_MS: ${AGAT_POSTGRES_IDLE_TIMEOUT_MS:-30000}
       AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: ${AGAT_POSTGRES_STATEMENT_TIMEOUT_MS:-30000}
       AGAT_POSTGRES_SSL_MODE: ${AGAT_POSTGRES_SSL_MODE:-disable}
+      AGAT_POSTGRES_EXPECTED_REPLICAS: ${AGAT_POSTGRES_EXPECTED_REPLICAS:-1}
       AGAT_REGION: ${AGAT_REGION:-local}
       AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
       AGAT_WORKER_RELEASE_PUBLIC_KEYS: ${AGAT_WORKER_RELEASE_PUBLIC_KEYS:-{}}
@@ -140,6 +141,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${AGAT_POSTGRES_ADMIN_PASSWORD:-agat-local-admin-only}
       AGAT_POSTGRES_SYSTEM_PASSWORD: ${AGAT_POSTGRES_SYSTEM_PASSWORD:-agat-local-system-only}
+      AGAT_POSTGRES_MIGRATION_PASSWORD: ${AGAT_POSTGRES_MIGRATION_PASSWORD:-agat-local-migration-only}
       AGAT_POSTGRES_TENANT_PASSWORD: ${AGAT_POSTGRES_TENANT_PASSWORD:-agat-local-tenant-only}
       PGDATA: /var/lib/postgresql/data/pgdata
     healthcheck:
@@ -153,6 +155,58 @@ services:
     volumes:
       - agat-postgres-data:/var/lib/postgresql/data
       - ./deploy/k8s/docker-desktop/postgres-init.sh:/docker-entrypoint-initdb.d/10-agat-roles.sh:ro
+
+  postgres-migrate:
+    profiles: ["ha"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    command: ["node", "apps/coordinator/dist/postgres-schema-migrator.js"]
+    depends_on:
+      postgres-role-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      AGAT_POSTGRES_MIGRATION_URL: ${AGAT_POSTGRES_MIGRATION_URL:-postgresql://agat_migrator:agat-local-migration-only@postgres:5432/agat}
+      AGAT_POSTGRES_URL: ${AGAT_POSTGRES_URL:-postgresql://agat_system:agat-local-system-only@postgres:5432/agat}
+      AGAT_POSTGRES_TENANT_URL: ${AGAT_POSTGRES_TENANT_URL:-postgresql://agat_tenant:agat-local-tenant-only@postgres:5432/agat}
+      AGAT_POSTGRES_POOL_MAX: ${AGAT_POSTGRES_POOL_MAX:-4}
+      AGAT_POSTGRES_EXPECTED_REPLICAS: ${AGAT_POSTGRES_EXPECTED_REPLICAS:-1}
+      AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT: ${AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT:-80}
+      AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE: ${AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE:-5}
+      AGAT_POSTGRES_ADMISSION_DURATION_MS: ${AGAT_POSTGRES_ADMISSION_DURATION_MS:-3000}
+      AGAT_POSTGRES_ADMISSION_P99_MS: ${AGAT_POSTGRES_ADMISSION_P99_MS:-250}
+      AGAT_POSTGRES_ADMISSION_REPORT_PATH: /tmp/postgres-admission.json
+      AGAT_POSTGRES_SSL_MODE: ${AGAT_POSTGRES_SSL_MODE:-disable}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+
+  postgres-role-bootstrap:
+    profiles: ["ha"]
+    image: postgres:17.6-alpine
+    restart: "no"
+    command: ["/bin/sh", "/opt/agat/init-agat.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      POSTGRES_DB: agat
+      POSTGRES_USER: postgres
+      PGPASSWORD: ${AGAT_POSTGRES_ADMIN_PASSWORD:-agat-local-admin-only}
+      AGAT_POSTGRES_MIGRATION_PASSWORD: ${AGAT_POSTGRES_MIGRATION_PASSWORD:-agat-local-migration-only}
+      AGAT_POSTGRES_SYSTEM_PASSWORD: ${AGAT_POSTGRES_SYSTEM_PASSWORD:-agat-local-system-only}
+      AGAT_POSTGRES_TENANT_PASSWORD: ${AGAT_POSTGRES_TENANT_PASSWORD:-agat-local-tenant-only}
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    volumes:
+      - ./deploy/k8s/docker-desktop/postgres-init.sh:/opt/agat/init-agat.sh:ro
 
   search:
     profiles: ["worker", "web-search"]

@@ -16,7 +16,7 @@
 
 ## Release TO-BE
 
-После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап меняет только deployment privilege boundary: schema bootstrap будет вынесен в отдельную migration Job/role, а runtime перестанет иметь DDL.
+После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап уже вынес schema v21/admission в отдельную migration Job/role, а runtime сделал DDL-free: [contract](./postgresql-migration-job-runtime-role.md).
 
 ## Source register
 
@@ -38,16 +38,17 @@
 - все durable tables импортируются в детерминированном foreign-key order; self-referencing rows идут parent-before-child, а cycle отклоняется; только `coordinator_replicas` сознательно сбрасывается как runtime liveness state;
 - SQLite artifact без `content_blob` читается только внутри указанного artifacts root, затем size и SHA-256 проверяются до insert;
 - audit-outbox trigger отключается и возвращается внутри той же transaction, поэтому historical events не порождают повторный export;
-- PostgreSQL system и tenant roles должны различаться и указывать на одну database;
+- PostgreSQL migration, runtime system и tenant roles должны различаться и указывать на одну database;
 - connection URLs передаются только через environment и не попадают в report или stdout.
 
 ## Rehearsal
 
-Сначала создайте пустую disposable database с migration system role и tenant role. Для production endpoint используйте TLS `verify-full`; пароли не помещайте в shell history или аргументы процесса.
+Сначала создайте пустую disposable database с отдельными migration owner, DDL-free runtime и tenant roles. Для production endpoint используйте TLS `verify-full`; пароли не помещайте в shell history или аргументы процесса.
 
 ```bash
-export AGAT_MIGRATION_POSTGRES_URL='postgresql://MIGRATION_ROLE@db.example/agat_rehearsal'
-export AGAT_MIGRATION_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@db.example/agat_rehearsal'
+export AGAT_POSTGRES_MIGRATION_URL='postgresql://MIGRATION_ROLE@db.example/agat_rehearsal'
+export AGAT_POSTGRES_URL='postgresql://RUNTIME_ROLE@db.example/agat_rehearsal'
+export AGAT_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@db.example/agat_rehearsal'
 export AGAT_POSTGRES_SSL_MODE='verify-full'
 export AGAT_POSTGRES_CA_CERT_PATH='/run/secrets/postgres-ca.pem'
 
@@ -64,8 +65,9 @@ npm run fleet:migrate-state -- \
 ## Apply и независимая проверка
 
 ```bash
-export AGAT_MIGRATION_POSTGRES_URL='postgresql://MIGRATION_ROLE@db.example/agat'
-export AGAT_MIGRATION_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@db.example/agat'
+export AGAT_POSTGRES_MIGRATION_URL='postgresql://MIGRATION_ROLE@db.example/agat'
+export AGAT_POSTGRES_URL='postgresql://RUNTIME_ROLE@db.example/agat'
+export AGAT_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@db.example/agat'
 
 npm run fleet:migrate-state -- \
   --mode apply \
@@ -80,6 +82,9 @@ npm run fleet:migrate-state -- \
   --artifacts-dir /srv/agat/data/artifacts \
   --report /secure/reconciliation/verify.json \
   --confirm-offline SOURCE_AND_WRITERS_STOPPED
+
+# После успешного apply+verify завершить schema/admission release gate:
+npm run fleet:migrate-schema
 ```
 
 Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, foreign-key status, artifact counters, а для каждой таблицы — row count и canonical SHA-256 source/target. Integer-like значения кодируются десятичной строкой, binary — base64, columns и rows имеют стабильный order. `coordinator_replicas` единственная строка с policy `runtime_ephemeral_reset`; её target count обязан быть нулевым.
@@ -90,7 +95,7 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 2. Остановить coordinator, workers и внешние writers; убедиться, что lock файла получает только migrator.
 3. Выполнить `rehearse` на disposable database, приложить report к change record и удалить rehearsal target.
 4. Создать новый production target и выполнить `apply`; при любом несовпадении transaction откатывается.
-5. Выполнить отдельный `verify`, проверить выборочный authenticated artifact download и только затем разрешить coordinator runtime role.
+5. Выполнить отдельный `verify`, выборочный artifact download и `fleet:migrate-schema`; только successful admission marker разрешает coordinator runtime role.
 6. Направить весь трафик в PostgreSQL cell, проверить health/queues/SIEM и оставить SQLite source immutable на период rollback window.
 
 После первой production write в PostgreSQL старый SQLite становится stale. Возврат на него запрещён: нужен остановленный контур и проверенный reverse export либо восстановление согласованного PostgreSQL backup.
@@ -124,7 +129,7 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 | MIG-01 | downtime превышает окно | production-sized rehearsal, bounded batches | measured duration и approved window / Application + SRE |
 | MIG-02 | filesystem artifact snapshot расходится с SQLite | immutable snapshot, size/SHA-256 fail-closed | zero mismatches / Data owner |
 | MIG-03 | неизвестен исход commit при потере соединения | apply не повторяется, verify read-only | verified report или восстановление target / Incident commander |
-| MIG-04 | bootstrap credential имеет DDL | credential используется только offline, target новый | отдельная Job/role и DDL-free runtime / Security + Database owner |
+| MIG-04 | migration credential имеет DDL | credential scoped offline/Job, runtime не owner и без CREATE | закрыто schema v21 boundary; short-lived secret остаётся hardening / Security+DBA |
 | MIG-05 | SQLite schema кроме v20 | exact-version fail-closed | отдельный source upgrade/rehearsal / Application owner |
 | MIG-06 | multi-cell source нельзя разделить автоматически | ровно одна cell в preflight | отдельный утверждённый migration plan / Data + Residency owner |
 
@@ -135,10 +140,11 @@ npm run typecheck --workspace @agat/coordinator
 node --import tsx --test apps/coordinator/test/sqlite-postgres-migrator.test.ts
 
 AGAT_TEST_MIGRATION_POSTGRES_URL='postgresql://SYSTEM_ROLE@127.0.0.1:55433/agat' \
+AGAT_TEST_MIGRATION_RUNTIME_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55433/agat' \
 AGAT_TEST_MIGRATION_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55433/agat' \
 node --import tsx --test apps/coordinator/test/sqlite-postgres-migrator.integration.test.ts
 ```
 
 Integration test импортирует durable state и filesystem artifacts, затем выполняет verify-only. Отдельные `AGAT_TEST_REHEARSAL_POSTGRES_URL` и `AGAT_TEST_REHEARSAL_POSTGRES_TENANT_URL` включают rollback scenario и доказывают, что добавленная source row отсутствует после rollback.
 
-Следующий production gate отделяет schema migration Job/role от DDL-free coordinator runtime role; этот этап пока использует существующий bootstrap path только на новой database.
+Schema migration Job/role и DDL-free runtime gate реализованы следующим этапом. Следующий незакрытый gate — managed multi-AZ PostgreSQL, PITR и измеренные restore/failover RPO/RTO/SLO.

@@ -7,7 +7,8 @@
 - namespace `agat`, не затрагивающий остальные namespace локального кластера;
 - `agat-gateway` — публичный Kong DB-less `LoadBalancer` на `http://127.0.0.1:8787`; coordinator доступен только как `ClusterIP`;
 - `agat-coordinator` — две stateless replicas с RollingUpdate (`maxUnavailable=0`), PDB `minAvailable=1` и preferred pod anti-affinity;
-- `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с system/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
+- `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с migration/runtime/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
+- `agat-postgres-role-bootstrap-v21` и `agat-postgres-schema-v21` — versioned one-shot Jobs для ownership/role boundary, transactional schema и connection admission;
 - `agat-keycloak` и `agat-keycloak-postgres` — OIDC, роли, пользователи и проекты; Keycloak доступен на `http://127.0.0.1:8080`;
 - `agat-temporal` — persistent локальный dev-server с namespace `agat`, gRPC/HTTP/metrics и UI на `http://127.0.0.1:8233`;
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
@@ -51,11 +52,11 @@ npm run k8s:up
 1. проверит `docker-desktop` и готовность node;
 2. создаст namespace, application Secret и отдельный coordinator PostgreSQL Secret при первом запуске;
 3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
-4. применит Kustomize-манифесты и передаст образы в kind через встроенный registry mirror Docker Desktop;
-5. последовательно дождётся PostgreSQL, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
+4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся role-bootstrap/schema/admission Jobs;
+5. только после schema v21 marker поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
-Чистый 1.7 namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: автоматического переноса данных нет. После проверенного offline export/import можно подтвердить cutover:
+Чистый namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: state migrator существует, но намеренно не запускается автоматически без maintenance/reconciliation. После [offline migration](./sqlite-postgresql-migration.md) можно подтвердить authority cutover:
 
 ```bash
 AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true npm run k8s:up
@@ -221,7 +222,7 @@ npm run k8s:up
 
 `AGAT_SEARCH_SECRET` и `AGAT_TEMPORAL_INTERNAL_TOKEN` можно передать вместе с ротацией. Попытка незаметно заменить `AGAT_CREDENTIALS_KEY` или один из persistent Keycloak secrets отклоняется до изменения Secret. Ключ credentials меняют только вместе с миграцией уже зашифрованных записей; пароль Keycloak PostgreSQL — средствами PostgreSQL; пароль `agat-admin` — через Keycloak.
 
-Fleet state store использует отдельный `agat-postgres-secrets` с `admin-password`, `system-password`, `tenant-password`, `system-url` и `tenant-url`. При первом запуске можно передать `AGAT_POSTGRES_ADMIN_PASSWORD`, `AGAT_POSTGRES_SYSTEM_PASSWORD`, `AGAT_POSTGRES_TENANT_PASSWORD`; после создания PVC скрипт отклоняет незаметную замену. Ротация выполняется отдельной database procedure с одновременным обновлением role password и Secret, а не повторным `k8s:up`.
+Fleet state store использует отдельный `agat-postgres-secrets` с admin, migration, runtime-system и tenant passwords/URLs. Admin получает только role-bootstrap Job, migration URL — только schema Job, а coordinator Deployment — runtime+tenant. При первом запуске можно передать `AGAT_POSTGRES_ADMIN_PASSWORD`, `AGAT_POSTGRES_MIGRATION_PASSWORD`, `AGAT_POSTGRES_SYSTEM_PASSWORD`, `AGAT_POSTGRES_TENANT_PASSWORD`; после создания PVC скрипт отклоняет незаметную замену. Ротация выполняется отдельной database procedure с одновременным обновлением role password и Secret.
 
 После ротации enrollment token уже зарегистрированный worker продолжит использовать node token из PVC. Для принудительной повторной регистрации удалите только файл identity внутри worker pod или пересоздайте `agat-worker-state` осознанно.
 
@@ -280,7 +281,7 @@ AGAT_K8S_IMAGE_TAG=dev npm run k8s:up
 - Две coordinator replicas проверяют shared-state semantics, но один Docker Desktop node и один `agat-coordinator-postgres` pod/PVC остаются общим failure domain. Production требует managed/multi-AZ PostgreSQL, TLS, PITR и проверенного restore/failover.
 - `temporal server start-dev` и Keycloak `start-dev` предназначены только для локальной разработки. Production требует полноценного Temporal/Cloud, оптимизированного Keycloak, TLS и backup каждой внешней БД.
 - PDB защищает только от части добровольных disruptions и не спасает от потери Docker Desktop node/database.
-- Нет автоматической SQLite→PostgreSQL миграции, cross-region failover, object store, runtime attestation обычного worker и SIEM poison-event/retention UI.
+- SQLite→PostgreSQL migration требует явного offline runbook и не запускается `k8s:up`; cross-region failover, object store, runtime attestation обычного worker и SIEM poison-event/retention UI ещё отсутствуют.
 - Kong rate limit в локальном профиле хранится в памяти одного pod; несколько Gateway replicas требуют Redis-backed policy.
 - `host.docker.internal` предназначен для связи контейнера с model server на машине Docker Desktop. Для удалённых GPU-узлов используйте отдельный worker, защищённый URL coordinator и SearXNG, доступный с той машины.
 - Сброс Kubernetes-кластера в Docker Desktop удаляет workload и локальные volumes; делайте backup перед reset.

@@ -265,7 +265,7 @@ Web/PWA остаётся control surface и не обещает надёжный
 ### Production Fleet readiness и DR
 
 - **Готово, этап 1:** canonical offline SQLite→PostgreSQL migrator, artifact backfill, reconciliation/verify report и rehearsal rollback;
-- отдельная migration Job/role, DDL-free runtime role и connection admission/load testing;
+- **Готово, этап 2:** отдельная migration Job/role, catalog drift gate, DDL-free runtime role и connection admission/load testing;
 - managed multi-AZ PostgreSQL, PITR, фактический restore/failover и утверждённые RPO/RTO/SLO;
 - S3-compatible artifact store с lifecycle/retention вместо роста PostgreSQL/WAL;
 - residency-aware region-loss runbook без active-active payload writes;
@@ -289,4 +289,4 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P1 | Готово в 1.5 | Изолированное выполнение tools | WASI/OCI Jobs, read-only root, exact-IP egress, ephemeral scoped Secrets и optional sandboxed runtime |
 | P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
-| P1 | Этап 1 готов | Production Fleet readiness и DR | Offline migration закрыта; migration role, managed DB, restore/failover, object storage и measured SLO остаются production gates |
+| P1 | Этапы 1–2 готовы | Production Fleet readiness и DR | Offline migration и DDL-free Job boundary закрыты; managed DB, restore/failover, object storage и measured SLO остаются production gates |

@@ -3,9 +3,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
+
+import pg from "pg";
 
 import { AgatStore } from "../src/database.js";
+import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -13,6 +16,7 @@ import {
 } from "../src/postgres-database.js";
 
 const systemUrl = process.env.AGAT_TEST_POSTGRES_URL ?? "";
+const migrationUrl = process.env.AGAT_POSTGRES_MIGRATION_URL ?? "";
 const tenantUrl = process.env.AGAT_TEST_POSTGRES_TENANT_URL ?? "";
 
 function store(instanceId: string, region: string, residencyDomain: string, artifactsDir: string): AgatStore {
@@ -21,6 +25,7 @@ function store(instanceId: string, region: string, residencyDomain: string, arti
     postgres: {
       systemUrl,
       tenantUrl,
+      roleMode: "runtime",
       applicationName: instanceId,
       poolMax: 2,
       connectTimeoutMs: 5_000,
@@ -28,6 +33,7 @@ function store(instanceId: string, region: string, residencyDomain: string, arti
       statementTimeoutMs: 30_000,
       sslMode: "disable",
     },
+    postgresSchemaMode: "runtime",
     coordinatorInstanceId: instanceId,
     region,
     residencyDomain,
@@ -36,11 +42,16 @@ function store(instanceId: string, region: string, residencyDomain: string, arti
   });
 }
 
-describe("PostgreSQL Fleet/HA integration", { skip: !systemUrl || !tenantUrl }, () => {
+describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
+  before(async () => {
+    await migratePostgresSchemaAndAdmit();
+  });
+
   it("rejects a tenant connection that resolves to the system BYPASSRLS role", () => {
     assert.throws(() => new PostgresDatabaseSync({
       systemUrl,
       tenantUrl: systemUrl,
+      roleMode: "runtime",
       applicationName: "agat-role-separation-negative-test",
       poolMax: 1,
       connectTimeoutMs: 5_000,
@@ -48,6 +59,62 @@ describe("PostgreSQL Fleet/HA integration", { skip: !systemUrl || !tenantUrl }, 
       statementTimeoutMs: 5_000,
       sslMode: "disable",
     }), /same actual role|одну фактическую роль/i);
+  });
+
+  it("keeps the runtime role DDL-free after a separate migration gate", () => {
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-ddl-free-"));
+    const runtime = store(`ddl-free-${randomUUID().slice(0, 8)}`, "eu-ddl", "eu-ddl", artifacts);
+    try {
+      const profile = runtime.db.prepare(`
+        SELECT has_schema_privilege(current_user, current_schema(), 'CREATE') AS schema_create
+      `).get();
+      assert.equal(profile?.schema_create, false);
+      assert.throws(
+        () => runtime.db.exec("CREATE TABLE forbidden_runtime_ddl(id TEXT PRIMARY KEY)"),
+        /permission denied/i,
+      );
+      assert.throws(
+        () => runtime.db.exec("CREATE TEMP TABLE forbidden_runtime_temp_ddl(id TEXT PRIMARY KEY)"),
+        /permission denied/i,
+      );
+    } finally {
+      runtime.close();
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a schema Job while a coordinator replica is active", async () => {
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-active-migration-"));
+    const runtime = store(`active-migration-${randomUUID().slice(0, 8)}`, "eu-active", "eu-active", artifacts);
+    try {
+      await assert.rejects(
+        migratePostgresSchemaAndAdmit(),
+        /active coordinator replicas/,
+      );
+    } finally {
+      runtime.close();
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects runtime startup after out-of-band schema drift", async () => {
+    const connection = new pg.Client({ connectionString: migrationUrl, ssl: false });
+    await connection.connect();
+    try {
+      await connection.query("CREATE TABLE schema_drift_probe(id TEXT PRIMARY KEY)");
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-schema-drift-"));
+      try {
+        assert.throws(
+          () => store(`schema-drift-${randomUUID().slice(0, 8)}`, "eu-drift", "eu-drift", artifacts),
+          /schema manifest drift/i,
+        );
+      } finally {
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    } finally {
+      await connection.query("DROP TABLE IF EXISTS schema_drift_probe");
+      await connection.end();
+    }
   });
 
   it("shares state between replicas, serializes project quota and enforces RLS", () => {

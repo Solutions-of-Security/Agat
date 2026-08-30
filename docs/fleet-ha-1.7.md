@@ -106,6 +106,8 @@ Docker Desktop manifest поднимает два coordinator pods, rolling upda
 
 Migration выполняется coordinator startup под `pg_advisory_xact_lock(867530901)`. Это безопасно сериализует одновременный bootstrap replicas, но production least-privilege plateau всё ещё требует отдельной migration job и runtime system role без DDL.
 
+Post-1.7 этап 2 заменил этот historical startup plateau на schema v21 Job, отдельного owner `agat_migrator`, DDL-free runtime и connection admission gate: [PostgreSQL migration Job и DDL-free runtime](./postgresql-migration-job-runtime-role.md).
+
 ## Project queues, quotas и residency
 
 - `maxQueuedTasks` ограничивает все non-terminal runs проекта: `queued/running/waiting_approval/waiting_external/compensating`.
@@ -222,7 +224,7 @@ Post-1.7 production-readiness этап добавил canonical offline migrator
 | ID | Риск / открытая работа | Текущий контроль | Production gate |
 |---|---|---|---|
 | RISK-1701 | Local PostgreSQL — single point of failure | честная маркировка local/staging | managed multi-AZ + failover test |
-| RISK-1702 | Startup role пока выполняет DDL | advisory migration lock | отдельная migration job и DDL-free runtime role |
+| RISK-1702 | Startup role в 1.7 выполняла DDL | post-1.7 schema v21 Job и DDL-free runtime закрыли риск | закрыто; regression gate остаётся обязательным |
 | RISK-1703 | Synchronous DB bridge ограничивает throughput replica | bounded statements/pools и scale-out | async repositories + load test |
 | RISK-1704 | PostgreSQL artifact bytes увеличивают DB/WAL | SHA-256, bounded API payloads | object store + lifecycle policy |
 | RISK-1705 | Нет автоматической SQLite migration | offline documented plateau | canonical migrator + reconciliation report |
@@ -256,7 +258,10 @@ bash -n scripts/*.sh
 PostgreSQL integration test включается только с disposable database:
 
 ```bash
-AGAT_TEST_POSTGRES_URL='postgresql://SYSTEM_ROLE@127.0.0.1:55432/agat' \
+AGAT_POSTGRES_MIGRATION_URL='postgresql://MIGRATION_ROLE@127.0.0.1:55432/agat' \
+AGAT_POSTGRES_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55432/agat' \
+AGAT_TEST_POSTGRES_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55432/agat' \
+AGAT_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55432/agat' \
 AGAT_TEST_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55432/agat' \
 node --import tsx --test apps/coordinator/test/fleet-ha-postgres.integration.test.ts
 ```

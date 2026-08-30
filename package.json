@@ -11,6 +11,8 @@
     "dev:api": "npm run dev --workspace @agat/coordinator",
     "dev:web": "npm run dev --workspace @agat/web",
     "fleet:migrate-state": "node --import tsx apps/coordinator/src/sqlite-postgres-migrator.ts",
+    "fleet:migrate-schema": "node --import tsx apps/coordinator/src/postgres-schema-migrator.ts",
+    "fleet:admit-postgres": "node --import tsx apps/coordinator/src/postgres-admission.ts",
     "fleet:sign-worker": "node scripts/sign-worker-release.mjs",
     "k8s:admin-token": "bash scripts/k8s-admin-token.sh",
     "k8s:enrollment-token": "bash scripts/k8s-enrollment-token.sh",

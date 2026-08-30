@@ -220,6 +220,9 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+export const POSTGRES_SCHEMA_VERSION = 21;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-fleet-runtime-boundary-v21";
+
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
   if (!Array.isArray(value) || value.length === 0 || value.length > 16) {
@@ -975,6 +978,10 @@ export interface StoreOptions {
   telemetry?: CoordinatorTelemetry;
   stateStoreDriver?: "sqlite" | "postgresql";
   postgres?: PostgresDatabaseOptions;
+  postgresSchemaMode?: "migration" | "runtime";
+  postgresRuntimeRole?: string;
+  schemaOnly?: boolean;
+  requirePostgresAdmission?: boolean;
   coordinatorInstanceId?: string;
   region?: string;
   residencyDomain?: string;
@@ -997,22 +1004,47 @@ export class AgatStore {
   private readonly workerReleasePublicKeys: ReadonlyMap<string, string>;
   private readonly requireSignedWorkerReleases: boolean;
   private readonly postgresTenantRole: string | null;
+  private readonly postgresRuntimeRole: string | null;
+  private readonly postgresSchemaMode: "migration" | "runtime";
+  private readonly schemaOnly: boolean;
 
   constructor(dbPath: string, options: StoreOptions = {}) {
     this.stateStoreDriver = options.stateStoreDriver ?? "sqlite";
-    if (this.stateStoreDriver === "postgresql" && !options.postgres?.tenantUrl) {
-      throw new Error("PostgreSQL state store требует tenant URL");
+    if (this.stateStoreDriver === "postgresql" && (!options.postgres?.systemUrl || !options.postgres.tenantUrl)) {
+      throw new Error("PostgreSQL state store требует system и tenant URL");
     }
     this.postgresTenantRole = this.stateStoreDriver === "postgresql"
       ? postgresRoleIdentifier(new URL(options.postgres!.tenantUrl).username, "PostgreSQL tenant role")
+      : null;
+    this.postgresSchemaMode = options.postgresSchemaMode ?? "runtime";
+    this.schemaOnly = options.schemaOnly ?? false;
+    this.postgresRuntimeRole = this.stateStoreDriver === "postgresql"
+      ? postgresRoleIdentifier(
+          options.postgresRuntimeRole
+            ?? new URL(options.postgres!.systemUrl).username,
+          "PostgreSQL runtime role",
+        )
       : null;
     if (this.stateStoreDriver === "sqlite" && dbPath !== ":memory:") {
       fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
     }
 
     if (this.stateStoreDriver === "postgresql") {
-      if (!options.postgres?.systemUrl) throw new Error("PostgreSQL state store требует system URL");
-      this.db = new PostgresDatabaseSync(options.postgres);
+      const postgresOptions = options.postgres!;
+      if (postgresOptions.roleMode !== this.postgresSchemaMode) {
+        throw new Error("PostgreSQL roleMode должен совпадать с postgresSchemaMode");
+      }
+      const connectedRole = postgresRoleIdentifier(
+        new URL(postgresOptions.systemUrl).username,
+        "PostgreSQL system role",
+      );
+      if (this.postgresSchemaMode === "migration" && connectedRole === this.postgresRuntimeRole) {
+        throw new Error("PostgreSQL migration и runtime roles должны различаться");
+      }
+      if (this.postgresSchemaMode === "runtime" && connectedRole !== this.postgresRuntimeRole) {
+        throw new Error("PostgreSQL runtime URL не совпадает с ожидаемой runtime role");
+      }
+      this.db = new PostgresDatabaseSync(postgresOptions);
     } else {
       this.db = new DatabaseSync(dbPath) as unknown as SyncDatabase;
       Object.defineProperty(this.db, "dialect", { value: "sqlite", enumerable: true });
@@ -1032,30 +1064,42 @@ export class AgatStore {
       serviceName: "agat-coordinator",
       exporterEndpoint: "",
     });
-    if (this.stateStoreDriver === "postgresql") {
-      this.transaction(() => {
-        this.db.exec("SELECT pg_advisory_xact_lock(867530901);");
+    try {
+      if (this.stateStoreDriver === "postgresql") {
+        if (this.postgresSchemaMode === "migration") {
+          this.transaction(() => {
+            this.db.exec("SELECT pg_advisory_xact_lock(867530901);");
+            this.migrate();
+            this.migrateFleetHa();
+          });
+        } else {
+          this.validatePostgresSchema(options.requirePostgresAdmission ?? true);
+        }
+      } else {
+        this.configure();
         this.migrate();
         this.migrateFleetHa();
-      });
-    } else {
-      this.configure();
-      this.migrate();
-      this.migrateFleetHa();
+      }
+      if (this.schemaOnly) return;
+      this.seedAgents();
+      this.ensureAllPromptRegistries();
+      if (options.seedDemo) this.seedDemoData();
+      else this.removeDemoData();
+      this.heartbeatCoordinatorReplica();
+    } catch (error) {
+      this.db.close();
+      throw error;
     }
-    this.seedAgents();
-    this.ensureAllPromptRegistries();
-    if (options.seedDemo) this.seedDemoData();
-    else this.removeDemoData();
-    this.heartbeatCoordinatorReplica();
   }
 
   close(): void {
-    try {
-      this.db.prepare("UPDATE coordinator_replicas SET status = 'stopped', updated_at = ? WHERE instance_id = ?")
-        .run(nowIso(), this.coordinatorInstanceId);
-    } catch {
-      // Shutdown must still release the database connection if the backend is unavailable.
+    if (!this.schemaOnly) {
+      try {
+        this.db.prepare("UPDATE coordinator_replicas SET status = 'stopped', updated_at = ? WHERE instance_id = ?")
+          .run(nowIso(), this.coordinatorInstanceId);
+      } catch {
+        // Shutdown must still release the database connection if the backend is unavailable.
+      }
     }
     this.db.close();
   }
@@ -2344,6 +2388,17 @@ export class AgatStore {
 
     if (this.stateStoreDriver === "postgresql") {
       this.db.exec(`
+        CREATE TABLE IF NOT EXISTS agat_schema_migrations (
+          version INTEGER PRIMARY KEY,
+          contract_id TEXT NOT NULL,
+          manifest_sha256 TEXT NOT NULL,
+          admission_status TEXT NOT NULL DEFAULT 'pending',
+          admission_report_sha256 TEXT,
+          admission_checked_at TEXT,
+          applied_at TEXT NOT NULL,
+          applied_by TEXT NOT NULL
+        );
+
         CREATE OR REPLACE FUNCTION agat_enqueue_audit_event() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -2378,6 +2433,200 @@ export class AgatStore {
       ON CONFLICT(event_id) DO NOTHING;
     `);
     this.db.exec("PRAGMA user_version = 20;");
+    if (this.stateStoreDriver === "postgresql") {
+      const manifestSha256 = this.postgresSchemaManifestSha256();
+      this.db.prepare(`
+        INSERT INTO agat_schema_migrations(
+          version, contract_id, manifest_sha256, admission_status, applied_at, applied_by
+        ) VALUES (?, ?, ?, 'pending', ?, current_user)
+        ON CONFLICT(version) DO UPDATE SET
+          contract_id = excluded.contract_id,
+          manifest_sha256 = excluded.manifest_sha256,
+          admission_status = 'pending',
+          admission_report_sha256 = NULL,
+          admission_checked_at = NULL
+      `).run(POSTGRES_SCHEMA_VERSION, POSTGRES_SCHEMA_CONTRACT, manifestSha256, nowIso());
+    }
+  }
+
+  private postgresSchemaManifestSha256(): string {
+    if (this.stateStoreDriver !== "postgresql") throw new Error("PostgreSQL schema manifest доступен только для PostgreSQL");
+    const rows = this.db.prepare(`
+      SELECT kind, object_name, definition FROM (
+        SELECT
+          'column' AS kind,
+          columns.table_name || '.' || LPAD(columns.ordinal_position::text, 5, '0') AS object_name,
+          columns.column_name || '|' || columns.data_type || '|' || columns.udt_name || '|'
+            || columns.is_nullable || '|' || COALESCE(columns.column_default, '') AS definition
+        FROM information_schema.columns AS columns
+        WHERE columns.table_schema = current_schema()
+
+        UNION ALL
+
+        SELECT
+          'constraint' AS kind,
+          class_row.relname || '.' || constraint_row.conname AS object_name,
+          pg_get_constraintdef(constraint_row.oid, true) || '|validated=' || constraint_row.convalidated::text AS definition
+        FROM pg_constraint AS constraint_row
+        JOIN pg_class AS class_row ON class_row.oid = constraint_row.conrelid
+        JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
+        WHERE namespace_row.nspname = current_schema()
+
+        UNION ALL
+
+        SELECT
+          'index' AS kind,
+          table_row.relname || '.' || index_row.relname AS object_name,
+          pg_get_indexdef(index_row.oid) AS definition
+        FROM pg_index AS index_catalog
+        JOIN pg_class AS table_row ON table_row.oid = index_catalog.indrelid
+        JOIN pg_class AS index_row ON index_row.oid = index_catalog.indexrelid
+        JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+        WHERE namespace_row.nspname = current_schema()
+
+        UNION ALL
+
+        SELECT
+          'trigger' AS kind,
+          class_row.relname || '.' || trigger_row.tgname AS object_name,
+          pg_get_triggerdef(trigger_row.oid, true) || '|enabled=' || trigger_row.tgenabled::text AS definition
+        FROM pg_trigger AS trigger_row
+        JOIN pg_class AS class_row ON class_row.oid = trigger_row.tgrelid
+        JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
+        WHERE namespace_row.nspname = current_schema() AND NOT trigger_row.tgisinternal
+
+        UNION ALL
+
+        SELECT
+          'policy' AS kind,
+          policies.tablename || '.' || policies.policyname AS object_name,
+          policies.permissive || '|' || policies.roles::text || '|' || policies.cmd || '|'
+            || COALESCE(policies.qual, '') || '|' || COALESCE(policies.with_check, '') AS definition
+        FROM pg_policies AS policies
+        WHERE policies.schemaname = current_schema()
+
+        UNION ALL
+
+        SELECT
+          'table_security' AS kind,
+          class_row.relname AS object_name,
+          'rls=' || class_row.relrowsecurity::text || '|force=' || class_row.relforcerowsecurity::text AS definition
+        FROM pg_class AS class_row
+        JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
+        WHERE namespace_row.nspname = current_schema() AND class_row.relkind = 'r'
+
+        UNION ALL
+
+        SELECT
+          'function' AS kind,
+          procedure_row.proname || '(' || pg_get_function_identity_arguments(procedure_row.oid) || ')' AS object_name,
+          pg_get_functiondef(procedure_row.oid) AS definition
+        FROM pg_proc AS procedure_row
+        JOIN pg_namespace AS namespace_row ON namespace_row.oid = procedure_row.pronamespace
+        WHERE namespace_row.nspname = current_schema()
+          AND procedure_row.proname IN ('agat_current_project', 'agat_enqueue_audit_event')
+      ) AS manifest
+      ORDER BY kind, object_name, definition
+    `).all() as Row[];
+    if (rows.length === 0) throw new Error("PostgreSQL schema manifest пуст");
+    return sha256Text(canonicalJson(rows));
+  }
+
+  private validatePostgresSchema(requireAdmission: boolean): void {
+    const presence = this.db.prepare(`
+      SELECT to_regclass(format('%I.%I', current_schema(), 'agat_schema_migrations')) IS NOT NULL AS present
+    `).get() as Record<string, unknown> | undefined;
+    if (presence?.present !== true) {
+      throw new Error(`PostgreSQL schema v${POSTGRES_SCHEMA_VERSION} не применена отдельной migration Job`);
+    }
+    const marker = this.db.prepare(`
+      SELECT version, contract_id, manifest_sha256, admission_status,
+        admission_report_sha256, admission_checked_at
+      FROM agat_schema_migrations
+      WHERE version = ?
+    `).get(POSTGRES_SCHEMA_VERSION) as Row | undefined;
+    if (!marker) {
+      throw new Error(`PostgreSQL schema v${POSTGRES_SCHEMA_VERSION} не применена отдельной migration Job`);
+    }
+    if (String(marker.contract_id) !== POSTGRES_SCHEMA_CONTRACT) {
+      throw new Error("PostgreSQL schema contract не совпадает с runtime release");
+    }
+    const actualManifest = this.postgresSchemaManifestSha256();
+    if (String(marker.manifest_sha256) !== actualManifest) {
+      throw new Error("PostgreSQL schema manifest drift: runtime startup запрещён");
+    }
+    const constraints = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM pg_constraint
+      WHERE connamespace = current_schema()::regnamespace AND NOT convalidated
+    `).get() as Row | undefined;
+    if (Number(constraints?.count ?? 0) !== 0) {
+      throw new Error("PostgreSQL schema содержит unvalidated constraints");
+    }
+    const privileges = this.db.prepare(`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE class_row.relkind = 'r'
+            AND class_row.relname <> 'agat_schema_migrations'
+            AND NOT (
+              has_table_privilege(current_user, class_row.oid, 'SELECT')
+              AND has_table_privilege(current_user, class_row.oid, 'INSERT')
+              AND has_table_privilege(current_user, class_row.oid, 'UPDATE')
+              AND has_table_privilege(current_user, class_row.oid, 'DELETE')
+            )
+        ) AS missing_runtime_dml,
+        COUNT(*) FILTER (
+          WHERE class_row.relkind = 'r'
+            AND (
+              has_table_privilege(current_user, class_row.oid, 'TRUNCATE')
+              OR has_table_privilege(current_user, class_row.oid, 'REFERENCES')
+              OR has_table_privilege(current_user, class_row.oid, 'TRIGGER')
+            )
+        ) AS dangerous_runtime_table_privileges,
+        COUNT(*) FILTER (
+          WHERE class_row.relkind = 'S'
+            AND NOT (
+              has_sequence_privilege(current_user, class_row.oid, 'USAGE')
+              AND has_sequence_privilege(current_user, class_row.oid, 'SELECT')
+            )
+        ) AS missing_runtime_sequence_privileges
+      FROM pg_class AS class_row
+      JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
+      WHERE namespace_row.nspname = current_schema() AND class_row.relkind IN ('r', 'S')
+    `).get() as Row | undefined;
+    if (Number(privileges?.missing_runtime_dml ?? 0) !== 0
+      || Number(privileges?.dangerous_runtime_table_privileges ?? 0) !== 0
+      || Number(privileges?.missing_runtime_sequence_privileges ?? 0) !== 0) {
+      throw new Error("PostgreSQL runtime grants не соответствуют DDL-free contract");
+    }
+    const metadataPrivileges = this.db.prepare(`
+      SELECT
+        has_table_privilege(current_user, 'agat_schema_migrations', 'SELECT') AS can_read,
+        has_table_privilege(current_user, 'agat_schema_migrations', 'INSERT')
+          OR has_table_privilege(current_user, 'agat_schema_migrations', 'UPDATE')
+          OR has_table_privilege(current_user, 'agat_schema_migrations', 'DELETE') AS can_write,
+        has_table_privilege(?, 'agat_schema_migrations', 'SELECT')
+          OR has_table_privilege(?, 'agat_schema_migrations', 'INSERT')
+          OR has_table_privilege(?, 'agat_schema_migrations', 'UPDATE')
+          OR has_table_privilege(?, 'agat_schema_migrations', 'DELETE') AS tenant_access
+    `).get(
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+    ) as Record<string, unknown> | undefined;
+    if (metadataPrivileges?.can_read !== true
+      || metadataPrivileges?.can_write === true
+      || metadataPrivileges?.tenant_access === true) {
+      throw new Error("PostgreSQL schema metadata grants нарушают runtime/tenant boundary");
+    }
+    if (requireAdmission && (
+      marker.admission_status !== "passed"
+      || typeof marker.admission_report_sha256 !== "string"
+      || !/^[a-f0-9]{64}$/.test(marker.admission_report_sha256)
+      || typeof marker.admission_checked_at !== "string"
+    )) {
+      throw new Error("PostgreSQL connection admission/load gate не завершён");
+    }
   }
 
   private installPostgresTenantPolicies(): void {
@@ -2457,32 +2706,46 @@ export class AgatStore {
           WITH CHECK (project_id = agat_current_project());
       `);
     }
-    this.installPostgresTenantPrivileges([
+    this.installPostgresRolePrivileges([
       ...Object.keys(directPolicies),
       ...Object.keys(childPolicies),
       "agents",
     ]);
   }
 
-  private installPostgresTenantPrivileges(projectTables: string[]): void {
+  private installPostgresRolePrivileges(projectTables: string[]): void {
     if (!this.postgresTenantRole) throw new Error("PostgreSQL tenant role не настроена");
+    if (!this.postgresRuntimeRole) throw new Error("PostgreSQL runtime role не настроена");
     const schemaRow = this.db.prepare("SELECT current_schema() AS name").get() as Row | undefined;
     const schemaName = typeof schemaRow?.name === "string" ? schemaRow.name : "public";
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) throw new Error("PostgreSQL schema имеет небезопасное имя");
     const schema = quotePostgresIdentifier(schemaName);
-    const role = quotePostgresIdentifier(this.postgresTenantRole);
+    const tenantRole = quotePostgresIdentifier(this.postgresTenantRole);
+    const runtimeRole = quotePostgresIdentifier(this.postgresRuntimeRole);
     const isolated = [...new Set(projectTables)].sort().map(quotePostgresIdentifier).join(", ");
     const readOnly = ["settings", "nodes", "model_benchmarks"].map(quotePostgresIdentifier).join(", ");
     this.db.exec(`
-      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${role};
-      REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${role};
-      GRANT USAGE ON SCHEMA ${schema} TO ${role};
-      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${isolated} TO ${role};
-      GRANT SELECT ON TABLE ${readOnly} TO ${role};
-      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${role};
-      GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${role};
-      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON TABLES FROM ${role};
-      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON SEQUENCES FROM ${role};
+      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM PUBLIC, ${runtimeRole}, ${tenantRole};
+      REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM PUBLIC, ${runtimeRole}, ${tenantRole};
+      REVOKE EXECUTE ON FUNCTION ${schema}.agat_current_project() FROM PUBLIC;
+      REVOKE EXECUTE ON FUNCTION ${schema}.agat_enqueue_audit_event() FROM PUBLIC;
+
+      GRANT USAGE ON SCHEMA ${schema} TO ${runtimeRole}, ${tenantRole};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${runtimeRole};
+      REVOKE INSERT, UPDATE, DELETE ON TABLE ${schema}.agat_schema_migrations FROM ${runtimeRole};
+      GRANT SELECT ON TABLE ${schema}.agat_schema_migrations TO ${runtimeRole};
+      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${runtimeRole};
+      GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${runtimeRole};
+      GRANT EXECUTE ON FUNCTION ${schema}.agat_enqueue_audit_event() TO ${runtimeRole};
+
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${isolated} TO ${tenantRole};
+      GRANT SELECT ON TABLE ${readOnly} TO ${tenantRole};
+      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${tenantRole};
+      GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${tenantRole};
+
+      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON TABLES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON SEQUENCES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, ${runtimeRole}, ${tenantRole};
     `);
   }
 
@@ -3219,6 +3482,12 @@ export class AgatStore {
         AND state_store_driver = ? AND status = 'ready' AND last_seen >= ?
     `).get(this.region, this.residencyDomain, this.stateStoreDriver, staleBefore) as Row | undefined;
     const readyReplicas = Number(replicaRow?.ready_replicas ?? 0);
+    const postgresSchema = this.stateStoreDriver === "postgresql"
+      ? this.db.prepare(`
+          SELECT version, contract_id, admission_status, admission_report_sha256, admission_checked_at
+          FROM agat_schema_migrations WHERE version = ?
+        `).get(POSTGRES_SCHEMA_VERSION) as Row | undefined
+      : undefined;
     return {
       driver: this.stateStoreDriver,
       instanceId: this.coordinatorInstanceId,
@@ -3227,6 +3496,13 @@ export class AgatStore {
       reachable: true,
       readyReplicas,
       haReady: this.stateStoreDriver === "postgresql" && readyReplicas >= 2,
+      ...(postgresSchema ? {
+        schemaVersion: Number(postgresSchema.version),
+        schemaContract: String(postgresSchema.contract_id),
+        admissionStatus: String(postgresSchema.admission_status),
+        admissionReportSha256: String(postgresSchema.admission_report_sha256 ?? ""),
+        admissionCheckedAt: String(postgresSchema.admission_checked_at ?? ""),
+      } : {}),
     };
   }
 

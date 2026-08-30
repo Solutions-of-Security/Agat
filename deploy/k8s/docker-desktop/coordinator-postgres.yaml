@@ -89,6 +89,11 @@ spec:
                 secretKeyRef:
                   name: agat-postgres-secrets
                   key: system-password
+            - name: AGAT_POSTGRES_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: migration-password
             - name: AGAT_POSTGRES_TENANT_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -175,9 +180,13 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: agat
-              app.kubernetes.io/component: coordinator
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [agat]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [coordinator, database-migration]
       ports:
         - protocol: TCP
           port: 5432

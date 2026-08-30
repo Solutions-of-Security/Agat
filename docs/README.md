@@ -103,6 +103,7 @@ python3 workers/agat_worker.py
 - [Native edge worker 1.6](./native-edge-worker.md)
 - [Fleet и HA 1.7](./fleet-ha-1.7.md)
 - [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md)
+- [PostgreSQL migration Job и DDL-free runtime](./postgresql-migration-job-runtime-role.md)
 - [ADR-017: PostgreSQL HA-cell](./adr-017-fleet-ha-cell.md)
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)

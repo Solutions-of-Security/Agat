@@ -2463,9 +2463,11 @@ async function main(): Promise<void> {
     workerReleasePublicKeys: config.workerReleasePublicKeys,
     requireSignedWorkerReleases: config.requireSignedWorkerReleases,
     ...(config.stateStoreDriver === "postgresql" ? {
+      postgresSchemaMode: "runtime" as const,
       postgres: {
         systemUrl: config.postgresUrl,
         tenantUrl: config.postgresTenantUrl,
+        roleMode: "runtime" as const,
         applicationName: `agat-${config.coordinatorInstanceId}`,
         poolMax: config.postgresPoolMax,
         connectTimeoutMs: config.postgresConnectTimeoutMs,

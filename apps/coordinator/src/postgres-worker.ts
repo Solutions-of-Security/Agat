@@ -12,6 +12,7 @@ interface AccessScope {
 interface PostgresWorkerOptions {
   systemUrl: string;
   tenantUrl: string;
+  roleMode: "migration" | "runtime";
   applicationName: string;
   poolMax: number;
   connectTimeoutMs: number;
@@ -78,8 +79,11 @@ interface RoleSecurityProfile {
   rolcreatedb: boolean;
   rolreplication: boolean;
   powerful_membership: boolean;
+  reserved_connection_membership: boolean;
   database_create: boolean;
+  database_temporary: boolean;
   schema_create: boolean;
+  owns_schema_objects: boolean;
 }
 
 async function roleSecurityProfile(pool: Pool): Promise<RoleSecurityProfile> {
@@ -97,8 +101,27 @@ async function roleSecurityProfile(pool: Pool): Promise<RoleSecurityProfile> {
             OR inherited.rolcreatedb OR inherited.rolreplication)
           AND pg_has_role(current_user, inherited.oid, 'MEMBER')
       ) AS powerful_membership,
+      pg_has_role(current_user, 'pg_use_reserved_connections', 'MEMBER') AS reserved_connection_membership,
       has_database_privilege(current_user, current_database(), 'CREATE') AS database_create,
-      has_schema_privilege(current_user, current_schema(), 'CREATE') AS schema_create
+      has_database_privilege(current_user, current_database(), 'TEMPORARY') AS database_temporary,
+      has_schema_privilege(current_user, current_schema(), 'CREATE') AS schema_create,
+      (
+        EXISTS (
+          SELECT 1 FROM pg_namespace namespace_row
+          WHERE namespace_row.nspname = current_schema()
+            AND namespace_row.nspowner = current_role_row.oid
+        ) OR EXISTS (
+          SELECT 1 FROM pg_class class_row
+          JOIN pg_namespace namespace_row ON namespace_row.oid = class_row.relnamespace
+          WHERE namespace_row.nspname = current_schema()
+            AND class_row.relowner = current_role_row.oid
+        ) OR EXISTS (
+          SELECT 1 FROM pg_proc procedure_row
+          JOIN pg_namespace namespace_row ON namespace_row.oid = procedure_row.pronamespace
+          WHERE namespace_row.nspname = current_schema()
+            AND procedure_row.proowner = current_role_row.oid
+        )
+      ) AS owns_schema_objects
     FROM pg_roles current_role_row
     WHERE current_role_row.rolname = current_user
   `);
@@ -107,7 +130,11 @@ async function roleSecurityProfile(pool: Pool): Promise<RoleSecurityProfile> {
   return profile;
 }
 
-async function validateRoleSeparation(system: Pool, tenant: Pool): Promise<void> {
+async function validateRoleSeparation(
+  system: Pool,
+  tenant: Pool,
+  roleMode: PostgresWorkerOptions["roleMode"],
+): Promise<void> {
   const [systemProfile, tenantProfile] = await Promise.all([
     roleSecurityProfile(system),
     roleSecurityProfile(tenant),
@@ -115,8 +142,24 @@ async function validateRoleSeparation(system: Pool, tenant: Pool): Promise<void>
   if (systemProfile.role_name === tenantProfile.role_name) {
     throw new Error("PostgreSQL system и tenant connections используют одну фактическую роль");
   }
-  if ((!systemProfile.rolsuper && !systemProfile.rolbypassrls) || !systemProfile.schema_create) {
-    throw new Error("PostgreSQL system role должна иметь BYPASSRLS и CREATE текущей schema");
+  if (
+    systemProfile.rolsuper
+    || !systemProfile.rolbypassrls
+    || systemProfile.rolcreaterole
+    || systemProfile.rolcreatedb
+    || systemProfile.rolreplication
+    || systemProfile.powerful_membership
+    || systemProfile.reserved_connection_membership
+    || systemProfile.database_create
+    || systemProfile.database_temporary
+  ) {
+    throw new Error("PostgreSQL system role имеет запрещённые elevated attributes, membership, database CREATE/TEMPORARY");
+  }
+  if (roleMode === "migration" && (!systemProfile.schema_create || !systemProfile.owns_schema_objects)) {
+    throw new Error("PostgreSQL migration role должна владеть schema objects и иметь schema CREATE");
+  }
+  if (roleMode === "runtime" && (systemProfile.schema_create || systemProfile.owns_schema_objects)) {
+    throw new Error("PostgreSQL runtime system role должна быть DDL-free и не владеть schema objects");
   }
   if (
     tenantProfile.rolsuper
@@ -125,7 +168,9 @@ async function validateRoleSeparation(system: Pool, tenant: Pool): Promise<void>
     || tenantProfile.rolcreatedb
     || tenantProfile.rolreplication
     || tenantProfile.powerful_membership
+    || tenantProfile.reserved_connection_membership
     || tenantProfile.database_create
+    || tenantProfile.database_temporary
     || tenantProfile.schema_create
   ) {
     throw new Error("PostgreSQL tenant role имеет опасные attributes, membership или CREATE privilege");
@@ -354,7 +399,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     tenantPool = createPool(request.options.tenantUrl || request.options.systemUrl, request.options, "tenant");
     await systemPool.query("SELECT 1");
     await tenantPool.query("SELECT 1");
-    await validateRoleSeparation(systemPool, tenantPool);
+    await validateRoleSeparation(systemPool, tenantPool, request.options.roleMode);
     return { connected: true };
   }
   if (request.operation === "close") {

@@ -38,10 +38,30 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        - name: wait-for-postgres
+        - name: wait-for-postgres-schema
           image: postgres:17.6-alpine
           imagePullPolicy: IfNotPresent
-          command: ["/bin/sh", "-ec", "until pg_isready -h agat-coordinator-postgres -U agat_system -d agat; do sleep 2; done"]
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until test "$(psql \
+                --host agat-coordinator-postgres \
+                --username agat_system \
+                --dbname agat \
+                --tuples-only \
+                --no-align \
+                --command "SELECT COUNT(*) FROM agat_schema_migrations WHERE version = 21 AND admission_status = 'passed'" \
+                2>/dev/null)" = "1"; do
+                sleep 2
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-password
           resources:
             requests:
               cpu: 5m

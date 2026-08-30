@@ -1,0 +1,212 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agat-postgres-role-bootstrap-v21
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: agat
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: database-migration
+        app.kubernetes.io/part-of: agat
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: role-bootstrap
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until pg_isready --host agat-coordinator-postgres --username postgres --dbname agat; do
+                sleep 2
+              done
+              exec /bin/sh /opt/agat/init-agat.sh
+          env:
+            - name: PGHOST
+              value: agat-coordinator-postgres
+            - name: POSTGRES_DB
+              value: agat
+            - name: POSTGRES_USER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: admin-password
+            - name: AGAT_POSTGRES_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: migration-password
+            - name: AGAT_POSTGRES_SYSTEM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-password
+            - name: AGAT_POSTGRES_TENANT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: tenant-password
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: init
+              mountPath: /opt/agat/init-agat.sh
+              subPath: init-agat.sh
+              readOnly: true
+      volumes:
+        - name: init
+          configMap:
+            name: agat-postgres-init
+            defaultMode: 0555
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agat-postgres-schema-v21
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: agat
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: database-migration
+        app.kubernetes.io/part-of: agat
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-migration-role
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until test "$(psql \
+                --host agat-coordinator-postgres \
+                --username agat_migrator \
+                --dbname agat \
+                --tuples-only \
+                --no-align \
+                --command "SELECT has_schema_privilege(current_user, current_schema(), 'CREATE')
+                  AND NOT has_database_privilege(current_user, current_database(), 'CREATE')
+                  AND NOT has_database_privilege(current_user, current_database(), 'TEMPORARY')
+                  AND EXISTS (
+                    SELECT 1 FROM pg_namespace
+                    WHERE nspname = current_schema() AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+                  )" 2>/dev/null)" = "t"; do
+                sleep 2
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: migration-password
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: schema-migration
+          image: agat-local/coordinator:1.7.0
+          imagePullPolicy: Always
+          command: ["node", "apps/coordinator/dist/postgres-schema-migrator.js"]
+          envFrom:
+            - configMapRef:
+                name: agat-coordinator-config
+          env:
+            - name: AGAT_POSTGRES_MIGRATION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: migration-url
+            - name: AGAT_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-url
+            - name: AGAT_POSTGRES_TENANT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: tenant-url
+            - name: AGAT_POSTGRES_EXPECTED_REPLICAS
+              value: "2"
+            - name: AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT
+              value: "80"
+            - name: AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE
+              value: "5"
+            - name: AGAT_POSTGRES_ADMISSION_DURATION_MS
+              value: "5000"
+            - name: AGAT_POSTGRES_ADMISSION_P99_MS
+              value: "250"
+            - name: AGAT_POSTGRES_ADMISSION_REPORT_PATH
+              value: /tmp/postgres-admission.json
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi

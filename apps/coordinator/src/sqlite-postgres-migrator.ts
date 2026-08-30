@@ -53,6 +53,7 @@ export interface SqlitePostgresMigrationOptions {
   reportPath: string;
   mode: MigrationMode;
   targetUrl: string;
+  targetRuntimeUrl: string;
   targetTenantUrl: string;
   sslMode: "disable" | "require" | "verify-full";
   sslCaPath?: string;
@@ -286,19 +287,29 @@ async function assertPristineTarget(client: Client): Promise<void> {
 }
 
 function validateTargetUrls(options: SqlitePostgresMigrationOptions): void {
-  let system: URL;
+  let migration: URL;
+  let runtime: URL;
   let tenant: URL;
   try {
-    system = new URL(options.targetUrl);
+    migration = new URL(options.targetUrl);
+    runtime = new URL(options.targetRuntimeUrl);
     tenant = new URL(options.targetTenantUrl);
   } catch {
     throw new Error("PostgreSQL migration URLs некорректны");
   }
-  if (system.protocol !== "postgres:" && system.protocol !== "postgresql:") throw new Error("Target URL должен использовать PostgreSQL");
-  if (system.hostname !== tenant.hostname || system.port !== tenant.port || system.pathname !== tenant.pathname) {
-    throw new Error("Migration system и tenant URLs должны указывать на одну database");
+  for (const url of [migration, runtime, tenant]) {
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      throw new Error("Target URLs должны использовать PostgreSQL");
+    }
   }
-  if (system.username === tenant.username) throw new Error("Migration system и tenant roles должны различаться");
+  if ([runtime, tenant].some((url) => (
+    migration.hostname !== url.hostname || migration.port !== url.port || migration.pathname !== url.pathname
+  ))) {
+    throw new Error("Migration, runtime и tenant URLs должны указывать на одну database");
+  }
+  if (new Set([migration.username, runtime.username, tenant.username]).size !== 3) {
+    throw new Error("Migration, runtime и tenant roles должны различаться");
+  }
 }
 
 function bootstrapTarget(options: SqlitePostgresMigrationOptions, cell: { region: string; residencyDomain: string }, migrationId: string): void {
@@ -307,6 +318,7 @@ function bootstrapTarget(options: SqlitePostgresMigrationOptions, cell: { region
     postgres: {
       systemUrl: options.targetUrl,
       tenantUrl: options.targetTenantUrl,
+      roleMode: "migration",
       applicationName: `agat-sqlite-migration-${migrationId}`,
       poolMax: 1,
       connectTimeoutMs: 10_000,
@@ -317,6 +329,9 @@ function bootstrapTarget(options: SqlitePostgresMigrationOptions, cell: { region
       sslCert: options.sslCertPath ? fs.readFileSync(options.sslCertPath, "utf8") : "",
       sslKey: options.sslKeyPath ? fs.readFileSync(options.sslKeyPath, "utf8") : "",
     },
+    postgresSchemaMode: "migration",
+    postgresRuntimeRole: new URL(options.targetRuntimeUrl).username,
+    schemaOnly: true,
     coordinatorInstanceId: `migration-bootstrap-${migrationId}`,
     region: cell.region,
     residencyDomain: cell.residencyDomain,
@@ -333,7 +348,7 @@ async function assertTargetShape(client: Client, tables: SqliteTable[]): Promise
     ORDER BY table_name
   `);
   const actualTables = tableResult.rows.map((row) => row.table_name);
-  const expectedTables = tables.map((table) => table.name).sort();
+  const expectedTables = [...tables.map((table) => table.name), "agat_schema_migrations"].sort();
   if (actualTables.join("\u0000") !== expectedTables.join("\u0000")) {
     throw new Error("Schema drift: набор SQLite и PostgreSQL tables различается");
   }
@@ -771,10 +786,13 @@ function argument(name: string): string | undefined {
 function cliOptions(): SqlitePostgresMigrationOptions {
   const mode = argument("--mode") ?? "rehearse";
   if (mode !== "apply" && mode !== "rehearse" && mode !== "verify") throw new Error("--mode: apply, rehearse или verify");
-  const targetUrl = process.env.AGAT_MIGRATION_POSTGRES_URL ?? process.env.AGAT_POSTGRES_URL ?? "";
+  const targetUrl = process.env.AGAT_POSTGRES_MIGRATION_URL
+    ?? process.env.AGAT_MIGRATION_POSTGRES_URL
+    ?? "";
+  const targetRuntimeUrl = process.env.AGAT_POSTGRES_URL ?? "";
   const targetTenantUrl = process.env.AGAT_MIGRATION_POSTGRES_TENANT_URL ?? process.env.AGAT_POSTGRES_TENANT_URL ?? "";
-  if (!targetUrl || !targetTenantUrl) {
-    throw new Error("Нужны AGAT_MIGRATION_POSTGRES_URL и AGAT_MIGRATION_POSTGRES_TENANT_URL");
+  if (!targetUrl || !targetRuntimeUrl || !targetTenantUrl) {
+    throw new Error("Нужны AGAT_POSTGRES_MIGRATION_URL, AGAT_POSTGRES_URL и AGAT_POSTGRES_TENANT_URL");
   }
   const sourcePath = argument("--source");
   const reportPath = argument("--report");
@@ -791,6 +809,7 @@ function cliOptions(): SqlitePostgresMigrationOptions {
     reportPath,
     mode,
     targetUrl,
+    targetRuntimeUrl,
     targetTenantUrl,
     sslMode,
     sslCaPath: process.env.AGAT_POSTGRES_CA_CERT_PATH,

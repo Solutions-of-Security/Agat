@@ -2,7 +2,7 @@
 
 ## Статус
 
-PostgreSQL adapter активирован в релизе 1.7. `AGAT_STATE_STORE_DRIVER=postgresql` больше не является заглушкой: coordinator создаёт bounded `pg` pools, сериализует schema migration advisory lock, поддерживает несколько replicas и использует PostgreSQL как единственный source of truth.
+PostgreSQL adapter активирован в релизе 1.7. Post-1.7 production-readiness этапы добавили canonical offline migration и schema v21 boundary: coordinator создаёт bounded `pg` pools, но только валидирует schema/admission marker; DDL выполняет отдельная Job под owner role.
 
 Реализация закрывает release contract Fleet/HA, но не все production gates прежнего проекта. Полная модель, риски и acceptance evidence: [Fleet и HA 1.7](./fleet-ha-1.7.md); решение по cell/data authority: [ADR-017](./adr-017-fleet-ha-cell.md).
 
@@ -10,9 +10,9 @@ PostgreSQL adapter активирован в релизе 1.7. `AGAT_STATE_STORE
 
 - `SyncDatabase` отделяет существующий domain store от конкретного SQLite API.
 - `PostgresDatabaseSync` использует отдельный worker thread и `pg` 8.23.0, чтобы сохранить совместимость синхронного `AgatStore`.
-- System и tenant connection URLs обязательны, имеют разные roles и указывают на одну database cell.
+- Migration, runtime system и tenant identities разделены. Deployment получает только runtime+tenant URLs; migration URL scoped отдельной Job.
 - Каждая replica имеет bounded pools, connect/idle/statement timeouts и transaction client pinning.
-- SQLite placeholders/небольшой dialect subset нормализуются в bridge; migration 20 устанавливает fleet schema, indexes, RLS и audit trigger.
+- SQLite placeholders/небольшой dialect subset нормализуются в bridge; PostgreSQL schema v21 устанавливает fleet objects, RLS, audit trigger, catalog manifest и admission marker.
 - Stage, embedding и audit claims используют `FOR UPDATE SKIP LOCKED`.
 - Project row lock сериализует quota check и run creation; optimistic revisions защищают policy/rollout updates.
 - Artifact metadata и bytes находятся в PostgreSQL; local filesystem является только проверяемым download cache.
@@ -46,16 +46,16 @@ Trigger создаёт outbox row вместе с event commit. Exporter claim/c
 
 - repository boundary представлен общим sync adapter, а не набором async repositories;
 - artifact bytes временно перенесены в PostgreSQL, чтобы реально обеспечить cross-replica availability;
-- migrations пока выполняются coordinator startup под advisory lock, а не отдельной Job;
+- в historical 1.7 migrations выполнялись startup role; post-1.7 schema v21 вынесла их в Job и DDL-free runtime;
 - Temporal notification outbox не добавлен: существующие idempotent Updates/Signals остаются отдельным durable boundary.
 
-Эти расхождения не скрываются: они записаны как `RISK-1702/1703/1704` и являются production scale gates.
+Оставшиеся расхождения записаны как `RISK-1703/1704` и являются production scale gates. `RISK-1702` закрыт [отдельной Job/runtime boundary](./postgresql-migration-job-runtime-role.md).
 
 ## Оставшиеся этапы
 
-### Offline migration
+### Offline migration — готово
 
-Нужен canonical SQLite exporter/importer, который:
+Canonical exporter/importer реализован и:
 
 1. работает только при остановленных writes;
 2. сохраняет исходный SQLite backup;
@@ -64,15 +64,15 @@ Trigger создаёт outbox row вместе с event commit. Exporter claim/c
 5. не переносит expired leases как активные;
 6. формирует подписываемый reconciliation report.
 
-Dual-write не планируется.
+Dual-write не используется. Contract и evidence: [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md).
 
-### Разделение migration/runtime roles
+### Разделение migration/runtime roles — готово
 
-Отдельная migration Job должна владеть DDL и advisory lock. Runtime system role должна сохранить DML/BYPASSRLS для trusted scheduler/admin paths, но лишиться schema alteration. Tenant role остаётся RLS-only.
+Отдельная migration Job владеет DDL/advisory lock; runtime сохраняет только bounded DML/BYPASSRLS и не имеет ownership/schema CREATE. Catalog drift, active replicas и незавершённый connection admission блокируют startup. Tenant role остаётся RLS-only.
 
 ### Async repositories и capacity
 
-Worker-thread bridge блокирует event loop одной replica на время sync DB call. До высокой нагрузки нужны async repositories, pool acquisition metrics, query budgets и load test по целевому project/run mix.
+Worker-thread bridge блокирует event loop одной replica на время sync DB call. Connection budget и read-only p99 admission уже исполняются перед rollout; до высокой нагрузки всё ещё нужны async repositories, pool acquisition metrics и load test по целевому project/run mix.
 
 ### Artifact object store
 
@@ -80,7 +80,7 @@ PostgreSQL `BYTEA` обеспечивает correctness plateau, но крупн
 
 ### Production database
 
-Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Обязательны TLS `verify-full`, connection admission, replication/WAL/backup monitoring, PITR и фактические restore/failover exercises с утверждёнными RPO/RTO.
+Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Обязательны TLS `verify-full`, повтор admission на production capacity, replication/WAL/backup monitoring, PITR и фактические restore/failover exercises с утверждёнными RPO/RTO.
 
 ## Acceptance matrix
 
@@ -91,10 +91,10 @@ Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Об
 | RLS/cross-project/global mutation deny | выполнено | property/fuzz test и security review |
 | Cross-replica artifact download | выполнено | object-store lifecycle/DR |
 | SIEM disjoint claim/retry/redaction | выполнено | sink conformance, retention/DLQ |
-| SQLite→PostgreSQL reconciliation | manual procedure only | canonical migrator required |
+| SQLite→PostgreSQL reconciliation | canonical apply/verify/rehearsal готов | production-sized rehearsal |
 | Backup restore | local DB не является evidence | timed clean-environment restore required |
 | Multi-AZ failover | не входит | required |
-| DDL-free runtime role | не выполнено | required |
+| DDL-free runtime role | schema v21 Job, manifest/admission и negative E2E готовы | managed-IaC role provisioning |
 
 ## Наблюдаемость
 
