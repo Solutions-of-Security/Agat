@@ -4,7 +4,7 @@
 
 Production HA-cell использует внешний managed PostgreSQL 17 как единственный state authority. Release gate принимает endpoint только при свежем provider evidence о нескольких availability zones, хотя бы одном здоровом synchronous standby, automatic failover, private encrypted endpoint и непрерывном PITR. Репозиторий не изображает облачного control plane: provision/failover/restore выполняет выбранный managed provider, а Agat независимо проверяет topology, application schema, фактические canaries и измеренные RPO/RTO/SLO.
 
-Этап включает executable contract, schema v22, HMAC-sealed evidence, Kubernetes preflight Job и физический disposable rehearsal. Он не объявляет конкретный production cluster квалифицированным без provider snapshot и выполненных именно на нём restore/failover drills. Такой cluster остаётся deployment gate, а не скрытым допущением релиза.
+Этап включает executable contract, DR canaries в текущей schema v23, HMAC-sealed evidence, Kubernetes preflight Job и физический disposable rehearsal. Он не объявляет конкретный production cluster квалифицированным без provider snapshot и выполненных именно на нём restore/failover drills. Такой cluster остаётся deployment gate, а не скрытым допущением релиза.
 
 ## AS-IS
 
@@ -27,7 +27,7 @@ flowchart LR
   RESTORE --> SLO
 ```
 
-`deploy/k8s/production/postgres-resilience-policy.json` является canonical policy. `apps/coordinator/src/postgres-resilience.ts` валидирует provider snapshot и database observation, создаёт hash-only checkpoints, доказывает failover/restore и подписывает reports HMAC-SHA256. Kubernetes Job `agat-postgres-resilience-gate-v22` получает только runtime URL, CA, provider evidence и отдельный evidence key; admin/migration/tenant credentials ему не нужны.
+`deploy/k8s/production/postgres-resilience-policy.json` является canonical policy. `apps/coordinator/src/postgres-resilience.ts` валидирует provider snapshot и database observation, создаёт hash-only checkpoints, доказывает failover/restore и подписывает reports HMAC-SHA256. Kubernetes Job `agat-postgres-resilience-gate-v23` получает только runtime URL, CA, provider evidence и отдельный evidence key; admin/migration/tenant credentials ему не нужны.
 
 ## Source и evidence register
 
@@ -36,8 +36,8 @@ flowchart LR
 | `apps/coordinator/src/postgres-resilience.ts` | evidence schema v1 | topology/PITR/SLO policy, checkpoint и verification semantics |
 | `deploy/k8s/production/postgres-resilience-policy.json` | policy v1 | production objectives и approval roles |
 | `scripts/test-postgres-physical-dr.sh` | PostgreSQL 17.6 | actual streaming promotion и named restore-point PITR rehearsal |
-| `agat_schema_migrations` | schema v22 | runtime manifest/admission contract |
-| `agat_dr_canaries` | schema v22 | global, tenant-inaccessible restore/failover checkpoints |
+| `agat_schema_migrations` | schema v23 | runtime manifest/admission contract |
+| `agat_dr_canaries` | schema v23 | global, tenant-inaccessible restore/failover checkpoints |
 | [PostgreSQL 17 continuous archiving и PITR](https://www.postgresql.org/docs/17/continuous-archiving.html) | проверено 2026-08-30 | base backup + непрерывная WAL sequence, recovery target и timelines |
 | [PostgreSQL 17 recovery targets](https://www.postgresql.org/docs/17/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET) | проверено 2026-08-30 | named/time/LSN target, target action и timeline |
 | [PostgreSQL 17 replication monitoring](https://www.postgresql.org/docs/17/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW) | проверено 2026-08-30 | sender state и write/flush/replay observations |
@@ -94,7 +94,7 @@ Provider/IaC adapter формирует bounded JSON без credentials:
 - exact SLO policy digest, change ID и approver subjects/roles;
 - для drill — immutable operation ID, source/target cluster и primary identities, start/completion и recovery target.
 
-Gate дополнительно наблюдает сам runtime endpoint: read-write primary, TLS session, data checksums, `wal_level`, durable `synchronous_commit`, DDL-free role, schema v22/admission marker и `agat_dr_canaries`. Provider assertion не может заменить database observation, а database observation не может доказать provider topology — нужны обе стороны.
+Gate дополнительно наблюдает сам runtime endpoint: read-write primary, TLS session, data checksums, `wal_level`, durable `synchronous_commit`, DDL-free role, schema v23/admission marker и `agat_dr_canaries`. Provider assertion не может заменить database observation, а database observation не может доказать provider topology — нужны обе стороны.
 
 `AGAT_DR_ALLOW_INSECURE_LOCAL=true` существует только для disposable CLI integration и принимается лишь для `localhost`, `127.0.0.1` или `::1`. Report сохраняет фактический `databaseObservation.tls=false`; production Job не задаёт override и всегда использует `verify-full` с mounted CA.
 
@@ -109,7 +109,7 @@ HMAC обеспечивает integrity внутри operational trust domain, �
 ## Release preflight runbook
 
 1. Provider/IaC создаёт свежий evidence JSON и SLO approval для exact policy digest.
-2. Runtime schema v22 уже применена отдельной migration Job; coordinator replicas ещё не получают traffic.
+2. Runtime schema v23 уже применена отдельной migration Job; coordinator replicas ещё не получают traffic.
 3. Создайте отдельный evidence key и Kubernetes Secrets `agat-postgres-secrets`, `agat-postgres-resilience-evidence`, ConfigMap `agat-production-cell`.
 4. Примените production gate и сохраните immutable Job log/HMAC report в change evidence.
 5. Только passing report разрешает coordinator rollout. `haReady` приложения не заменяет этот gate.
@@ -135,9 +135,9 @@ Kubernetes base намеренно использует non-resolvable `registry
 ```bash
 kubectl kustomize deploy/k8s/production
 kubectl apply -k /secure/agat-production-overlay
-kubectl wait --for=condition=Complete job/agat-postgres-resilience-gate-v22 \
+kubectl wait --for=condition=Complete job/agat-postgres-resilience-gate-v23 \
   --namespace agat --timeout=300s
-kubectl logs --namespace agat job/agat-postgres-resilience-gate-v22
+kubectl logs --namespace agat job/agat-postgres-resilience-gate-v23
 ```
 
 Production overlay намеренно не создаёт managed cluster или Secrets. Они принадлежат provider IaC/secret manager и проходят организационный change control.
@@ -239,7 +239,7 @@ npm run fleet:postgres-resilience -- evaluate-slo \
 | SLO window/drill stale | SLO report fail | не обнулять error budget; провести drills/получить полное окно |
 | новый policy digest | старое approval недействительно | два distinct approver подтверждают exact digest |
 
-Rollback application release выполняется только на schema-compatible v22 и не откатывает managed failover. После PITR clone production traffic остаётся на source; promote clone в authority относится к отдельному region-loss/corruption incident runbook. Нельзя dual-write source и clone.
+Rollback application release выполняется только на schema-compatible v23 и не откатывает managed failover. После PITR clone production traffic остаётся на source; promote clone в authority относится к отдельному region-loss/corruption incident runbook. Нельзя dual-write source и clone.
 
 ## Operations, NFR и observability
 
@@ -291,6 +291,6 @@ python3 /Users/mdavliatshin/.codex/skills/it-architect/scripts/architecture_audi
 
 Фактический disposable rehearsal 2026-08-30 на `postgres:17.6-alpine` подтвердил streaming standby, primary stop + promotion, наличие pre-failover canary и post-promotion write; measured failover RTO — 1 секунда. Physical base backup + archived WAL восстановлены до named restore point: before-canary присутствует, after-canary отсутствует, clone writable; measured RPO — 1 секунда, restore RTO — 2 секунды.
 
-Отдельный schema v22 E2E подтвердил 7 704 admission operations, p99 1.193 ms, checksums/WAL/synchronous commit/DDL-free runtime/schema marker, HMAC checkpoint и ожидаемый `permission denied` tenant role на `agat_dr_canaries`. Эти числа являются test evidence, не production SLO.
+Отдельный schema v22 E2E до additive v23 artifact migration подтвердил 7 704 admission operations, p99 1.193 ms, checksums/WAL/synchronous commit/DDL-free runtime/schema marker, HMAC checkpoint и ожидаемый `permission denied` tenant role на `agat_dr_canaries`. Эти числа являются test evidence, не production SLO.
 
 Production acceptance завершается только после passing HMAC reports от реального managed cluster: preflight, failover, isolated PITR restore и полного SLO window. Отсутствие cloud credentials в repository не заменяется вымышленным «успешным» report.

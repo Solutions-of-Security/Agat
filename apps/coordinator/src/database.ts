@@ -5,6 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 
 import { PostgresDatabaseSync, type PostgresDatabaseOptions } from "./postgres-database.js";
 import type { SyncDatabase } from "./sync-database.js";
+import {
+  S3ArtifactObjectStoreSync,
+  artifactObjectKey,
+  normalizeArtifactObjectPrefix,
+  type ArtifactObjectStore,
+  type ArtifactObjectStoreOptions,
+} from "./artifact-object-store.js";
 
 import {
   defaultProcessGraph,
@@ -220,8 +227,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 22;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-managed-postgres-resilience-v22";
+export const POSTGRES_SCHEMA_VERSION = 23;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-s3-artifact-lifecycle-v23";
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -987,6 +994,10 @@ export interface StoreOptions {
   residencyDomain?: string;
   workerReleasePublicKeys?: Record<string, string>;
   requireSignedWorkerReleases?: boolean;
+  artifactStoreDriver?: "filesystem" | "postgresql" | "s3";
+  artifactRetentionDays?: number;
+  artifactS3?: ArtifactObjectStoreOptions;
+  artifactObjectStore?: ArtifactObjectStore;
 }
 
 export class AgatStore {
@@ -1007,6 +1018,13 @@ export class AgatStore {
   private readonly postgresRuntimeRole: string | null;
   private readonly postgresSchemaMode: "migration" | "runtime";
   private readonly schemaOnly: boolean;
+  private readonly artifactStoreDriver: "filesystem" | "postgresql" | "s3";
+  private readonly artifactRetentionDays: number;
+  private readonly artifactObjectPrefix: string;
+  private readonly artifactObjectBucket: string;
+  private readonly artifactObjectLockMode: "none" | "GOVERNANCE" | "COMPLIANCE";
+  private artifactObjectStore: ArtifactObjectStore | null;
+  private transactionDepth = 0;
 
   constructor(dbPath: string, options: StoreOptions = {}) {
     this.stateStoreDriver = options.stateStoreDriver ?? "sqlite";
@@ -1018,6 +1036,29 @@ export class AgatStore {
       : null;
     this.postgresSchemaMode = options.postgresSchemaMode ?? "runtime";
     this.schemaOnly = options.schemaOnly ?? false;
+    this.artifactStoreDriver = options.artifactStoreDriver
+      ?? (this.stateStoreDriver === "postgresql" ? "postgresql" : "filesystem");
+    this.artifactRetentionDays = Math.trunc(options.artifactRetentionDays ?? 0);
+    this.artifactObjectPrefix = options.artifactS3
+      ? normalizeArtifactObjectPrefix(options.artifactS3.prefix)
+      : "agat";
+    this.artifactObjectBucket = options.artifactS3?.bucket ?? "";
+    this.artifactObjectLockMode = options.artifactS3?.objectLockMode ?? "none";
+    this.artifactObjectStore = options.artifactObjectStore ?? null;
+    if (this.artifactStoreDriver === "filesystem" && this.stateStoreDriver !== "sqlite") {
+      throw new Error("Filesystem Artifact Store разрешён только с SQLite state store");
+    }
+    if (this.artifactStoreDriver === "postgresql" && this.stateStoreDriver !== "postgresql") {
+      throw new Error("PostgreSQL Artifact Store требует PostgreSQL state store");
+    }
+    if (this.artifactStoreDriver === "s3") {
+      if (this.stateStoreDriver !== "postgresql" || !options.artifactS3) {
+        throw new Error("S3 Artifact Store требует PostgreSQL state store и S3 configuration");
+      }
+      if (!Number.isInteger(this.artifactRetentionDays) || this.artifactRetentionDays < 1 || this.artifactRetentionDays > 3_650) {
+        throw new Error("S3 artifact retention должен быть от 1 до 3650 дней");
+      }
+    }
     this.postgresRuntimeRole = this.stateStoreDriver === "postgresql"
       ? postgresRoleIdentifier(
           options.postgresRuntimeRole
@@ -1080,6 +1121,9 @@ export class AgatStore {
         this.migrate();
         this.migrateFleetHa();
       }
+      if (this.artifactStoreDriver === "s3" && !this.artifactObjectStore) {
+        this.artifactObjectStore = new S3ArtifactObjectStoreSync(options.artifactS3!);
+      }
       if (this.schemaOnly) return;
       this.seedAgents();
       this.ensureAllPromptRegistries();
@@ -1087,6 +1131,7 @@ export class AgatStore {
       else this.removeDemoData();
       this.heartbeatCoordinatorReplica();
     } catch (error) {
+      this.artifactObjectStore?.close();
       this.db.close();
       throw error;
     }
@@ -1101,7 +1146,11 @@ export class AgatStore {
         // Shutdown must still release the database connection if the backend is unavailable.
       }
     }
-    this.db.close();
+    try {
+      this.artifactObjectStore?.close();
+    } finally {
+      this.db.close();
+    }
   }
 
   maintenanceTick(): void {
@@ -2286,9 +2335,32 @@ export class AgatStore {
     }
 
     const artifactColumns = this.db.prepare("PRAGMA table_info(artifacts)").all() as Row[];
-    if (!artifactColumns.some((column) => column.name === "content_blob")) {
-      this.db.exec("ALTER TABLE artifacts ADD COLUMN content_blob BLOB;");
+    const artifactAdditions = [
+      ["content_blob", "BLOB"],
+      ["storage_backend", "TEXT NOT NULL DEFAULT 'filesystem'"],
+      ["storage_state", "TEXT NOT NULL DEFAULT 'ready'"],
+      ["object_bucket", "TEXT"],
+      ["object_key", "TEXT"],
+      ["object_version_id", "TEXT"],
+      ["retention_until", "TEXT"],
+      ["legal_hold", "INTEGER NOT NULL DEFAULT 0"],
+      ["deleted_at", "TEXT"],
+      ["last_storage_error", "TEXT"],
+      ["project_id", "TEXT"],
+    ] as const;
+    for (const [name, definition] of artifactAdditions) {
+      if (!artifactColumns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE artifacts ADD COLUMN ${name} ${definition};`);
+      }
     }
+    if (this.stateStoreDriver === "postgresql") {
+      this.db.exec("UPDATE artifacts SET storage_backend = 'postgresql' WHERE storage_backend = 'filesystem' AND content_blob IS NOT NULL;");
+    }
+    this.db.exec(`
+      UPDATE artifacts SET project_id = (
+        SELECT runs.project_id FROM runs WHERE runs.id = artifacts.run_id
+      ) WHERE project_id IS NULL;
+    `);
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS coordinator_replicas (
@@ -2348,6 +2420,26 @@ export class AgatStore {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS artifact_storage_outbox (
+        id TEXT PRIMARY KEY,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        artifact_id TEXT,
+        project_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        object_bucket TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        object_version_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        available_at TEXT NOT NULL,
+        locked_by TEXT,
+        lock_expires_at TEXT,
+        last_error TEXT,
+        delivered_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_runs_project_queue_status
         ON runs(project_id, region, queue_name, status, priority, created_at);
       CREATE INDEX IF NOT EXISTS idx_stages_claimable
@@ -2359,6 +2451,13 @@ export class AgatStore {
         ON worker_rollouts(project_id, region, status, ring);
       CREATE INDEX IF NOT EXISTS idx_audit_outbox_delivery
         ON audit_export_outbox(status, available_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_artifact_storage_outbox_delivery
+        ON artifact_storage_outbox(status, available_at, created_at);
+      CREATE INDEX IF NOT EXISTS idx_artifacts_storage_lifecycle
+        ON artifacts(storage_backend, storage_state, legal_hold, retention_until);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_object_identity
+        ON artifacts(object_bucket, object_key)
+        WHERE object_key IS NOT NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_ci ON projects(LOWER(name));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_project_name_ci
         ON agents(project_id, LOWER(name)) WHERE is_builtin = 0;
@@ -2427,6 +2526,30 @@ export class AgatStore {
         DROP TRIGGER IF EXISTS agat_events_audit_outbox ON events;
         CREATE TRIGGER agat_events_audit_outbox
           AFTER INSERT ON events FOR EACH ROW EXECUTE FUNCTION agat_enqueue_audit_event();
+
+        CREATE OR REPLACE FUNCTION agat_enqueue_artifact_delete() RETURNS trigger
+        LANGUAGE plpgsql SECURITY DEFINER
+        SET search_path = pg_catalog, public AS $$
+        BEGIN
+          IF OLD.storage_backend = 's3' AND OLD.object_bucket IS NOT NULL AND OLD.object_key IS NOT NULL THEN
+            INSERT INTO artifact_storage_outbox(
+              id, dedupe_key, artifact_id, project_id, operation,
+              object_bucket, object_key, object_version_id,
+              status, attempts, available_at, created_at, updated_at
+            ) SELECT
+              'cascade-delete:' || OLD.id || ':' || COALESCE(OLD.object_version_id, 'current'),
+              OLD.id || ':' || COALESCE(OLD.object_version_id, 'current'),
+              OLD.id, OLD.project_id, 'delete', OLD.object_bucket, OLD.object_key, OLD.object_version_id,
+              'pending', 0, CURRENT_TIMESTAMP::text, CURRENT_TIMESTAMP::text, CURRENT_TIMESTAMP::text
+            WHERE OLD.project_id IS NOT NULL
+            ON CONFLICT(dedupe_key) DO NOTHING;
+          END IF;
+          RETURN OLD;
+        END;
+        $$;
+        DROP TRIGGER IF EXISTS agat_artifacts_delete_outbox ON artifacts;
+        CREATE TRIGGER agat_artifacts_delete_outbox
+          BEFORE DELETE ON artifacts FOR EACH ROW EXECUTE FUNCTION agat_enqueue_artifact_delete();
       `);
       this.installPostgresTenantPolicies();
     } else {
@@ -2439,6 +2562,23 @@ export class AgatStore {
           ) VALUES (NEW.id, NEW.project_id, 'pending', 0, NEW.created_at, NEW.created_at, NEW.created_at)
           ON CONFLICT(event_id) DO NOTHING;
         END;
+
+        CREATE TRIGGER IF NOT EXISTS agat_artifacts_delete_outbox
+        BEFORE DELETE ON artifacts
+        WHEN OLD.storage_backend = 's3' AND OLD.object_bucket IS NOT NULL AND OLD.object_key IS NOT NULL
+        BEGIN
+          INSERT INTO artifact_storage_outbox(
+            id, dedupe_key, artifact_id, project_id, operation,
+            object_bucket, object_key, object_version_id,
+            status, attempts, available_at, created_at, updated_at
+          ) SELECT
+            'cascade-delete:' || OLD.id || ':' || COALESCE(OLD.object_version_id, 'current'),
+            OLD.id || ':' || COALESCE(OLD.object_version_id, 'current'),
+            OLD.id, OLD.project_id, 'delete', OLD.object_bucket, OLD.object_key, OLD.object_version_id,
+            'pending', 0, datetime('now'), datetime('now'), datetime('now')
+          WHERE OLD.project_id IS NOT NULL
+          ON CONFLICT(dedupe_key) DO NOTHING;
+        END;
       `);
     }
     this.db.exec(`
@@ -2447,7 +2587,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 20;");
+    this.db.exec("PRAGMA user_version = 23;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -2539,7 +2679,9 @@ export class AgatStore {
         FROM pg_proc AS procedure_row
         JOIN pg_namespace AS namespace_row ON namespace_row.oid = procedure_row.pronamespace
         WHERE namespace_row.nspname = current_schema()
-          AND procedure_row.proname IN ('agat_current_project', 'agat_enqueue_audit_event')
+          AND procedure_row.proname IN (
+            'agat_current_project', 'agat_enqueue_audit_event', 'agat_enqueue_artifact_delete'
+          )
       ) AS manifest
       ORDER BY kind, object_name, definition
     `).all() as Row[];
@@ -2622,8 +2764,16 @@ export class AgatStore {
         has_table_privilege(?, 'agat_schema_migrations', 'SELECT')
           OR has_table_privilege(?, 'agat_schema_migrations', 'INSERT')
           OR has_table_privilege(?, 'agat_schema_migrations', 'UPDATE')
-          OR has_table_privilege(?, 'agat_schema_migrations', 'DELETE') AS tenant_access
+          OR has_table_privilege(?, 'agat_schema_migrations', 'DELETE') AS tenant_access,
+        has_table_privilege(?, 'artifact_storage_outbox', 'SELECT')
+          OR has_table_privilege(?, 'artifact_storage_outbox', 'INSERT')
+          OR has_table_privilege(?, 'artifact_storage_outbox', 'UPDATE')
+          OR has_table_privilege(?, 'artifact_storage_outbox', 'DELETE') AS tenant_artifact_outbox_access
     `).get(
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
+      this.postgresTenantRole!,
       this.postgresTenantRole!,
       this.postgresTenantRole!,
       this.postgresTenantRole!,
@@ -2631,7 +2781,8 @@ export class AgatStore {
     ) as Record<string, unknown> | undefined;
     if (metadataPrivileges?.can_read !== true
       || metadataPrivileges?.can_write === true
-      || metadataPrivileges?.tenant_access === true) {
+      || metadataPrivileges?.tenant_access === true
+      || metadataPrivileges?.tenant_artifact_outbox_access === true) {
       throw new Error("PostgreSQL schema metadata grants нарушают runtime/tenant boundary");
     }
     if (requireAdmission && (
@@ -2744,6 +2895,7 @@ export class AgatStore {
       REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM PUBLIC, ${runtimeRole}, ${tenantRole};
       REVOKE EXECUTE ON FUNCTION ${schema}.agat_current_project() FROM PUBLIC;
       REVOKE EXECUTE ON FUNCTION ${schema}.agat_enqueue_audit_event() FROM PUBLIC;
+      REVOKE EXECUTE ON FUNCTION ${schema}.agat_enqueue_artifact_delete() FROM PUBLIC;
 
       GRANT USAGE ON SCHEMA ${schema} TO ${runtimeRole}, ${tenantRole};
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${runtimeRole};
@@ -2752,6 +2904,7 @@ export class AgatStore {
       GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${runtimeRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${runtimeRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_enqueue_audit_event() TO ${runtimeRole};
+      GRANT EXECUTE ON FUNCTION ${schema}.agat_enqueue_artifact_delete() TO ${runtimeRole};
 
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${isolated} TO ${tenantRole};
       GRANT SELECT ON TABLE ${readOnly} TO ${tenantRole};
@@ -11465,7 +11618,11 @@ export class AgatStore {
       SELECT a.* FROM artifacts a JOIN runs r ON r.id = a.run_id
       WHERE a.id = ? AND r.project_id = ?
     `).get(artifactId, normalizeProjectId(projectId)) as Row | undefined;
-    if (!row) return null;
+    if (!row || row.storage_state !== "ready") return null;
+    const storageBackend = String(row.storage_backend ?? "filesystem");
+    if (!(["filesystem", "postgresql", "s3"] as const).includes(storageBackend as "filesystem" | "postgresql" | "s3")) {
+      throw new Error("Artifact metadata содержит неизвестный storage backend");
+    }
     const relativePath = String(row.relative_path);
     const segments = relativePath.split("/");
     if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
@@ -11474,44 +11631,398 @@ export class AgatStore {
     const candidate = path.resolve(this.artifactsDir, ...segments);
     const rootPrefix = `${path.resolve(this.artifactsDir)}${path.sep}`;
     if (!candidate.startsWith(rootPrefix)) throw new Error("Путь артефакта вышел за пределы хранилища");
+    const remoteAuthority = storageBackend !== "filesystem";
     if (!fs.existsSync(this.artifactsDir)) {
-      if (row.content_blob instanceof Uint8Array) fs.mkdirSync(this.artifactsDir, { recursive: true, mode: 0o700 });
+      if (remoteAuthority) fs.mkdirSync(this.artifactsDir, { recursive: true, mode: 0o700 });
       else throw new Error("Хранилище артефактов недоступно");
     }
-    if (fs.lstatSync(this.artifactsDir).isSymbolicLink()) {
+    const rootStatus = fs.lstatSync(this.artifactsDir);
+    if (rootStatus.isSymbolicLink() || !rootStatus.isDirectory()) {
       throw new Error("Хранилище артефактов недоступно");
     }
     let current = this.artifactsDir;
-    for (const segment of segments) {
+    for (const segment of segments.slice(0, -1)) {
       current = path.join(current, segment);
       if (!fs.existsSync(current)) {
-        if (row.content_blob instanceof Uint8Array && current !== candidate) fs.mkdirSync(current, { mode: 0o700 });
-        else if (row.content_blob instanceof Uint8Array && current === candidate) break;
+        if (remoteAuthority) fs.mkdirSync(current, { mode: 0o700 });
         else throw new Error("Файл артефакта не найден");
       }
-      if (!fs.existsSync(current)) continue;
       const status = fs.lstatSync(current);
-      if (status.isSymbolicLink()) throw new Error("Путь артефакта содержит символическую ссылку");
-    }
-    if (!fs.existsSync(candidate) && row.content_blob instanceof Uint8Array) {
-      const bytes = Buffer.from(row.content_blob);
-      if (bytes.byteLength !== Number(row.size_bytes) || createHash("sha256").update(bytes).digest("hex") !== row.sha256) {
-        throw new Error("PostgreSQL artifact payload не совпадает с metadata hash/size");
-      }
-      const temporary = `${candidate}.${randomUUID()}.tmp`;
-      try {
-        fs.writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
-        try {
-          fs.linkSync(temporary, candidate);
-        } catch (error) {
-          if (!fs.existsSync(candidate)) throw error;
-        }
-      } finally {
-        if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+      if (status.isSymbolicLink() || !status.isDirectory()) {
+        throw new Error("Путь артефакта содержит небезопасный объект");
       }
     }
-    if (!fs.lstatSync(candidate).isFile()) throw new Error("Артефакт не является обычным файлом");
+    const expectedSize = Number(row.size_bytes);
+    const expectedSha256 = String(row.sha256);
+    if (fs.existsSync(candidate)) {
+      const status = fs.lstatSync(candidate);
+      if (status.isSymbolicLink() || !status.isFile()) throw new Error("Артефакт не является обычным файлом");
+      const cached = fs.readFileSync(candidate);
+      const cacheValid = cached.byteLength === expectedSize
+        && createHash("sha256").update(cached).digest("hex") === expectedSha256;
+      if (cacheValid) return { artifact: this.artifactDto(row), filePath: candidate };
+      if (!remoteAuthority) throw new Error("Filesystem artifact не совпадает с metadata hash/size");
+      fs.rmSync(candidate, { force: true });
+    }
+    let bytes: Buffer;
+    if (storageBackend === "postgresql") {
+      if (!(row.content_blob instanceof Uint8Array)) throw new Error("PostgreSQL artifact payload отсутствует");
+      bytes = Buffer.from(row.content_blob);
+    } else if (storageBackend === "s3") {
+      if (!this.artifactObjectStore) throw new Error("S3 Artifact Store недоступен");
+      if (row.object_bucket !== this.artifactObjectBucket || typeof row.object_key !== "string") {
+        throw new Error("S3 artifact metadata не совпадает с configured bucket");
+      }
+      const object = this.artifactObjectStore.get(
+        row.object_key,
+        typeof row.object_version_id === "string" ? row.object_version_id : null,
+      );
+      if (object.metadata.sha256 !== expectedSha256 || object.metadata.sizeBytes !== expectedSize) {
+        throw new Error("S3 artifact object не совпадает с database metadata");
+      }
+      bytes = object.body;
+    } else {
+      throw new Error("Filesystem artifact отсутствует");
+    }
+    if (bytes.byteLength !== expectedSize || createHash("sha256").update(bytes).digest("hex") !== expectedSha256) {
+      throw new Error(`${storageBackend} artifact payload не совпадает с metadata hash/size`);
+    }
+    const temporary = `${candidate}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
+      fs.renameSync(temporary, candidate);
+    } finally {
+      if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+    }
     return { artifact: this.artifactDto(row), filePath: candidate };
+  }
+
+  setArtifactRetention(
+    artifactId: string,
+    projectId: string,
+    retentionUntil: string,
+    legalHold: boolean,
+    actor: string,
+  ): Record<string, unknown> {
+    const normalizedProject = normalizeProjectId(projectId);
+    const normalizedActor = requiredAgentText(actor, "Artifact retention actor", 200);
+    const retentionTimestamp = new Date(retentionUntil);
+    if (!Number.isFinite(retentionTimestamp.getTime()) || retentionTimestamp.getTime() <= Date.now()) {
+      throw new Error("Artifact retentionUntil должен быть будущим ISO timestamp");
+    }
+    const normalizedRetention = retentionTimestamp.toISOString();
+    const row = this.db.prepare(`
+      SELECT a.* FROM artifacts a JOIN runs r ON r.id = a.run_id
+      WHERE a.id = ? AND r.project_id = ? AND a.storage_backend = 's3' AND a.storage_state = 'ready'
+    `).get(artifactId, normalizedProject) as Row | undefined;
+    if (!row) throw new Error("Активный S3 artifact не найден");
+    if (!this.artifactObjectStore || row.object_bucket !== this.artifactObjectBucket || typeof row.object_key !== "string") {
+      throw new Error("S3 Artifact Store или object metadata недоступны");
+    }
+    if (this.artifactObjectLockMode !== "none") {
+      const protectedObject = this.artifactObjectStore.setProtection(
+        row.object_key,
+        typeof row.object_version_id === "string" ? row.object_version_id : null,
+        normalizedRetention,
+        legalHold,
+      );
+      if (!protectedObject.retentionUntil || Date.parse(protectedObject.retentionUntil) < retentionTimestamp.getTime()
+        || protectedObject.legalHold !== legalHold) {
+        throw new Error("S3 Object Lock не подтвердил retention/legal hold");
+      }
+    }
+    this.transaction(() => {
+      const updated = this.db.prepare(`
+        UPDATE artifacts SET retention_until = ?, legal_hold = ?, last_storage_error = NULL
+        WHERE id = ? AND storage_state = 'ready'
+      `).run(normalizedRetention, legalHold ? 1 : 0, artifactId);
+      if (Number(updated.changes) !== 1) throw new Error("Artifact retention state изменился конкурентно");
+      this.addEvent(String(row.run_id), row.stage_id == null ? null : String(row.stage_id), null, "info", "artifact.retention.updated", "Обновлена политика хранения артефакта", {
+        kind: "artifact",
+        artifactId,
+        retentionUntil: normalizedRetention,
+        legalHold,
+        actor: normalizedActor,
+        protection: this.artifactObjectLockMode === "none" ? "application" : "s3_object_lock",
+      });
+    });
+    return this.artifactDto(this.db.prepare("SELECT * FROM artifacts WHERE id = ?").get(artifactId) as Row);
+  }
+
+  inspectArtifactBucket(): Record<string, unknown> {
+    if (this.artifactStoreDriver !== "s3" || !this.artifactObjectStore) throw new Error("S3 Artifact Store не настроен");
+    return this.artifactObjectStore.inspectBucket() as unknown as Record<string, unknown>;
+  }
+
+  configureArtifactBucketLifecycle(noncurrentExpirationDays: number, abortMultipartDays: number): Record<string, unknown> {
+    if (this.artifactStoreDriver !== "s3" || !this.artifactObjectStore) throw new Error("S3 Artifact Store не настроен");
+    return this.artifactObjectStore.configureLifecycle(
+      noncurrentExpirationDays,
+      abortMultipartDays,
+    ) as unknown as Record<string, unknown>;
+  }
+
+  migratePostgresArtifactsToS3(limit = 20): { selected: number; migrated: number; bytes: number } {
+    if (this.artifactStoreDriver !== "s3" || !this.artifactObjectStore) throw new Error("S3 Artifact Store не настроен");
+    const boundedLimit = clampInteger(limit, 1, 200, 20);
+    const rows = this.db.prepare(`
+      SELECT a.*, r.project_id, r.residency_domain FROM artifacts a
+      JOIN runs r ON r.id = a.run_id
+      WHERE a.storage_backend = 'postgresql' AND a.storage_state = 'ready' AND a.content_blob IS NOT NULL
+      ORDER BY a.created_at, a.id LIMIT ?
+    `).all(boundedLimit) as Row[];
+    let migrated = 0;
+    let bytes = 0;
+    for (const row of rows) {
+      if (!(row.content_blob instanceof Uint8Array)) throw new Error(`Artifact ${row.id} content_blob отсутствует`);
+      const payload = Buffer.from(row.content_blob);
+      const sha256 = String(row.sha256);
+      if (payload.byteLength !== Number(row.size_bytes) || createHash("sha256").update(payload).digest("hex") !== sha256) {
+        throw new Error(`Artifact ${row.id} не прошёл hash/size reconciliation`);
+      }
+      const objectKey = artifactObjectKey(
+        this.artifactObjectPrefix,
+        String(row.residency_domain),
+        sha256Text(String(row.project_id)),
+        String(row.id),
+        sha256,
+      );
+      const originalExpiry = Date.parse(String(row.created_at)) + this.artifactRetentionDays * 86_400_000;
+      const retentionUntil = new Date(originalExpiry > Date.now()
+        ? originalExpiry
+        : Date.now() + this.artifactRetentionDays * 86_400_000).toISOString();
+      const stored = this.artifactObjectStore.put({
+        key: objectKey,
+        body: payload,
+        mediaType: String(row.media_type),
+        sha256,
+        projectHash: sha256Text(String(row.project_id)),
+        ...(this.artifactObjectLockMode === "none" ? {} : { retentionUntil }),
+      });
+      this.transaction(() => {
+        const updated = this.db.prepare(`
+          UPDATE artifacts SET
+            storage_backend = 's3', object_bucket = ?, object_key = ?, object_version_id = ?,
+            retention_until = ?, content_blob = NULL, last_storage_error = NULL
+          WHERE id = ? AND storage_backend = 'postgresql' AND storage_state = 'ready'
+            AND sha256 = ? AND size_bytes = ? AND content_blob IS NOT NULL
+        `).run(
+          this.artifactObjectBucket, objectKey, stored.versionId, retentionUntil,
+          String(row.id), sha256, payload.byteLength,
+        );
+        if (Number(updated.changes) !== 1) throw new Error(`Artifact ${row.id} изменился конкурентно`);
+        this.addEvent(String(row.run_id), row.stage_id == null ? null : String(row.stage_id), null, "info", "artifact.storage.migrated", "Artifact перенесён из PostgreSQL BYTEA в S3-compatible store", {
+          kind: "artifact",
+          artifactId: row.id,
+          sha256,
+          sizeBytes: payload.byteLength,
+          retentionUntil,
+        });
+      });
+      migrated += 1;
+      bytes += payload.byteLength;
+    }
+    return { selected: rows.length, migrated, bytes };
+  }
+
+  reconcileArtifactObjects(
+    graceSeconds = 86_400,
+    apply = false,
+    maximum = 10_000,
+  ): {
+    scannedObjects: number;
+    scannedRows: number;
+    orphanObjectKeySha256: string[];
+    missingObjectArtifactIds: string[];
+    deletedOrphans: number;
+    quarantinedRows: number;
+  } {
+    if (this.artifactStoreDriver !== "s3" || !this.artifactObjectStore) throw new Error("S3 Artifact Store не настроен");
+    const boundedGrace = clampInteger(graceSeconds, 300, 2_592_000, 86_400);
+    const boundedMaximum = clampInteger(maximum, 1, 99_999, 10_000);
+    const objects = this.artifactObjectStore.list(`${this.artifactObjectPrefix}/objects/`, boundedMaximum + 1);
+    if (objects.length > boundedMaximum) throw new Error("S3 reconcile scan truncated; уменьшите scope или увеличьте bounded maximum");
+    const rows = this.db.prepare(`
+      SELECT id, object_key, object_version_id, sha256, size_bytes, storage_state
+      FROM artifacts WHERE storage_backend = 's3' AND storage_state <> 'deleted'
+      ORDER BY id LIMIT ?
+    `).all(boundedMaximum + 1) as Row[];
+    if (rows.length > boundedMaximum) throw new Error("Artifact metadata reconcile scan truncated");
+    const authoritative = new Map(rows
+      .filter((row) => typeof row.object_key === "string")
+      .map((row) => [String(row.object_key), row]));
+    const cutoff = Date.now() - boundedGrace * 1_000;
+    const orphans = objects.filter((object) => !authoritative.has(object.key)
+      && typeof object.lastModified === "string" && Date.parse(object.lastModified) <= cutoff);
+    const missing: Row[] = [];
+    for (const row of rows) {
+      if (typeof row.object_key !== "string") {
+        missing.push(row);
+        continue;
+      }
+      try {
+        const object = this.artifactObjectStore.head(
+          row.object_key,
+          typeof row.object_version_id === "string" ? row.object_version_id : null,
+        );
+        if (object.sha256 !== row.sha256 || object.sizeBytes !== Number(row.size_bytes)) missing.push(row);
+      } catch (error) {
+        const statusCode = Number((error as { statusCode?: unknown })?.statusCode ?? 0);
+        const code = String((error as { code?: unknown })?.code ?? "");
+        if (statusCode === 404 || ["NoSuchKey", "NoSuchVersion", "NotFound"].includes(code)) missing.push(row);
+        else throw error;
+      }
+    }
+    let deletedOrphans = 0;
+    let quarantinedRows = 0;
+    const missingActive = missing.filter((row) => row.storage_state !== "delete_pending");
+    if (apply) {
+      for (const orphan of orphans) {
+        const current = this.artifactObjectStore.head(orphan.key);
+        this.artifactObjectStore.delete(orphan.key, current.versionId);
+        deletedOrphans += 1;
+      }
+      for (const row of missingActive) {
+        const updated = this.db.prepare(`
+          UPDATE artifacts SET storage_state = 'missing', last_storage_error = ?
+          WHERE id = ? AND storage_backend = 's3' AND storage_state <> 'deleted'
+        `).run("Object missing or hash/size mismatch during reconciliation", String(row.id));
+        quarantinedRows += Number(updated.changes);
+      }
+    }
+    return {
+      scannedObjects: objects.length,
+      scannedRows: rows.length,
+      orphanObjectKeySha256: orphans.map((object) => sha256Text(object.key)).sort(),
+      missingObjectArtifactIds: missingActive.map((row) => String(row.id)).sort(),
+      deletedOrphans,
+      quarantinedRows,
+    };
+  }
+
+  runArtifactLifecycle(limit = 50): { staged: number; delivered: number; retried: number; dead: number } {
+    if (this.artifactStoreDriver !== "s3" || !this.artifactObjectStore) {
+      return { staged: 0, delivered: 0, retried: 0, dead: 0 };
+    }
+    const boundedLimit = clampInteger(limit, 1, 500, 50);
+    const timestamp = nowIso();
+    const candidates = this.db.prepare(`
+      SELECT a.id, a.object_bucket, a.object_key, a.object_version_id, r.project_id
+      FROM artifacts a JOIN runs r ON r.id = a.run_id
+      WHERE a.storage_backend = 's3' AND a.storage_state = 'ready'
+        AND a.legal_hold = 0 AND a.retention_until IS NOT NULL AND a.retention_until <= ?
+      ORDER BY a.retention_until, a.id LIMIT ?
+    `).all(timestamp, boundedLimit) as Row[];
+    let staged = 0;
+    this.transaction(() => {
+      for (const candidate of candidates) {
+        if (typeof candidate.object_bucket !== "string" || typeof candidate.object_key !== "string") continue;
+        const dedupeKey = `${candidate.id}:${candidate.object_version_id ?? "current"}`;
+        const updated = this.db.prepare(`
+          UPDATE artifacts SET storage_state = 'delete_pending', last_storage_error = NULL
+          WHERE id = ? AND storage_state = 'ready' AND legal_hold = 0 AND retention_until <= ?
+        `).run(String(candidate.id), timestamp);
+        if (Number(updated.changes) !== 1) continue;
+        const inserted = this.db.prepare(`
+          INSERT INTO artifact_storage_outbox(
+            id, dedupe_key, artifact_id, project_id, operation,
+            object_bucket, object_key, object_version_id,
+            status, attempts, available_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'delete', ?, ?, ?, 'pending', 0, ?, ?, ?)
+          ON CONFLICT(dedupe_key) DO NOTHING
+        `).run(
+          randomUUID(), dedupeKey, String(candidate.id), String(candidate.project_id),
+          candidate.object_bucket, candidate.object_key,
+          candidate.object_version_id == null ? null : String(candidate.object_version_id),
+          timestamp, timestamp, timestamp,
+        );
+        if (Number(inserted.changes) !== 1) {
+          throw new Error(`Artifact ${candidate.id} delete intent уже существует`);
+        }
+        staged += 1;
+      }
+    });
+
+    const lockExpiresAt = new Date(Date.now() + 60_000).toISOString();
+    const claimed = this.db.prepare(`
+      WITH claim AS (
+        SELECT id FROM artifact_storage_outbox
+        WHERE (status = 'pending' AND available_at <= ?)
+          OR (status = 'delivering' AND lock_expires_at IS NOT NULL AND lock_expires_at <= ?)
+        ORDER BY available_at, created_at
+        FOR UPDATE SKIP LOCKED
+        LIMIT ?
+      )
+      UPDATE artifact_storage_outbox AS outbox SET
+        status = 'delivering', attempts = outbox.attempts + 1,
+        locked_by = ?, lock_expires_at = ?, updated_at = ?
+      FROM claim WHERE outbox.id = claim.id
+      RETURNING outbox.*
+    `).all(timestamp, timestamp, boundedLimit, this.coordinatorInstanceId, lockExpiresAt, timestamp) as Row[];
+    let delivered = 0;
+    let retried = 0;
+    let dead = 0;
+    for (const item of claimed) {
+      try {
+        if (item.operation !== "delete" || item.object_bucket !== this.artifactObjectBucket || typeof item.object_key !== "string") {
+          throw new Error("Artifact outbox command не соответствует configured S3 bucket");
+        }
+        this.artifactObjectStore.delete(
+          item.object_key,
+          typeof item.object_version_id === "string" ? item.object_version_id : null,
+        );
+        const completedAt = nowIso();
+        this.transaction(() => {
+          const completed = this.db.prepare(`
+            UPDATE artifact_storage_outbox SET
+              status = 'delivered', delivered_at = ?, locked_by = NULL,
+              lock_expires_at = NULL, last_error = NULL, updated_at = ?
+            WHERE id = ? AND status = 'delivering' AND locked_by = ?
+          `).run(completedAt, completedAt, String(item.id), this.coordinatorInstanceId);
+          if (Number(completed.changes) !== 1) {
+            throw new Error(`Artifact outbox ${item.id} lease потерян после object delete`);
+          }
+          if (typeof item.artifact_id === "string") {
+            const artifact = this.db.prepare("SELECT run_id, stage_id FROM artifacts WHERE id = ?")
+              .get(item.artifact_id) as Row | undefined;
+            this.db.prepare(`
+              UPDATE artifacts SET storage_state = 'deleted', deleted_at = ?, content_blob = NULL,
+                last_storage_error = NULL
+              WHERE id = ? AND storage_state = 'delete_pending'
+            `).run(completedAt, item.artifact_id);
+            if (artifact) {
+              this.addEvent(String(artifact.run_id), artifact.stage_id == null ? null : String(artifact.stage_id), null, "info", "artifact.deleted", "Истёкший артефакт удалён из object store", {
+                kind: "artifact",
+                artifactId: item.artifact_id,
+                outboxId: item.id,
+              });
+            }
+          }
+        });
+        delivered += 1;
+      } catch (error) {
+        const attempts = Number(item.attempts ?? 1);
+        const terminal = attempts >= 10;
+        const failure = (error instanceof Error ? error.message : "S3 delete failed").slice(0, 1_000);
+        const retryAt = new Date(Date.now() + Math.min(3_600, 2 ** Math.min(attempts, 12)) * 1_000).toISOString();
+        this.transaction(() => {
+          this.db.prepare(`
+            UPDATE artifact_storage_outbox SET status = ?, available_at = ?, locked_by = NULL,
+              lock_expires_at = NULL, last_error = ?, updated_at = ?
+            WHERE id = ? AND status = 'delivering' AND locked_by = ?
+          `).run(terminal ? "dead" : "pending", retryAt, failure, nowIso(), String(item.id), this.coordinatorInstanceId);
+          if (terminal && typeof item.artifact_id === "string") {
+            this.db.prepare(`
+              UPDATE artifacts SET storage_state = 'delete_failed', last_storage_error = ?
+              WHERE id = ? AND storage_state = 'delete_pending'
+            `).run(failure, item.artifact_id);
+          }
+        });
+        if (terminal) dead += 1;
+        else retried += 1;
+      }
+    }
+    return { staged, delivered, retried, dead };
   }
 
   listEvents(afterId = 0, limit = 200, projectId = "default"): EventRecord[] {
@@ -13611,80 +14122,124 @@ export class AgatStore {
     if (!filename || segments.some((segment) => !segment || segment === "." || segment === "..")) {
       throw new Error("Не удалось сформировать безопасный путь артефакта");
     }
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
+    const createdAt = nowIso();
+    const sha256 = createHash("sha256").update(buffer).digest("hex");
+    const artifactRun = this.db.prepare("SELECT project_id, residency_domain FROM runs WHERE id = ?")
+      .get(String(stage.run_id)) as Row | undefined;
+    if (!artifactRun) throw new Error("Run артефакта не найден");
+    let contentBlob: Buffer | null = this.artifactStoreDriver === "postgresql" ? buffer : null;
+    let objectBucket: string | null = null;
+    let objectKey: string | null = null;
+    let objectVersionId: string | null = null;
+    let retentionUntil: string | null = null;
+    let filePath: string | null = null;
 
-    fs.mkdirSync(this.artifactsDir, { recursive: true, mode: 0o700 });
-    if (fs.lstatSync(this.artifactsDir).isSymbolicLink()) {
-      throw new Error("Корневой каталог артефактов не может быть символической ссылкой");
-    }
-    let directory = this.artifactsDir;
-    for (const segment of segments) {
-      directory = path.join(directory, segment);
-      if (fs.existsSync(directory)) {
-        const status = fs.lstatSync(directory);
-        if (status.isSymbolicLink() || !status.isDirectory()) {
-          throw new Error("Путь артефакта пересекает небезопасный объект файловой системы");
+    if (this.artifactStoreDriver === "s3") {
+      if (!this.artifactObjectStore) throw new Error("S3 Artifact Store недоступен");
+      objectKey = artifactObjectKey(
+        this.artifactObjectPrefix,
+        String(artifactRun.residency_domain),
+        sha256Text(String(artifactRun.project_id)),
+        artifactId,
+        sha256,
+      );
+      retentionUntil = new Date(Date.parse(createdAt) + this.artifactRetentionDays * 86_400_000).toISOString();
+      const stored = this.artifactObjectStore.put({
+        key: objectKey,
+        body: buffer,
+        mediaType,
+        sha256,
+        projectHash: sha256Text(String(artifactRun.project_id)),
+        ...(this.artifactObjectLockMode === "none" ? {} : { retentionUntil }),
+      });
+      objectBucket = this.artifactObjectBucket;
+      objectVersionId = stored.versionId;
+      contentBlob = null;
+    } else {
+      fs.mkdirSync(this.artifactsDir, { recursive: true, mode: 0o700 });
+      const rootStatus = fs.lstatSync(this.artifactsDir);
+      if (rootStatus.isSymbolicLink() || !rootStatus.isDirectory()) {
+        throw new Error("Корневой каталог артефактов небезопасен");
+      }
+      let directory = this.artifactsDir;
+      for (const segment of segments) {
+        directory = path.join(directory, segment);
+        if (fs.existsSync(directory)) {
+          const status = fs.lstatSync(directory);
+          if (status.isSymbolicLink() || !status.isDirectory()) {
+            throw new Error("Путь артефакта пересекает небезопасный объект файловой системы");
+          }
+        } else {
+          fs.mkdirSync(directory, { mode: 0o700 });
         }
-      } else {
-        fs.mkdirSync(directory, { mode: 0o700 });
+      }
+      filePath = path.join(directory, filename);
+      const rootPrefix = `${path.resolve(this.artifactsDir)}${path.sep}`;
+      if (!path.resolve(filePath).startsWith(rootPrefix)) throw new Error("Путь артефакта вышел за пределы хранилища");
+      const temporaryPath = path.join(directory, `.${filename}.${artifactId}.tmp`);
+      try {
+        fs.writeFileSync(temporaryPath, buffer, { flag: "wx", mode: 0o600 });
+        fs.linkSync(temporaryPath, filePath);
+      } finally {
+        if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
       }
     }
 
-    const filePath = path.join(directory, filename);
-    const rootPrefix = `${path.resolve(this.artifactsDir)}${path.sep}`;
-    if (!path.resolve(filePath).startsWith(rootPrefix)) throw new Error("Путь артефакта вышел за пределы хранилища");
-    const temporaryPath = path.join(directory, `.${filename}.${artifactId}.tmp`);
-    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
     try {
-      fs.writeFileSync(temporaryPath, buffer, { flag: "wx", mode: 0o600 });
-      fs.linkSync(temporaryPath, filePath);
-    } finally {
-      if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
-    }
-
-    const createdAt = nowIso();
-    const sha256 = createHash("sha256").update(buffer).digest("hex");
-    try {
-      this.db
-        .prepare(`
-          INSERT INTO artifacts(
-            id, run_id, stage_id, name, kind, media_type, relative_path,
-            size_bytes, sha256, content_blob, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        .run(
-          artifactId,
+      this.transaction(() => {
+        this.db.prepare(`
+            INSERT INTO artifacts(
+              id, run_id, stage_id, name, kind, media_type, relative_path,
+              size_bytes, sha256, content_blob, storage_backend, storage_state,
+              object_bucket, object_key, object_version_id, retention_until,
+              legal_hold, deleted_at, last_storage_error, project_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
+          `).run(
+            artifactId,
+            String(stage.run_id),
+            stage.id === null || stage.id === undefined ? null : String(stage.id),
+            name,
+            kind,
+            mediaType,
+            relativePath,
+            buffer.byteLength,
+            sha256,
+            contentBlob,
+            this.artifactStoreDriver,
+            objectBucket,
+            objectKey,
+            objectVersionId,
+            retentionUntil,
+            String(artifactRun.project_id),
+            createdAt,
+          );
+        this.addEvent(
           String(stage.run_id),
           stage.id === null || stage.id === undefined ? null : String(stage.id),
-          name,
-          kind,
-          mediaType,
-          relativePath,
-          buffer.byteLength,
-          sha256,
-          buffer,
-          createdAt,
+          null,
+          "info",
+          "artifact.created",
+          `Сохранён артефакт «${name}»`,
+          {
+            kind: "artifact",
+            artifactId,
+            artifactKind: kind,
+            name,
+            mediaType,
+            relativePath,
+            sizeBytes: buffer.byteLength,
+            sha256,
+            storageBackend: this.artifactStoreDriver,
+            retentionUntil,
+          },
         );
-      this.addEvent(
-        String(stage.run_id),
-        stage.id === null || stage.id === undefined ? null : String(stage.id),
-        null,
-        "info",
-        "artifact.created",
-        `Сохранён артефакт «${name}»`,
-        {
-        kind: "artifact",
-        artifactId,
-        artifactKind: kind,
-        name,
-        mediaType,
-        relativePath,
-        sizeBytes: buffer.byteLength,
-        sha256,
-        },
-      );
+      });
     } catch (error) {
-      const status = fs.lstatSync(filePath);
-      if (status.isFile() && !status.isSymbolicLink()) fs.rmSync(filePath);
+      if (filePath && fs.existsSync(filePath)) {
+        const status = fs.lstatSync(filePath);
+        if (status.isFile() && !status.isSymbolicLink()) fs.rmSync(filePath);
+      }
       throw error;
     }
   }
@@ -13848,6 +14403,11 @@ export class AgatStore {
       relativePath: row.relative_path,
       sizeBytes: Number(row.size_bytes),
       sha256: row.sha256,
+      storageBackend: row.storage_backend ?? "filesystem",
+      storageState: row.storage_state ?? "ready",
+      retentionUntil: row.retention_until ?? null,
+      legalHold: Number(row.legal_hold ?? 0) === 1,
+      deletedAt: row.deleted_at ?? null,
       createdAt: row.created_at,
     };
   }
@@ -13913,7 +14473,9 @@ export class AgatStore {
   }
 
   private transaction<T>(callback: () => T): T {
+    if (this.transactionDepth > 0) return callback();
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth = 1;
     try {
       const result = callback();
       this.db.exec("COMMIT");
@@ -13921,6 +14483,8 @@ export class AgatStore {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.transactionDepth = 0;
     }
   }
 }

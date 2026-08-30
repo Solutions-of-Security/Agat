@@ -2,7 +2,7 @@
 
 ## Статус
 
-PostgreSQL adapter активирован в релизе 1.7. Post-1.7 production-readiness этапы добавили canonical offline migration, DDL-free Job boundary и schema v22 managed-resilience contract: coordinator создаёт bounded `pg` pools, но только валидирует schema/admission marker; DDL выполняет отдельная Job под owner role.
+PostgreSQL adapter активирован в релизе 1.7. Post-1.7 production-readiness этапы добавили canonical offline migration, DDL-free Job boundary, managed-resilience contract и текущую schema v23 с S3 artifact outbox: coordinator создаёт bounded `pg` pools, но только валидирует schema/admission marker; DDL выполняет отдельная Job под owner role.
 
 Реализация закрывает release contract Fleet/HA, но не все production gates прежнего проекта. Полная модель, риски и acceptance evidence: [Fleet и HA 1.7](./fleet-ha-1.7.md); решение по cell/data authority: [ADR-017](./adr-017-fleet-ha-cell.md).
 
@@ -12,10 +12,10 @@ PostgreSQL adapter активирован в релизе 1.7. Post-1.7 producti
 - `PostgresDatabaseSync` использует отдельный worker thread и `pg` 8.23.0, чтобы сохранить совместимость синхронного `AgatStore`.
 - Migration, runtime system и tenant identities разделены. Deployment получает только runtime+tenant URLs; migration URL scoped отдельной Job.
 - Каждая replica имеет bounded pools, connect/idle/statement timeouts и transaction client pinning.
-- SQLite placeholders/небольшой dialect subset нормализуются в bridge; PostgreSQL schema v22 устанавливает fleet objects, RLS, audit trigger, catalog manifest, admission marker и tenant-inaccessible DR canaries.
+- SQLite placeholders/небольшой dialect subset нормализуются в bridge; PostgreSQL schema v23 устанавливает fleet objects, RLS, audit/storage triggers, catalog manifest, admission marker и tenant-inaccessible DR canaries.
 - Stage, embedding и audit claims используют `FOR UPDATE SKIP LOCKED`.
 - Project row lock сериализует quota check и run creation; optimistic revisions защищают policy/rollout updates.
-- Artifact metadata и bytes находятся в PostgreSQL; local filesystem является только проверяемым download cache.
+- Artifact metadata/retention/delete intent находятся в PostgreSQL; новые bytes — в versioned S3-compatible store, local filesystem является только проверяемым download cache. Legacy BYTEA поддержан только для bounded backfill.
 - SQLite остаётся поддерживаемым one-replica developer backend. Dual-write отсутствует.
 
 ## Транзакционные правила
@@ -72,7 +72,7 @@ Dual-write не используется. Contract и evidence: [Offline SQLite 
 
 ### Managed PostgreSQL resilience — готово
 
-Provider-neutral gate проверяет multi-AZ, synchronous standby, automatic failover, private TLS endpoint, PITR retention/freshness и два distinct SLO approver. Schema v22 checkpoints и HMAC reports доказывают actual failover и exact PITR boundary; полный contract и per-cluster qualification описаны в [Managed PostgreSQL](./managed-postgresql-resilience.md).
+Provider-neutral gate проверяет multi-AZ, synchronous standby, automatic failover, private TLS endpoint, PITR retention/freshness и два distinct SLO approver. Schema v23 checkpoints и HMAC reports доказывают actual failover и exact PITR boundary; полный contract и per-cluster qualification описаны в [Managed PostgreSQL](./managed-postgresql-resilience.md).
 
 ### Async repositories и capacity
 
@@ -80,7 +80,7 @@ Worker-thread bridge блокирует event loop одной replica на вр�
 
 ### Artifact object store
 
-PostgreSQL `BYTEA` обеспечивает correctness plateau, но крупные artifacts увеличивают DB/WAL/backup. Следующий этап вводит S3-compatible bytes authority с transactionally consistent metadata/outbox и lifecycle policy.
+Schema v23 вводит S3-compatible bytes authority с transactional PostgreSQL metadata/outbox, exact-version delete, retention/legal hold и bounded reconciliation. Полный contract: [S3 Artifact Store](./s3-artifact-store-lifecycle.md).
 
 ### Production database qualification
 
@@ -98,7 +98,7 @@ Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Ис
 | SQLite→PostgreSQL reconciliation | canonical apply/verify/rehearsal готов | production-sized rehearsal |
 | Backup restore | physical named-point PITR rehearsal выполнен | timed isolated managed restore report per cell |
 | Multi-AZ failover | provider gate + physical promotion rehearsal выполнены | managed operation report per cell |
-| DDL-free runtime role | schema v22 Job, manifest/admission и negative E2E готовы | managed-IaC role provisioning |
+| DDL-free runtime role | schema v23 Job, manifest/admission и negative E2E готовы | managed-IaC role provisioning |
 
 ## Наблюдаемость
 

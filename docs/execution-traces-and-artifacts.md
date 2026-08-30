@@ -42,10 +42,10 @@ Vector поискового запроса в trace не сохраняется:
 
 | Режим | Что сохраняется |
 |---|---|
-| `history` | Input, events и stage outputs в SQLite. Последний output можно скачать из UI как `result.md`. |
-| `artifacts` | Всё из `history`, плюс output каждого этапа и финальный результат в файловом Artifact Store. |
+| `history` | Input, events и stage outputs в configured state store. Последний output можно скачать из UI как `result.md`. |
+| `artifacts` | Всё из `history`, плюс output каждого этапа и финальный результат в configured Artifact Store. |
 
-Файловый режим выбран в UI по умолчанию. Пользователь может указать относительный каталог, например `reports/releases`. Coordinator добавит UUID запуска и сформирует структуру:
+Artifact-режим выбран в UI по умолчанию. Пользователь может указать относительный каталог, например `reports/releases`. Относительный путь остаётся логическим именем и безопасным cache path даже при S3 authority. Coordinator добавит UUID запуска и сформирует структуру:
 
 ```text
 reports/releases/<run-id>/
@@ -84,15 +84,17 @@ reports/releases/<run-id>/
 AGAT_ARTIFACTS_DIR=./data/artifacts
 ```
 
-В Docker Compose и Docker Desktop Kubernetes используется `/data/artifacts` на том же persistent volume, что и SQLite. В базе `artifacts` хранится только metadata:
+`AGAT_ARTIFACTS_DIR` является authority только для SQLite single-replica profile. В PostgreSQL HA profile это replica-local проверяемый cache. Текущая schema v23 поддерживает `AGAT_ARTIFACT_STORE_DRIVER=postgresql` для legacy BYTEA plateau и `s3` для production payload authority. Docker Desktop Kubernetes по умолчанию использует versioned local MinIO; PostgreSQL хранит:
 
 - `run_id`, `stage_id`;
 - имя и тип артефакта;
 - media type и относительный путь;
 - размер и SHA-256;
+- storage backend/state, bucket/key/version;
+- retention, legal hold и deletion/error state;
 - время создания.
 
-Скачивание выполняется через authenticated API по artifact ID. Клиент никогда не передаёт файловый путь в download endpoint.
+Скачивание выполняется через authenticated API по artifact ID. Клиент никогда не передаёт файловый путь или object key в download endpoint. S3/provider metadata, bytes и cache повторно сверяются с DB hash/size. Полный lifecycle, backfill и reconciliation: [S3-compatible Artifact Store](./s3-artifact-store-lifecycle.md).
 
 ## API
 
@@ -116,6 +118,6 @@ Trace и скачивание требуют OIDC Bearer token; в legacy local 
 
 ## Backup и удаление
 
-SQLite и каталог `AGAT_ARTIFACTS_DIR` образуют один логический backup. Восстановление только базы вернёт metadata без файлов; восстановление только файлов потеряет привязку к запускам.
+В SQLite profile база и `AGAT_ARTIFACTS_DIR` образуют один логический backup. В S3 profile PostgreSQL metadata/outbox и versioned object store образуют согласованный recovery set; replica cache в backup не входит. Restore обязан сверить metadata с object versions до открытия download traffic.
 
-Удаление run удаляет metadata каскадно, но автоматическая сборка оставшихся файлов пока не реализована. Retention policy, object storage и garbage collector остаются следующими этапами. До их появления удаляйте orphaned files только после сверки с таблицей `artifacts` и проверенного backup.
+Удаление run создаёт exact-version delete commands через cascade trigger до удаления metadata. Retention lifecycle использует тот же leased outbox. Orphan objects после успешного PUT и сорванного DB commit удаляются только typed-confirmation reconciliation после grace period; ручное массовое удаление по prefix запрещено.

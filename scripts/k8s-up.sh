@@ -282,6 +282,8 @@ ensure_secret_key "keycloak-postgres-password" "${AGAT_KEYCLOAK_POSTGRES_PASSWOR
 ensure_secret_key "keycloak-bootstrap-password" "${AGAT_KEYCLOAK_BOOTSTRAP_PASSWORD:-}"
 ensure_secret_key "keycloak-demo-password" "${AGAT_KEYCLOAK_DEMO_PASSWORD:-}"
 ensure_secret_key "temporal-internal-token" "${AGAT_TEMPORAL_INTERNAL_TOKEN:-}"
+ensure_secret_key "artifact-access-key" "${AGAT_ARTIFACT_S3_ACCESS_KEY_ID:-}"
+ensure_secret_key "artifact-secret-key" "${AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY:-}"
 
 postgres_secret_exists=false
 kubectl get secret/agat-postgres-secrets --namespace "${namespace}" >/dev/null 2>&1 && postgres_secret_exists=true
@@ -409,10 +411,11 @@ if ${coordinator_existed}; then
   kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas=0 >/dev/null
   kubectl rollout status deployment/agat-coordinator --namespace "${namespace}" --timeout=120s >/dev/null
 fi
-kubectl delete job/agat-postgres-role-bootstrap-v22 \
+kubectl delete job/agat-postgres-role-bootstrap-v23 \
+  job/agat-postgres-schema-v23 \
+  job/agat-artifact-store-bootstrap-v23 \
+  job/agat-postgres-role-bootstrap-v22 \
   job/agat-postgres-schema-v22 \
-  job/agat-postgres-role-bootstrap-v21 \
-  job/agat-postgres-schema-v21 \
   --namespace "${namespace}" \
   --ignore-not-found \
   --wait=true >/dev/null
@@ -443,14 +446,27 @@ node --input-type=module -e '
       .replace(expectedReplicas, `- name: AGAT_POSTGRES_EXPECTED_REPLICAS\n              value: "${replicas}"`),
   );
 ' "${rendered_manifests_dir}" "${coordinator_image}" "${coordinator_replicas}"
+node --input-type=module -e '
+  import fs from "node:fs";
+  import path from "node:path";
+  const [directory, image] = process.argv.slice(1);
+  const manifest = path.join(directory, "artifact-store.yaml");
+  const source = fs.readFileSync(manifest, "utf8");
+  const expected = "image: agat-local/coordinator:1.7.0";
+  if (source.split(expected).length - 1 !== 1) throw new Error("ожидался один artifact bootstrap image");
+  fs.writeFileSync(manifest, source.replace(expected, `image: ${image}`));
+' "${rendered_manifests_dir}" "${coordinator_image}"
 kubectl apply --kustomize "${rendered_manifests_dir}"
 cleanup_rendered_manifests
 rendered_manifests_dir=""
 trap - EXIT
-kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v22 \
+kubectl wait --for=condition=Complete job/agat-artifact-store-bootstrap-v23 \
+  --namespace "${namespace}" --timeout=360s >/dev/null || die \
+  "Artifact Store bootstrap Job не завершилась"
+kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v23 \
   --namespace "${namespace}" --timeout=360s >/dev/null || die \
   "PostgreSQL role bootstrap Job не завершилась"
-kubectl wait --for=condition=Complete job/agat-postgres-schema-v22 \
+kubectl wait --for=condition=Complete job/agat-postgres-schema-v23 \
   --namespace "${namespace}" --timeout=960s >/dev/null || die \
   "PostgreSQL schema/admission Job не завершилась"
 coordinator_otel_patch="$(node --input-type=module -e '

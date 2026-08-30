@@ -2462,6 +2462,28 @@ async function main(): Promise<void> {
     residencyDomain: config.residencyDomain,
     workerReleasePublicKeys: config.workerReleasePublicKeys,
     requireSignedWorkerReleases: config.requireSignedWorkerReleases,
+    artifactStoreDriver: config.artifactStoreDriver,
+    artifactRetentionDays: config.artifactRetentionDays,
+    ...(config.artifactStoreDriver === "s3" ? {
+      artifactS3: {
+        endpoint: config.artifactS3Endpoint,
+        region: config.artifactS3Region,
+        bucket: config.artifactS3Bucket,
+        prefix: config.artifactS3Prefix,
+        forcePathStyle: config.artifactS3ForcePathStyle,
+        ...(config.artifactS3AccessKeyId ? {
+          accessKeyId: config.artifactS3AccessKeyId,
+          secretAccessKey: config.artifactS3SecretAccessKey,
+          ...(config.artifactS3SessionToken ? { sessionToken: config.artifactS3SessionToken } : {}),
+        } : {}),
+        requestTimeoutMs: config.artifactS3RequestTimeoutMs,
+        maximumObjectBytes: config.artifactS3MaximumObjectBytes,
+        serverSideEncryption: config.artifactS3Sse,
+        ...(config.artifactS3KmsKeyId ? { kmsKeyId: config.artifactS3KmsKeyId } : {}),
+        objectLockMode: config.artifactS3ObjectLockMode,
+        requireVersioning: config.artifactS3RequireVersioning,
+      },
+    } : {}),
     ...(config.stateStoreDriver === "postgresql" ? {
       postgresSchemaMode: "runtime" as const,
       postgres: {
@@ -2505,7 +2527,7 @@ async function main(): Promise<void> {
     console.log(`АГАТ слушает http://${config.host}:${config.port}`);
     console.log(`State store: ${config.stateStoreDriver}`);
     console.log(`HA-cell: ${config.region}/${config.residencyDomain} · ${config.coordinatorInstanceId}`);
-    console.log(`Артефакты: ${config.artifactsDir}`);
+    console.log(`Artifact store: ${config.artifactStoreDriver}${config.artifactStoreDriver === "s3" ? ` · bucket ${config.artifactS3Bucket}` : ` · cache ${config.artifactsDir}`}`);
     console.log(`Локальный worker launcher: ${config.localWorkerLauncherEnabled ? "включён" : "выключен"}`);
     console.log(`Runtime процессов: ${processRuntime.snapshot().mode}`);
     console.log(`OpenTelemetry: ${config.otelEnabled ? "включён" : "выключен"}`);
@@ -2524,6 +2546,18 @@ async function main(): Promise<void> {
     }
   }, 1_000);
   maintenanceTimer.unref();
+
+  const artifactLifecycleTimer = setInterval(() => {
+    try {
+      const result = runWithPostgresSystemScope(() => store.runArtifactLifecycle());
+      if (result.delivered > 0 || result.retried > 0 || result.dead > 0) {
+        console.log(`Artifact lifecycle: staged=${result.staged} delivered=${result.delivered} retried=${result.retried} dead=${result.dead}`);
+      }
+    } catch (error) {
+      console.warn(`Ошибка artifact lifecycle: ${safeMessage(error)}`);
+    }
+  }, config.artifactLifecycleIntervalSeconds * 1_000);
+  artifactLifecycleTimer.unref();
 
   let mcpRefreshRunning = false;
   const mcpRefreshTimer = setInterval(() => {
@@ -2581,6 +2615,7 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     clearInterval(maintenanceTimer);
+    clearInterval(artifactLifecycleTimer);
     clearInterval(mcpRefreshTimer);
     clearInterval(siemTimer);
     server.close(() => void (async () => {

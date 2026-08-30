@@ -8,7 +8,7 @@ import pg, { type Client, type ClientConfig } from "pg";
 
 import { AgatStore } from "./database.js";
 
-const REQUIRED_SQLITE_SCHEMA_VERSION = 20;
+const REQUIRED_SQLITE_SCHEMA_VERSION = 23;
 const DEFAULT_BATCH_ROWS = 250;
 const MAX_POSTGRES_PARAMETERS = 60_000;
 const MIGRATION_LOCK_ID = 867_530_902;
@@ -381,6 +381,9 @@ function resolvedArtifactPath(root: string, relativePath: string): string {
 }
 
 function transformArtifact(row: MigrationRow, options: SqlitePostgresMigrationOptions, stats: ArtifactStats): MigrationRow {
+  if (row.storage_backend !== "filesystem" || row.storage_state !== "ready") {
+    throw new Error(`SQLite artifact ${row.id} имеет неподдерживаемое storage state`);
+  }
   let content = row.content_blob;
   if (content === null || content === undefined) {
     const artifactPath = resolvedArtifactPath(options.artifactsDir, String(row.relative_path));
@@ -395,7 +398,19 @@ function transformArtifact(row: MigrationRow, options: SqlitePostgresMigrationOp
   if (digest !== String(row.sha256).toLowerCase()) throw new Error(`Artifact SHA-256 mismatch: ${row.id}`);
   stats.verified += 1;
   stats.bytes += bytes.length;
-  return { ...row, content_blob: bytes };
+  return {
+    ...row,
+    content_blob: bytes,
+    storage_backend: "postgresql",
+    storage_state: "ready",
+    object_bucket: null,
+    object_key: null,
+    object_version_id: null,
+    retention_until: null,
+    legal_hold: 0,
+    deleted_at: null,
+    last_storage_error: null,
+  };
 }
 
 function primaryKeyColumns(table: SqliteTable): SqliteColumn[] {

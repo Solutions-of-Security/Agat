@@ -2,9 +2,9 @@
 
 ## Статус
 
-Принято для релиза 1.7 и local/staging deployment. Production approval условный: требуется managed multi-AZ PostgreSQL, отдельная migration job, backup/restore evidence и утверждённые RPO/RTO.
+Принято для релиза 1.7 и local/staging deployment. Последующие production-readiness этапы реализовали отдельную migration Job, managed PostgreSQL evidence gate и S3-compatible artifact authority; актуальные operational gates находятся в [roadmap](./roadmap.md), [managed PostgreSQL runbook](./managed-postgresql-resilience.md) и [ADR-018](./adr-018-s3-artifact-authority.md).
 
-ADR-017 обновляет целевое решение из [проекта PostgreSQL adapter](./postgresql-state-store-design.md); он не отменяет стратегический переход к async repositories/object storage.
+ADR-017 фиксирует исторический Fleet 1.7 plateau из [проекта PostgreSQL adapter](./postgresql-state-store-design.md). Его временное хранение artifact bytes в `BYTEA` заменено schema v23 и [ADR-018](./adr-018-s3-artifact-authority.md); synchronous repository bridge пока остаётся.
 
 ## Контекст
 

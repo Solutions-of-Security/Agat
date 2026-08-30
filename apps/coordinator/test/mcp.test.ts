@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { Tool } from "@modelcontextprotocol/client";
 
-import { AgatStore } from "../src/database.js";
+import { AgatStore, POSTGRES_SCHEMA_VERSION } from "../src/database.js";
 import {
   McpGateway,
   normalizeCatalogTools,
@@ -140,7 +140,7 @@ describe("MCP gateway and risk policy", () => {
       preview_diff_json: "[]",
     });
     const version = migrated.db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(version.user_version, 20);
+    assert.equal(version.user_version, POSTGRES_SCHEMA_VERSION);
   });
 
   it("rejects endpoint secrets and transport-owned credential headers", async () => {

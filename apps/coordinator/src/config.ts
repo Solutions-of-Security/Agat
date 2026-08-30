@@ -18,6 +18,9 @@ function integerFromEnv(value: string | undefined, fallback: number): number {
 
 export type TemporalTarget = "local" | "cloud" | "self-hosted";
 export type StateStoreDriver = "sqlite" | "postgresql";
+export type ArtifactStoreDriver = "filesystem" | "postgresql" | "s3";
+export type ArtifactS3Encryption = "none" | "AES256" | "aws:kms";
+export type ArtifactS3ObjectLockMode = "none" | "GOVERNANCE" | "COMPLIANCE";
 export type EdgeAttestationMode = "disabled" | "broker";
 export type PostgresSslMode = "disable" | "require" | "verify-full";
 
@@ -31,6 +34,24 @@ function stateStoreDriverFromEnv(value: string | undefined): StateStoreDriver {
   const normalized = (value ?? "sqlite").trim().toLowerCase();
   if (normalized === "sqlite" || normalized === "postgresql") return normalized;
   throw new Error("AGAT_STATE_STORE_DRIVER должен быть sqlite или postgresql");
+}
+
+function artifactStoreDriverFromEnv(value: string | undefined, stateStoreDriver: StateStoreDriver): ArtifactStoreDriver {
+  const normalized = (value ?? (stateStoreDriver === "postgresql" ? "postgresql" : "filesystem")).trim().toLowerCase();
+  if (normalized === "filesystem" || normalized === "postgresql" || normalized === "s3") return normalized;
+  throw new Error("AGAT_ARTIFACT_STORE_DRIVER должен быть filesystem, postgresql или s3");
+}
+
+function artifactS3EncryptionFromEnv(value: string | undefined): ArtifactS3Encryption {
+  const normalized = (value ?? "none").trim();
+  if (normalized === "none" || normalized === "AES256" || normalized === "aws:kms") return normalized;
+  throw new Error("AGAT_ARTIFACT_S3_SSE должен быть none, AES256 или aws:kms");
+}
+
+function artifactS3ObjectLockModeFromEnv(value: string | undefined): ArtifactS3ObjectLockMode {
+  const normalized = (value ?? "none").trim();
+  if (normalized === "none" || normalized === "GOVERNANCE" || normalized === "COMPLIANCE") return normalized;
+  throw new Error("AGAT_ARTIFACT_S3_OBJECT_LOCK_MODE должен быть none, GOVERNANCE или COMPLIANCE");
 }
 
 function edgeAttestationModeFromEnv(value: string | undefined): EdgeAttestationMode {
@@ -91,6 +112,23 @@ export interface CoordinatorConfig {
   port: number;
   dbPath: string;
   artifactsDir: string;
+  artifactStoreDriver: ArtifactStoreDriver;
+  artifactRetentionDays: number;
+  artifactLifecycleIntervalSeconds: number;
+  artifactS3Endpoint: string;
+  artifactS3Region: string;
+  artifactS3Bucket: string;
+  artifactS3Prefix: string;
+  artifactS3ForcePathStyle: boolean;
+  artifactS3AccessKeyId: string;
+  artifactS3SecretAccessKey: string;
+  artifactS3SessionToken: string;
+  artifactS3RequestTimeoutMs: number;
+  artifactS3MaximumObjectBytes: number;
+  artifactS3Sse: ArtifactS3Encryption;
+  artifactS3KmsKeyId: string;
+  artifactS3ObjectLockMode: ArtifactS3ObjectLockMode;
+  artifactS3RequireVersioning: boolean;
   enrollmentToken: string;
   adminToken: string;
   credentialsKey: string;
@@ -186,12 +224,30 @@ export function loadConfig(): CoordinatorConfig {
   const port = integerFromEnv(process.env.AGAT_PORT, 8787);
   const temporalTarget = temporalTargetFromEnv(process.env.AGAT_TEMPORAL_TARGET);
   const stateStoreDriver = stateStoreDriverFromEnv(process.env.AGAT_STATE_STORE_DRIVER);
+  const artifactStoreDriver = artifactStoreDriverFromEnv(process.env.AGAT_ARTIFACT_STORE_DRIVER, stateStoreDriver);
   const region = optionalSafeText(process.env.AGAT_REGION ?? "local", "AGAT_REGION", 63).toLowerCase();
   return {
     host: process.env.AGAT_HOST ?? "127.0.0.1",
     port,
     dbPath: path.resolve(process.env.AGAT_DB_PATH ?? "./data/agat.db"),
     artifactsDir: path.resolve(process.env.AGAT_ARTIFACTS_DIR ?? "./data/artifacts"),
+    artifactStoreDriver,
+    artifactRetentionDays: Math.max(0, Math.min(3_650, integerFromEnv(process.env.AGAT_ARTIFACT_RETENTION_DAYS, 0))),
+    artifactLifecycleIntervalSeconds: Math.max(10, Math.min(3_600, integerFromEnv(process.env.AGAT_ARTIFACT_LIFECYCLE_INTERVAL_SECONDS, 60))),
+    artifactS3Endpoint: optionalSafeText(process.env.AGAT_ARTIFACT_S3_ENDPOINT, "AGAT_ARTIFACT_S3_ENDPOINT", 2_048).replace(/\/+$/, ""),
+    artifactS3Region: optionalSafeText(process.env.AGAT_ARTIFACT_S3_REGION ?? "us-east-1", "AGAT_ARTIFACT_S3_REGION", 63),
+    artifactS3Bucket: optionalSafeText(process.env.AGAT_ARTIFACT_S3_BUCKET, "AGAT_ARTIFACT_S3_BUCKET", 63),
+    artifactS3Prefix: optionalSafeText(process.env.AGAT_ARTIFACT_S3_PREFIX ?? "agat", "AGAT_ARTIFACT_S3_PREFIX", 256),
+    artifactS3ForcePathStyle: booleanFromEnv(process.env.AGAT_ARTIFACT_S3_FORCE_PATH_STYLE, true),
+    artifactS3AccessKeyId: optionalSafeText(process.env.AGAT_ARTIFACT_S3_ACCESS_KEY_ID, "AGAT_ARTIFACT_S3_ACCESS_KEY_ID", 1_024),
+    artifactS3SecretAccessKey: optionalSafeText(process.env.AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY, "AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY", 8_192),
+    artifactS3SessionToken: optionalSafeText(process.env.AGAT_ARTIFACT_S3_SESSION_TOKEN, "AGAT_ARTIFACT_S3_SESSION_TOKEN", 16_384),
+    artifactS3RequestTimeoutMs: Math.max(1_000, Math.min(120_000, integerFromEnv(process.env.AGAT_ARTIFACT_S3_REQUEST_TIMEOUT_MS, 15_000))),
+    artifactS3MaximumObjectBytes: Math.max(800_000, Math.min(64 * 1_024 * 1_024, integerFromEnv(process.env.AGAT_ARTIFACT_S3_MAX_OBJECT_BYTES, 1_048_576))),
+    artifactS3Sse: artifactS3EncryptionFromEnv(process.env.AGAT_ARTIFACT_S3_SSE),
+    artifactS3KmsKeyId: optionalSafeText(process.env.AGAT_ARTIFACT_S3_KMS_KEY_ID, "AGAT_ARTIFACT_S3_KMS_KEY_ID", 2_048),
+    artifactS3ObjectLockMode: artifactS3ObjectLockModeFromEnv(process.env.AGAT_ARTIFACT_S3_OBJECT_LOCK_MODE),
+    artifactS3RequireVersioning: booleanFromEnv(process.env.AGAT_ARTIFACT_S3_REQUIRE_VERSIONING, stateStoreDriver === "postgresql"),
     enrollmentToken: process.env.AGAT_ENROLLMENT_TOKEN ?? "agat-local-enrollment",
     adminToken: process.env.AGAT_ADMIN_TOKEN ?? "",
     credentialsKey: process.env.AGAT_CREDENTIALS_KEY ?? process.env.AGAT_ADMIN_TOKEN ?? "agat-local-credentials-key",
@@ -397,6 +453,60 @@ export function validateTemporalCoordinatorConfig(config: CoordinatorConfig): vo
   }
   if (config.postgresSslMode === "disable" && (config.postgresCaCertPath || hasPostgresClientCert)) {
     throw new Error("PostgreSQL TLS-файлы нельзя использовать при AGAT_POSTGRES_SSL_MODE=disable");
+  }
+  if (config.artifactStoreDriver === "filesystem" && config.stateStoreDriver !== "sqlite") {
+    throw new Error("Filesystem Artifact Store разрешён только с single-replica SQLite");
+  }
+  if (config.artifactStoreDriver === "postgresql" && config.stateStoreDriver !== "postgresql") {
+    throw new Error("PostgreSQL Artifact Store требует PostgreSQL state store");
+  }
+  if (config.artifactStoreDriver === "s3") {
+    if (config.stateStoreDriver !== "postgresql") {
+      throw new Error("S3 Artifact Store требует PostgreSQL metadata/outbox state store");
+    }
+    if (!config.artifactS3Endpoint || !config.artifactS3Bucket) {
+      throw new Error("S3 Artifact Store требует AGAT_ARTIFACT_S3_ENDPOINT и AGAT_ARTIFACT_S3_BUCKET");
+    }
+    let endpoint: URL;
+    try {
+      endpoint = new URL(config.artifactS3Endpoint);
+    } catch {
+      throw new Error("AGAT_ARTIFACT_S3_ENDPOINT должен быть абсолютным URL");
+    }
+    const localEndpoint = config.region === "local"
+      && ["localhost", "127.0.0.1", "::1", "minio", "artifact-store", "agat-artifact-store"].includes(endpoint.hostname);
+    if (endpoint.protocol !== "https:" && !(localEndpoint && endpoint.protocol === "http:")) {
+      throw new Error("S3 Artifact Store требует HTTPS; HTTP разрешён только local MinIO profile");
+    }
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(config.artifactS3Bucket)
+      || config.artifactS3Bucket.includes("..")) {
+      throw new Error("AGAT_ARTIFACT_S3_BUCKET имеет небезопасное имя");
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/.test(config.artifactS3Prefix)
+      || config.artifactS3Prefix.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+      throw new Error("AGAT_ARTIFACT_S3_PREFIX имеет небезопасный формат");
+    }
+    if (Boolean(config.artifactS3AccessKeyId) !== Boolean(config.artifactS3SecretAccessKey)) {
+      throw new Error("AGAT_ARTIFACT_S3_ACCESS_KEY_ID и AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY задаются вместе");
+    }
+    if (config.artifactS3SessionToken && !config.artifactS3AccessKeyId) {
+      throw new Error("AGAT_ARTIFACT_S3_SESSION_TOKEN требует explicit access key identity");
+    }
+    if (config.artifactRetentionDays < 1) {
+      throw new Error("S3 Artifact Store требует AGAT_ARTIFACT_RETENTION_DAYS=1..3650");
+    }
+    if (config.artifactS3Sse === "none" && !localEndpoint) {
+      throw new Error("Production S3 Artifact Store требует AES256 или aws:kms server-side encryption");
+    }
+    if (config.artifactS3Sse === "aws:kms" && !config.artifactS3KmsKeyId) {
+      throw new Error("AGAT_ARTIFACT_S3_KMS_KEY_ID обязателен для aws:kms");
+    }
+    if (config.artifactS3Sse !== "aws:kms" && config.artifactS3KmsKeyId) {
+      throw new Error("AGAT_ARTIFACT_S3_KMS_KEY_ID используется только с aws:kms");
+    }
+    if (config.artifactS3ObjectLockMode !== "none" && !config.artifactS3RequireVersioning) {
+      throw new Error("S3 Object Lock требует versioning gate");
+    }
   }
   if (config.siemEnabled) {
     if (!config.siemUrl) throw new Error("AGAT_SIEM_URL обязателен при AGAT_SIEM_ENABLED=true");

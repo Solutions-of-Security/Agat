@@ -52,7 +52,7 @@ spec:
                 --dbname agat \
                 --tuples-only \
                 --no-align \
-                --command "SELECT COUNT(*) FROM agat_schema_migrations WHERE version = 22 AND admission_status = 'passed'" \
+                --command "SELECT COUNT(*) FROM agat_schema_migrations WHERE version = 23 AND admission_status = 'passed'" \
                 2>/dev/null)" = "1"; do
                 sleep 2
               done
@@ -150,6 +150,16 @@ spec:
                 secretKeyRef:
                   name: agat-postgres-secrets
                   key: tenant-url
+            - name: AGAT_ARTIFACT_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: artifact-access-key
+            - name: AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: artifact-secret-key
             - name: AGAT_COORDINATOR_INSTANCE_ID
               valueFrom:
                 fieldRef:

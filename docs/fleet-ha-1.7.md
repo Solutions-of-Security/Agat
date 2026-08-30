@@ -4,7 +4,7 @@
 
 Релиз 1.7 переводит state plane coordinator с single-writer SQLite на поддерживаемый PostgreSQL backend и разрешает несколько coordinator replicas внутри одной региональной HA-cell. В той же транзакционной границе появились project queues/quotas, residency placement, реестр подписанных worker releases, deterministic staged rollout и durable audit outbox для SIEM.
 
-Это release-ready реализация для локального и staging-контура. Она не объявляет одиночный PostgreSQL pod в Docker Desktop production HA, не делает active-active запись между регионами и не доказывает происхождение бинарника на недоверенном worker host.
+Это исторический release contract для локального и staging-контура. Post-1.7 production-readiness этапы уже добавили offline migrator, DDL-free migration boundary, managed PostgreSQL evidence gates и schema v23 S3-compatible artifact authority; незакрытые пункты отражены в [roadmap](./roadmap.md). Одиночный PostgreSQL pod в Docker Desktop по-прежнему не является production HA.
 
 ## Границы и scope
 

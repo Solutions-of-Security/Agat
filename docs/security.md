@@ -69,7 +69,7 @@
 - [ ] Выбран ровно один authoritative backend: SQLite только для single-process development либо PostgreSQL для Fleet/HA; dual-write отсутствует.
 - [ ] SQLite volume и `AGAT_ARTIFACTS_DIR` шифруются и backup-ятся вместе, если используется developer backend.
 - [ ] Production PostgreSQL использует TLS `verify-full`, разные system/tenant roles, multi-AZ/PITR и проверенный restore; runtime role не получает лишний DDL.
-- [ ] Knowledge store, PostgreSQL artifact bytes и JSON exports классифицированы как внутренние данные; export хранится и передаётся по защищённому каналу.
+- [ ] Knowledge store, PostgreSQL artifact metadata/legacy backfill, S3-compatible artifact objects и JSON exports классифицированы как внутренние данные; database, bucket и export хранятся и передаются по защищённому каналу в разрешённой residency cell.
 - [ ] Golden inputs, references, prompt versions, human rationale и judge outputs классифицированы как trace data; доступ и retention проверены.
 - [ ] `.env`, worker credentials и model API keys не попадают в Git или logs.
 - [ ] Reverse proxy ограничивает request rate и размер body.

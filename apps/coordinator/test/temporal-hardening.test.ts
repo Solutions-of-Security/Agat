@@ -44,13 +44,18 @@ describe("Temporal production hardening", () => {
       /AGAT_TEMPORAL_API_KEY/,
     );
     assert.throws(
-      () => validateTemporalCoordinatorConfig({ ...base, stateStoreDriver: "postgresql" }),
+      () => validateTemporalCoordinatorConfig({
+        ...base,
+        stateStoreDriver: "postgresql",
+        artifactStoreDriver: "postgresql",
+      }),
       /AGAT_POSTGRES_URL.*AGAT_POSTGRES_TENANT_URL/,
     );
     assert.throws(
       () => validateTemporalCoordinatorConfig({
         ...base,
         stateStoreDriver: "postgresql",
+        artifactStoreDriver: "postgresql",
         postgresUrl: "postgresql://agat:system@127.0.0.1:5432/agat",
         postgresTenantUrl: "postgresql://agat:tenant@127.0.0.1:5432/agat",
         requireSignedWorkerReleases: false,
@@ -61,6 +66,7 @@ describe("Temporal production hardening", () => {
       () => validateTemporalCoordinatorConfig({
         ...base,
         stateStoreDriver: "postgresql",
+        artifactStoreDriver: "postgresql",
         postgresUrl: "postgresql://agat_system:system@127.0.0.1:5432/agat",
         postgresTenantUrl: "postgresql://agat_tenant:tenant@127.0.0.1:5432/agat",
         requireSignedWorkerReleases: false,

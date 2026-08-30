@@ -1,6 +1,6 @@
 # Локальный Kubernetes в Docker Desktop
 
-Этот контур запускает полный локальный control plane в Kubernetes Docker Desktop: Kong Gateway, две coordinator replicas с web UI, отдельный PostgreSQL Fleet state store, Keycloak/PostgreSQL, Temporal server/worker, базовый model worker и внутренний web-search. Из интерфейса можно дополнительно создавать несколько worker-пулов с выбранными моделями. Состояние хранится в PVC, случайные токены/пароли/ключи — в раздельных Kubernetes Secrets.
+Этот контур запускает полный локальный control plane в Kubernetes Docker Desktop: Kong Gateway, две coordinator replicas с web UI, отдельный PostgreSQL Fleet state store, versioned MinIO Artifact Store, Keycloak/PostgreSQL, Temporal server/worker, базовый model worker и внутренний web-search. Из интерфейса можно дополнительно создавать несколько worker-пулов с выбранными моделями. Состояние хранится в PVC, случайные токены/пароли/ключи — в раздельных Kubernetes Secrets.
 
 ## Что разворачивается
 
@@ -8,7 +8,8 @@
 - `agat-gateway` — публичный Kong DB-less `LoadBalancer` на `http://127.0.0.1:8787`; coordinator доступен только как `ClusterIP`;
 - `agat-coordinator` — две stateless replicas с RollingUpdate (`maxUnavailable=0`), PDB `minAvailable=1` и preferred pod anti-affinity;
 - `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с migration/runtime/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
-- `agat-postgres-role-bootstrap-v22` и `agat-postgres-schema-v22` — versioned one-shot Jobs для ownership/role boundary, transactional schema, DR canaries и connection admission;
+- `agat-artifact-store` — local MinIO/PVC с bucket versioning; это developer profile, а не production durability claim;
+- `agat-artifact-store-bootstrap-v23`, `agat-postgres-role-bootstrap-v23` и `agat-postgres-schema-v23` — versioned one-shot Jobs для bucket, ownership/role boundary, transactional schema, DR canaries и connection admission;
 - `agat-keycloak` и `agat-keycloak-postgres` — OIDC, роли, пользователи и проекты; Keycloak доступен на `http://127.0.0.1:8080`;
 - `agat-temporal` — persistent локальный dev-server с namespace `agat`, gRPC/HTTP/metrics и UI на `http://127.0.0.1:8233`;
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
@@ -16,7 +17,7 @@
 - управляемые `agat-local-*` Deployments — по одному pod на каждый worker, созданный кнопкой в разделе **Узлы**;
 - одноразовые `agat-tool-*` Jobs для admin-managed WASI tools и, после явного CNI gate, digest-pinned OCI tools;
 - `agat-search` — внутренний SearXNG `ClusterIP` для `web_search`; наружу сервис не публикуется;
-- `agat-coordinator-postgres` на 4 GiB, `agat-keycloak-postgres` и `agat-temporal-data` по 2 GiB, `agat-worker-state` на 128 MiB; coordinator file cache использует pod-local `emptyDir` и не является source of truth;
+- `agat-coordinator-postgres` и local `agat-artifact-store` по 4 GiB, `agat-keycloak-postgres` и `agat-temporal-data` по 2 GiB, `agat-worker-state` на 128 MiB; coordinator file cache использует pod-local `emptyDir` и не является source of truth;
 - init/startup/readiness/liveness checks; coordinator и Temporal worker начинают работу только после готовности Temporal namespace;
 - resource requests/limits и урезанные Linux capabilities; worker pods не получают service-account token;
 - namespace-scoped service account coordinator с Role для worker Deployments и одноразовых sandbox Jobs, Pods/log, Secrets и NetworkPolicies.
@@ -50,10 +51,10 @@ npm run k8s:up
 Команда:
 
 1. проверит `docker-desktop` и готовность node;
-2. создаст namespace, application Secret и отдельный coordinator PostgreSQL Secret при первом запуске;
+2. создаст namespace, application Secret с отдельными Artifact Store keys и coordinator PostgreSQL Secret при первом запуске;
 3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
-4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся role-bootstrap/schema/admission Jobs;
-5. только после schema v22 marker поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
+4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся bucket/role-bootstrap/schema/admission Jobs;
+5. только после schema v23 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
 Чистый namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: state migrator существует, но намеренно не запускается автоматически без maintenance/reconciliation. После [offline migration](./sqlite-postgresql-migration.md) можно подтвердить authority cutover:
@@ -120,7 +121,7 @@ AGAT_SIEM_BEARER_TOKEN='scoped-secret' \
 npm run k8s:up
 ```
 
-Локальный PostgreSQL работает без TLS только внутри namespace. Production resilience Job требует строго `verify-full`, private managed endpoint, multi-AZ/PITR provider evidence и реальные DR reports; Docker Desktop manifest не является production deployment template. Полный contract: [Managed PostgreSQL](./managed-postgresql-resilience.md) и [Fleet и HA 1.7](./fleet-ha-1.7.md).
+Локальные PostgreSQL и MinIO работают без TLS только внутри namespace. Production Artifact Store требует private HTTPS, encryption, scoped workload identity и отдельный residency/DR review: [S3 Artifact Store](./s3-artifact-store-lifecycle.md). Production resilience Job требует строго `verify-full`, private managed endpoint, multi-AZ/PITR provider evidence и реальные DR reports; Docker Desktop manifest не является production deployment template. Полный contract: [Managed PostgreSQL](./managed-postgresql-resilience.md) и [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Запуск workers кнопкой
 

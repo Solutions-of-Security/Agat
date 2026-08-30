@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, it } from "node:test";
 
-import { AgatStore } from "../src/database.js";
+import { AgatStore, POSTGRES_SCHEMA_VERSION } from "../src/database.js";
 import type { AgentRuntime, AgentRuntimeProfile, ProcessGraph } from "../src/types.js";
 
 const stores: AgatStore[] = [];
@@ -1084,7 +1084,7 @@ describe("scheduler", () => {
       "SELECT value FROM settings WHERE key = 'model_router_policy'",
     ).get() as { value?: string } | undefined;
     inspection.close();
-    assert.equal(userVersion.user_version, 20);
+    assert.equal(userVersion.user_version, POSTGRES_SCHEMA_VERSION);
     assert.equal(benchmarkTable?.name, "model_benchmarks");
     assert.equal(knowledgeTable?.name, "knowledge_collections");
     assert.equal(a2aEndpointTable?.name, "a2a_endpoints");

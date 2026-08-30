@@ -16,7 +16,7 @@
 
 ## Release TO-BE
 
-После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап вынес schema/admission в отдельную migration Job/role, а runtime сделал DDL-free; текущая schema v22 дополнительно содержит DR canaries: [contract](./postgresql-migration-job-runtime-role.md).
+После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап вынес schema/admission в отдельную migration Job/role, а runtime сделал DDL-free; текущая schema v23 дополнительно содержит DR canaries и S3 artifact lifecycle metadata/outbox: [contract](./postgresql-migration-job-runtime-role.md).
 
 ## Source register
 
@@ -130,7 +130,7 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 | MIG-02 | filesystem artifact snapshot расходится с SQLite | immutable snapshot, size/SHA-256 fail-closed | zero mismatches / Data owner |
 | MIG-03 | неизвестен исход commit при потере соединения | apply не повторяется, verify read-only | verified report или восстановление target / Incident commander |
 | MIG-04 | migration credential имеет DDL | credential scoped offline/Job, runtime не owner и без CREATE | закрыто schema v21 boundary; short-lived secret остаётся hardening / Security+DBA |
-| MIG-05 | SQLite schema кроме v20 | exact-version fail-closed | отдельный source upgrade/rehearsal / Application owner |
+| MIG-05 | SQLite schema кроме v23 | exact-version fail-closed | отдельный source upgrade/rehearsal / Application owner |
 | MIG-06 | multi-cell source нельзя разделить автоматически | ровно одна cell в preflight | отдельный утверждённый migration plan / Data + Residency owner |
 
 ## Acceptance evidence
@@ -138,13 +138,14 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 ```bash
 npm run typecheck --workspace @agat/coordinator
 node --import tsx --test apps/coordinator/test/sqlite-postgres-migrator.test.ts
+npm run fleet:test-state-migration
 
-AGAT_TEST_MIGRATION_POSTGRES_URL='postgresql://SYSTEM_ROLE@127.0.0.1:55433/agat' \
+AGAT_TEST_MIGRATION_POSTGRES_URL='postgresql://MIGRATION_ROLE@127.0.0.1:55433/agat' \
 AGAT_TEST_MIGRATION_RUNTIME_URL='postgresql://RUNTIME_ROLE@127.0.0.1:55433/agat' \
 AGAT_TEST_MIGRATION_POSTGRES_TENANT_URL='postgresql://TENANT_ROLE@127.0.0.1:55433/agat' \
 node --import tsx --test apps/coordinator/test/sqlite-postgres-migrator.integration.test.ts
 ```
 
-Integration test импортирует durable state и filesystem artifacts, затем выполняет verify-only. Отдельные `AGAT_TEST_REHEARSAL_POSTGRES_URL` и `AGAT_TEST_REHEARSAL_POSTGRES_TENANT_URL` включают rollback scenario и доказывают, что добавленная source row отсутствует после rollback.
+Integration test импортирует durable state и filesystem artifacts, затем выполняет verify-only. Отдельные `AGAT_TEST_REHEARSAL_POSTGRES_URL`, `AGAT_TEST_REHEARSAL_RUNTIME_URL` и `AGAT_TEST_REHEARSAL_POSTGRES_TENANT_URL` включают rollback scenario и доказывают, что добавленная source row отсутствует после rollback.
 
-Schema migration Job/role и DDL-free runtime gate реализованы следующим этапом. Следующий незакрытый gate — managed multi-AZ PostgreSQL, PITR и измеренные restore/failover RPO/RTO/SLO.
+Schema migration Job/role, DDL-free runtime, managed PostgreSQL resilience и S3 artifact authority реализованы последующими этапами. Текущие незакрытые gates — residency-aware region-loss DR и OCI/runtime attestation с SIEM retention/DLQ.

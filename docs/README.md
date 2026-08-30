@@ -43,7 +43,8 @@ MVP уже включает:
 - Process Builder 1.2: deterministic parallel fork/join, cron/calendar и idempotent webhooks, внешний signal, version-pinned subprocess/templates, structural diff, safe/live instance replay, BPMN 2.0 integration и reverse-order compensation.
 - Native edge workers: Android llama.cpp/Vulkan service и iOS Core ML/Metal app, Play Integrity/App Attest broker verification, hardware-attested scoped credentials и admin remote wipe.
 - Fleet/HA 1.7: несколько coordinator replicas на PostgreSQL, exact project queues/quotas, residency cells, FORCE RLS tenant role, signed worker releases/staged rollout и durable SIEM audit outbox.
-- Production PostgreSQL resilience: provider-neutral multi-AZ/PITR gate, schema v22 DR canaries, physical failover/restore rehearsal и HMAC-sealed RPO/RTO/SLO evidence.
+- Production PostgreSQL resilience: provider-neutral multi-AZ/PITR gate, schema v23 DR canaries, physical failover/restore rehearsal и HMAC-sealed RPO/RTO/SLO evidence.
+- S3-compatible Artifact Store: versioned content authority, SHA-256 verified replica cache, retention/legal hold, exact-version delete outbox и bounded reconciliation/backfill.
 
 ## Быстрый запуск
 
@@ -107,6 +108,8 @@ python3 workers/agat_worker.py
 - [PostgreSQL migration Job и DDL-free runtime](./postgresql-migration-job-runtime-role.md)
 - [Managed PostgreSQL: multi-AZ, PITR и измеримый DR](./managed-postgresql-resilience.md)
 - [ADR-017: PostgreSQL HA-cell](./adr-017-fleet-ha-cell.md)
+- [S3-compatible Artifact Store и lifecycle](./s3-artifact-store-lifecycle.md)
+- [ADR-018: PostgreSQL metadata и S3 payload authority](./adr-018-s3-artifact-authority.md)
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
