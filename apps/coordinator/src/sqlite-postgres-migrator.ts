@@ -348,7 +348,11 @@ async function assertTargetShape(client: Client, tables: SqliteTable[]): Promise
     ORDER BY table_name
   `);
   const actualTables = tableResult.rows.map((row) => row.table_name);
-  const expectedTables = [...tables.map((table) => table.name), "agat_schema_migrations"].sort();
+  const expectedTables = [
+    ...tables.map((table) => table.name),
+    "agat_dr_canaries",
+    "agat_schema_migrations",
+  ].sort();
   if (actualTables.join("\u0000") !== expectedTables.join("\u0000")) {
     throw new Error("Schema drift: набор SQLite и PostgreSQL tables различается");
   }

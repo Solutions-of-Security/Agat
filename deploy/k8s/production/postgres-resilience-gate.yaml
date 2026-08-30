@@ -1,0 +1,101 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agat-postgres-resilience-gate-v22
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: database-resilience
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: database-resilience
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: preflight
+          image: registry.invalid/agat/coordinator:1.7.0
+          imagePullPolicy: Always
+          command:
+            - node
+            - apps/coordinator/dist/postgres-resilience.js
+            - preflight
+            - --policy
+            - /etc/agat/postgres/policy.json
+            - --provider-evidence
+            - /var/run/agat-dr/provider.json
+          env:
+            - name: AGAT_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-url
+            - name: AGAT_POSTGRES_SSL_MODE
+              value: verify-full
+            - name: AGAT_POSTGRES_CA_CERT_PATH
+              value: /var/run/agat-postgres/ca.crt
+            - name: AGAT_DR_EVIDENCE_KEY_PATH
+              value: /var/run/agat-dr/evidence.key
+            - name: AGAT_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: agat-production-cell
+                  key: region
+            - name: AGAT_RESIDENCY_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: agat-production-cell
+                  key: residency-domain
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/agat/postgres
+              readOnly: true
+            - name: database-ca
+              mountPath: /var/run/agat-postgres
+              readOnly: true
+            - name: evidence
+              mountPath: /var/run/agat-dr
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: agat-postgres-resilience-policy
+        - name: database-ca
+          secret:
+            secretName: agat-postgres-secrets
+            defaultMode: 0440
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: evidence
+          secret:
+            secretName: agat-postgres-resilience-evidence
+            defaultMode: 0440
+            items:
+              - key: provider.json
+                path: provider.json
+              - key: evidence.key
+                path: evidence.key

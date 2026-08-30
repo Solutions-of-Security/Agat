@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agat-postgres-resilience-default-deny
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: database-resilience
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: database-resilience
+  policyTypes:
+    - Egress
+  egress: []

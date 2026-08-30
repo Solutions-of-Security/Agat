@@ -2,7 +2,7 @@
 
 ## Статус
 
-PostgreSQL adapter активирован в релизе 1.7. Post-1.7 production-readiness этапы добавили canonical offline migration и schema v21 boundary: coordinator создаёт bounded `pg` pools, но только валидирует schema/admission marker; DDL выполняет отдельная Job под owner role.
+PostgreSQL adapter активирован в релизе 1.7. Post-1.7 production-readiness этапы добавили canonical offline migration, DDL-free Job boundary и schema v22 managed-resilience contract: coordinator создаёт bounded `pg` pools, но только валидирует schema/admission marker; DDL выполняет отдельная Job под owner role.
 
 Реализация закрывает release contract Fleet/HA, но не все production gates прежнего проекта. Полная модель, риски и acceptance evidence: [Fleet и HA 1.7](./fleet-ha-1.7.md); решение по cell/data authority: [ADR-017](./adr-017-fleet-ha-cell.md).
 
@@ -12,7 +12,7 @@ PostgreSQL adapter активирован в релизе 1.7. Post-1.7 producti
 - `PostgresDatabaseSync` использует отдельный worker thread и `pg` 8.23.0, чтобы сохранить совместимость синхронного `AgatStore`.
 - Migration, runtime system и tenant identities разделены. Deployment получает только runtime+tenant URLs; migration URL scoped отдельной Job.
 - Каждая replica имеет bounded pools, connect/idle/statement timeouts и transaction client pinning.
-- SQLite placeholders/небольшой dialect subset нормализуются в bridge; PostgreSQL schema v21 устанавливает fleet objects, RLS, audit trigger, catalog manifest и admission marker.
+- SQLite placeholders/небольшой dialect subset нормализуются в bridge; PostgreSQL schema v22 устанавливает fleet objects, RLS, audit trigger, catalog manifest, admission marker и tenant-inaccessible DR canaries.
 - Stage, embedding и audit claims используют `FOR UPDATE SKIP LOCKED`.
 - Project row lock сериализует quota check и run creation; optimistic revisions защищают policy/rollout updates.
 - Artifact metadata и bytes находятся в PostgreSQL; local filesystem является только проверяемым download cache.
@@ -70,6 +70,10 @@ Dual-write не используется. Contract и evidence: [Offline SQLite 
 
 Отдельная migration Job владеет DDL/advisory lock; runtime сохраняет только bounded DML/BYPASSRLS и не имеет ownership/schema CREATE. Catalog drift, active replicas и незавершённый connection admission блокируют startup. Tenant role остаётся RLS-only.
 
+### Managed PostgreSQL resilience — готово
+
+Provider-neutral gate проверяет multi-AZ, synchronous standby, automatic failover, private TLS endpoint, PITR retention/freshness и два distinct SLO approver. Schema v22 checkpoints и HMAC reports доказывают actual failover и exact PITR boundary; полный contract и per-cluster qualification описаны в [Managed PostgreSQL](./managed-postgresql-resilience.md).
+
 ### Async repositories и capacity
 
 Worker-thread bridge блокирует event loop одной replica на время sync DB call. Connection budget и read-only p99 admission уже исполняются перед rollout; до высокой нагрузки всё ещё нужны async repositories, pool acquisition metrics и load test по целевому project/run mix.
@@ -78,9 +82,9 @@ Worker-thread bridge блокирует event loop одной replica на вр�
 
 PostgreSQL `BYTEA` обеспечивает correctness plateau, но крупные artifacts увеличивают DB/WAL/backup. Следующий этап вводит S3-compatible bytes authority с transactionally consistent metadata/outbox и lifecycle policy.
 
-### Production database
+### Production database qualification
 
-Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Обязательны TLS `verify-full`, повтор admission на production capacity, replication/WAL/backup monitoring, PITR и фактические restore/failover exercises с утверждёнными RPO/RTO.
+Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Исполняемый gate, physical rehearsal и objectives готовы; каждый deployed cluster обязан отдельно предъявить fresh provider evidence, повторный admission и passing failover/restore/SLO reports. Repository test не выдаётся за cloud qualification.
 
 ## Acceptance matrix
 
@@ -92,9 +96,9 @@ Local PostgreSQL Deployment заменяется managed/multi-AZ endpoint. Об
 | Cross-replica artifact download | выполнено | object-store lifecycle/DR |
 | SIEM disjoint claim/retry/redaction | выполнено | sink conformance, retention/DLQ |
 | SQLite→PostgreSQL reconciliation | canonical apply/verify/rehearsal готов | production-sized rehearsal |
-| Backup restore | local DB не является evidence | timed clean-environment restore required |
-| Multi-AZ failover | не входит | required |
-| DDL-free runtime role | schema v21 Job, manifest/admission и negative E2E готовы | managed-IaC role provisioning |
+| Backup restore | physical named-point PITR rehearsal выполнен | timed isolated managed restore report per cell |
+| Multi-AZ failover | provider gate + physical promotion rehearsal выполнены | managed operation report per cell |
+| DDL-free runtime role | schema v22 Job, manifest/admission и negative E2E готовы | managed-IaC role provisioning |
 
 ## Наблюдаемость
 

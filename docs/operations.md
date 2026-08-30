@@ -11,7 +11,7 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
-Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — schema v21 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
+Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v22 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают native edge readiness без broker token/URL.
 
 ## Rollout 1.7 Fleet и HA
 
@@ -19,10 +19,11 @@ Schema `19 → 20` добавляет regional project policy, queue/quota state
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
 2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
-3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените schema v21 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
-4. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
-5. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
-6. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
+3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v22 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
+4. Для production endpoint выполните multi-AZ/PITR preflight, actual failover и isolated restore по [managed PostgreSQL runbook](./managed-postgresql-resilience.md). Сохраните HMAC reports и exact SLO policy approval; application `haReady` этот gate не заменяет.
+5. Запустите одну coordinator replica и проверьте `/health`, queues, artifact download, Temporal reconciliation и SIEM pending/delivery. Затем увеличьте до двух и выполните concurrent lease/quota test.
+6. Для shared-token server workers зарегистрируйте подписанный baseline release, назначьте fallback/target каждого ring, начните с canary и только после наблюдения поднимайте percentage. Затем включите `AGAT_REQUIRE_SIGNED_WORKER_RELEASES=true`; hardware-attested mobile nodes используют отдельную app-attestation boundary.
+7. Проверьте revoke: отозванный release не должен получить новый lease. Уже выполняющийся внешний side effect требует отдельной incident/compensation процедуры.
 
 Docker Desktop 1.7 разворачивает PostgreSQL и две coordinator replicas для локальной проверки. Если namespace уже содержит SQLite coordinator, `npm run k8s:up` остановится до любых apply/build. `AGAT_K8S_ALLOW_POSTGRES_CUTOVER=true` только подтверждает осознанный запуск нового PostgreSQL authority и **не переносит данные**; старый `agat-data` PVC остаётся до удаления namespace. Не используйте флаг вместо миграции.
 
@@ -39,7 +40,7 @@ node --import tsx --test apps/coordinator/test/fleet-ha-postgres.integration.tes
 kubectl kustomize deploy/k8s/docker-desktop >/dev/null
 ```
 
-Production cutover остаётся заблокирован без timed backup/restore/failover, утверждённых RPO/RTO и load test. Полный contract и риски: [Fleet и HA 1.7](./fleet-ha-1.7.md).
+Production cutover остаётся заблокирован без per-cluster passing reports для timed backup/restore/failover, утверждённых RPO/RTO/SLO и load test. Исполняемый DB contract: [Managed PostgreSQL](./managed-postgresql-resilience.md); исходный Fleet contract: [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ### Offline SQLite → PostgreSQL
 
@@ -48,6 +49,10 @@ Production cutover остаётся заблокирован без timed backup
 ### PostgreSQL schema Job и runtime role
 
 Coordinator startup не выполняет DDL. При rollout остановите все replicas, примените versioned role-bootstrap/schema Job, дождитесь successful capacity/load marker и только затем поднимайте runtime. Migration credential не передаётся Deployment; runtime имеет DML+BYPASSRLS, но не ownership/CREATE/TRUNCATE/TRIGGER/REFERENCES. Полный порядок, formulas и recovery: [PostgreSQL migration Job и DDL-free runtime](./postgresql-migration-job-runtime-role.md).
+
+### Managed PostgreSQL resilience
+
+Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v22 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
 
 ## Rollout 1.6 native edge worker
 

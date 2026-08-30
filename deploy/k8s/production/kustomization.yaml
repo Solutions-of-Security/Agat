@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agat
+resources:
+  - postgres-resilience-gate.yaml
+  - postgres-resilience-network-policy.yaml
+configMapGenerator:
+  - name: agat-postgres-resilience-policy
+    files:
+      - policy.json=postgres-resilience-policy.json
+generatorOptions:
+  disableNameSuffixHash: true

@@ -409,7 +409,9 @@ if ${coordinator_existed}; then
   kubectl scale deployment/agat-coordinator --namespace "${namespace}" --replicas=0 >/dev/null
   kubectl rollout status deployment/agat-coordinator --namespace "${namespace}" --timeout=120s >/dev/null
 fi
-kubectl delete job/agat-postgres-role-bootstrap-v21 \
+kubectl delete job/agat-postgres-role-bootstrap-v22 \
+  job/agat-postgres-schema-v22 \
+  job/agat-postgres-role-bootstrap-v21 \
   job/agat-postgres-schema-v21 \
   --namespace "${namespace}" \
   --ignore-not-found \
@@ -445,10 +447,10 @@ kubectl apply --kustomize "${rendered_manifests_dir}"
 cleanup_rendered_manifests
 rendered_manifests_dir=""
 trap - EXIT
-kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v21 \
+kubectl wait --for=condition=Complete job/agat-postgres-role-bootstrap-v22 \
   --namespace "${namespace}" --timeout=360s >/dev/null || die \
   "PostgreSQL role bootstrap Job не завершилась"
-kubectl wait --for=condition=Complete job/agat-postgres-schema-v21 \
+kubectl wait --for=condition=Complete job/agat-postgres-schema-v22 \
   --namespace "${namespace}" --timeout=960s >/dev/null || die \
   "PostgreSQL schema/admission Job не завершилась"
 coordinator_otel_patch="$(node --input-type=module -e '

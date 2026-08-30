@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "policyId": "agat-production-postgresql-v1",
+  "engineMajor": 17,
+  "topology": {
+    "minimumZones": 2,
+    "minimumSynchronousStandbys": 1,
+    "requireAutomaticFailover": true
+  },
+  "backup": {
+    "requirePitr": true,
+    "minimumRetentionHours": 168,
+    "maximumRestoreLagSeconds": 60,
+    "maximumBackupAgeSeconds": 86400
+  },
+  "objectives": {
+    "rpoSeconds": 60,
+    "failoverRtoSeconds": 300,
+    "restoreRtoSeconds": 14400,
+    "monthlyAvailabilityPercent": 99.9,
+    "minimumSloWindowHours": 672
+  },
+  "evidence": {
+    "maximumTopologyAgeSeconds": 900,
+    "maximumDrillAgeDays": 90,
+    "requiredDistinctApprovers": 2,
+    "requiredApprovalRoles": [
+      "service-owner",
+      "platform-operations"
+    ]
+  }
+}

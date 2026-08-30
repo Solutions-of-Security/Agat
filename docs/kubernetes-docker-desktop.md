@@ -8,7 +8,7 @@
 - `agat-gateway` — публичный Kong DB-less `LoadBalancer` на `http://127.0.0.1:8787`; coordinator доступен только как `ClusterIP`;
 - `agat-coordinator` — две stateless replicas с RollingUpdate (`maxUnavailable=0`), PDB `minAvailable=1` и preferred pod anti-affinity;
 - `agat-coordinator-postgres` — локальный PostgreSQL 17 state store с migration/runtime/tenant roles, FORCE RLS и отдельным PVC; это test/staging topology, а не production HA database;
-- `agat-postgres-role-bootstrap-v21` и `agat-postgres-schema-v21` — versioned one-shot Jobs для ownership/role boundary, transactional schema и connection admission;
+- `agat-postgres-role-bootstrap-v22` и `agat-postgres-schema-v22` — versioned one-shot Jobs для ownership/role boundary, transactional schema, DR canaries и connection admission;
 - `agat-keycloak` и `agat-keycloak-postgres` — OIDC, роли, пользователи и проекты; Keycloak доступен на `http://127.0.0.1:8080`;
 - `agat-temporal` — persistent локальный dev-server с namespace `agat`, gRPC/HTTP/metrics и UI на `http://127.0.0.1:8233`;
 - `agat-temporal-worker` — отдельный TypeScript worker с prebuilt Workflow bundle и Prometheus metrics;
@@ -53,7 +53,7 @@ npm run k8s:up
 2. создаст namespace, application Secret и отдельный coordinator PostgreSQL Secret при первом запуске;
 3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
 4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся role-bootstrap/schema/admission Jobs;
-5. только после schema v21 marker поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
+5. только после schema v22 marker поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
 Чистый namespace сразу использует PostgreSQL и две coordinator replicas. При обнаружении существующего SQLite coordinator скрипт завершится до apply/build: state migrator существует, но намеренно не запускается автоматически без maintenance/reconciliation. После [offline migration](./sqlite-postgresql-migration.md) можно подтвердить authority cutover:
@@ -120,7 +120,7 @@ AGAT_SIEM_BEARER_TOKEN='scoped-secret' \
 npm run k8s:up
 ```
 
-Локальный PostgreSQL работает без TLS только внутри namespace. Для production remote endpoint конфигурация fail-closed требует `AGAT_POSTGRES_SSL_MODE=require` либо `verify-full`; Docker Desktop manifest не является production deployment template. Полный contract: [Fleet и HA 1.7](./fleet-ha-1.7.md).
+Локальный PostgreSQL работает без TLS только внутри namespace. Production resilience Job требует строго `verify-full`, private managed endpoint, multi-AZ/PITR provider evidence и реальные DR reports; Docker Desktop manifest не является production deployment template. Полный contract: [Managed PostgreSQL](./managed-postgresql-resilience.md) и [Fleet и HA 1.7](./fleet-ha-1.7.md).
 
 ## Запуск workers кнопкой
 
@@ -278,10 +278,10 @@ AGAT_K8S_IMAGE_TAG=dev npm run k8s:up
 Встроенный Temporal работает как `start-dev`; `AGAT_TEMPORAL_TARGET=local`, TLS и Worker Deployment Versioning выключены намеренно. Этот профиль нельзя переносить в production простым изменением image tag. Production-переход описан в [отдельном runbook](./production-durable-runtime.md).
 
 - Это single-machine среда разработки, а не production HA.
-- Две coordinator replicas проверяют shared-state semantics, но один Docker Desktop node и один `agat-coordinator-postgres` pod/PVC остаются общим failure domain. Production требует managed/multi-AZ PostgreSQL, TLS, PITR и проверенного restore/failover.
+- Две coordinator replicas проверяют shared-state semantics, но один Docker Desktop node и один `agat-coordinator-postgres` pod/PVC остаются общим failure domain. Production использует отдельный managed/multi-AZ/PITR gate и per-cluster restore/failover reports.
 - `temporal server start-dev` и Keycloak `start-dev` предназначены только для локальной разработки. Production требует полноценного Temporal/Cloud, оптимизированного Keycloak, TLS и backup каждой внешней БД.
 - PDB защищает только от части добровольных disruptions и не спасает от потери Docker Desktop node/database.
-- SQLite→PostgreSQL migration требует явного offline runbook и не запускается `k8s:up`; cross-region failover, object store, runtime attestation обычного worker и SIEM poison-event/retention UI ещё отсутствуют.
+- SQLite→PostgreSQL migration требует явного offline runbook и не запускается `k8s:up`; cross-region authority transfer, object store, runtime attestation обычного worker и SIEM poison-event/retention UI ещё отсутствуют.
 - Kong rate limit в локальном профиле хранится в памяти одного pod; несколько Gateway replicas требуют Redis-backed policy.
 - `host.docker.internal` предназначен для связи контейнера с model server на машине Docker Desktop. Для удалённых GPU-узлов используйте отдельный worker, защищённый URL coordinator и SearXNG, доступный с той машины.
 - Сброс Kubernetes-кластера в Docker Desktop удаляет workload и локальные volumes; делайте backup перед reset.

@@ -220,8 +220,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 21;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-fleet-runtime-boundary-v21";
+export const POSTGRES_SCHEMA_VERSION = 22;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-managed-postgres-resilience-v22";
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -2398,6 +2398,21 @@ export class AgatStore {
           applied_at TEXT NOT NULL,
           applied_by TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS agat_dr_canaries (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN (
+            'heartbeat', 'failover-before', 'failover-after',
+            'restore-before', 'restore-after', 'restore-verified'
+          )),
+          region TEXT NOT NULL,
+          residency_domain TEXT NOT NULL,
+          issued_at TEXT NOT NULL,
+          payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256) = 64),
+          created_by TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_agat_dr_canaries_issued
+          ON agat_dr_canaries(issued_at, id);
 
         CREATE OR REPLACE FUNCTION agat_enqueue_audit_event() RETURNS trigger
         LANGUAGE plpgsql AS $$

@@ -16,7 +16,7 @@
 
 ## Release TO-BE
 
-После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап уже вынес schema v21/admission в отдельную migration Job/role, а runtime сделал DDL-free: [contract](./postgresql-migration-job-runtime-role.md).
+После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап вынес schema/admission в отдельную migration Job/role, а runtime сделал DDL-free; текущая schema v22 дополнительно содержит DR canaries: [contract](./postgresql-migration-job-runtime-role.md).
 
 ## Source register
 
