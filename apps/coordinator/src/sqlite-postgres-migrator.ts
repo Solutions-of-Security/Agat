@@ -207,6 +207,13 @@ export function migrationTableOrder(tables: SqliteTable[]): string[] {
   return ordered;
 }
 
+export function migrationColumnsMatch(source: string[], target: string[]): boolean {
+  if (source.length !== target.length) return false;
+  const sourceNames = [...source].sort();
+  const targetNames = [...target].sort();
+  return sourceNames.every((name, index) => name === targetNames[index]);
+}
+
 function sourceCell(database: DatabaseSync): { region: string; residencyDomain: string } {
   const rows = database.prepare(`
     SELECT DISTINCT home_region, residency_domain FROM projects
@@ -368,7 +375,12 @@ async function assertTargetShape(client: Client, tables: SqliteTable[]): Promise
     const target = result.rows.map((row) => row.column_name);
     const source = table.columns.map((column) => column.name);
     if (target.length === 0) throw new Error(`Target table ${table.name} отсутствует`);
-    if (target.join("\u0000") !== source.join("\u0000")) {
+    // SQLite preserves the physical position in which ALTER TABLE added a
+    // column. A database upgraded through older releases can therefore have
+    // a different ordinal order than a freshly-created PostgreSQL schema even
+    // though both expose the exact same named contract. Import and digest SQL
+    // always select explicit quoted names, so set equality is the invariant.
+    if (!migrationColumnsMatch(source, target)) {
       throw new Error(`Schema drift в ${table.name}: SQLite и PostgreSQL columns различаются`);
     }
   }

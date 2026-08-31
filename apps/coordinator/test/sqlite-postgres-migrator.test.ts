@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   canonicalMigrationRow,
+  migrationColumnsMatch,
   migrationTableOrder,
 } from "../src/sqlite-postgres-migrator.js";
 
@@ -50,5 +51,14 @@ describe("SQLite to PostgreSQL migration contract", () => {
       table("left", ["right"]),
       table("right", ["left"]),
     ]), /Циклические межтабличные foreign keys/);
+  });
+
+  it("accepts historical SQLite column order but rejects actual shape drift", () => {
+    const historical = ["id", "is_builtin", "created_at", "runtime"];
+    const freshPostgres = ["id", "runtime", "is_builtin", "created_at"];
+
+    assert.equal(migrationColumnsMatch(historical, freshPostgres), true);
+    assert.equal(migrationColumnsMatch(historical, ["id", "runtime", "created_at"]), false);
+    assert.equal(migrationColumnsMatch(historical, [...freshPostgres, "unexpected"]), false);
   });
 });
