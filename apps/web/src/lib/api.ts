@@ -282,6 +282,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  cancelRun: (runId: string) =>
+    request<void>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   downloadArtifact: (artifactId: string) =>
     requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/download`),
   localWorkers: (signal?: AbortSignal) =>

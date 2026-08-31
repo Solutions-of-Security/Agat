@@ -1,47 +1,95 @@
-import type { ViewId } from "../types";
-import { Brand } from "./Brand";
-import { Icon, type IconName } from "./Icon";
+import { useEffect, useMemo, useState } from "react";
 
-const navItems: Array<{ id: ViewId; label: string; icon: IconName }> = [
-  { id: "overview", label: "Обзор", icon: "dashboard" },
-  { id: "agents", label: "Агенты", icon: "agents" },
-  { id: "runs", label: "Запуски", icon: "runs" },
-  { id: "processes", label: "Процессы", icon: "workflow" },
-  { id: "knowledge", label: "Knowledge", icon: "knowledge" },
-  { id: "evals", label: "Golden eval", icon: "repeat" },
-  { id: "tools", label: "MCP", icon: "plug" },
-  { id: "a2a", label: "A2A", icon: "network" },
-  { id: "nodes", label: "Узлы", icon: "nodes" },
-  { id: "models", label: "Модели", icon: "models" },
-  { id: "fleet", label: "Fleet / HA", icon: "shield" },
-];
+import { getNavigationGroups, getPrimaryNavigation, type NavigationItem } from "../navigation";
+import type { AgatRole, ViewId } from "../types";
+import { Brand } from "./Brand";
+import { Icon } from "./Icon";
 
 interface SidebarProps {
   activeView: ViewId;
   health: { label: string; status: "online" | "waiting" | "offline" };
+  roles: AgatRole[];
   onNavigate: (view: ViewId) => void;
 }
 
-export function Sidebar({ activeView, health, onNavigate }: SidebarProps) {
+interface SidebarLinkProps {
+  activeView: ViewId;
+  item: NavigationItem;
+  nested?: boolean;
+  onNavigate: (view: ViewId) => void;
+}
+
+function SidebarLink({ activeView, item, nested = false, onNavigate }: SidebarLinkProps) {
+  const active = activeView === item.id;
+  return (
+    <button
+      className={`sidebar__link${nested ? " sidebar__link--child" : ""}${active ? " is-active" : ""}`}
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={() => onNavigate(item.id)}
+    >
+      <Icon name={item.icon} size={nested ? 18 : 20} />
+      <span>{item.label}</span>
+    </button>
+  );
+}
+
+export function Sidebar({ activeView, health, roles, onNavigate }: SidebarProps) {
+  const primaryItems = useMemo(() => getPrimaryNavigation(roles), [roles]);
+  const groups = useMemo(() => getNavigationGroups(roles), [roles]);
+  const [expanded, setExpanded] = useState<Record<"creation" | "administration", boolean>>({
+    creation: true,
+    administration: false,
+  });
+
+  useEffect(() => {
+    const activeGroup = groups.find((group) => group.items.some((item) => item.id === activeView));
+    if (activeGroup) setExpanded((current) => ({ ...current, [activeGroup.id]: true }));
+  }, [activeView, groups]);
+
   return (
     <aside className="sidebar">
       <div className="sidebar__brand"><Brand /></div>
       <nav className="sidebar__nav" aria-label="Основная навигация">
-        {navItems.map((item) => (
-          <button
-            className={`sidebar__link${activeView === item.id ? " is-active" : ""}`}
-            type="button"
-            aria-current={activeView === item.id ? "page" : undefined}
-            onClick={() => onNavigate(item.id)}
-            key={item.id}
-          >
-            <Icon name={item.icon} size={21} />
-            <span>{item.label}</span>
-          </button>
-        ))}
+        <div className="sidebar__primary">
+          {primaryItems.map((item) => (
+            <SidebarLink activeView={activeView} item={item} onNavigate={onNavigate} key={item.id} />
+          ))}
+        </div>
+
+        {groups.map((group) => {
+          const open = expanded[group.id];
+          const childActive = group.items.some((item) => item.id === activeView);
+          const sections = group.sections ?? [{ id: group.id, label: "", items: group.items }];
+          return (
+            <div className={`sidebar__group${childActive ? " has-active-child" : ""}`} key={group.id}>
+              <button
+                className="sidebar__group-toggle"
+                type="button"
+                aria-expanded={open}
+                aria-controls={`sidebar-group-${group.id}`}
+                onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
+              >
+                <Icon name={group.icon} size={19} />
+                <span>{group.label}</span>
+                <Icon className="sidebar__group-chevron" name={open ? "up" : "down"} size={15} />
+              </button>
+              <div className="sidebar__group-content" id={`sidebar-group-${group.id}`} hidden={!open}>
+                {sections.map((section) => (
+                  <div className="sidebar__subgroup" key={section.id}>
+                    {section.label ? <p>{section.label}</p> : null}
+                    {section.items.map((item) => (
+                      <SidebarLink activeView={activeView} item={item} nested onNavigate={onNavigate} key={item.id} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </nav>
       <div className="sidebar__footer">
-        <div className="health-line"><span className={`status-dot status-dot--${health.status}`} />{health.label}</div>
+        <div className="health-line"><span className={`status-dot status-dot--${health.status}`} />Контур {health.label}</div>
         <p>АГАТ · локальный контур</p>
         <span className="version">v1.7.0</span>
       </div>

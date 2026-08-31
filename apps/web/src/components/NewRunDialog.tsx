@@ -73,10 +73,10 @@ export function NewRunDialog({ open, agents, collections, initialAgentIds, busy,
   }
 
   return (
-    <dialog className="run-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog" ref={dialogRef} aria-labelledby="new-run-dialog-title" onCancel={onClose} onClose={onClose}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
-          <div><h2>Новый запуск</h2><p>Соберите цепочку и задайте политику выполнения</p></div>
+          <div><h2 id="new-run-dialog-title">Новый запуск</h2><p>Соберите цепочку и задайте политику выполнения</p></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
           </button>

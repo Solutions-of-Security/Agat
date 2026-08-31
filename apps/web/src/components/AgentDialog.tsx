@@ -62,11 +62,11 @@ export function AgentDialog({ open, agent, agents, models, busy, error, onClose,
   }
 
   return (
-    <dialog className="run-dialog agent-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog agent-dialog" ref={dialogRef} aria-labelledby="agent-dialog-title" onCancel={onClose} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-head">
           <div>
-            <h2>{agent ? "Настройка агента" : "Новый агент"}</h2>
+            <h2 id="agent-dialog-title">{agent ? "Настройка агента" : "Новый агент"}</h2>
             <p>{agent ? "Роль и runtime редактируются здесь; prompt/model продвигаются через Golden eval" : "Опишите ответственность, инструкции и предпочтительную локальную модель"}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">

@@ -4,10 +4,11 @@ import { Icon } from "./Icon";
 interface ApprovalPanelProps {
   approval: Approval | null;
   busy: boolean;
+  canDecide: boolean;
   onDecision: (approval: Approval, decision: "approve" | "reject") => void;
 }
 
-export function ApprovalPanel({ approval, busy, onDecision }: ApprovalPanelProps) {
+export function ApprovalPanel({ approval, busy, canDecide, onDecision }: ApprovalPanelProps) {
   if (!approval) {
     return (
       <div className="approval approval--clear">
@@ -35,14 +36,18 @@ export function ApprovalPanel({ approval, busy, onDecision }: ApprovalPanelProps
           <pre>{JSON.stringify(approval.previewDiff, null, 2)}</pre>
         </div>
       ) : null}
-      <div className="approval__actions">
-        <button className="button button--secondary" type="button" disabled={busy} onClick={() => onDecision(approval, "reject")}>
-          Отклонить
-        </button>
-        <button className="button button--primary" type="button" disabled={busy} onClick={() => onDecision(approval, "approve")}>
-          Разрешить
-        </button>
-      </div>
+      {canDecide ? (
+        <div className="approval__actions">
+          <button className="button button--secondary" type="button" disabled={busy} onClick={() => onDecision(approval, "reject")}>
+            Отклонить
+          </button>
+          <button className="button button--primary" type="button" disabled={busy} onClick={() => onDecision(approval, "approve")}>
+            Разрешить
+          </button>
+        </div>
+      ) : (
+        <p className="approval__readonly"><Icon name="shield" size={16} />Режим просмотра: решение может принять оператор или администратор.</p>
+      )}
     </div>
   );
 }

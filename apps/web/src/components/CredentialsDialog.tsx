@@ -83,10 +83,10 @@ export function CredentialsDialog({
   };
 
   return (
-    <dialog className="run-dialog credentials-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog credentials-dialog" ref={dialogRef} aria-labelledby="credentials-dialog-title" onCancel={onClose} onClose={onClose}>
       <section aria-label="Credentials">
         <header>
-          <div><span className="eyebrow">СЕКРЕТЫ И ИНТЕГРАЦИИ</span><h2>Credentials</h2></div>
+          <div><span className="eyebrow">СЕКРЕТЫ И ИНТЕГРАЦИИ</span><h2 id="credentials-dialog-title">Credentials</h2></div>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}><Icon name="close" size={18} /></button>
         </header>
         <div className="credentials-dialog__body">

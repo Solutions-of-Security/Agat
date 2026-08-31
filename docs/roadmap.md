@@ -283,7 +283,153 @@ Web/PWA остаётся control surface и не обещает надёжный
 - подключить реальный pinned Sigstore release pipeline, SPIRE/другой trusted local attestor и SIEM sink с exact ack/dedupe;
 - провести cross-system region-loss game day и security review trust roots/scoped secrets/RBAC.
 
-Следующий продуктовый релиз после этих qualification gates в roadmap пока не определён и требует отдельной приоритизации.
+Следующий продуктовый релиз определён как **1.8 — Operator UX foundation**. Его scope сформирован по результатам [UX/UI-аудита всех страниц и пользовательских сценариев](./ux-ui-audit.md). Production qualification Fleet остаётся обязательным параллельным gate и не заменяется UI-работами.
+
+### Запланировано в 1.8 — Operator UX foundation
+
+Цель релиза: сократить когнитивную нагрузку в ежедневной работе оператора, исправить мобильную навигацию и доступность, не удаляя экспертные возможности платформы.
+
+#### P0-задачи релиза 1.8
+
+ID ниже обозначают roadmap-эпики. Перед разработкой каждый эпик декомпозируется в design/spec, frontend, accessibility и test-задачи с владельцем и спринтом. Размер относительный: `S` — локальное изменение, `M` — несколько связанных компонентов, `L` — сквозное изменение shell или пользовательского процесса.
+
+| ID | Задача | Результат | Зависимости | Размер |
+|---|---|---|---|---:|
+| UX-101 | Перестроить информационную архитектуру по задачам и ролям | Первый уровень: `Обзор`, `Запуски`, `Согласования`, `Создание`, `Администрирование`; недоступные разделы не создают тупиков | — | L |
+| UX-102 | Заменить мобильную навигацию | Один ряд из `Обзор`, `Запуски`, `Согласования`, `Процессы`, `Ещё`; infrastructure-разделы доступны внутри `Ещё` с учётом роли | UX-101 | M |
+| UX-103 | Упростить глобальный topbar | Убраны повторяющиеся queue/node/agent metrics и дубли CTA; добавлены рабочие уведомления и меню профиля | UX-101 | M |
+| UX-104 | Обновить типографику и размеры controls | Основной текст ≥14 px, вторичный ≥12 px, touch targets ≥44×44 px; исключения задокументированы | — | L |
+| UX-105 | Закрыть базовые accessibility-разрывы | Skip link, корректные tabs, `aria-selected`, focus trap/return, Escape, понятные disabled prerequisites | UX-104 | M |
+| UX-106 | Пересобрать Runs как status-first workspace | Первый экран отвечает на вопросы `что происходит`, `что требуется`, `каков результат`; trace/policy/hashes перенесены в технические детали | UX-104 | L |
+| UX-107 | Создать единый inbox согласований | Очередь решений с действием, целью, эффектом, риском, инициатором, сроком, комментарием и audit trail | UX-101, UX-106 | L |
+| UX-108 | Упростить создание запуска | Flow `Задача → Цепочка → Проверка и запуск`, явный reorder агентов, понятные priority presets, advanced defaults свёрнуты | UX-106 | M–L |
+| UX-109 | Устранить mobile layout defects | Нет horizontal overflow на 390 px; исправлены Fleet, bottom nav, Golden eval master-detail и перекрытие контента fixed-навигацией | UX-102, UX-104 | M |
+| UX-110 | Унифицировать опасные и глобальные действия | Нет прямого logout по аватару, декоративного terminal control и системных `window.prompt/confirm` для критических операций | UX-103, UX-105 | M |
+
+#### Прогресс реализации на 31 августа 2026 года
+
+Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
+
+| ID | Статус | Сделано | Остаётся |
+|---|---|---|---|
+| UX-101 | Основной scope готов | Ролевая матрица, task-oriented группы, русские labels, breadcrumbs, защита deep links и read-only actions; run/approval deep links реализованы | Shareable routes остальных сущностей остаются в UX-302 |
+| UX-102 | Готово | Один mobile-ряд из пяти пунктов и ролевой sheet `Ещё` | Проверка на реальных iOS/Android устройствах входит в release gate |
+| UX-103 | Готово | Убраны дубли metrics/CTA; кнопка открывает project-scoped панель с pending approvals, warn/error-событиями, seen/unseen, `Прочитать всё` и точными переходами; profile menu явное | Server-side синхронизация seen-state между браузерами не входит в scope 1.8 |
+| UX-104 | Базовый gate готов | 14/12 px для стандартных страниц, controls ≥44 px, responsive Fleet | Populated Process canvas и системная visual regression fixture |
+| UX-105 | Базовый gate готов | Рабочий skip link; WAI-ARIA tabs с roving focus; подписанные dialogs; focus trap/return, Escape и объяснение недоступного experiment; keyboard-only smoke пройден | Screen reader и реальные устройства входят в release gate |
+| UX-106 | Основной scope готов | Master-detail list, status/current stage/duration/result/error/next action, state-valid Repeat/Cancel/Open, inline cancel confirmation, lazy technical disclosure и shareable run/approval routes | Реальные устройства, screen reader и operator usability-test входят в release gate |
+| UX-107 | Частично | Отдельная очередь, счётчик и доступные роли решений | Фильтры, risk/effect context, комментарий и полный audit trail |
+| UX-108 | Не начато | — | Трёхшаговый flow нового запуска и progressive disclosure |
+| UX-109 | Выявленные дефекты исправлены | 36 route/viewport checks без overflow; Fleet и fixed bottom nav исправлены | Реальные устройства и populated Quality/Process fixtures |
+| UX-110 | Частично | Аватар открывает меню; logout явный; декоративный topbar control удалён | Замена оставшихся системных `prompt/confirm` единым product dialog |
+
+#### Детализация задач 1.8
+
+**UX-101 — ролевая информационная архитектура**
+
+- определить primary navigation для `admin`, `designer`, `operator`, `viewer`, `auditor`;
+- объединить `Узлы`, `Модели`, `Fleet / HA` в `Администрирование → Инфраструктура`;
+- объединить `MCP` и `A2A` в `Администрирование → Интеграции`;
+- переименовать `Knowledge` в `Знания`, `Golden eval` — в `Качество`, сохранив протокольные термины в справке;
+- для read-only ролей показывать представление без editor chrome и недоступных primary actions;
+- добавить breadcrumbs и сохранить прямой переход к текущим сущностям.
+
+**UX-106 — status-first Runs**
+
+- оставить в основном представлении статус, текущий этап, длительность, результат, ошибку и следующее действие;
+- перенести resource policy, trace filters, manifest, hashes и Replay / Eval в `Технические детали`;
+- убрать Node Rail со страницы запусков;
+- сделать выбранный run отдельным shareable route или устойчивым detail drawer;
+- добавить явные `Повторить`, `Отменить`, `Открыть результат` только для допустимых состояний;
+- каждое disabled действие сопровождается объяснением prerequisite.
+
+**UX-107 — inbox согласований**
+
+- отдельный пункт навигации и счётчик непросмотренных решений;
+- фильтры по проекту, риску, типу действия и сроку;
+- конкретные action labels, например `Разрешить Редактору сформировать отчёт`;
+- причина отклонения и необязательный комментарий при согласовании;
+- для MCP — redacted arguments, preview diff, policy reason и число требуемых approvers;
+- после решения сохраняется и показывается audit trail без повторного выполнения действия.
+
+**UX-108 — новый запуск**
+
+- на первом шаге только название и задача;
+- на втором — агенты, порядок и optional knowledge;
+- на третьем — summary, readiness, режим, назначение результата и подтверждение;
+- до раскрытия advanced показывать не более семи пользовательских решений;
+- не выбирать все встроенные агенты и Artifact Store без понятного объяснения;
+- заменить числовой priority 0–100 на `Обычный / Высокий / Срочный`, сохранив число в advanced.
+
+#### Release gate 1.8
+
+Релиз 1.8 считается готовым, когда одновременно выполнены условия:
+
+- не более шести пунктов первого уровня на desktop и пяти на mobile;
+- sidebar и bottom nav адаптируются к пяти ролям;
+- при 390×844 нет horizontal overflow ни на одной из 11 страниц;
+- mobile navigation занимает один ряд и не перекрывает конечные действия форм;
+- основной текст не меньше 14 px, вторичный — 12 px, интерактивные цели не меньше 44×44 px;
+- кнопка уведомлений открывает панель, avatar открывает profile menu;
+- нет видимых controls без действия;
+- новый запуск выполняется по трёхшаговому flow;
+- согласование содержит достаточный контекст и допускает комментарий;
+- tabs и модалки проходят keyboard-only smoke test;
+- сценарии проверены на 390, 768, 1280 и 1440 px;
+- operator usability-test: минимум 4 из 5 участников без подсказки находят требующее решения действие и корректно завершают его.
+
+### Предварительно запланировано в 1.9 — Creator and admin simplification
+
+Цель релиза: распространить progressive disclosure на authoring и инфраструктурные сценарии после стабилизации общего shell и операторских flows.
+
+| ID | Задача | Результат | Зависимости | Размер |
+|---|---|---|---|---:|
+| UX-201 | Ввести общий паттерн `Базовый / Расширенный` | Единые компоненты disclosure, presets и advanced settings для форм | UX-104, UX-105 | L |
+| UX-202 | Создать Agent workspace | Вкладки `Настройка`, `Промпт`, `Тесты`, `Версии`, `Запуски`; candidate prompt создаётся без ручного поиска Golden eval | UX-201 | L |
+| UX-203 | Пересобрать Quality flow | Явный lifecycle `Dataset → Experiment → Review → Promote`, один contextual CTA, mobile list → detail | UX-201, UX-202 | L |
+| UX-204 | Упростить Process Builder | Категории шагов, базовый picker, отдельные режимы `Проектирование`, `Запуски`, `Публикация`; увеличенные mobile controls | UX-201 | L |
+| UX-205 | Разделить publish, automations и BPMN | `Опубликовать`, `Triggers/автоматизация`, `Импорт/экспорт` становятся отдельными намерениями | UX-204 | M |
+| UX-206 | Упростить Knowledge ingest | Flow `База знаний → Источник → Индексация`; chunking/Top K/embedding settings перенесены в advanced | UX-201 | M–L |
+| UX-207 | Создать Integrations workspace | MCP и A2A объединены; подключение выполняется wizard-ами, raw policy/transport details скрыты в advanced | UX-101, UX-201 | L |
+| UX-208 | Разделить Infrastructure workspace | Узлы, модели и Fleet получают task-oriented tabs, compact cards и incident-oriented summary | UX-101, UX-201 | L |
+| UX-209 | Унифицировать язык и состояния | Общий glossary, русские пользовательские labels, единые empty/loading/error/success patterns | UX-201 | M |
+| UX-210 | Добавить guard для autosave и несохранённых данных | Уход из процесса или формы не теряет dirty/in-flight изменения | UX-204 | S–M |
+
+#### Ключевые критерии 1.9
+
+- raw JSON, hashes, manifests и transport details не появляются в базовом режиме;
+- Agent workspace поддерживает путь `candidate → experiment → review → promote` без разрыва навигации;
+- Process picker сначала показывает не более шести базовых типов шагов;
+- A2A endpoint разбит минимум на три последовательных шага и автоматически заполняет skill metadata;
+- MCP сначала предлагает подключить источник, а не редактировать policy JSON;
+- TTL, priority, quota и retention имеют человеко-понятные presets;
+- mobile master-detail заменён на последовательные list/detail экраны;
+- все destructive actions используют единый product dialog с целью, последствием и способом восстановления.
+
+### После 1.9 — Efficiency and personalization backlog
+
+| ID | Задача | Результат | Приоритет |
+|---|---|---|---:|
+| UX-301 | Глобальный поиск и command palette | Быстрый переход к run, process, agent, node, approval и доступным действиям | P2 |
+| UX-302 | Shareable deep links | URL сохраняет выбранную сущность, вкладку и безопасный фильтр | P2 |
+| UX-303 | Saved views и bulk actions | Сохранённые фильтры для очередей, узлов, моделей и audit; безопасные массовые операции | P2 |
+| UX-304 | Персонализируемый Обзор | Presets для operator, designer, admin и auditor | P2 |
+| UX-305 | Контекстная справка и glossary | Объяснения protocol/infrastructure терминов без ухода из текущего процесса | P2 |
+| UX-306 | UX-telemetry без чувствительного content | Task completion, time-to-action, ошибки навигации и раскрытие advanced без prompt/output data | P2 |
+| UX-307 | Регулярные usability regressions | Набор сценариев и квартальная проверка operator/designer/admin на desktop/mobile | P2 |
+
+### Рекомендуемая последовательность UX-работ
+
+1. Параллельно выполнить UX-101 и UX-104.
+2. На новой IA собрать UX-102, UX-103 и UX-105.
+3. После foundation реализовать UX-106 и UX-108.
+4. Поверх новой модели Runs добавить UX-107.
+5. Закрыть mobile defects UX-109 и единые dangerous actions UX-110.
+6. Провести release-gate usability test 1.8.
+7. Зафиксировать общий Basic / Advanced паттерн UX-201.
+8. Параллельно развивать creator-поток UX-202–UX-206 и admin-поток UX-207–UX-208.
+9. Завершить 1.9 терминологией, системными состояниями и autosave guard.
+10. Не начинать UX-301–UX-307 до стабилизации shell и основных workflows, чтобы не автоматизировать текущую перегрузку.
 
 ## Рекомендуемый порядок
 
@@ -304,3 +450,8 @@ Web/PWA остаётся control surface и не обещает надёжный
 | P2 | Готово в 1.6 | Native mobile worker | Attested Android/iOS inference, scoped credential и remote wipe без ложного PWA background SLA |
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
 | P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |
+| P0 | Foundation готова в 1.8 | Role-based IA, mobile navigation, notifications и accessibility foundation | Shell, базовые уведомления и keyboard gate реализованы; остаются device/screen-reader release checks |
+| P0 | UX-106 готов; следующий инкремент 1.8 | Трёхшаговый новый запуск UX-108, затем полный inbox согласований UX-107 | Завершает основной create→monitor→decide operator workflow поверх новой модели Runs |
+| P1 | Предварительно в 1.9 | Basic / Advanced и creator workflows | Упрощает Agents, Processes, Knowledge и Quality без удаления экспертных возможностей |
+| P1 | Предварительно в 1.9 | Integrations и Infrastructure workspaces | Убирает MCP/A2A/Fleet из общего пользовательского потока |
+| P2 | После 1.9 | Search, saved views, personalization и UX-telemetry | Повышает эффективность после стабилизации базовой структуры |

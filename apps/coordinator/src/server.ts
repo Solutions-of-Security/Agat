@@ -2030,6 +2030,21 @@ export function createCoordinatorServer(
         return;
       }
 
+      const cancelRunId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/cancel$/);
+      if (request.method === "POST" && cancelRunId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const run = store.getRun(cancelRunId, auth.projectId);
+        if (!run || !store.cancelRun(cancelRunId, auth.projectId)) throw new HttpError(404, "Запуск не найден");
+        const process = run.process;
+        const processInstanceId = process && typeof process === "object" && "instanceId" in process
+          && typeof process.instanceId === "string" ? process.instanceId : null;
+        if (processInstanceId) {
+          notifyProcessRuntime(processRuntime, store, processInstanceId, "process.cancelled");
+        }
+        noContent(response);
+        return;
+      }
+
       const runId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)$/);
       if (request.method === "GET" && runId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);

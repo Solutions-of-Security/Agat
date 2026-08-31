@@ -222,11 +222,11 @@ function McpServerDialog({ open, server, credentials, busy, error, canManageSand
   }
 
   return (
-    <dialog className="run-dialog mcp-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog mcp-dialog" ref={dialogRef} aria-labelledby="mcp-dialog-title" onCancel={onClose} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-head">
           <div>
-            <h2>{server ? "Настройка MCP-сервера" : "Новый MCP-сервер"}</h2>
+            <h2 id="mcp-dialog-title">{server ? "Настройка MCP-сервера" : "Новый MCP-сервер"}</h2>
             <p>Streamable HTTP, WASI или digest-pinned OCI · единый policy boundary</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть"><Icon name="close" /></button>

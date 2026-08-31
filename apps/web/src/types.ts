@@ -1725,4 +1725,4 @@ export interface A2AOutboundInvocationResponse {
   response: Record<string, unknown>;
 }
 
-export type ViewId = "overview" | "agents" | "runs" | "processes" | "knowledge" | "evals" | "tools" | "a2a" | "nodes" | "models" | "fleet";
+export type ViewId = "overview" | "runs" | "approvals" | "agents" | "processes" | "knowledge" | "evals" | "tools" | "a2a" | "nodes" | "models" | "fleet";

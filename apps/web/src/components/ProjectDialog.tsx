@@ -32,10 +32,10 @@ export function ProjectDialog({ open, busy, error, onClose, onSubmit }: ProjectD
   }
 
   return (
-    <dialog className="run-dialog project-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog project-dialog" ref={dialogRef} aria-labelledby="project-dialog-title" onCancel={onClose} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-head">
-          <div><h2>Новый проект</h2><p>Изолированное пространство агентов, процессов, запусков и credentials</p></div>
+          <div><h2 id="project-dialog-title">Новый проект</h2><p>Изолированное пространство агентов, процессов, запусков и credentials</p></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть"><Icon name="close" /></button>
         </div>
         <label className="field"><span>Название</span><input required maxLength={100} autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Аналитика" /></label>

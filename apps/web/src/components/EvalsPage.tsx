@@ -14,7 +14,9 @@ import type {
   KnowledgeCollection,
   PromptRegistryEntry,
 } from "../types";
+import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
+import { ModalLayer } from "./ModalLayer";
 
 type EvalTab = "experiments" | "datasets" | "prompts";
 
@@ -100,7 +102,7 @@ function Modal({ title, subtitle, onClose, children }: {
   children: ReactNode;
 }) {
   return (
-    <div className="eval-modal" role="dialog" aria-modal="true" aria-label={title}>
+    <ModalLayer className="eval-modal" label={title} onClose={onClose}>
       <div className="eval-modal__surface">
         <header>
           <div><h2>{title}</h2><p>{subtitle}</p></div>
@@ -108,7 +110,7 @@ function Modal({ title, subtitle, onClose, children }: {
         </header>
         {children}
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 
@@ -137,6 +139,20 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
   const canDesign = can(roles, ["admin", "designer"]);
   const canRun = can(roles, ["admin", "designer", "operator"]);
   const canReview = can(roles, ["admin", "designer", "operator", "auditor"]);
+  const experimentPrerequisite = !canRun
+    ? "Текущая роль может только просматривать качество."
+    : loading
+      ? "Загружаем доступные datasets и prompts."
+      : !snapshot?.datasets.length
+        ? "Сначала создайте golden dataset."
+        : !snapshot.prompts.length
+          ? "Сначала зафиксируйте prompt в registry."
+          : null;
+  const evalTabs: readonly TabDefinition<EvalTab>[] = [
+    { id: "experiments", label: <>Experiments <span>{snapshot?.counts.experiments ?? 0}</span></> },
+    { id: "datasets", label: <>Datasets <span>{snapshot?.counts.datasets ?? 0}</span></> },
+    { id: "prompts", label: <>Prompt registry <span>{snapshot?.counts.prompts ?? 0}</span></> },
+  ];
 
   const load = useCallback(async (signal?: AbortSignal, requestedExperimentId: string | null = selectedExperimentId) => {
     try {
@@ -352,19 +368,22 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
   }, [snapshot?.experiments]);
 
   if (loading && !snapshot) {
-    return <main className="main-column section-page evals-page"><div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем golden eval</strong></div></main>;
+    return <main className="main-column section-page evals-page"><div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем оценку качества</strong></div></main>;
   }
 
   return (
     <main className="main-column section-page evals-page" id="evals">
       <div className="page-title page-title--section evals-page__title">
         <div>
-          <h1>Golden eval</h1>
+          <h1>Качество</h1>
           <p>Неизменяемые datasets, prompt registry и release gate для prompt/model/RAG изменений</p>
         </div>
-        <button className="button button--primary" type="button" onClick={openExperiment} disabled={!canRun || !snapshot?.datasets.length || !snapshot.prompts.length}>
-          <Icon name="play" size={17} />Новый experiment
-        </button>
+        <div className="page-title__action-stack">
+          <button className="button button--primary" type="button" onClick={openExperiment} disabled={Boolean(experimentPrerequisite)} aria-describedby={experimentPrerequisite ? "experiment-prerequisite" : undefined}>
+            <Icon name="play" size={17} />Новый experiment
+          </button>
+          {experimentPrerequisite ? <p id="experiment-prerequisite">{experimentPrerequisite}</p> : null}
+        </div>
       </div>
 
       {error ? <button className="evals-error" type="button" onClick={() => setError(null)}><Icon name="warning" size={16} />{error}</button> : null}
@@ -376,16 +395,11 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
         <div><span>Активный gate</span><strong>{detail?.qualityScore === null || detail?.qualityScore === undefined ? "N/A" : `${detail.qualityScore}`}</strong><small>порог {detail?.minQualityScore ?? 80}/100</small></div>
       </section>
 
-      <nav className="evals-tabs" aria-label="Разделы golden eval">
-        <button className={tab === "experiments" ? "is-active" : ""} type="button" onClick={() => setTab("experiments")}>Experiments <span>{snapshot?.counts.experiments ?? 0}</span></button>
-        <button className={tab === "datasets" ? "is-active" : ""} type="button" onClick={() => setTab("datasets")}>Datasets <span>{snapshot?.counts.datasets ?? 0}</span></button>
-        <button className={tab === "prompts" ? "is-active" : ""} type="button" onClick={() => setTab("prompts")}>Prompt registry <span>{snapshot?.counts.prompts ?? 0}</span></button>
-      </nav>
+      <AccessibleTabList activeTab={tab} ariaLabel="Разделы оценки качества" className="evals-tabs" idPrefix="quality" tabs={evalTabs} onChange={setTab} />
 
-      {tab === "experiments" ? (
-        <section className="evals-workspace">
+      <TabPanel active={tab === "experiments"} className="evals-workspace" idPrefix="quality" tabId="experiments">
           <aside className="evals-list">
-            <header><div><strong>Batch runs</strong><small>Dataset × prompt × model</small></div><button type="button" onClick={openExperiment} disabled={!canRun} aria-label="Новый experiment"><Icon name="plus" size={15} /></button></header>
+            <header><div><strong>Batch runs</strong><small>Dataset × prompt × model</small></div><button type="button" onClick={openExperiment} disabled={Boolean(experimentPrerequisite)} aria-label="Новый experiment" aria-describedby={experimentPrerequisite ? "experiment-prerequisite" : undefined}><Icon name="plus" size={15} /></button></header>
             {(snapshot?.experiments ?? []).map((experiment) => (
               <button className={selectedExperimentId === experiment.id ? "is-active" : ""} type="button" onClick={() => void selectExperiment(experiment.id)} key={experiment.id}>
                 <span><strong>{experiment.name}</strong><small>{experiment.datasetName} v{experiment.datasetVersion} · {experiment.model ?? "auto"}</small></span>
@@ -443,11 +457,9 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
               </>
             ) : <div className="eval-empty"><Icon name="repeat" size={28} /><strong>Нет experiments</strong><p>Сначала создайте golden dataset, затем зафиксируйте prompt/model candidate.</p></div>}
           </div>
-        </section>
-      ) : null}
+      </TabPanel>
 
-      {tab === "datasets" ? (
-        <section className="registry-layout">
+      <TabPanel active={tab === "datasets"} className="registry-layout" idPrefix="quality" tabId="datasets">
           <aside className="registry-list">
             <header><div><strong>Golden datasets</strong><small>Каждая версия неизменяема</small></div><button type="button" onClick={() => setDatasetEditor(emptyDataset())} disabled={!canDesign} aria-label="Новый golden dataset"><Icon name="plus" size={15} /></button></header>
             {(snapshot?.datasets ?? []).map((dataset) => <button className={selectedDatasetId === dataset.id ? "is-active" : ""} type="button" onClick={() => setSelectedDatasetId(dataset.id)} key={dataset.id}><span><strong>{dataset.name}</strong><small>v{dataset.currentVersion} · {dataset.versions[0]?.examples.length ?? 0} examples</small></span><code>{dataset.versions[0]?.contentSha256.slice(0, 7)}</code></button>)}
@@ -458,11 +470,9 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
               <div className="registry-versions">{selectedDataset.versions.map((version) => <article key={version.version}><div className="registry-version__head"><strong>v{version.version}{version.active ? " · CURRENT" : ""}</strong><code>{version.contentSha256.slice(0, 12)}</code><time>{formatDate(version.createdAt)}</time></div><p>{version.changeNote || "Без комментария"}</p><div className="dataset-version__stats"><span>{version.examples.length} examples</span><span>{version.rubric.length} rubric criteria</span><span>{version.knowledgeSnapshot.collectionIds?.length ?? 0} knowledge collections</span></div><details><summary>Примеры и rubric</summary>{version.rubric.map((criterion) => <p key={criterion.id}><strong>{criterion.label}</strong> · weight {criterion.weight} · {criterion.description}</p>)}{version.examples.map((example) => <p key={example.id}><strong>{example.position + 1}. {example.name}</strong> · {example.input}</p>)}</details></article>)}</div>
             </> : <div className="eval-empty"><strong>Dataset не выбран</strong></div>}
           </div>
-        </section>
-      ) : null}
+      </TabPanel>
 
-      {tab === "prompts" ? (
-        <section className="registry-layout">
+      <TabPanel active={tab === "prompts"} className="registry-layout" idPrefix="quality" tabId="prompts">
           <aside className="registry-list">
             <header><div><strong>Prompt registry</strong><small>Immutable versions + active alias</small></div><button type="button" onClick={() => setPromptEditor({ promptId: null, content: "", note: "", name: "" })} disabled={!canDesign} aria-label="Новый prompt"><Icon name="plus" size={15} /></button></header>
             {(snapshot?.prompts ?? []).map((prompt) => <button className={selectedPromptId === prompt.id ? "is-active" : ""} type="button" onClick={() => setSelectedPromptId(prompt.id)} key={prompt.id}><span><strong>{prompt.name}</strong><small>{prompt.agentName ?? "standalone"} · active v{prompt.activeVersion}</small></span><code>{prompt.versions.length}v</code></button>)}
@@ -476,8 +486,7 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
               })}</div>
             </> : <div className="eval-empty"><strong>Prompt не выбран</strong></div>}
           </div>
-        </section>
-      ) : null}
+      </TabPanel>
 
       <datalist id="eval-model-options">{models.map((model) => <option value={model} key={model} />)}</datalist>
 

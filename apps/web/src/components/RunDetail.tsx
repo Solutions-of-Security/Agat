@@ -8,10 +8,12 @@ import type {
   EvaluationGate,
   ReplayRunRequest,
   Run,
+  RunStatus,
   RunTrace,
   SchedulerMode,
   StageStatus,
 } from "../types";
+import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { ApprovalPanel } from "./ApprovalPanel";
 import { Icon } from "./Icon";
 import { PolicyControl } from "./PolicyControl";
@@ -25,6 +27,17 @@ const stageStatusCopy: Record<StageStatus, string> = {
   completed: "Завершено",
   failed: "Ошибка",
   cancelled: "Отклонено",
+};
+
+const runStatusCopy: Record<RunStatus, string> = {
+  queued: "В очереди",
+  running: "Выполняется",
+  waiting_approval: "Требует решения",
+  waiting_external: "Ожидает события",
+  compensating: "Исправляет изменения",
+  completed: "Завершён",
+  failed: "Ошибка",
+  cancelled: "Отменён",
 };
 
 type DetailTab = "trace" | "io" | "artifacts" | "evaluation";
@@ -61,6 +74,29 @@ function formatDuration(milliseconds: number | null) {
   if (milliseconds === null) return "—";
   if (milliseconds < 1_000) return `${milliseconds} мс`;
   return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 1 : 0)} с`;
+}
+
+function formatRunDuration(run: Run) {
+  const start = new Date(run.startedAt ?? run.createdAt).getTime();
+  const end = run.completedAt ? new Date(run.completedAt).getTime() : Date.now();
+  const totalSeconds = Math.max(0, Math.floor((end - start) / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds} сек`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes} мин${seconds ? ` ${seconds} сек` : ""}`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} ч ${minutes % 60} мин`;
+}
+
+function formatRunDate(value: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 const gateCopy: Record<EvaluationGate, string> = {
@@ -298,19 +334,21 @@ interface EvaluationPanelProps {
   trace: RunTrace | null;
   models: string[];
   busy: boolean;
+  canReplayRuns: boolean;
   onReplay: (runId: string, payload: ReplayRunRequest) => Promise<void>;
 }
 
-function EvaluationPanel({ run, trace, models, busy, onReplay }: EvaluationPanelProps) {
+function EvaluationPanel({ run, trace, models, busy, canReplayRuns, onReplay }: EvaluationPanelProps) {
   const [primaryModel, setPrimaryModel] = useState("");
   const [secondaryModel, setSecondaryModel] = useState("");
   const [compare, setCompare] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modelOptions = useMemo(() => [...new Set(models)].sort(), [models]);
-  const canReplay = ["completed", "failed", "cancelled"].includes(run.status)
+  const replayEligible = ["completed", "failed", "cancelled"].includes(run.status)
     && run.process === null
     && run.stages.length > 0
     && run.stages.every((stage) => stage.kind === "agent");
+  const canReplay = canReplayRuns && replayEligible;
 
   useEffect(() => {
     setPrimaryModel("");
@@ -431,7 +469,13 @@ function EvaluationPanel({ run, trace, models, busy, onReplay }: EvaluationPanel
               <Icon name="play" size={15} />{busy ? "Создаём…" : compare ? "Запустить A/B" : "Запустить replay"}
             </button>
           </div>
-        ) : <p className="evaluation-note evaluation-note--warn">Этот запуск нельзя безопасно повторить: нужен терминальный run только из agent stages.</p>}
+        ) : (
+          <p className="evaluation-note evaluation-note--warn">
+            {canReplayRuns
+              ? "Этот запуск нельзя безопасно повторить: нужен терминальный run только из agent stages."
+              : "Режим просмотра: replay доступен администратору, проектировщику или оператору."}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -443,6 +487,12 @@ interface RunDetailProps {
   schedulerMode: SchedulerMode;
   approval: Approval | null;
   busy: boolean;
+  canManageScheduler: boolean;
+  canDecideApproval: boolean;
+  canReplayRuns: boolean;
+  canCancelRuns: boolean;
+  onBack: () => void;
+  onCancel: (runId: string) => Promise<void>;
   onSchedulerChange: (mode: SchedulerMode) => void;
   onApproval: (approval: Approval, decision: "approve" | "reject") => void;
   models: string[];
@@ -455,12 +505,21 @@ export function RunDetail({
   schedulerMode,
   approval,
   busy,
+  canManageScheduler,
+  canDecideApproval,
+  canReplayRuns,
+  canCancelRuns,
+  onBack,
+  onCancel,
   onSchedulerChange,
   onApproval,
   models,
   onReplay,
 }: RunDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>("trace");
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [trace, setTrace] = useState<RunTrace | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
@@ -472,13 +531,16 @@ export function RunDetail({
 
   useEffect(() => {
     setActiveTab("trace");
+    setTechnicalOpen(false);
+    setConfirmCancel(false);
+    setActionError(null);
     setTrace(null);
     setTraceError(null);
     setDownloadError(null);
   }, [runId]);
 
   useEffect(() => {
-    if (!runId) return;
+    if (!runId || !technicalOpen) return;
     const controller = new AbortController();
     setTraceLoading(true);
     api.runTrace(runId, controller.signal)
@@ -494,7 +556,7 @@ export function RunDetail({
         if (!controller.signal.aborted) setTraceLoading(false);
       });
     return () => controller.abort();
-  }, [eventRevision, runId, runUpdatedAt]);
+  }, [eventRevision, runId, runUpdatedAt, technicalOpen]);
 
   if (!run) {
     return <section className="run-detail empty-state" id="active-run">Выберите запуск, чтобы увидеть цепочку агентов.</section>;
@@ -503,20 +565,53 @@ export function RunDetail({
   const detailedRun = trace?.run ?? run;
   const fallbackEvents = events.filter((event) => event.runId === run.id);
   const traceEvents = trace?.events ?? fallbackEvents;
-  const current = detailedRun.stages.find((stage) => !["completed", "cancelled"].includes(stage.status));
+  const detailTabs: readonly TabDefinition<DetailTab>[] = [
+    { id: "trace", label: <><Icon name="terminal" size={15} />Ход и логи <span>{traceEvents.length}</span></> },
+    { id: "io", label: <><Icon name="list" size={15} />Вход и результат</> },
+    { id: "artifacts", label: <><Icon name="box" size={15} />Артефакты <span>{trace?.artifacts.length ?? 0}</span></> },
+    { id: "evaluation", label: <><Icon name="repeat" size={15} />Replay / Eval <span>{trace?.comparison?.runs.length ?? 0}</span></> },
+  ];
+  const current = detailedRun.stages.find((stage) => ["running", "waiting_approval", "waiting_external", "queued"].includes(stage.status))
+    ?? detailedRun.stages.find((stage) => !["completed", "cancelled"].includes(stage.status));
   const relevantApproval = approval?.runId === run.id ? approval : null;
-  const currentLabel = detailedRun.status === "completed"
-    ? "Цепочка завершена"
-    : detailedRun.status === "failed"
-      ? "Запуск завершился ошибкой"
+  const result = finalOutput(detailedRun);
+  const completedStages = detailedRun.stages.filter((stage) => stage.status === "completed").length;
+  const terminal = ["completed", "failed", "cancelled"].includes(detailedRun.status);
+  const cancellable = ["queued", "running", "waiting_approval", "waiting_external"].includes(detailedRun.status);
+  const terminalStage = detailedRun.status === "failed"
+    ? detailedRun.stages.find((stage) => stage.status === "failed")
+    : detailedRun.status === "cancelled"
+      ? detailedRun.stages.find((stage) => stage.status === "cancelled")
+      : [...detailedRun.stages].reverse().find((stage) => stage.status === "completed");
+  const replayEligible = terminal
+    && detailedRun.process === null
+    && detailedRun.stages.length > 0
+    && detailedRun.stages.every((stage) => stage.kind === "agent");
+  const latestError = [...traceEvents].reverse().find((event) => event.level === "error")?.message
+    ?? detailedRun.stages.find((stage) => stage.status === "failed")?.output
+    ?? null;
+  const stateDescription = detailedRun.status === "running"
+    ? "Агент выполняет задачу. Статус обновится автоматически."
+    : detailedRun.status === "queued"
+      ? "Запуск начнётся, когда планировщик освободит подходящий узел."
+      : detailedRun.status === "waiting_approval"
+        ? "Для продолжения требуется решение оператора."
+        : detailedRun.status === "waiting_external"
+          ? "Процесс продолжится после получения ожидаемого события."
+          : detailedRun.status === "compensating"
+            ? "Система безопасно отменяет уже выполненные изменения."
+            : detailedRun.status === "completed"
+              ? "Все этапы завершены, результат готов к использованию."
+              : detailedRun.status === "failed"
+                ? "Проверьте ошибку и технические детали перед повтором."
+                : "Выполнение остановлено; завершённые данные сохранены.";
+  const statusIcon = detailedRun.status === "completed"
+    ? "check"
+    : detailedRun.status === "failed" || detailedRun.status === "waiting_approval"
+      ? "warning"
       : detailedRun.status === "cancelled"
-        ? "Запуск отклонён"
-        : current?.agent.name ?? "Ожидает планировщик";
-  const currentTone = detailedRun.status === "running" || detailedRun.status === "completed"
-    ? "online"
-    : detailedRun.status === "failed" || detailedRun.status === "cancelled"
-      ? "offline"
-      : "waiting";
+        ? "close"
+        : "play";
 
   function exportTrace() {
     const payload = trace ?? {
@@ -545,18 +640,110 @@ export function RunDetail({
     }
   }
 
+  async function repeatRun() {
+    setActionError(null);
+    try {
+      await onReplay(detailedRun.id, { variants: [{ name: "Manifest replay" }] });
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : "Не удалось повторить запуск");
+    }
+  }
+
+  async function cancelSelectedRun() {
+    setActionError(null);
+    try {
+      await onCancel(detailedRun.id);
+      setConfirmCancel(false);
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : "Не удалось остановить запуск");
+    }
+  }
+
+  function openResult() {
+    const resultPanel = document.getElementById("run-result");
+    resultPanel?.scrollIntoView({ behavior: "smooth", block: "center" });
+    resultPanel?.focus({ preventScroll: true });
+  }
+
   return (
     <section className="run-detail" id="active-run" aria-labelledby="active-run-title">
+      <button className="run-detail__back" type="button" onClick={onBack}>
+        <Icon name="back" size={18} />Все запуски
+      </button>
       <div className="run-detail__header">
         <div>
           <h2 id="active-run-title">{detailedRun.name}</h2>
-          <p>Цепочка агентов: <span>{detailedRun.stages.map((stage) => stage.agent.name).join(" → ")}</span></p>
-        </div>
-        <div className="current-stage">
-          <small>Текущий этап</small>
-          <strong><span className={`status-dot status-dot--${currentTone}`} />{currentLabel}</strong>
+          <p><span className="mono">{detailedRun.id}</span> · {detailedRun.completedAt ? "Завершён" : "Создан"} {formatRunDate(detailedRun.completedAt ?? detailedRun.createdAt)}</p>
         </div>
       </div>
+
+      <section className={`run-summary run-summary--${detailedRun.status}`} aria-label="Текущее состояние запуска">
+        <div className="run-summary__state">
+          <span className="run-summary__icon"><Icon name={statusIcon} size={25} /></span>
+          <span>
+            <strong>{runStatusCopy[detailedRun.status]}</strong>
+            <small>{stateDescription}</small>
+          </span>
+        </div>
+        <dl className="run-summary__metrics">
+          <div>
+            <dt>Текущий этап</dt>
+            <dd>{terminal ? (terminalStage?.agent.name ?? "—") : (current?.agent.name ?? "Планировщик")}</dd>
+          </div>
+          <div>
+            <dt>Длительность</dt>
+            <dd>{formatRunDuration(detailedRun)}</dd>
+          </div>
+          <div>
+            <dt>Прогресс</dt>
+            <dd>{completedStages} из {detailedRun.stages.length}</dd>
+          </div>
+        </dl>
+        <div className="run-summary__actions">
+          {result && detailedRun.status === "completed" ? (
+            <button className="button button--primary" type="button" onClick={openResult}>
+              <Icon name="save" size={17} />Открыть результат
+            </button>
+          ) : null}
+          {replayEligible && canReplayRuns ? (
+            <button className={`button ${result && detailedRun.status === "completed" ? "button--secondary" : "button--primary"}`} type="button" disabled={busy} onClick={() => void repeatRun()}>
+              <Icon name="repeat" size={17} />{busy ? "Создаём…" : "Повторить"}
+            </button>
+          ) : terminal ? (
+            <button className="button button--secondary" type="button" disabled aria-describedby="run-replay-reason">
+              <Icon name="repeat" size={17} />Повторить
+            </button>
+          ) : null}
+          {cancellable && canCancelRuns ? (
+            <button className="button button--danger" type="button" disabled={busy} onClick={() => setConfirmCancel(true)}>
+              <Icon name="close" size={17} />Остановить
+            </button>
+          ) : null}
+        </div>
+        {terminal && (!replayEligible || !canReplayRuns) ? (
+          <p className="run-summary__reason" id="run-replay-reason">
+            {!canReplayRuns
+              ? "Повтор доступен администратору, проектировщику или оператору."
+              : "Процессы и цепочки с внешними шагами повторяются из раздела «Процессы»."}
+          </p>
+        ) : null}
+        {confirmCancel ? (
+          <div className="run-cancel-confirm" role="group" aria-label="Подтверждение остановки запуска">
+            <p><strong>Остановить запуск?</strong><span>Активный этап будет отменён, уже сохранённые данные останутся доступны.</span></p>
+            <div>
+              <button className="button button--secondary" type="button" disabled={busy} onClick={() => setConfirmCancel(false)}>Продолжить выполнение</button>
+              <button className="button button--danger" type="button" disabled={busy} onClick={() => void cancelSelectedRun()}>{busy ? "Останавливаем…" : "Остановить"}</button>
+            </div>
+          </div>
+        ) : null}
+        {actionError ? <p className="run-action-error" role="alert">{actionError}</p> : null}
+      </section>
+
+      {relevantApproval ? (
+        <div className="run-primary-approval">
+          <ApprovalPanel approval={relevantApproval} busy={busy} canDecide={canDecideApproval} onDecision={onApproval} />
+        </div>
+      ) : null}
 
       <ol className="stage-rail" aria-label="Этапы запуска">
         {detailedRun.stages.map((stage) => (
@@ -566,62 +753,86 @@ export function RunDetail({
             </span>
             <div className="stage__copy">
               <strong>{stage.agent.name}</strong>
-              <span>{stageStatusCopy[stage.status]}{stage.nodeName ? ` · ${stage.nodeName}` : ""}</span>
-              {stage.routing ? (
-                <small className="stage__routing">
-                  {stage.routing.selectedModel ?? "worker fallback"} · {stage.routing.strategy} · {stage.routing.alternativesConsidered} кандидат(а)
-                </small>
-              ) : null}
+              <span>{stageStatusCopy[stage.status]}</span>
             </div>
           </li>
         ))}
       </ol>
 
-      <div className="detail-grid detail-grid--trace">
-        <div className="run-workspace">
-          <div className="run-tabs" role="tablist" aria-label="Детали запуска">
-            <button className={activeTab === "trace" ? "is-active" : ""} type="button" onClick={() => setActiveTab("trace")}>
-              <Icon name="terminal" size={15} />Ход и логи <span>{traceEvents.length}</span>
-            </button>
-            <button className={activeTab === "io" ? "is-active" : ""} type="button" onClick={() => setActiveTab("io")}>
-              <Icon name="list" size={15} />Вход и результат
-            </button>
-            <button className={activeTab === "artifacts" ? "is-active" : ""} type="button" onClick={() => setActiveTab("artifacts")}>
-              <Icon name="box" size={15} />Артефакты <span>{trace?.artifacts.length ?? 0}</span>
-            </button>
-            <button className={activeTab === "evaluation" ? "is-active" : ""} type="button" onClick={() => setActiveTab("evaluation")}>
-              <Icon name="repeat" size={15} />Replay / Eval <span>{trace?.comparison?.runs.length ?? 0}</span>
-            </button>
+      <section className={`run-result${latestError && detailedRun.status === "failed" ? " run-result--error" : ""}`} id="run-result" tabIndex={-1} aria-labelledby="run-result-title">
+        <header>
+          <div>
+            <h3 id="run-result-title">{detailedRun.status === "failed" ? "Ошибка" : "Результат"}</h3>
+            <p>{result ? "Последний сохранённый ответ" : "Появится после завершения первого этапа"}</p>
           </div>
-          {activeTab === "trace" ? (
-            <TraceTimeline
-              run={detailedRun}
-              events={traceEvents}
-              loading={traceLoading}
-              error={traceError}
-              truncated={trace?.truncated ?? false}
-              onExport={exportTrace}
-            />
+          {result ? (
+            <button className="button button--secondary" type="button" onClick={() => triggerDownload(new Blob([result], { type: "text/markdown;charset=utf-8" }), "result.md")}>
+              <Icon name="save" size={16} />Скачать
+            </button>
           ) : null}
-          {activeTab === "io" ? <InputOutputPanel run={detailedRun} /> : null}
-          {activeTab === "artifacts" ? (
-            <ArtifactsPanel
-              run={detailedRun}
-              artifacts={trace?.artifacts ?? []}
-              downloadingId={downloadingId}
-              error={downloadError}
-              onDownload={(artifact) => void downloadArtifact(artifact)}
+        </header>
+        {latestError && detailedRun.status === "failed" ? <p className="run-result__error" role="alert">{latestError}</p> : null}
+        {result ? <pre>{result}</pre> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
+      </section>
+
+      <details
+        className="run-technical"
+        open={technicalOpen}
+        onToggle={(event) => setTechnicalOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span className="run-technical__icon"><Icon name="terminal" size={18} /></span>
+          <span><strong>Технические детали</strong><small>Трассировка, входы, артефакты и политика</small></span>
+          <Icon name="chevron" size={17} />
+        </summary>
+        <div className={`detail-grid detail-grid--trace${canManageScheduler ? "" : " detail-grid--single"}`}>
+          <div className="run-workspace">
+            <AccessibleTabList
+              activeTab={activeTab}
+              ariaLabel="Технические детали запуска"
+              className="run-tabs"
+              idPrefix="run-detail"
+              tabs={detailTabs}
+              onChange={setActiveTab}
             />
-          ) : null}
-          {activeTab === "evaluation" ? (
-            <EvaluationPanel run={detailedRun} trace={trace} models={models} busy={busy} onReplay={onReplay} />
+            <TabPanel active={activeTab === "trace"} idPrefix="run-detail" tabId="trace">
+              <TraceTimeline
+                run={detailedRun}
+                events={traceEvents}
+                loading={traceLoading}
+                error={traceError}
+                truncated={trace?.truncated ?? false}
+                onExport={exportTrace}
+              />
+            </TabPanel>
+            <TabPanel active={activeTab === "io"} idPrefix="run-detail" tabId="io"><InputOutputPanel run={detailedRun} /></TabPanel>
+            <TabPanel active={activeTab === "artifacts"} idPrefix="run-detail" tabId="artifacts">
+              <ArtifactsPanel
+                run={detailedRun}
+                artifacts={trace?.artifacts ?? []}
+                downloadingId={downloadingId}
+                error={downloadError}
+                onDownload={(artifact) => void downloadArtifact(artifact)}
+              />
+            </TabPanel>
+            <TabPanel active={activeTab === "evaluation"} idPrefix="run-detail" tabId="evaluation">
+              <EvaluationPanel
+                run={detailedRun}
+                trace={trace}
+                models={models}
+                busy={busy}
+                canReplayRuns={canReplayRuns}
+                onReplay={onReplay}
+              />
+            </TabPanel>
+          </div>
+          {canManageScheduler ? (
+            <div className="detail-side">
+              <PolicyControl value={schedulerMode} disabled={busy} onChange={onSchedulerChange} />
+            </div>
           ) : null}
         </div>
-        <div className="detail-side">
-          <PolicyControl value={schedulerMode} disabled={busy} onChange={onSchedulerChange} />
-          <ApprovalPanel approval={relevantApproval} busy={busy} onDecision={onApproval} />
-        </div>
-      </div>
+      </details>
     </section>
   );
 }

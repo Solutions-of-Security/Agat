@@ -140,6 +140,8 @@ python3 workers/agat_worker.py
 - [Операции и восстановление](./operations.md)
 - [Roadmap и дополнительные фичи](./roadmap.md)
 - [Дизайн-система и visual QA](./design-system.md)
+- [UX/UI-аудит всех страниц и пользовательских сценариев](./ux-ui-audit.md)
+- [Operator UX foundation: shell, роли и responsive QA](./design/ux-shell-baseline.md)
 
 ## Проверка
 

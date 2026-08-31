@@ -9,9 +9,16 @@ import type {
   ProcessWebhookSecret,
   SaveProcessScheduleRequest,
 } from "../types";
+import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
 
 type ReleaseTab = "triggers" | "versions" | "bpmn";
+
+const releaseTabs: readonly TabDefinition<ReleaseTab>[] = [
+  { id: "triggers", label: "Triggers" },
+  { id: "versions", label: "Версии" },
+  { id: "bpmn", label: "BPMN 2.0" },
+];
 
 interface ProcessReleasePanelProps {
   open: boolean;
@@ -265,21 +272,18 @@ export function ProcessReleasePanel({ open, process, onClose, onChanged }: Proce
 
   const versionOptions: Array<number | "draft"> = ["draft", ...process.versions.map((item) => item.version)];
   return (
-    <dialog className="process-release-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="process-release-dialog" ref={dialogRef} aria-labelledby="process-release-dialog-title" onCancel={onClose} onClose={onClose}>
       <section>
         <header className="process-release-dialog__head">
-          <div><small>Process release</small><h2>{process.name}</h2></div>
+          <div><small>Process release</small><h2 id="process-release-dialog-title">{process.name}</h2></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть"><Icon name="close" /></button>
         </header>
-        <nav className="process-release-dialog__tabs">
-          <button className={tab === "triggers" ? "is-active" : ""} type="button" onClick={() => setTab("triggers")}>Triggers</button>
-          <button className={tab === "versions" ? "is-active" : ""} type="button" onClick={() => setTab("versions")}>Версии</button>
-          <button className={tab === "bpmn" ? "is-active" : ""} type="button" onClick={() => setTab("bpmn")}>BPMN 2.0</button>
-        </nav>
+        <AccessibleTabList activeTab={tab} ariaLabel="Настройки выпуска процесса" className="process-release-dialog__tabs" idPrefix="process-release" tabs={releaseTabs} onChange={setTab} />
         {error ? <button className="process-release-dialog__error" type="button" onClick={() => setError(null)}>{error}</button> : null}
         <div className="process-release-dialog__body">
           {loading ? <p className="process-release-dialog__loading">Загружаем release-настройки…</p> : null}
-          {!loading && tab === "triggers" ? (
+          <TabPanel active={tab === "triggers"} idPrefix="process-release" tabId="triggers">
+          {!loading ? (
             <div className="process-release-grid">
               <form className="process-release-card" onSubmit={(event) => void saveSchedule(event)}>
                 <header><div><h3>Temporal Schedule</h3><p>Interval, cron или calendar; overlap всегда SKIP.</p></div>{schedule ? <span>active</span> : null}</header>
@@ -310,21 +314,26 @@ export function ProcessReleasePanel({ open, process, onClose, onChanged }: Proce
               </div>
             </div>
           ) : null}
+          </TabPanel>
 
-          {!loading && tab === "versions" ? (
+          <TabPanel active={tab === "versions"} idPrefix="process-release" tabId="versions">
+          {!loading ? (
             <div className="process-release-card process-release-card--wide">
               <header><div><h3>Структурный version diff</h3><p>Сравнение metadata, nodes, configs и edges без выполнения процесса.</p></div></header>
               <div className="process-version-selectors"><label className="field"><span>Откуда</span><select value={diffFrom} onChange={(event) => setDiffFrom(event.target.value === "draft" ? "draft" : Number(event.target.value))}>{versionOptions.map((version) => <option value={version} key={version}>{version === "draft" ? "Черновик" : `v${version}`}</option>)}</select></label><Icon name="chevron" /><label className="field"><span>Куда</span><select value={diffTo} onChange={(event) => setDiffTo(event.target.value === "draft" ? "draft" : Number(event.target.value))}>{versionOptions.map((version) => <option value={version} key={version}>{version === "draft" ? "Черновик" : `v${version}`}</option>)}</select></label></div>
               {diff ? <><div className="process-diff-summary"><span>+{diff.summary.addedNodes} nodes</span><span>−{diff.summary.removedNodes} nodes</span><span>~{diff.summary.changedNodes} nodes</span><span>+{diff.summary.addedEdges}/−{diff.summary.removedEdges} edges</span></div><div className="process-diff-list">{diff.entries.length ? diff.entries.map((entry) => <details key={`${entry.kind}:${entry.id}`}><summary><strong>{entry.kind.replaceAll("_", " ")}</strong><code>{entry.id}</code></summary><pre>{JSON.stringify({ before: entry.before, after: entry.after }, null, 2)}</pre></details>) : <p>Структурных изменений нет.</p>}</div></> : null}
             </div>
           ) : null}
+          </TabPanel>
 
-          {!loading && tab === "bpmn" ? (
+          <TabPanel active={tab === "bpmn"} idPrefix="process-release" tabId="bpmn">
+          {!loading ? (
             <div className="process-release-grid">
               <div className="process-release-card"><header><div><h3>Экспорт BPMN 2.0</h3><p>Executable XML с AGAT extension attributes и BPMN DI coordinates.</p></div></header><label className="field"><span>Версия</span><select value={bpmnVersion} onChange={(event) => setBpmnVersion(event.target.value === "draft" ? "draft" : Number(event.target.value))}>{versionOptions.map((version) => <option value={version} key={version}>{version === "draft" ? "Черновик" : `v${version}`}</option>)}</select></label><button className="button button--primary" type="button" disabled={busy} onClick={() => void exportBpmn(bpmnVersion)}><Icon name="publish" size={15} />Скачать .bpmn</button></div>
               <div className="process-release-card"><header><div><h3>Импорт BPMN 2.0</h3><p>Создаёт новый безопасный черновик; DTD/entities запрещены, неподдерживаемые элементы исключаются.</p></div></header><label className="process-bpmn-drop"><Icon name="workflow" size={26} /><strong>Выберите .bpmn или .xml</strong><small>До 1 МБ</small><input type="file" accept=".bpmn,.xml,application/xml,text/xml" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBpmn(file); }} /></label></div>
             </div>
           ) : null}
+          </TabPanel>
         </div>
       </section>
     </dialog>

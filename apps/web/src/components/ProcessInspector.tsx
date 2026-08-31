@@ -10,6 +10,7 @@ import type {
   StageStatus,
   TestProcessNodeResult,
 } from "../types";
+import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
 
 const operatorLabels: Record<ProcessConditionOperator, string> = {
@@ -541,6 +542,13 @@ export function ProcessInspector({
 
   if (!node) return null;
 
+  const inspectorTabs: readonly TabDefinition<InspectorTab>[] = [
+    { id: "parameters", label: "Параметры" },
+    { id: "input", label: "Вход" },
+    { id: "output", label: "Выход" },
+    { id: "logs", label: `Логи${execution?.events.length ? ` · ${execution.events.length}` : ""}` },
+  ];
+
   return (
     <aside className={`process-inspector process-inspector--${node.type}`}>
       <header>
@@ -560,19 +568,10 @@ export function ProcessInspector({
         </div>
       </header>
 
-      <nav className="process-inspector__tabs" aria-label="Данные шага">
-        {([
-          ["parameters", "Параметры"],
-          ["input", "Вход"],
-          ["output", "Выход"],
-          ["logs", `Логи${execution?.events.length ? ` · ${execution.events.length}` : ""}`],
-        ] as Array<[InspectorTab, string]>).map(([value, label]) => (
-          <button className={tab === value ? "is-active" : ""} type="button" key={value} onClick={() => setTab(value)}>{label}</button>
-        ))}
-      </nav>
+      <AccessibleTabList activeTab={tab} ariaLabel="Данные шага" className="process-inspector__tabs" idPrefix="process-inspector" tabs={inspectorTabs} onChange={setTab} />
 
       <div className="process-inspector__body">
-        {tab === "parameters" ? (
+        <TabPanel active={tab === "parameters"} idPrefix="process-inspector" tabId="parameters">
           <ParametersTab
             node={node}
             agents={agents}
@@ -583,8 +582,8 @@ export function ProcessInspector({
             onManageCredentials={onManageCredentials}
             onChange={onChange}
           />
-        ) : null}
-        {tab === "input" ? (
+        </TabPanel>
+        <TabPanel active={tab === "input"} idPrefix="process-inspector" tabId="input">
           <div className="process-inspector__io">
             <label className="field">
               <span>Вход для теста или запуска отсюда</span>
@@ -601,8 +600,8 @@ export function ProcessInspector({
               <pre>{formatExecutionValue(execution?.input)}</pre>
             </section>
           </div>
-        ) : null}
-        {tab === "output" ? (
+        </TabPanel>
+        <TabPanel active={tab === "output"} idPrefix="process-inspector" tabId="output">
           <div className="process-inspector__io">
             {testResult ? (
               <section className="process-inspector__test-result">
@@ -616,8 +615,8 @@ export function ProcessInspector({
               <pre>{formatExecutionValue(execution?.output)}</pre>
             </section>
           </div>
-        ) : null}
-        {tab === "logs" ? (
+        </TabPanel>
+        <TabPanel active={tab === "logs"} idPrefix="process-inspector" tabId="logs">
           <div className="process-inspector__logs">
             {executionLoading ? <p>Загружаем журнал шага…</p> : null}
             {!executionLoading && !execution?.events.length ? <p>Для этого шага пока нет событий.</p> : null}
@@ -628,7 +627,7 @@ export function ProcessInspector({
               </details>
             ))}
           </div>
-        ) : null}
+        </TabPanel>
       </div>
 
       <footer className="process-inspector__footer">

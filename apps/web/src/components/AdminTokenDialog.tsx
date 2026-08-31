@@ -29,10 +29,10 @@ export function AdminTokenDialog({ open, onCancel, onSubmit }: AdminTokenDialogP
   }
 
   return (
-    <dialog className="run-dialog admin-token-dialog" ref={dialogRef} onCancel={onCancel} onClose={onCancel}>
+    <dialog className="run-dialog admin-token-dialog" ref={dialogRef} aria-labelledby="admin-token-dialog-title" onCancel={onCancel} onClose={onCancel}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
-          <div><h2>Доступ к защищённым данным</h2><p>Введите admin token локального coordinator</p></div>
+          <div><h2 id="admin-token-dialog-title">Доступ к защищённым данным</h2><p>Введите admin token локального coordinator</p></div>
           <button className="icon-button" type="button" onClick={onCancel} aria-label="Закрыть">
             <Icon name="close" />
           </button>

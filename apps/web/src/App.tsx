@@ -4,6 +4,7 @@ import { AgentDialog } from "./components/AgentDialog";
 import { AdminTokenDialog } from "./components/AdminTokenDialog";
 import { AgentsPage } from "./components/AgentsPage";
 import { BottomNav } from "./components/BottomNav";
+import { Breadcrumbs } from "./components/Breadcrumbs";
 import { CredentialsDialog } from "./components/CredentialsDialog";
 import { NewRunDialog } from "./components/NewRunDialog";
 import { NodeRail } from "./components/NodeRail";
@@ -13,9 +14,11 @@ import { ProjectDialog } from "./components/ProjectDialog";
 import { NewProcessDialog, StartProcessDialog } from "./components/ProcessDialogs";
 import { RunsPage } from "./components/RunsPage";
 import { Sidebar } from "./components/Sidebar";
-import { Topbar } from "./components/Topbar";
+import { Topbar, type PrimaryAction } from "./components/Topbar";
 import { api, provideAdminToken, subscribeToAdminTokenRequests, subscribeToEvents } from "./lib/api";
 import { activeProjectId, logout, setActiveProjectId } from "./lib/auth";
+import { canAccessView, formatAppRoute, getRoleCapabilities, parseAppRoute } from "./navigation";
+import { buildNotifications, type AppNotification } from "./notifications";
 import type {
   Agent,
   Approval,
@@ -42,17 +45,15 @@ const KnowledgePage = lazy(() => import("./components/KnowledgePage").then((modu
 const EvalsPage = lazy(() => import("./components/EvalsPage").then((module) => ({ default: module.EvalsPage })));
 const A2APage = lazy(() => import("./components/A2APage").then((module) => ({ default: module.A2APage })));
 const FleetPage = lazy(() => import("./components/FleetPage").then((module) => ({ default: module.FleetPage })));
-const views = new Set<ViewId>(["overview", "agents", "runs", "processes", "knowledge", "evals", "tools", "a2a", "nodes", "models", "fleet"]);
-
-function viewFromLocation(): ViewId {
-  const candidate = window.location.hash.replace(/^#/, "") as ViewId;
-  return views.has(candidate) ? candidate : "overview";
+function routeFromLocation() {
+  return parseAppRoute(window.location.hash);
 }
 
 export default function App() {
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [activeView, setActiveView] = useState<ViewId>(viewFromLocation);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ViewId>(() => routeFromLocation().view);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(() => routeFromLocation().runId);
+  const [runDetailOpen, setRunDetailOpen] = useState(() => routeFromLocation().runId !== null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [runInitialAgentIds, setRunInitialAgentIds] = useState<string[] | null>(null);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
@@ -131,6 +132,8 @@ export default function App() {
     setActiveProjectId(projectId);
     setCurrentProjectId(projectId);
     setSelectedRunId(null);
+    setRunDetailOpen(false);
+    window.history.replaceState(null, "", formatAppRoute(activeView));
     setOverview(null);
     await refresh();
   }
@@ -154,7 +157,12 @@ export default function App() {
   useEffect(() => subscribeToAdminTokenRequests(setAdminTokenDialogOpen), []);
 
   useEffect(() => {
-    const onHistoryChange = () => setActiveView(viewFromLocation());
+    const onHistoryChange = () => {
+      const route = routeFromLocation();
+      setActiveView(route.view);
+      setRunDetailOpen(route.runId !== null);
+      if (route.runId) setSelectedRunId(route.runId);
+    };
     window.addEventListener("hashchange", onHistoryChange);
     window.addEventListener("popstate", onHistoryChange);
     return () => {
@@ -163,9 +171,33 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user || canAccessView(activeView, user.roles)) return;
+    setActiveView("overview");
+    window.history.replaceState(null, "", "#overview");
+  }, [activeView, user]);
+
   const navigate = useCallback((view: ViewId) => {
+    if (view === "approvals") {
+      const approvalRunIds = new Set(overview?.approvals.map((approval) => approval.runId) ?? []);
+      setSelectedRunId((current) => {
+        if (current && approvalRunIds.has(current)) return current;
+        return overview?.approvals[0]?.runId
+          ?? overview?.runs.find((run) => run.status === "waiting_approval")?.id
+          ?? null;
+      });
+    }
+    setRunDetailOpen(false);
     setActiveView(view);
-    window.history.pushState(null, "", `#${view}`);
+    window.history.pushState(null, "", formatAppRoute(view));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [overview?.approvals, overview?.runs]);
+
+  const openRun = useCallback((runId: string, view: "runs" | "approvals" = "runs") => {
+    setSelectedRunId(runId);
+    setRunDetailOpen(true);
+    setActiveView(view);
+    window.history.pushState(null, "", formatAppRoute(view, runId));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -173,7 +205,17 @@ export default function App() {
     () => overview?.runs.find((run) => run.id === selectedRunId) ?? null,
     [overview?.runs, selectedRunId],
   );
+
+  useEffect(() => {
+    if (!overview || !runDetailOpen) return;
+    const route = routeFromLocation();
+    if (!route.runId || overview.runs.some((run) => run.id === route.runId)) return;
+    setRunDetailOpen(false);
+    window.history.replaceState(null, "", formatAppRoute(route.view));
+  }, [overview, runDetailOpen]);
+
   const activeApproval = overview?.approvals.find((approval) => approval.runId === selectedRunId) ?? null;
+  const notifications = useMemo(() => overview ? buildNotifications(overview) : [], [overview]);
   const health = useMemo(() => {
     if (!overview || overview.counts.nodes === 0) return { label: "без узлов", status: "waiting" as const };
     if (overview.counts.onlineNodes === 0) return { label: "офлайн", status: "offline" as const };
@@ -210,8 +252,7 @@ export default function App() {
       const created = await api.createRun(payload);
       setRunDialogOpen(false);
       await refresh();
-      setSelectedRunId(created.id);
-      navigate("runs");
+      openRun(created.id);
     } catch (requestError) {
       setRunFormError(requestError instanceof Error ? requestError.message : "Не удалось создать запуск");
     } finally {
@@ -225,7 +266,7 @@ export default function App() {
       const replay = await api.replayRun(runId, payload);
       await refresh();
       const firstRun = replay.runs[0];
-      if (firstRun) setSelectedRunId(firstRun.id);
+      if (firstRun) openRun(firstRun.id);
     } finally {
       setBusy(false);
     }
@@ -355,6 +396,16 @@ export default function App() {
     }
   }
 
+  async function cancelRun(runId: string) {
+    setBusy(true);
+    try {
+      await api.cancelRun(runId);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function replayProcessInstance(instanceId: string, mode: "safe" | "live") {
     setBusy(true);
     setProcessError(null);
@@ -418,18 +469,63 @@ export default function App() {
     );
   }
 
-  const showNodeRail = activeView === "overview" || activeView === "runs";
-  const primaryAction = activeView === "agents" ? "agent" : activeView === "processes" ? "process" : activeView === "tools" ? "mcp" : activeView === "a2a" ? "a2a" : "run";
+  const roles = user?.roles ?? [];
+  const { canCreateRuns, canDesign } = getRoleCapabilities(roles);
+  const showNodeRail = activeView === "overview";
+  const primaryAction: PrimaryAction = activeView === "agents" && canDesign
+    ? "agent"
+    : activeView === "processes" && canDesign
+      ? "process"
+      : activeView === "tools" && canDesign
+        ? "mcp"
+        : activeView === "a2a" && canDesign
+          ? "a2a"
+          : (activeView === "overview" || activeView === "runs") && canCreateRuns
+            ? "run"
+            : null;
+
+  function triggerPrimaryAction() {
+    if (primaryAction === "agent") openAgentDialog();
+    else if (primaryAction === "process") openProcessDialog();
+    else if (primaryAction === "mcp") setMcpCreateRequest((value) => value + 1);
+    else if (primaryAction === "a2a") setA2ACreateRequest((value) => value + 1);
+    else if (primaryAction === "run") openRunDialog();
+  }
+
+  function openNotification(notification: AppNotification) {
+    if (notification.runId && (notification.targetView === "runs" || notification.targetView === "approvals")) {
+      openRun(notification.runId, notification.targetView);
+      return;
+    }
+    navigate(notification.targetView);
+  }
+
+  function focusMainContent() {
+    const mainContent = document.getElementById("main-content");
+    mainContent?.focus({ preventScroll: true });
+    mainContent?.scrollIntoView();
+  }
 
   return (
     <div className={`app-shell${activeView === "processes" ? " app-shell--processes" : ""}`}>
-      <Sidebar activeView={activeView} health={health} onNavigate={navigate} />
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          focusMainContent();
+        }}
+      >
+        Перейти к основному содержимому
+      </a>
+      <Sidebar activeView={activeView} health={health} roles={roles} onNavigate={navigate} />
       <div className="workspace">
         <Topbar
-          counts={overview.counts}
-          health={health}
+          notifications={notifications}
           primaryAction={primaryAction}
-          onPrimary={() => primaryAction === "agent" ? openAgentDialog() : primaryAction === "process" ? openProcessDialog() : primaryAction === "mcp" ? setMcpCreateRequest((value) => value + 1) : primaryAction === "a2a" ? setA2ACreateRequest((value) => value + 1) : openRunDialog()}
+          onPrimary={triggerPrimaryAction}
+          onNotification={openNotification}
+          onApprovals={() => navigate("approvals")}
           user={user}
           projects={projects}
           activeProjectId={currentProjectId}
@@ -437,24 +533,30 @@ export default function App() {
           onCreateProject={() => { setProjectError(null); setProjectDialogOpen(true); }}
           onLogout={() => void logout()}
         />
-        <div className={`workspace__body${showNodeRail ? "" : " workspace__body--full"}`}>
+        <Breadcrumbs activeView={activeView} onNavigate={navigate} />
+        <div className={`workspace__body${showNodeRail ? "" : " workspace__body--full"}`} id="main-content" tabIndex={-1}>
           {activeView === "overview" ? (
             <OverviewPage
               overview={overview}
               onCreateRun={() => openRunDialog()}
               onNavigate={navigate}
-              onOpenRun={(runId) => { setSelectedRunId(runId); navigate("runs"); }}
+              onOpenRun={(runId) => openRun(runId)}
             />
           ) : null}
-          {activeView === "runs" ? (
+          {activeView === "runs" || activeView === "approvals" ? (
             <RunsPage
+              mode={activeView === "approvals" ? "approvals" : "runs"}
+              roles={roles}
               overview={overview}
               selectedRun={selectedRun}
               selectedRunId={selectedRunId}
               approval={activeApproval}
               busy={busy}
+              detailOpen={runDetailOpen}
               onCreate={() => openRunDialog()}
-              onSelect={setSelectedRunId}
+              onSelect={(runId) => openRun(runId, activeView === "approvals" ? "approvals" : "runs")}
+              onBack={() => navigate(activeView)}
+              onCancel={(runId) => cancelRun(runId)}
               onSchedulerChange={(mode) => void changeScheduler(mode)}
               onApproval={(approval, decision) => void decideApproval(approval, decision)}
               onReplay={(runId, payload) => replayRun(runId, payload)}
@@ -515,7 +617,7 @@ export default function App() {
             </Suspense>
           ) : null}
           {activeView === "evals" ? (
-            <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем golden eval</strong></div>}>
+            <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем оценку качества</strong></div>}>
               <EvalsPage
                 projectId={currentProjectId}
                 agents={overview.agents}
@@ -571,7 +673,7 @@ export default function App() {
           {showNodeRail ? <NodeRail nodes={overview.nodes} onManage={() => navigate("nodes")} /> : null}
         </div>
       </div>
-      <BottomNav activeView={activeView} onNavigate={navigate} />
+      <BottomNav activeView={activeView} roles={roles} onNavigate={navigate} />
       <NewRunDialog
         open={runDialogOpen}
         agents={overview.agents}
