@@ -306,9 +306,9 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | UX-109 | Устранить mobile layout defects | Нет horizontal overflow на 390 px; исправлены Fleet, bottom nav, Golden eval master-detail и перекрытие контента fixed-навигацией | UX-102, UX-104 | M |
 | UX-110 | Унифицировать опасные и глобальные действия | Нет прямого logout по аватару, декоративного terminal control и системных `window.prompt/confirm` для критических операций | UX-103, UX-105 | M |
 
-#### Прогресс реализации на 31 августа 2026 года
+#### Прогресс реализации на 1 сентября 2026 года
 
-Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
+Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md), новый запуск — в [спецификации UX-108](./design/ux-108-new-run-wizard.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
 
 | ID | Статус | Сделано | Остаётся |
 |---|---|---|---|
@@ -319,7 +319,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | UX-105 | Базовый gate готов | Рабочий skip link; WAI-ARIA tabs с roving focus; подписанные dialogs; focus trap/return, Escape и объяснение недоступного experiment; keyboard-only smoke пройден | Screen reader и реальные устройства входят в release gate |
 | UX-106 | Основной scope готов | Master-detail list, status/current stage/duration/result/error/next action, state-valid Repeat/Cancel/Open, inline cancel confirmation, lazy technical disclosure и shareable run/approval routes | Реальные устройства, screen reader и operator usability-test входят в release gate |
 | UX-107 | Частично | Отдельная очередь, счётчик и доступные роли решений | Фильтры, risk/effect context, комментарий и полный audit trail |
-| UX-108 | Не начато | — | Трёхшаговый flow нового запуска и progressive disclosure |
+| UX-108 | Основной scope готов | Трёхшаговый wizard, один безопасный default-agent, явный reorder, optional knowledge, summary/readiness, priority presets, journal-default и advanced disclosure; desktop/mobile Browser QA пройден | Реальный coordinator/worker e2e, реальные устройства, screen reader и operator usability-test входят в release gate |
 | UX-109 | Выявленные дефекты исправлены | 36 route/viewport checks без overflow; Fleet и fixed bottom nav исправлены | Реальные устройства и populated Quality/Process fixtures |
 | UX-110 | Частично | Аватар открывает меню; logout явный; декоративный topbar control удалён | Замена оставшихся системных `prompt/confirm` единым product dialog |
 
@@ -451,7 +451,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
 | P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |
 | P0 | Foundation готова в 1.8 | Role-based IA, mobile navigation, notifications и accessibility foundation | Shell, базовые уведомления и keyboard gate реализованы; остаются device/screen-reader release checks |
-| P0 | UX-106 готов; следующий инкремент 1.8 | Трёхшаговый новый запуск UX-108, затем полный inbox согласований UX-107 | Завершает основной create→monitor→decide operator workflow поверх новой модели Runs |
+| P0 | UX-106 и UX-108 готовы; следующий инкремент 1.8 | Полный inbox согласований UX-107 | Завершает decide-часть основного create→monitor→decide operator workflow |
 | P1 | Предварительно в 1.9 | Basic / Advanced и creator workflows | Упрощает Agents, Processes, Knowledge и Quality без удаления экспертных возможностей |
 | P1 | Предварительно в 1.9 | Integrations и Infrastructure workspaces | Убирает MCP/A2A/Fleet из общего пользовательского потока |
 | P2 | После 1.9 | Search, saved views, personalization и UX-telemetry | Повышает эффективность после стабилизации базовой структуры |
