@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 interface AgentDialogProps {
   open: boolean;
   agent: Agent | null;
+  initialValue: CreateAgentRequest | null;
   agents: Agent[];
   models: string[];
   busy: boolean;
@@ -26,7 +27,16 @@ const emptyForm: CreateAgentRequest = {
   },
 };
 
-export function AgentDialog({ open, agent, agents, models, busy, error, onClose, onSubmit }: AgentDialogProps) {
+function copyRequest(request: CreateAgentRequest): CreateAgentRequest {
+  return {
+    ...request,
+    runtimeConfig: request.runtimeConfig.profile === "specialist_team_v1"
+      ? { ...request.runtimeConfig, specialistAgentIds: [...request.runtimeConfig.specialistAgentIds] }
+      : { ...request.runtimeConfig },
+  };
+}
+
+export function AgentDialog({ open, agent, initialValue, agents, models, busy, error, onClose, onSubmit }: AgentDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<CreateAgentRequest>(emptyForm);
   const specialistCandidates = useMemo(
@@ -50,11 +60,11 @@ export function AgentDialog({ open, agent, agents, models, busy, error, onClose,
         model: agent.model,
         runtime: agent.runtime,
         runtimeConfig: agent.runtimeConfig,
-      } : emptyForm);
+      } : initialValue ? copyRequest(initialValue) : emptyForm);
       dialog.showModal();
     }
     if (!open && dialog.open) dialog.close();
-  }, [agent, open]);
+  }, [agent, initialValue, open]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,8 +76,12 @@ export function AgentDialog({ open, agent, agents, models, busy, error, onClose,
       <form onSubmit={submit}>
         <div className="dialog-head">
           <div>
-            <h2 id="agent-dialog-title">{agent ? "Настройка агента" : "Новый агент"}</h2>
-            <p>{agent ? "Роль и runtime редактируются здесь; prompt/model продвигаются через Golden eval" : "Опишите ответственность, инструкции и предпочтительную локальную модель"}</p>
+            <h2 id="agent-dialog-title">{agent ? "Настройка агента" : initialValue ? "Установить шаблон" : "Новый агент"}</h2>
+            <p>{agent
+              ? "Роль и runtime редактируются здесь; prompt/model продвигаются через Golden eval"
+              : initialValue
+                ? "Проверьте готовую роль, системный промпт, runtime и модель перед созданием копии в проекте"
+                : "Опишите ответственность, инструкции и предпочтительную локальную модель"}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
@@ -249,7 +263,7 @@ export function AgentDialog({ open, agent, agents, models, busy, error, onClose,
           <button className="button button--secondary" type="button" onClick={onClose}>Отмена</button>
           <button className="button button--primary" type="submit" disabled={busy || Boolean(teamMemberError)}>
             <Icon name={agent ? "check" : "plus"} size={17} />
-            {busy ? "Сохраняем…" : agent ? "Сохранить" : "Создать агента"}
+            {busy ? "Сохраняем…" : agent ? "Сохранить" : initialValue ? "Установить агента" : "Создать агента"}
           </button>
         </div>
       </form>

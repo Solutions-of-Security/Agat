@@ -395,6 +395,15 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 
 Все горизонты отсчитываются от 1 сентября 2026 года. Это порядок начала и прохождения gate, а не обещание срока без подтверждённых команды и capacity.
 
+#### Прогресс реализации на 1 сентября 2026 года
+
+| ID | Статус | Уже реализовано | Остаётся до Definition of Done |
+|---|---|---|---|
+| SP-101 | Частично | Curated-каталог 13 ролей, включая все 6 P0; bounded prompts, requirements, runtime config, установка копии через существующий Agent API | Version-pinned backend provenance, output schemas, tool allowlists как данные, golden eval examples и immutable template lifecycle |
+| SP-005 | Частично | Вкладка маркетплейса, поиск, P0/P1/P2-фильтры, readiness requirements на карточках и предзаполненная установка | Pack manifest/registry, clean-project readiness check, process/connector install, совместимый upgrade и preview diff |
+
+Карточка агента и успешное создание project-scoped копии не означают готовность solution pack: обязательные pack-level gates ниже остаются без изменений.
+
 #### P0 foundation — 0–3 месяца
 
 | ID | Задача | Проверяемый результат | Зависимости | Размер |
@@ -557,8 +566,8 @@ Pack не считается готовым по факту появления �
 | P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |
 | P0 | Foundation готова в 1.8 | Role-based IA, mobile navigation, notifications и accessibility foundation | Shell, базовые уведомления и keyboard gate реализованы; остаются device/screen-reader release checks |
 | P0 | UX-106–UX-110: основной scope готов | Единый create→monitor→decide workflow и безопасные значимые действия | Следующий UX-инкремент — release-gate usability test 1.8 на ролях operator/designer/admin и реальных mobile devices |
-| P0 | Запланировано на 0–3 месяца | Solution-pack foundation и connector contract (`SP-001`–`SP-005`, `CON-001`) | Закрывает главный продуктовый gap: manifest, structured outputs, release lifecycle, KPI и установка |
-| P0 | Запланировано на 0–3 месяца | Пять первых packs и шесть базовых ролей (`SP-101`–`SP-106`) | Монетизирует готовые RAG, durable process, specialist team, approvals, eval и audit |
+| P0 | Начато; `SP-005` частично | Solution-pack foundation и connector contract (`SP-001`–`SP-005`, `CON-001`) | Каталог и установка agent-копии готовы; manifest, structured outputs, release lifecycle, KPI, readiness и upgrade остаются в scope |
+| P0 | `SP-101` частично; packs запланированы | Пять первых packs и шесть базовых ролей (`SP-101`–`SP-106`) | 13 curated agent templates и все шесть P0-ролей доступны; pack/eval/schema/immutable gates ещё не закрыты |
 | P1 | После P0 gate, 3–6 месяцев | Software, Support, Finance, Legal, Procurement, Security packs (`SP-201`–`SP-206`) | Закрывает наиболее востребованные domain workflows после готовности connector packs |
 | P2 | После P1 gate, 6–12 месяцев | Sales/RFP и HR lifecycle packs (`SP-301`, `SP-302`) | Расширяет front/middle office после доказанного repeat demand и ROI |
 | Watch | Только по entry criteria | Voice, browser/computer use и generic marketing (`EXP-401`–`EXP-403`) | Не позволяет популярным, но менее подходящим сценариям перехватить roadmap |

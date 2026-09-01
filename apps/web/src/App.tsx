@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { createAgentRequestFromTemplate, type AgentMarketplaceTemplate } from "./agentMarketplace";
 import { approvalIdentity, type ApprovalInboxItem } from "./approvalInbox";
 import { useActionDialog } from "./components/ActionDialog";
 import { AgentDialog } from "./components/AgentDialog";
@@ -65,6 +66,7 @@ export default function App() {
   const [runInitialAgentIds, setRunInitialAgentIds] = useState<string[] | null>(null);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [agentTemplateRequest, setAgentTemplateRequest] = useState<CreateAgentRequest | null>(null);
   const [processDialogOpen, setProcessDialogOpen] = useState(false);
   const [startingProcess, setStartingProcess] = useState<ProcessDefinition | null>(null);
   const [busy, setBusy] = useState(false);
@@ -252,8 +254,9 @@ export default function App() {
     setRunDialogOpen(true);
   }
 
-  function openAgentDialog(agent: Agent | null = null) {
+  function openAgentDialog(agent: Agent | null = null, template: AgentMarketplaceTemplate | null = null) {
     setEditingAgent(agent);
+    setAgentTemplateRequest(template ? createAgentRequestFromTemplate(template) : null);
     setAgentFormError(null);
     setAgentDialogOpen(true);
   }
@@ -303,6 +306,7 @@ export default function App() {
       else await api.createAgent(payload);
       setAgentDialogOpen(false);
       setEditingAgent(null);
+      setAgentTemplateRequest(null);
       await refresh();
       navigate("agents");
     } catch (requestError) {
@@ -616,6 +620,7 @@ export default function App() {
               onCreate={() => openAgentDialog()}
               onEdit={(agent) => openAgentDialog(agent)}
               onRun={(agentId) => openRunDialog([agentId])}
+              onInstallTemplate={(template) => openAgentDialog(null, template)}
             />
           ) : null}
           {activeView === "processes" ? (
@@ -739,11 +744,12 @@ export default function App() {
       <AgentDialog
         open={agentDialogOpen}
         agent={editingAgent}
+        initialValue={agentTemplateRequest}
         agents={overview.agents}
         models={overview.models}
         busy={busy}
         error={agentFormError}
-        onClose={() => { setAgentDialogOpen(false); setEditingAgent(null); setAgentFormError(null); }}
+        onClose={() => { setAgentDialogOpen(false); setEditingAgent(null); setAgentTemplateRequest(null); setAgentFormError(null); }}
         onSubmit={(payload) => void saveAgent(payload)}
       />
       <CredentialsDialog
