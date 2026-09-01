@@ -8,6 +8,7 @@ import type {
   ProjectFleetPolicy,
   RegisterWorkerReleaseRequest,
 } from "../types";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 
 interface FleetPageProps {
@@ -49,6 +50,7 @@ function policyFromSnapshot(snapshot: FleetSnapshot): PolicyDraft {
 }
 
 export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
+  const requestAction = useActionDialog();
   const [snapshot, setSnapshot] = useState<FleetSnapshot | null>(null);
   const [policy, setPolicy] = useState<PolicyDraft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,12 +158,29 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
 
   async function revokeRelease(releaseId: string) {
     if (!canManage) return;
-    const reason = window.prompt(`Причина немедленного revoke ${releaseId}`)?.trim();
-    if (!reason) return;
+    const decision = await requestAction({
+      title: "Немедленно отозвать release?",
+      description: "Workers больше не смогут использовать эту подписанную версию.",
+      subject: releaseId,
+      subjectLabel: "Release",
+      impact: "Release получит статус revoked и будет исключён из rollout. Узлы на этой версии не пройдут дальнейшую проверку допуска.",
+      recovery: "Revocation необратим. Для возврата кода зарегистрируйте новый подписанный release с новым идентификатором и digest.",
+      confirmLabel: "Отозвать release",
+      tone: "danger",
+      input: {
+        label: "Причина отзыва",
+        placeholder: "Опишите уязвимость, инцидент или ошибку сборки",
+        hint: "Причина сохранится в audit и должна позволять отличить этот revoke от планового rollout.",
+        required: true,
+        requiredMessage: "Укажите причину отзыва release",
+        maxLength: 1_000,
+      },
+    });
+    if (!decision.confirmed || !decision.value) return;
     setBusy(true);
     setError(null);
     try {
-      await api.revokeWorkerRelease(releaseId, reason);
+      await api.revokeWorkerRelease(releaseId, decision.value);
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось отозвать worker release");

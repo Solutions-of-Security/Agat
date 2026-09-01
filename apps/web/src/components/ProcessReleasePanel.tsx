@@ -10,6 +10,7 @@ import type {
   SaveProcessScheduleRequest,
 } from "../types";
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 
 type ReleaseTab = "triggers" | "versions" | "bpmn";
@@ -55,6 +56,7 @@ function scheduleRequest(schedule: ProcessSchedule | null): SaveProcessScheduleR
 }
 
 export function ProcessReleasePanel({ open, process, onClose, onChanged }: ProcessReleasePanelProps) {
+  const requestAction = useActionDialog();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<ReleaseTab>("triggers");
   const [schedule, setSchedule] = useState<ProcessSchedule | null>(null);
@@ -153,7 +155,18 @@ export function ProcessReleasePanel({ open, process, onClose, onChanged }: Proce
   }
 
   async function removeSchedule() {
-    if (!process || !schedule || !window.confirm("Удалить расписание процесса?")) return;
+    if (!process || !schedule) return;
+    const decision = await requestAction({
+      title: "Удалить расписание?",
+      description: "Процесс больше не будет запускаться автоматически по текущему правилу.",
+      subject: process.name,
+      subjectLabel: "Процесс",
+      impact: "Будущие срабатывания расписания отменятся. Уже созданные и выполняющиеся запуски продолжат работу.",
+      recovery: "Расписание можно создать заново, но его параметры потребуется настроить повторно.",
+      confirmLabel: "Удалить расписание",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     setBusy(true);
     setError(null);
     try {
@@ -206,7 +219,17 @@ export function ProcessReleasePanel({ open, process, onClose, onChanged }: Proce
   }
 
   async function rotateWebhook(webhook: ProcessWebhook) {
-    if (!window.confirm(`Ротировать token webhook «${webhook.name}»? Старый token сразу перестанет работать.`)) return;
+    const decision = await requestAction({
+      title: "Ротировать token webhook?",
+      description: "Все отправители должны перейти на новый token без задержки.",
+      subject: webhook.name,
+      subjectLabel: "Webhook",
+      impact: "Старый token перестанет работать сразу после ротации. Новый секрет будет показан только один раз.",
+      recovery: "Старый token вернуть нельзя. Скопируйте новый и обновите каждый вызывающий сервис.",
+      confirmLabel: "Ротировать token",
+      tone: "warning",
+    });
+    if (!decision.confirmed) return;
     setBusy(true);
     setError(null);
     try {
@@ -221,7 +244,17 @@ export function ProcessReleasePanel({ open, process, onClose, onChanged }: Proce
   }
 
   async function removeWebhook(webhook: ProcessWebhook) {
-    if (!window.confirm(`Удалить webhook «${webhook.name}»?`)) return;
+    const decision = await requestAction({
+      title: "Удалить webhook?",
+      description: "Входящие вызовы на этот endpoint больше не будут запускать процесс или отправлять signal.",
+      subject: webhook.name,
+      subjectLabel: "Webhook",
+      impact: "Endpoint и его token будут удалены. История уже созданных запусков останется в АГАТ.",
+      recovery: "Создайте новый webhook и обновите URL и token во всех вызывающих системах.",
+      confirmLabel: "Удалить webhook",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     setBusy(true);
     setError(null);
     try {

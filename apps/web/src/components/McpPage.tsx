@@ -11,6 +11,7 @@ import type {
   McpToolPolicy,
   SaveMcpServerRequest,
 } from "../types";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 
 const emptyServer: SaveMcpServerRequest = {
@@ -329,6 +330,7 @@ interface McpPageProps {
 }
 
 export function McpPage({ mcp, credentials, onChanged, onManageCredentials, createRequest, roles }: McpPageProps) {
+  const requestAction = useActionDialog();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<McpServer | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -380,7 +382,17 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
   }
 
   async function remove(server: McpServer) {
-    if (!window.confirm(`Удалить MCP-сервер «${server.name}»? История вызовов останется в audit.`)) return;
+    const decision = await requestAction({
+      title: "Удалить MCP-сервер?",
+      description: "Tools этого сервера исчезнут из каталога и перестанут выдаваться новым lease.",
+      subject: server.name,
+      subjectLabel: "MCP-сервер",
+      impact: "Подключение, catalog cache и tool policy сервера будут удалены. История вызовов останется в audit.",
+      recovery: "Добавьте сервер заново, привяжите credential и повторно проверьте tool policy.",
+      confirmLabel: "Удалить сервер",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     try {
       await run(`delete:${server.id}`, () => api.deleteMcpServer(server.id));
     } catch {
@@ -421,13 +433,35 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
 
   async function toggleEmergencyDeny() {
     const enabling = !mcp.policy.emergencyDeny.enabled;
-    const reason = window.prompt(
-      enabling ? "Причина включения emergency deny" : "Причина снятия emergency deny",
-      enabling ? "Incident response" : "Incident resolved",
-    );
-    if (!reason?.trim()) return;
+    const decision = await requestAction({
+      title: enabling ? "Включить emergency deny?" : "Снять emergency deny?",
+      description: enabling
+        ? "Это глобальный circuit breaker для MCP-вызовов текущего проекта."
+        : "MCP-вызовы снова будут оцениваться и выполняться по активной policy.",
+      subject: "MCP policy текущего проекта",
+      subjectLabel: "Контур",
+      impact: enabling
+        ? "Ожидающие и новые MCP-вызовы будут заблокированы; активные процессы могут завершиться ошибкой."
+        : "Новые MCP-вызовы снова смогут проходить по правилам allow/approval активной policy.",
+      recovery: enabling
+        ? "Emergency deny можно снять отдельным аудируемым действием после завершения incident response."
+        : "Circuit breaker можно включить повторно, но уже разрешённые side effects автоматически не откатываются.",
+      confirmLabel: enabling ? "Включить emergency deny" : "Снять emergency deny",
+      tone: "danger",
+      input: {
+        label: "Причина изменения",
+        placeholder: enabling ? "Например: подозрение на утечку credential" : "Например: инцидент устранён, policy проверена",
+        defaultValue: enabling ? "Incident response" : "Incident resolved",
+        hint: "Причина попадёт в audit trail и поможет восстановить контекст решения.",
+        required: true,
+        requiredMessage: "Укажите причину изменения emergency deny",
+        maxLength: 1_000,
+      },
+    });
+    const reason = decision.value;
+    if (!decision.confirmed || !reason) return;
     try {
-      await run("emergency-deny", () => api.setMcpEmergencyDeny(enabling, reason.trim()));
+      await run("emergency-deny", () => api.setMcpEmergencyDeny(enabling, reason));
     } catch {
       // Page-level error is already set.
     }

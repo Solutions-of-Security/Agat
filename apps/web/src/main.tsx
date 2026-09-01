@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "./App";
+import { ActionDialogProvider } from "./components/ActionDialog";
 import { initializeAuth } from "./lib/auth";
 import "./styles.css";
 
@@ -10,7 +11,9 @@ const root = createRoot(document.getElementById("root")!);
 void initializeAuth()
   .then(() => root.render(
     <StrictMode>
-      <App />
+      <ActionDialogProvider>
+        <App />
+      </ActionDialogProvider>
     </StrictMode>,
   ))
   .catch((error: unknown) => root.render(

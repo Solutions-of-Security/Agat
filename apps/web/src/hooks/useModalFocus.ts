@@ -34,10 +34,13 @@ export function useModalFocus<T extends HTMLElement>(
     document.body.style.overflow = "hidden";
 
     const frame = window.requestAnimationFrame(() => {
+      const explicitInitial = container.querySelector<HTMLElement>("[autofocus], [data-autofocus]");
+      if (explicitInitial) {
+        explicitInitial.focus();
+        return;
+      }
       if (container.contains(document.activeElement)) return;
-      const initial = container.querySelector<HTMLElement>("[autofocus], [data-autofocus]")
-        ?? focusableElements(container)[0]
-        ?? container;
+      const initial = focusableElements(container)[0] ?? container;
       initial.focus();
     });
 

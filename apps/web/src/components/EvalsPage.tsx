@@ -15,6 +15,7 @@ import type {
   PromptRegistryEntry,
 } from "../types";
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 import { ModalLayer } from "./ModalLayer";
 
@@ -119,6 +120,7 @@ function Gate({ name, value }: { name: string; value: "pass" | "fail" | "pending
 }
 
 export function EvalsPage({ projectId, agents, models, collections, roles, onChanged }: EvalsPageProps) {
+  const requestAction = useActionDialog();
   const [tab, setTab] = useState<EvalTab>("experiments");
   const [snapshot, setSnapshot] = useState<EvalSnapshot | null>(null);
   const [detail, setDetail] = useState<GoldenEvalExperiment | null>(null);
@@ -349,8 +351,19 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
     void mutate(() => api.judgeEvalExperiment(detail.id, judgeModel.trim()));
   }
 
-  function promote(prompt: PromptRegistryEntry, version: number, experiment: GoldenEvalExperiment) {
-    if (!window.confirm(`Активировать ${prompt.name} v${version} и модель ${experiment.model ?? "auto"}?`)) return;
+  async function promote(prompt: PromptRegistryEntry, version: number, experiment: GoldenEvalExperiment) {
+    const model = experiment.model ?? "auto";
+    const decision = await requestAction({
+      title: "Активировать версию prompt?",
+      description: "Новые запуски агента будут использовать выбранные prompt и модель.",
+      subject: `${prompt.name} · v${version} · ${model}`,
+      subjectLabel: "Promotion",
+      impact: `Версия v${version} и модель ${model} станут активными после пройденного quality gate. Уже начатые запуски останутся pinned к своим версиям.`,
+      recovery: "Можно продвинуть другую прошедшую gate версию; история экспериментов и предыдущих promotions сохранится.",
+      confirmLabel: "Активировать версию",
+      tone: "accent",
+    });
+    if (!decision.confirmed) return;
     void mutate(() => api.promotePrompt(prompt.id, {
       version,
       model: experiment.model,
@@ -482,7 +495,7 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
               <header><div><span>PROMPT REGISTRY</span><h2>{selectedPrompt.name}</h2><p>{selectedPrompt.agentName ? `Агент: ${selectedPrompt.agentName}` : "Standalone prompt"} · model {selectedPrompt.activeModel ?? "auto"}</p></div><button className="button button--secondary" type="button" onClick={() => openPromptVersion(selectedPrompt)} disabled={!canDesign}><Icon name="plus" size={15} />Новая версия</button></header>
               <div className="registry-versions">{selectedPrompt.versions.map((version) => {
                 const passing = passingByPromptVersion.get(`${selectedPrompt.id}:${version.version}`);
-                return <article className={version.active ? "is-active" : ""} key={version.version}><div className="registry-version__head"><strong>v{version.version}{version.active ? " · ACTIVE" : ""}</strong><code>{version.contentSha256.slice(0, 12)}</code><time>{formatDate(version.createdAt)}</time></div><pre>{version.content}</pre><footer><span>{version.changeNote || "Без комментария"} · {version.createdBy}</span>{!version.active ? <button className="button button--secondary" type="button" disabled={!canDesign || !passing || busy} onClick={() => passing && promote(selectedPrompt, version.version, passing)}>{passing ? `Promote · score ${passing.qualityScore}` : "Нужен PASS experiment"}</button> : null}</footer></article>;
+                return <article className={version.active ? "is-active" : ""} key={version.version}><div className="registry-version__head"><strong>v{version.version}{version.active ? " · ACTIVE" : ""}</strong><code>{version.contentSha256.slice(0, 12)}</code><time>{formatDate(version.createdAt)}</time></div><pre>{version.content}</pre><footer><span>{version.changeNote || "Без комментария"} · {version.createdBy}</span>{!version.active ? <button className="button button--secondary" type="button" disabled={!canDesign || !passing || busy} onClick={() => { if (passing) void promote(selectedPrompt, version.version, passing); }}>{passing ? `Promote · score ${passing.qualityScore}` : "Нужен PASS experiment"}</button> : null}</footer></article>;
               })}</div>
             </> : <div className="eval-empty"><strong>Prompt не выбран</strong></div>}
           </div>

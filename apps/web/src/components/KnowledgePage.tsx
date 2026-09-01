@@ -10,6 +10,7 @@ import type {
   KnowledgeSnapshot,
   MemoryEntry,
 } from "../types";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 
 interface KnowledgePageProps {
@@ -55,6 +56,7 @@ function accessAllowed(roles: AgatRole[], allowed: AgatRole[]): boolean {
 }
 
 export function KnowledgePage({ overview, projectId, agents, nodes, roles, onChanged }: KnowledgePageProps) {
+  const requestAction = useActionDialog();
   const [snapshot, setSnapshot] = useState<KnowledgeSnapshot | null>(null);
   const [snapshotProjectId, setSnapshotProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -178,18 +180,49 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
     }), () => setMemoryOpen(false));
   }
 
-  function removeCollection(id: string, name: string) {
-    if (!window.confirm(`Удалить коллекцию «${name}» со всеми документами и embeddings?`)) return;
+  async function removeCollection(id: string, name: string) {
+    const decision = await requestAction({
+      title: "Удалить коллекцию знаний?",
+      description: "Агенты перестанут находить материалы этой коллекции при следующих запусках.",
+      subject: name,
+      subjectLabel: "Коллекция",
+      impact: "Коллекция, документы, chunks и embeddings будут удалены. Артефакты и trace уже завершённых запусков не изменятся.",
+      recovery: "Создайте коллекцию заново, повторно загрузите источники и дождитесь индексации.",
+      confirmLabel: "Удалить коллекцию",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     void mutate(() => api.deleteKnowledgeCollection(id));
   }
 
-  function removeDocument(document: KnowledgeDocument) {
-    if (!window.confirm(`Удалить документ «${document.name}» и его chunks?`)) return;
+  async function removeDocument(document: KnowledgeDocument) {
+    const decision = await requestAction({
+      title: "Удалить документ?",
+      description: "Документ больше не будет участвовать в поиске по базе знаний.",
+      subject: document.name,
+      subjectLabel: "Документ",
+      impact: "Исходный документ, его chunks и embeddings будут удалены из коллекции.",
+      recovery: "Загрузите документ повторно и дождитесь новой индексации.",
+      confirmLabel: "Удалить документ",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     void mutate(() => api.deleteKnowledgeDocument(document.id));
   }
 
-  function removeMemory(entry: MemoryEntry) {
-    if (!window.confirm(`Удалить ${entry.kind === "episodic" ? "эпизодическую" : "рабочую"} память?`)) return;
+  async function removeMemory(entry: MemoryEntry) {
+    const memoryKind = entry.kind === "episodic" ? "эпизодическую" : "рабочую";
+    const decision = await requestAction({
+      title: `Удалить ${memoryKind} память?`,
+      description: "Эта запись больше не будет доступна агентам в текущем проекте.",
+      subject: entry.content.slice(0, 120),
+      subjectLabel: "Запись памяти",
+      impact: "Запись и её индекс будут удалены из активной памяти.",
+      recovery: "Содержимое можно сохранить повторно только вручную, если исходный текст остался у оператора.",
+      confirmLabel: "Удалить память",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     void mutate(() => api.deleteMemory(entry.id));
   }
 
@@ -297,7 +330,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                   <span className={`knowledge-worker-state${collection.embeddingWorkers > 0 ? " is-online" : ""}`}><i />{collection.embeddingWorkers > 0 ? `${collection.embeddingWorkers} worker` : "нет embedding worker"}</span>
                   <div className="knowledge-collection__actions">
                     <button className="button button--secondary" type="button" disabled={!canManage || busy} onClick={() => { setIngestCollectionId(collection.id); setDocumentContent(""); setDocumentName(""); }}><Icon name="plus" size={14} />Документ</button>
-                    <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => removeCollection(collection.id, collection.name)} aria-label={`Удалить коллекцию ${collection.name}`}><Icon name="trash" size={16} /></button>
+                    <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => void removeCollection(collection.id, collection.name)} aria-label={`Удалить коллекцию ${collection.name}`}><Icon name="trash" size={16} /></button>
                   </div>
                 </header>
                 <div className="knowledge-collection__meta">
@@ -329,7 +362,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                       <div><strong>{document.name}</strong><small>{document.sourceUri ?? document.mediaType} · SHA {document.contentSha256.slice(0, 10)}</small>{document.error ? <em>{document.error}</em> : null}</div>
                       <span>{document.embeddedCount}/{document.chunkCount} chunks</span>
                       <time>{formatDate(document.updatedAt)}</time>
-                      <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => removeDocument(document)} aria-label={`Удалить документ ${document.name}`}><Icon name="trash" size={15} /></button>
+                      <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => void removeDocument(document)} aria-label={`Удалить документ ${document.name}`}><Icon name="trash" size={15} /></button>
                     </div>
                   ))}
                 </div>
@@ -347,7 +380,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
               <span className={`memory-kind memory-kind--${entry.kind}`}>{entry.kind}</span>
               <p>{entry.content}</p>
               <small>{entry.agentName ?? "Все агенты"} · {entry.expiresAt ? `истекает ${formatDate(entry.expiresAt)}` : "без срока"} · SHA {entry.contentSha256.slice(0, 10)}</small>
-              <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => removeMemory(entry)} aria-label="Удалить memory entry"><Icon name="trash" size={15} /></button>
+              <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => void removeMemory(entry)} aria-label="Удалить memory entry"><Icon name="trash" size={15} /></button>
             </article>
           ))}</div>
         )}

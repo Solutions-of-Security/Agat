@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { approvalIdentity, type ApprovalInboxItem } from "./approvalInbox";
+import { useActionDialog } from "./components/ActionDialog";
 import { AgentDialog } from "./components/AgentDialog";
 import { AdminTokenDialog } from "./components/AdminTokenDialog";
 import { AgentsPage } from "./components/AgentsPage";
@@ -28,6 +29,7 @@ import type {
   AuthUser,
   CreateAgentRequest,
   CreateCredentialRequest,
+  CredentialSummary,
   CreateProcessRequest,
   CreateRunRequest,
   ModelRouterPolicy,
@@ -53,6 +55,7 @@ function routeFromLocation() {
 }
 
 export default function App() {
+  const requestAction = useActionDialog();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [activeView, setActiveView] = useState<ViewId>(() => routeFromLocation().view);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(() => routeFromLocation().runId);
@@ -323,12 +326,22 @@ export default function App() {
     }
   }
 
-  async function deleteCredential(id: string) {
-    if (!window.confirm("Удалить credentials? Восстановить секрет будет невозможно.")) return;
+  async function deleteCredential(credential: CredentialSummary) {
+    const decision = await requestAction({
+      title: "Удалить credential?",
+      description: "Интеграции, которые используют этот секрет, перестанут проходить аутентификацию.",
+      subject: credential.name,
+      subjectLabel: "Credential",
+      impact: "Зашифрованное значение и его scope будут удалены из проекта. Существующий секрет нельзя прочитать или вернуть.",
+      recovery: "Создайте новый credential и заново привяжите его к затронутым интеграциям.",
+      confirmLabel: "Удалить credential",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     setBusy(true);
     setCredentialsError(null);
     try {
-      await api.deleteCredential(id);
+      await api.deleteCredential(credential.id);
       await refresh();
     } catch (requestError) {
       setCredentialsError(requestError instanceof Error ? requestError.message : "Не удалось удалить credentials");
@@ -740,7 +753,7 @@ export default function App() {
         error={credentialsError}
         onClose={() => { setCredentialsDialogOpen(false); setCredentialsError(null); }}
         onSave={(id, payload) => void saveCredential(id, payload)}
-        onDelete={(credential) => void deleteCredential(credential.id)}
+        onDelete={(credential) => void deleteCredential(credential)}
       />
       <ProjectDialog
         open={projectDialogOpen}

@@ -40,6 +40,7 @@ import type {
   UpdateProcessRequest,
 } from "../types";
 import { api } from "../lib/api";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 import {
   processEdgeTypes,
@@ -526,6 +527,7 @@ export function ProcessesPage({
   onManageCredentials,
   onChanged,
 }: ProcessesPageProps) {
+  const requestAction = useActionDialog();
   const mobile = useMobileEditor();
   const agentSignature = agents.map((agent) => `${agent.id}:${agent.name}:${agent.model ?? ""}:${agent.updatedAt}`).join("|");
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agentSignature]);
@@ -791,9 +793,23 @@ export function ProcessesPage({
     if (next) setPicker(next);
   }
 
-  function chooseProcess(processId: string) {
+  async function chooseProcess(processId: string) {
     if (processId === selectedProcessId) return;
-    if (dirty && !window.confirm("Есть несохранённые изменения. Переключить процесс?")) return;
+    if (dirty) {
+      const target = processes.find((process) => process.id === processId);
+      const decision = await requestAction({
+        title: "Перейти без сохранения?",
+        description: target ? `Откроется процесс «${target.name}».` : "Откроется другой процесс.",
+        subject: processName || selectedProcess?.name,
+        subjectLabel: "Несохранённый процесс",
+        impact: "Локальные изменения схемы, названия и описания будут отброшены.",
+        recovery: "Последняя сохранённая версия останется доступна, но текущие несохранённые изменения восстановить нельзя.",
+        confirmLabel: "Отбросить и перейти",
+        cancelLabel: "Остаться",
+        tone: "warning",
+      });
+      if (!decision.confirmed) return;
+    }
     loadedProcessIdRef.current = null;
     setSelectedProcessId(processId);
   }
@@ -1071,7 +1087,7 @@ export function ProcessesPage({
             className="process-mobile-select"
             aria-label="Выбранный процесс"
             value={selectedProcessId ?? ""}
-            onChange={(event) => chooseProcess(event.target.value)}
+            onChange={(event) => void chooseProcess(event.target.value)}
           >
             {processes.map((process) => <option value={process.id} key={process.id}>{process.name}</option>)}
           </select>

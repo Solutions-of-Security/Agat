@@ -310,7 +310,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 
 #### Прогресс реализации на 1 сентября 2026 года
 
-Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md), единый inbox — в [спецификации UX-107](./design/ux-107-approval-inbox.md), новый запуск — в [спецификации UX-108](./design/ux-108-new-run-wizard.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
+Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md), единый inbox — в [спецификации UX-107](./design/ux-107-approval-inbox.md), новый запуск — в [спецификации UX-108](./design/ux-108-new-run-wizard.md), единые значимые действия — в [спецификации UX-110](./design/ux-110-action-dialog.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
 
 | ID | Статус | Сделано | Остаётся |
 |---|---|---|---|
@@ -323,7 +323,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | UX-107 | Основной scope готов | Единый project-scoped inbox, summary и фильтры, risk/effect/deadline context, точные actions, redacted MCP disclosure, комментарий, обязательная причина отказа, audit-only resolved state и shareable approval routes; desktop/mobile Browser QA пройден | Persisted `expires_at`, cursor API полного audit archive, реальные устройства, screen reader, multi-user race и operator usability-test входят в release gate |
 | UX-108 | Основной scope готов | Трёхшаговый wizard, один безопасный default-agent, явный reorder, optional knowledge, summary/readiness, priority presets, journal-default и advanced disclosure; desktop/mobile Browser QA пройден | Реальный coordinator/worker e2e, реальные устройства, screen reader и operator usability-test входят в release gate |
 | UX-109 | Выявленные дефекты исправлены | 36 route/viewport checks без overflow; Fleet и fixed bottom nav исправлены | Реальные устройства и populated Quality/Process fixtures |
-| UX-110 | Частично | Аватар открывает меню; logout явный; декоративный topbar control удалён | Замена оставшихся системных `prompt/confirm` единым product dialog |
+| UX-110 | Основной scope готов | Аватар открывает меню; logout явный; декоративный topbar control удалён; 15 системных `prompt/confirm` заменены единым product dialog с точным объектом, последствиями, восстановлением и optional/required reason; desktop/mobile Browser QA пройден | Реальные устройства, screen reader и operator usability-test входят в release gate |
 
 #### Детализация задач 1.8
 
@@ -362,6 +362,15 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 - до раскрытия advanced показывать не более семи пользовательских решений;
 - не выбирать все встроенные агенты и Artifact Store без понятного объяснения;
 - заменить числовой priority 0–100 на `Обычный / Высокий / Срочный`, сохранив число в advanced.
+
+**UX-110 — единые значимые действия**
+
+- один product dialog для destructive, warning и promotion actions;
+- до side effect показывать точный объект, последствия и способ восстановления;
+- использовать точный action label вместо generic `OK` / `Подтвердить`;
+- запрашивать reason только когда он отправляется в API или audit, с inline-валидацией обязательности;
+- Cancel, Close, Escape и размонтирование всегда дают безопасный результат и возвращают focus триггеру;
+- запрещать возврат blocking `window.prompt/confirm` unit guard-ом.
 
 #### Release gate 1.8
 
@@ -520,7 +529,7 @@ Pack не считается готовым по факту появления �
 2. На новой IA собрать UX-102, UX-103 и UX-105.
 3. После foundation реализовать UX-106 и UX-108.
 4. Поверх новой модели Runs добавить UX-107. Основной scope готов.
-5. Завершить единые dangerous actions UX-110; оставшиеся проверки mobile defects UX-109 включить в release gate.
+5. Единые dangerous actions UX-110 завершены; оставшиеся проверки mobile defects UX-109 включить в release gate.
 6. Провести release-gate usability test 1.8.
 7. Зафиксировать общий Basic / Advanced паттерн UX-201.
 8. Параллельно развивать creator-поток UX-202–UX-206 и admin-поток UX-207–UX-208.
@@ -547,7 +556,7 @@ Pack не считается готовым по факту появления �
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
 | P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |
 | P0 | Foundation готова в 1.8 | Role-based IA, mobile navigation, notifications и accessibility foundation | Shell, базовые уведомления и keyboard gate реализованы; остаются device/screen-reader release checks |
-| P0 | UX-106–UX-108: основной scope готов | Единый create→monitor→decide operator workflow | Следующий UX-инкремент — завершить UX-110 и заменить оставшиеся системные dialogs |
+| P0 | UX-106–UX-110: основной scope готов | Единый create→monitor→decide workflow и безопасные значимые действия | Следующий UX-инкремент — release-gate usability test 1.8 на ролях operator/designer/admin и реальных mobile devices |
 | P0 | Запланировано на 0–3 месяца | Solution-pack foundation и connector contract (`SP-001`–`SP-005`, `CON-001`) | Закрывает главный продуктовый gap: manifest, structured outputs, release lifecycle, KPI и установка |
 | P0 | Запланировано на 0–3 месяца | Пять первых packs и шесть базовых ролей (`SP-101`–`SP-106`) | Монетизирует готовые RAG, durable process, specialist team, approvals, eval и audit |
 | P1 | После P0 gate, 3–6 месяцев | Software, Support, Finance, Legal, Procurement, Security packs (`SP-201`–`SP-206`) | Закрывает наиболее востребованные domain workflows после готовности connector packs |

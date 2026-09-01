@@ -15,6 +15,7 @@ import type {
   SaveA2AEndpointRequest,
   SaveA2ARemoteRequest,
 } from "../types";
+import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 
 interface A2APageProps {
@@ -234,6 +235,7 @@ export function A2APage({
   onChanged,
   onOpenRun,
 }: A2APageProps) {
+  const requestAction = useActionDialog();
   const [snapshot, setSnapshot] = useState<A2ASnapshot | null>(null);
   const [editor, setEditor] = useState<{ endpointId: string | null; form: EndpointForm } | null>(null);
   const [remoteEditor, setRemoteEditor] = useState<RemoteForm | null>(null);
@@ -326,7 +328,17 @@ export function A2APage({
   }
 
   async function removeRemote(remote: A2ARemote) {
-    if (!window.confirm(`Удалить outbound peer «${remote.name}» и его task mirrors? Audit events останутся.`)) return;
+    const decision = await requestAction({
+      title: "Удалить outbound peer?",
+      description: "АГАТ больше не сможет отправлять новые задачи этому внешнему агенту.",
+      subject: remote.name,
+      subjectLabel: "Outbound peer",
+      impact: "Настройки подключения и task mirrors будут удалены. Audit events останутся доступными.",
+      recovery: "Добавьте peer заново и повторно настройте endpoint, skill и credentials.",
+      confirmLabel: "Удалить peer",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     try {
       await mutate(`remote-delete:${remote.id}`, () => api.deleteA2ARemote(remote.id));
     } catch {
@@ -373,7 +385,17 @@ export function A2APage({
   }
 
   async function rotate(endpoint: A2AEndpoint) {
-    if (!window.confirm(`Заменить token endpoint «${endpoint.name}»? Старый token сразу перестанет работать.`)) return;
+    const decision = await requestAction({
+      title: "Заменить token endpoint?",
+      description: "Все A2A-клиенты должны перейти на новый token.",
+      subject: endpoint.name,
+      subjectLabel: "A2A endpoint",
+      impact: "Старый token перестанет работать сразу. Новый секрет будет показан только один раз.",
+      recovery: "Старый token вернуть нельзя. Скопируйте новый token и обновите каждый клиент.",
+      confirmLabel: "Заменить token",
+      tone: "warning",
+    });
+    if (!decision.confirmed) return;
     try {
       let nextSecret: A2AEndpointSecret | null = null;
       await mutate(`rotate:${endpoint.id}`, async () => {
@@ -386,7 +408,17 @@ export function A2APage({
   }
 
   async function remove(endpoint: A2AEndpoint) {
-    if (!window.confirm(`Удалить A2A endpoint «${endpoint.name}»? История завершённых runs останется в АГАТ.`)) return;
+    const decision = await requestAction({
+      title: "Удалить A2A endpoint?",
+      description: "Новые внешние задачи больше не будут приниматься через этот endpoint.",
+      subject: endpoint.name,
+      subjectLabel: "A2A endpoint",
+      impact: "Endpoint, token и активная конфигурация будут удалены. История завершённых запусков останется в АГАТ.",
+      recovery: "Создайте новый endpoint и обновите его URL и token во внешних системах.",
+      confirmLabel: "Удалить endpoint",
+      tone: "danger",
+    });
+    if (!decision.confirmed) return;
     try {
       await mutate(`delete:${endpoint.id}`, () => api.deleteA2AEndpoint(endpoint.id));
     } catch {
