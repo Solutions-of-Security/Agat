@@ -765,9 +765,18 @@ export interface McpToolApproval {
   arguments: Record<string, unknown>;
   previewDiff: Array<Record<string, unknown>>;
   createdAt: string;
+  expiresAt?: string | null;
 }
 
 export type Approval = StageApproval | McpToolApproval;
+
+export type ApprovalDecision = "approve" | "reject";
+
+export interface ApprovalDecisionInput {
+  decision: ApprovalDecision;
+  comment?: string;
+  reason?: string;
+}
 
 export type McpDefaultPolicy = "deny" | "approval" | "auto";
 export type McpToolPolicy = "allow" | "approval" | "deny";

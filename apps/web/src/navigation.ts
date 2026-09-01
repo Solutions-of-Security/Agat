@@ -34,6 +34,7 @@ export interface RoleCapabilities {
 export interface AppRoute {
   view: ViewId;
   runId: string | null;
+  approvalId: string | null;
 }
 
 const ALL_ROLES: readonly AgatRole[] = ["admin", "designer", "operator", "viewer", "auditor"];
@@ -56,23 +57,31 @@ export function getRoleCapabilities(roles: readonly AgatRole[]): RoleCapabilitie
 }
 
 export function parseAppRoute(hash: string): AppRoute {
-  const [rawView = "", rawRunId, ...rest] = hash.replace(/^#\/?/, "").split("/");
+  const [rawView = "", rawRunId, rawApprovalId, ...rest] = hash.replace(/^#\/?/, "").split("/");
   const view = rawView as ViewId;
   const knownView = Object.prototype.hasOwnProperty.call(viewMeta, view) ? view : "overview";
-  if ((knownView !== "runs" && knownView !== "approvals") || !rawRunId || rest.length > 0) {
-    return { view: knownView, runId: null };
+  if ((knownView !== "runs" && knownView !== "approvals") || !rawRunId) {
+    return { view: knownView, runId: null, approvalId: null };
+  }
+  if (rest.length > 0 || (knownView === "runs" && rawApprovalId)) {
+    return { view: knownView, runId: null, approvalId: null };
   }
 
   try {
-    return { view: knownView, runId: decodeURIComponent(rawRunId) || null };
+    return {
+      view: knownView,
+      runId: decodeURIComponent(rawRunId) || null,
+      approvalId: knownView === "approvals" && rawApprovalId ? decodeURIComponent(rawApprovalId) || null : null,
+    };
   } catch {
-    return { view: knownView, runId: null };
+    return { view: knownView, runId: null, approvalId: null };
   }
 }
 
-export function formatAppRoute(view: ViewId, runId: string | null = null): string {
+export function formatAppRoute(view: ViewId, runId: string | null = null, approvalId: string | null = null): string {
   if ((view === "runs" || view === "approvals") && runId) {
-    return `#${view}/${encodeURIComponent(runId)}`;
+    const approvalSegment = view === "approvals" && approvalId ? `/${encodeURIComponent(approvalId)}` : "";
+    return `#${view}/${encodeURIComponent(runId)}${approvalSegment}`;
   }
   return `#${view}`;
 }

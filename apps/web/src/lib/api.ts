@@ -5,6 +5,7 @@ import type {
   A2AOutboundInvocationResponse,
   A2ASnapshot,
   Agent,
+  ApprovalDecisionInput,
   AuthUser,
   ComputeNode,
   CreateCredentialRequest,
@@ -343,10 +344,10 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ policy }),
     }),
-  decideMcpToolCall: (callId: string, decision: "approve" | "reject") =>
+  decideMcpToolCall: (callId: string, decision: ApprovalDecisionInput) =>
     request<unknown>(`/mcp/tool-calls/${encodeURIComponent(callId)}/decision`, {
       method: "POST",
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(decision),
     }),
   previewMcpPolicy: (document: McpPolicyDocument) =>
     request<McpPolicyPreview>("/mcp/policy/preview", {
@@ -456,10 +457,10 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(policy),
     }),
-  decideApproval: (stageId: string, decision: "approve" | "reject") =>
+  decideApproval: (stageId: string, decision: ApprovalDecisionInput) =>
     request<void>(`/approvals/${encodeURIComponent(stageId)}`, {
       method: "POST",
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(decision),
     }),
 };
 

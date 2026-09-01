@@ -10,6 +10,12 @@ import {
   type CoordinatorConfig,
 } from "./config.js";
 import {
+  approvalDecisionAuditData,
+  parseApprovalDecision,
+  withApprovalDeadline,
+  type ParsedApprovalDecision,
+} from "./approval-decisions.js";
+import {
   AuthenticationError,
   localAdminContext,
   OidcVerifier,
@@ -316,6 +322,30 @@ function requireWorker(
 
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Неизвестная ошибка";
+}
+
+function approvalDecision(value: unknown): ParsedApprovalDecision {
+  try {
+    return parseApprovalDecision(value);
+  } catch (error) {
+    throw new HttpError(400, safeMessage(error));
+  }
+}
+
+function overviewApprovalItems(store: AgatStore, projectId: string): unknown[] {
+  const approvals = store.getOverview(projectId).approvals;
+  return Array.isArray(approvals) ? approvals : [];
+}
+
+function approvalMatches(
+  value: unknown,
+  kind: "mcp_tool" | "stage",
+  identityField: "callId" | "stageId",
+  identity: string,
+): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const approval = value as Record<string, unknown>;
+  return approval.kind === kind && approval[identityField] === identity;
 }
 
 function sha256Text(value: string): string {
@@ -971,8 +1001,12 @@ export function createCoordinatorServer(
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
         const overview = store.getOverview(auth.projectId);
         const mcp = overview.mcp && typeof overview.mcp === "object" ? overview.mcp as Record<string, unknown> : {};
+        const approvals = Array.isArray(overview.approvals)
+          ? overview.approvals.map((item) => withApprovalDeadline(item, config.mcpApprovalTtlSeconds) ?? item)
+          : [];
         json(response, 200, {
           ...overview,
+          approvals,
           mcp: { ...mcp, enabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot() },
           processRuntime: processRuntime.snapshot(),
         });
@@ -1430,15 +1464,29 @@ export function createCoordinatorServer(
       const mcpDecisionCallId = routeParam(pathname, /^\/api\/v1\/mcp\/tool-calls\/([^/]+)\/decision$/);
       if (request.method === "POST" && mcpDecisionCallId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "operator"], true);
-        const body = await readJson<{ decision?: "approve" | "reject" }>(request);
-        if (body.decision !== "approve" && body.decision !== "reject") {
-          throw new HttpError(400, "decision должен быть approve или reject");
-        }
+        const body = approvalDecision(await readJson<unknown>(request));
+        const currentApproval = overviewApprovalItems(store, auth.projectId)
+          .find((item) => approvalMatches(item, "mcp_tool", "callId", mcpDecisionCallId));
+        if (!currentApproval) throw new HttpError(404, "MCP approval не найден, истёк или уже обработан");
         const result = await mcpGateway.decideCall(
           mcpDecisionCallId,
           body.decision,
           auth.projectId,
           { subject: auth.subject, display: auth.username },
+        );
+        store.recordPlatformEvent(
+          "approval.decision.recorded",
+          body.decision === "reject" ? "MCP-запрос отклонён оператором" : "MCP-запрос согласован оператором",
+          approvalDecisionAuditData({
+            projectId: auth.projectId,
+            approval: currentApproval,
+            decision: body,
+            outcome: result,
+            actorSubject: auth.subject,
+            actorDisplay: auth.username,
+            mcpApprovalTtlSeconds: config.mcpApprovalTtlSeconds,
+          }),
+          body.decision === "reject" ? "warn" : "info",
         );
         json(response, result.status === "waiting_approval" || result.status === "executing" ? 202 : 200, result);
         return;
@@ -2112,11 +2160,24 @@ export function createCoordinatorServer(
       const approvalStageId = routeParam(pathname, /^\/api\/v1\/approvals\/([^/]+)$/);
       if (request.method === "POST" && approvalStageId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "operator"], true);
-        const body = await readJson<{ decision?: string }>(request);
-        if (body.decision !== "approve" && body.decision !== "reject") {
-          throw new HttpError(400, "decision должен быть approve или reject");
-        }
+        const body = approvalDecision(await readJson<unknown>(request));
+        const currentApproval = overviewApprovalItems(store, auth.projectId)
+          .find((item) => approvalMatches(item, "stage", "stageId", approvalStageId));
+        if (!currentApproval) throw new HttpError(404, "Согласование не найдено или уже обработано");
         const processInstanceId = store.decideApproval(approvalStageId, body.decision === "approve", auth.projectId);
+        store.recordPlatformEvent(
+          "approval.decision.recorded",
+          body.decision === "reject" ? "Запрос отклонён оператором" : "Запрос согласован оператором",
+          approvalDecisionAuditData({
+            projectId: auth.projectId,
+            approval: currentApproval,
+            decision: body,
+            actorSubject: auth.subject,
+            actorDisplay: auth.username,
+            mcpApprovalTtlSeconds: config.mcpApprovalTtlSeconds,
+          }),
+          body.decision === "reject" ? "warn" : "info",
+        );
         notifyProcessRuntime(processRuntime, store, processInstanceId, `approval.${body.decision}`);
         noContent(response);
         return;

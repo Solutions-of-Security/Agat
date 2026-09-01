@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { approvalIdentity, type ApprovalInboxItem } from "./approvalInbox";
 import { AgentDialog } from "./components/AgentDialog";
 import { AdminTokenDialog } from "./components/AdminTokenDialog";
 import { AgentsPage } from "./components/AgentsPage";
@@ -10,6 +11,7 @@ import { NewRunDialog } from "./components/NewRunDialog";
 import { NodeRail } from "./components/NodeRail";
 import { NodesPage } from "./components/NodesPage";
 import { OverviewPage } from "./components/OverviewPage";
+import { ApprovalsPage } from "./components/ApprovalsPage";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { NewProcessDialog, StartProcessDialog } from "./components/ProcessDialogs";
 import { RunsPage } from "./components/RunsPage";
@@ -22,6 +24,7 @@ import { buildNotifications, type AppNotification } from "./notifications";
 import type {
   Agent,
   Approval,
+  ApprovalDecisionInput,
   AuthUser,
   CreateAgentRequest,
   CreateCredentialRequest,
@@ -53,6 +56,7 @@ export default function App() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [activeView, setActiveView] = useState<ViewId>(() => routeFromLocation().view);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(() => routeFromLocation().runId);
+  const [selectedApprovalId, setSelectedApprovalId] = useState<string | null>(() => routeFromLocation().approvalId);
   const [runDetailOpen, setRunDetailOpen] = useState(() => routeFromLocation().runId !== null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [runInitialAgentIds, setRunInitialAgentIds] = useState<string[] | null>(null);
@@ -132,6 +136,7 @@ export default function App() {
     setActiveProjectId(projectId);
     setCurrentProjectId(projectId);
     setSelectedRunId(null);
+    setSelectedApprovalId(null);
     setRunDetailOpen(false);
     window.history.replaceState(null, "", formatAppRoute(activeView));
     setOverview(null);
@@ -162,6 +167,7 @@ export default function App() {
       setActiveView(route.view);
       setRunDetailOpen(route.runId !== null);
       if (route.runId) setSelectedRunId(route.runId);
+      setSelectedApprovalId(route.approvalId);
     };
     window.addEventListener("hashchange", onHistoryChange);
     window.addEventListener("popstate", onHistoryChange);
@@ -179,25 +185,39 @@ export default function App() {
 
   const navigate = useCallback((view: ViewId) => {
     if (view === "approvals") {
-      const approvalRunIds = new Set(overview?.approvals.map((approval) => approval.runId) ?? []);
+      const currentApproval = overview?.approvals.find((approval) => approvalIdentity(approval) === selectedApprovalId);
+      const firstApproval = currentApproval ?? overview?.approvals[0] ?? null;
       setSelectedRunId((current) => {
-        if (current && approvalRunIds.has(current)) return current;
-        return overview?.approvals[0]?.runId
+        if (current && overview?.approvals.some((approval) => approval.runId === current)) return current;
+        return firstApproval?.runId
           ?? overview?.runs.find((run) => run.status === "waiting_approval")?.id
           ?? null;
       });
+      setSelectedApprovalId(firstApproval ? approvalIdentity(firstApproval) : null);
+    } else {
+      setSelectedApprovalId(null);
     }
     setRunDetailOpen(false);
     setActiveView(view);
     window.history.pushState(null, "", formatAppRoute(view));
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [overview?.approvals, overview?.runs]);
+  }, [overview?.approvals, overview?.runs, selectedApprovalId]);
 
   const openRun = useCallback((runId: string, view: "runs" | "approvals" = "runs") => {
     setSelectedRunId(runId);
+    setSelectedApprovalId(null);
     setRunDetailOpen(true);
     setActiveView(view);
     window.history.pushState(null, "", formatAppRoute(view, runId));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const openApproval = useCallback((item: ApprovalInboxItem) => {
+    setSelectedRunId(item.approval.runId);
+    setSelectedApprovalId(item.id);
+    setRunDetailOpen(true);
+    setActiveView("approvals");
+    window.history.pushState(null, "", formatAppRoute("approvals", item.approval.runId, item.id));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -445,7 +465,7 @@ export default function App() {
     }
   }
 
-  async function decideApproval(approval: Approval, decision: "approve" | "reject") {
+  async function decideApproval(approval: Approval, decision: ApprovalDecisionInput) {
     setBusy(true);
     try {
       if (approval.kind === "mcp_tool") await api.decideMcpToolCall(approval.callId, decision);
@@ -453,6 +473,7 @@ export default function App() {
       await refresh();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось сохранить решение");
+      throw requestError;
     } finally {
       setBusy(false);
     }
@@ -543,9 +564,9 @@ export default function App() {
               onOpenRun={(runId) => openRun(runId)}
             />
           ) : null}
-          {activeView === "runs" || activeView === "approvals" ? (
+          {activeView === "runs" ? (
             <RunsPage
-              mode={activeView === "approvals" ? "approvals" : "runs"}
+              mode="runs"
               roles={roles}
               overview={overview}
               selectedRun={selectedRun}
@@ -554,12 +575,25 @@ export default function App() {
               busy={busy}
               detailOpen={runDetailOpen}
               onCreate={() => openRunDialog()}
-              onSelect={(runId) => openRun(runId, activeView === "approvals" ? "approvals" : "runs")}
-              onBack={() => navigate(activeView)}
+              onSelect={(runId) => openRun(runId)}
+              onBack={() => navigate("runs")}
               onCancel={(runId) => cancelRun(runId)}
               onSchedulerChange={(mode) => void changeScheduler(mode)}
-              onApproval={(approval, decision) => void decideApproval(approval, decision)}
+              onApproval={decideApproval}
               onReplay={(runId, payload) => replayRun(runId, payload)}
+            />
+          ) : null}
+          {activeView === "approvals" ? (
+            <ApprovalsPage
+              roles={roles}
+              overview={overview}
+              selectedApprovalId={selectedApprovalId}
+              selectedRunId={selectedRunId}
+              detailOpen={runDetailOpen}
+              busy={busy}
+              onSelect={openApproval}
+              onBack={() => navigate("approvals")}
+              onDecision={decideApproval}
             />
           ) : null}
           {activeView === "agents" ? (

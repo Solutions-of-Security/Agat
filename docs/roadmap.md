@@ -285,6 +285,8 @@ Web/PWA остаётся control surface и не обещает надёжный
 
 Следующий продуктовый релиз определён как **1.8 — Operator UX foundation**. Его scope сформирован по результатам [UX/UI-аудита всех страниц и пользовательских сценариев](./ux-ui-audit.md). Production qualification Fleet остаётся обязательным параллельным gate и не заменяется UI-работами.
 
+По результатам [приоритизации агентов и процессов на сентябрь 2026 — август 2027](./agent-process-priorities-2026.md) также открыт параллельный продуктовый трек **Solution packs**. Он не расширяет release gate 1.8: календарные волны задают порядок разработки, а привязка эпиков к версиям выполняется только после capacity planning.
+
 ### Запланировано в 1.8 — Operator UX foundation
 
 Цель релиза: сократить когнитивную нагрузку в ежедневной работе оператора, исправить мобильную навигацию и доступность, не удаляя экспертные возможности платформы.
@@ -308,7 +310,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 
 #### Прогресс реализации на 1 сентября 2026 года
 
-Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md), новый запуск — в [спецификации UX-108](./design/ux-108-new-run-wizard.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
+Первые два инкремента зафиксированы в [Operator UX foundation](./design/ux-shell-baseline.md), status-first Runs — в [спецификации UX-106](./design/ux-106-runs-status-first.md), единый inbox — в [спецификации UX-107](./design/ux-107-approval-inbox.md), новый запуск — в [спецификации UX-108](./design/ux-108-new-run-wizard.md). Статусы ниже относятся к фактически проверенному scope, а не ко всему release gate 1.8.
 
 | ID | Статус | Сделано | Остаётся |
 |---|---|---|---|
@@ -318,7 +320,7 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | UX-104 | Базовый gate готов | 14/12 px для стандартных страниц, controls ≥44 px, responsive Fleet | Populated Process canvas и системная visual regression fixture |
 | UX-105 | Базовый gate готов | Рабочий skip link; WAI-ARIA tabs с roving focus; подписанные dialogs; focus trap/return, Escape и объяснение недоступного experiment; keyboard-only smoke пройден | Screen reader и реальные устройства входят в release gate |
 | UX-106 | Основной scope готов | Master-detail list, status/current stage/duration/result/error/next action, state-valid Repeat/Cancel/Open, inline cancel confirmation, lazy technical disclosure и shareable run/approval routes | Реальные устройства, screen reader и operator usability-test входят в release gate |
-| UX-107 | Частично | Отдельная очередь, счётчик и доступные роли решений | Фильтры, risk/effect context, комментарий и полный audit trail |
+| UX-107 | Основной scope готов | Единый project-scoped inbox, summary и фильтры, risk/effect/deadline context, точные actions, redacted MCP disclosure, комментарий, обязательная причина отказа, audit-only resolved state и shareable approval routes; desktop/mobile Browser QA пройден | Persisted `expires_at`, cursor API полного audit archive, реальные устройства, screen reader, multi-user race и operator usability-test входят в release gate |
 | UX-108 | Основной scope готов | Трёхшаговый wizard, один безопасный default-agent, явный reorder, optional knowledge, summary/readiness, priority presets, journal-default и advanced disclosure; desktop/mobile Browser QA пройден | Реальный coordinator/worker e2e, реальные устройства, screen reader и operator usability-test входят в release gate |
 | UX-109 | Выявленные дефекты исправлены | 36 route/viewport checks без overflow; Fleet и fixed bottom nav исправлены | Реальные устройства и populated Quality/Process fixtures |
 | UX-110 | Частично | Аватар открывает меню; logout явный; декоративный topbar control удалён | Замена оставшихся системных `prompt/confirm` единым product dialog |
@@ -378,6 +380,100 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 - сценарии проверены на 390, 768, 1280 и 1440 px;
 - operator usability-test: минимум 4 из 5 участников без подсказки находят требующее решения действие и корректно завершают его.
 
+### Параллельный продуктовый трек — Solution packs
+
+Цель трека: превратить уже реализованные runtime, RAG, specialist teams, MCP policy, approvals, eval, replay, artifacts, HA и SIEM в устанавливаемые бизнес-решения. Единица поставки — не отдельный prompt или process template, а versioned bundle из агентов, процесса, коннекторов, knowledge requirements, схем входа/выхода, policy, eval, KPI и human-escape/rollback правил.
+
+Все горизонты отсчитываются от 1 сентября 2026 года. Это порядок начала и прохождения gate, а не обещание срока без подтверждённых команды и capacity.
+
+#### P0 foundation — 0–3 месяца
+
+| ID | Задача | Проверяемый результат | Зависимости | Размер |
+|---|---|---|---|---:|
+| SP-001 | Ввести solution-pack manifest и immutable registry | Manifest фиксирует версии agents/team, process, tools/connectors, knowledge, input/output schemas, policy, eval, KPI, compatibility и rollback; API хранит immutable versions и lifecycle status | Agent/team snapshots, process templates, prompt registry | L |
+| SP-002 | Ввести общий structured business output contract | Agent/process stage публикует versioned JSON Schema; invalid output не проходит в condition/side effect; сохраняются typed validation error, provenance и artifact reference | SP-001, Artifact Store, Local RAG provenance | L |
+| SP-003 | Реализовать lifecycle `draft → eval → policy review → approve → publish → observe → rollback` | Promotion привязан к exact pack version; golden gate и policy preview обязательны; high-risk publication требует four-eyes; rollback не меняет immutable history | SP-001, Golden eval, MCP policy, Process Builder replay | L |
+| SP-004 | Добавить pack-level KPI/SLO и value dashboard | Для каждого pack измеряются cycle time, straight-through completion, escalation, field/factual error, approval reject, rollback и cost per successful outcome без prompt/output content в telemetry | SP-001, OTel, traces, artifacts | L |
+| SP-005 | Создать каталог, установку и upgrade solution packs | Пользователь может просмотреть requirements, установить/клонировать pack в проект, пройти readiness check и выполнить совместимый upgrade с preview diff | SP-001, SP-003, UX-101, UX-105; последующая унификация с UX-201/UX-207 | L |
+| CON-001 | Зафиксировать стандарт connector pack | Единый contract для install/health/capabilities/scopes/schema/idempotency/rate limits/sandbox/secrets; conformance suite блокирует несовместимый connector | MCP/HTTP gateway, isolated tools, scoped credentials | M |
+
+#### P0 connector packs — 0–3 месяца
+
+| ID | Задача | Проверяемый результат | Зависимости | Размер |
+|---|---|---|---|---:|
+| CON-101 | ITSM + SIEM connector pack | Read/search/create/update для service request и incident, получение alert/evidence, dry-run/preview и risk-tier действия с least privilege | CON-001, MCP policy, SIEM audit | L |
+| CON-102 | ЭДО/DMS + 1C/ERP connector pack | Получение документа и metadata, поиск контрагента/объекта учёта, подготовка draft-заявки; posting/signing остаются approval-gated | CON-001, isolated tools, four-eyes | L |
+| CON-103 | SQL/BI + файловые источники connector pack | Read-only запросы по allowlisted datasets, bounded result schema, ingestion поддерживаемых документов и export отчёта в Artifact Store | CON-001, SP-002, Local RAG | L |
+
+#### P0 agents и процессы — 0–3 месяца
+
+| ID | Задача | Агенты и процесс | Проверяемый результат | Зависимости | Размер |
+|---|---|---|---|---|---:|
+| SP-101 | Выпустить шесть базовых agent templates | Researcher, Document Operator, Data Analyst, ITSM Specialist, Supervisor, Reviewer/Guardian | У каждой роли есть bounded prompt, output schema, tool allowlist, eval examples, failure/handoff contract и immutable version | SP-001–SP-003 | L |
+| SP-102 | Выпустить Research-to-Report pack | Researcher → Analyst → Reviewer → Artifact | Ответ содержит проверяемые citations/provenance; reviewer блокирует unsupported claims; итоговый отчёт сохраняется как artifact | SP-002, SP-004, SP-101, Local RAG | L |
+| SP-103 | Выпустить Document-to-Approval pack | Intake → Extract → Validate → Human approval → Archive/API | Поддерживаемые документы преобразуются в schema-valid record; расхождения видимы; side effect невозможен без требуемого approval | SP-002, SP-101, CON-102 | L |
+| SP-104 | Выпустить IT Incident / Service Request pack | Trigger → Triage → RAG/runbook → Approval → MCP action → Postmortem | Агент различает advice и action, показывает preview/risk, исполняет только allowlisted действие и формирует postmortem artifact | SP-003, SP-004, SP-101, CON-101 | L |
+| SP-105 | Выпустить Data Monitoring-to-Report pack | Schedule/signal → Collect → Diagnose → Review → Report | Повторяемый scheduled run выявляет отклонение, указывает данные/допущения и выпускает reviewed management report | SP-002, SP-004, SP-101, CON-103 | L |
+| SP-106 | Выпустить Agent Release Governance pack | Golden eval → Reviewer → Policy review → Four-eyes → Publish → Observe → Rollback | Один runnable process управляет выпуском exact pack version и сохраняет evidence для каждого gate и rollback decision | SP-003, SP-004, SP-101 | M–L |
+
+#### P1 domain packs — 3–6 месяцев
+
+P1 начинается только после прохождения P0 gate. Коннекторы Git/CI и CRM/support channels реализуются по `CON-001` как часть соответствующего эпика; повторно использовать generic raw HTTP без domain contract недостаточно.
+
+| ID | Задача | Агенты и процесс | Проверяемый результат | Зависимости | Размер |
+|---|---|---|---|---|---:|
+| SP-201 | Software Delivery pack и Git/CI connector | Planner → Coder → Tester → Security Reviewer → release gate | Изменение связано с issue/commit/test evidence; write/release действия разделены и approval-gated | P0 gate, CON-001, sandbox policy | L |
+| SP-202 | Customer Support pack и channel/CRM connector | Intake → Triage → RAG → Safe action → Human fallback → QA | Измеряются first-response, resolution, escalation и QA; есть явный human escape и запрет неподтверждённых account actions | P0 gate, CON-001, SP-004 | L |
+| SP-203 | Finance Close / Reconciliation pack | Collect → Reconcile → Variance analysis → Control → Sign-off | Каждая цифра и корректировка прослеживается до источника; segregation of duties и sign-off обязательны | P0 gate, CON-102, SP-002 | L |
+| SP-204 | Contract Review pack | Ingest → Clauses → Legal RAG → Risk → Redline → Human approval → Record | Clauses и риски schema-valid и имеют provenance; автономное подписание исключено | P0 gate, CON-102, SP-002 | L |
+| SP-205 | Procurement Comparison pack | Proposal intake → Compare → Finance/risk → Request → Approval → ERP draft | Сравнение воспроизводимо по зафиксированным критериям; конфликтующие данные эскалируются; ERP posting approval-gated | P0 gate, CON-102, SP-004 | L |
+| SP-206 | Security / Compliance Response pack | Alert → Evidence → Guardian → Four-eyes → Action/SIEM | Evidence immutable, severity explainable, destructive response требует two-person approval, rollback/circuit breaker проверен | P0 gate, CON-101, SP-003 | L |
+
+#### P2 expansion — 6–12 месяцев
+
+| ID | Задача | Агенты и процесс | Проверяемый результат | Зависимости | Размер |
+|---|---|---|---|---|---:|
+| SP-301 | Sales / RFP pack и CRM/CPQ connector | Account research → Proposal → Pricing/legal review → Approval → CRM update | Цены и условия берутся из authoritative systems; исходящая коммуникация и CRM write проходят review | P1 gate, CON-001, SP-204 | L |
+| SP-302 | HR Onboarding / Offboarding pack и HRIS/IdP/email connector | Request → Documents → Knowledge → Access tasks → Approvals → Audit | PII policy и retention заданы; кадровые решения не автономны; выдача/отзыв доступа прослеживаемы и approval-gated | P1 gate, CON-001, identity/RBAC | L |
+
+#### Watchlist и условия входа
+
+| ID | Направление | До выполнения условия | Условие перевода в roadmap |
+|---|---|---|---|
+| EXP-401 | Voice front office | Не строить отдельную real-time channel platform | Не менее трёх целевых клиентов подтверждают один сценарий; есть latency/SLA, consent, recording/PII и human-transfer contract |
+| EXP-402 | Browser / computer-use execution | Не использовать UI automation как замену доступному API/MCP | Есть deterministic evidence, selector/version strategy, approval/circuit breaker, rollback и успешный bounded pilot в legacy UI |
+| EXP-403 | Marketing/content pack | Не делать основой позиционирования Agat | Подтверждён платный repeat demand после P0/P1 packs и измерима ценность сверх commodity generation |
+
+#### Definition of Done для каждого solution pack
+
+Pack не считается готовым по факту появления карточки или demo-run. Одновременно обязательны:
+
+- immutable manifest и воспроизводимая установка в чистый project;
+- version-pinned агенты/team, процесс, connector requirements и knowledge requirements;
+- JSON Schema входа/выхода, provenance и явная обработка invalid/unknown данных;
+- least-privilege tools/credentials, risk policy, approval и human-escape contract;
+- golden dataset, offline promotion gate и негативные тесты side effects;
+- pack-level KPI/SLO, trace, audit и runbook диагностики;
+- upgrade/rollback rehearsal без изменения immutable history;
+- документация в `/docs` и один воспроизводимый end-to-end example.
+
+#### Exit criteria волн
+
+- **P0 / 0–3 месяца:** пять runnable packs `SP-102`–`SP-106`, шесть базовых ролей, три connector packs; каждый проходит clean-project install, golden eval, policy, schema, KPI и human-escape gate.
+- **P1 / 3–6 месяцев:** минимум два production pilot в разных domain packs с измеренными cycle time, error/rework, escalation, approval reject и cost per successful outcome; critical side effects проходят multi-user race и rollback rehearsal.
+- **P2 / 6–12 месяцев:** подтверждён repeat demand и положительный ROI после стоимости connectors/support; PII и outbound-communication reviews закрыты до production.
+- **Watchlist:** ни один эксперимент не получает release commitment до выполнения указанного entry condition.
+
+#### Рекомендуемая последовательность Solution packs
+
+1. Параллельно начать `SP-001`, `SP-002`, `SP-004` и `CON-001`.
+2. После первого manifest/schema contract реализовать `SP-101` и `SP-003`.
+3. Собрать `CON-101`–`CON-103`; не начинать pack с недокументированным connector boundary.
+4. Параллельно выпустить `SP-102`, `SP-103` и `SP-105`; затем `SP-104` после action-policy rehearsal.
+5. Замкнуть P0 горизонтальным `SP-106` и выполнить общий P0 exit gate.
+6. В P1 сначала начать `SP-201` и `SP-202`, затем параллельно `SP-203`–`SP-206` по готовности domain owners и данных.
+7. `SP-301` и `SP-302` начинать только после P1 gate; `EXP-401`–`EXP-403` не отвлекают capacity до выполнения entry conditions.
+
 ### Предварительно запланировано в 1.9 — Creator and admin simplification
 
 Цель релиза: распространить progressive disclosure на authoring и инфраструктурные сценарии после стабилизации общего shell и операторских flows.
@@ -423,8 +519,8 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 1. Параллельно выполнить UX-101 и UX-104.
 2. На новой IA собрать UX-102, UX-103 и UX-105.
 3. После foundation реализовать UX-106 и UX-108.
-4. Поверх новой модели Runs добавить UX-107.
-5. Закрыть mobile defects UX-109 и единые dangerous actions UX-110.
+4. Поверх новой модели Runs добавить UX-107. Основной scope готов.
+5. Завершить единые dangerous actions UX-110; оставшиеся проверки mobile defects UX-109 включить в release gate.
 6. Провести release-gate usability test 1.8.
 7. Зафиксировать общий Basic / Advanced паттерн UX-201.
 8. Параллельно развивать creator-поток UX-202–UX-206 и admin-поток UX-207–UX-208.
@@ -451,7 +547,12 @@ ID ниже обозначают roadmap-эпики. Перед разработ
 | P3 | Готово в 1.7 | Fleet и HA | PostgreSQL replicas, regional queues, signed rollout, hard tenant isolation и SIEM export |
 | P1 | Этапы 1–6 готовы | Production Fleet readiness и DR | Все repository capabilities закрыты; остаётся qualification конкретных provider/CI/attestor/SIEM deployment и production game day |
 | P0 | Foundation готова в 1.8 | Role-based IA, mobile navigation, notifications и accessibility foundation | Shell, базовые уведомления и keyboard gate реализованы; остаются device/screen-reader release checks |
-| P0 | UX-106 и UX-108 готовы; следующий инкремент 1.8 | Полный inbox согласований UX-107 | Завершает decide-часть основного create→monitor→decide operator workflow |
+| P0 | UX-106–UX-108: основной scope готов | Единый create→monitor→decide operator workflow | Следующий UX-инкремент — завершить UX-110 и заменить оставшиеся системные dialogs |
+| P0 | Запланировано на 0–3 месяца | Solution-pack foundation и connector contract (`SP-001`–`SP-005`, `CON-001`) | Закрывает главный продуктовый gap: manifest, structured outputs, release lifecycle, KPI и установка |
+| P0 | Запланировано на 0–3 месяца | Пять первых packs и шесть базовых ролей (`SP-101`–`SP-106`) | Монетизирует готовые RAG, durable process, specialist team, approvals, eval и audit |
+| P1 | После P0 gate, 3–6 месяцев | Software, Support, Finance, Legal, Procurement, Security packs (`SP-201`–`SP-206`) | Закрывает наиболее востребованные domain workflows после готовности connector packs |
+| P2 | После P1 gate, 6–12 месяцев | Sales/RFP и HR lifecycle packs (`SP-301`, `SP-302`) | Расширяет front/middle office после доказанного repeat demand и ROI |
+| Watch | Только по entry criteria | Voice, browser/computer use и generic marketing (`EXP-401`–`EXP-403`) | Не позволяет популярным, но менее подходящим сценариям перехватить roadmap |
 | P1 | Предварительно в 1.9 | Basic / Advanced и creator workflows | Упрощает Agents, Processes, Knowledge и Quality без удаления экспертных возможностей |
 | P1 | Предварительно в 1.9 | Integrations и Infrastructure workspaces | Убирает MCP/A2A/Fleet из общего пользовательского потока |
 | P2 | После 1.9 | Search, saved views, personalization и UX-telemetry | Повышает эффективность после стабилизации базовой структуры |

@@ -86,12 +86,14 @@ test("run deep links сохраняют выбранный запуск и бе�
   const hash = formatAppRoute("runs", runId);
 
   assert.equal(hash, "#runs/run%2F%D0%BE%D1%82%D1%87%D1%91%D1%82%2042");
-  assert.deepEqual(parseAppRoute(hash), { view: "runs", runId });
-  assert.deepEqual(parseAppRoute("#approvals/approval-run"), { view: "approvals", runId: "approval-run" });
-  assert.deepEqual(parseAppRoute("#runs"), { view: "runs", runId: null });
-  assert.deepEqual(parseAppRoute("#runs/broken/extra"), { view: "runs", runId: null });
-  assert.deepEqual(parseAppRoute("#runs/%E0%A4%A"), { view: "runs", runId: null });
-  assert.deepEqual(parseAppRoute("#unknown"), { view: "overview", runId: null });
+  assert.deepEqual(parseAppRoute(hash), { view: "runs", runId, approvalId: null });
+  assert.deepEqual(parseAppRoute("#approvals/approval-run"), { view: "approvals", runId: "approval-run", approvalId: null });
+  assert.equal(formatAppRoute("approvals", "approval-run", "mcp:call/42"), "#approvals/approval-run/mcp%3Acall%2F42");
+  assert.deepEqual(parseAppRoute("#approvals/approval-run/mcp%3Acall%2F42"), { view: "approvals", runId: "approval-run", approvalId: "mcp:call/42" });
+  assert.deepEqual(parseAppRoute("#runs"), { view: "runs", runId: null, approvalId: null });
+  assert.deepEqual(parseAppRoute("#runs/broken/extra"), { view: "runs", runId: null, approvalId: null });
+  assert.deepEqual(parseAppRoute("#runs/%E0%A4%A"), { view: "runs", runId: null, approvalId: null });
+  assert.deepEqual(parseAppRoute("#unknown"), { view: "overview", runId: null, approvalId: null });
 });
 
 test("закреплённый mobile-раздел всегда доступен роли", () => {

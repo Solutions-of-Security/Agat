@@ -1,4 +1,4 @@
-import type { AgatEvent, AgatRole, Approval, Overview, ReplayRunRequest, Run, SchedulerMode } from "../types";
+import type { AgatEvent, AgatRole, Approval, ApprovalDecisionInput, Overview, ReplayRunRequest, Run, SchedulerMode } from "../types";
 import { getRoleCapabilities } from "../navigation";
 import { Icon } from "./Icon";
 import { RunDetail } from "./RunDetail";
@@ -18,7 +18,7 @@ interface RunsPageProps {
   onBack: () => void;
   onCancel: (runId: string) => Promise<void>;
   onSchedulerChange: (mode: SchedulerMode) => void;
-  onApproval: (approval: Approval, decision: "approve" | "reject") => void;
+  onApproval: (approval: Approval, decision: ApprovalDecisionInput) => Promise<void>;
   onReplay: (runId: string, payload: ReplayRunRequest) => Promise<void>;
 }
 

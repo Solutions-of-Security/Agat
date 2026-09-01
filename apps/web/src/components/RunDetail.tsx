@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { buildApprovalInboxItems } from "../approvalInbox";
 import { api } from "../lib/api";
 import type {
   AgatEvent,
   Approval,
+  ApprovalDecisionInput,
   Artifact,
   EvaluationGate,
   ReplayRunRequest,
@@ -494,7 +496,7 @@ interface RunDetailProps {
   onBack: () => void;
   onCancel: (runId: string) => Promise<void>;
   onSchedulerChange: (mode: SchedulerMode) => void;
-  onApproval: (approval: Approval, decision: "approve" | "reject") => void;
+  onApproval: (approval: Approval, decision: ApprovalDecisionInput) => Promise<void>;
   models: string[];
   onReplay: (runId: string, payload: ReplayRunRequest) => Promise<void>;
 }
@@ -574,6 +576,14 @@ export function RunDetail({
   const current = detailedRun.stages.find((stage) => ["running", "waiting_approval", "waiting_external", "queued"].includes(stage.status))
     ?? detailedRun.stages.find((stage) => !["completed", "cancelled"].includes(stage.status));
   const relevantApproval = approval?.runId === run.id ? approval : null;
+  const relevantApprovalItem = relevantApproval
+    ? buildApprovalInboxItems({
+      approvals: [relevantApproval],
+      runs: [detailedRun],
+      events,
+      generatedAt: detailedRun.updatedAt,
+    })[0] ?? null
+    : null;
   const result = finalOutput(detailedRun);
   const completedStages = detailedRun.stages.filter((stage) => stage.status === "completed").length;
   const terminal = ["completed", "failed", "cancelled"].includes(detailedRun.status);
@@ -741,7 +751,13 @@ export function RunDetail({
 
       {relevantApproval ? (
         <div className="run-primary-approval">
-          <ApprovalPanel approval={relevantApproval} busy={busy} canDecide={canDecideApproval} onDecision={onApproval} />
+          <ApprovalPanel
+            item={relevantApprovalItem}
+            busy={busy}
+            canDecide={canDecideApproval}
+            variant="compact"
+            onDecision={(item, decision) => onApproval(item.approval, decision)}
+          />
         </div>
       ) : null}
 
