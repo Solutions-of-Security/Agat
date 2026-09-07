@@ -1,5 +1,5 @@
-const CACHE_NAME = "agat-shell-v3";
-const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg"];
+const CACHE_NAME = "agat-shell-v4";
+const SHELL = ["/", "/manifest.webmanifest", "/brand/agat-mark.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));

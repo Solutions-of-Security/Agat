@@ -69,18 +69,18 @@ interface ProcessInspectorProps {
 
 function nodeTypeLabel(node: ProcessGraphNode): string {
   if (node.type === "start") return "Старт процесса";
-  if (node.type === "agent") return "Агентный шаг";
+  if (node.type === "agent") return "ИИ-агент";
   if (node.type === "http") return "Интеграция · HTTP";
   if (node.type === "transform") return "Данные · преобразование";
   if (node.type === "wait") return "Управление потоком · ожидание";
-  if (node.type === "approval") return "Human-in-the-loop";
+  if (node.type === "approval") return "Согласование с человеком";
   if (node.type === "artifact") return "Результат · артефакт";
   if (node.type === "condition") return "Условие";
   if (node.type === "loop") return "Цикл";
-  if (node.type === "parallel_fork") return "Gateway · параллельный fork";
-  if (node.type === "parallel_join") return "Gateway · параллельный join";
-  if (node.type === "signal") return "Триггер · внешний signal";
-  if (node.type === "subprocess") return "Call activity · subprocess";
+  if (node.type === "parallel_fork") return "Параллельные ветки";
+  if (node.type === "parallel_join") return "Объединение веток";
+  if (node.type === "signal") return "Ожидание внешнего события";
+  if (node.type === "subprocess") return "Вложенный процесс";
   return "Завершение процесса";
 }
 
@@ -115,6 +115,7 @@ function ParametersTab({
     value: "",
     caseSensitive: false,
   };
+  const assignedAgent = agents.find((agent) => agent.id === node.config.agentId);
 
   function updateConfig(config: ProcessGraphNode["config"]) {
     onChange({ ...node, config });
@@ -141,6 +142,7 @@ function ParametersTab({
               ))}
             </select>
           </label>
+          {assignedAgent ? <div className="process-agent-context"><p>{assignedAgent.role}</p><span>Модель: <strong>{assignedAgent.model ?? "Автовыбор"}</strong></span><details><summary>Инструкция агента</summary><p>{assignedAgent.systemPrompt}</p></details></div> : <p className="process-field-help">Выберите агента, который выполнит этот шаг.</p>}
           <label className="approval-toggle process-approval-toggle">
             <input
               type="checkbox"
@@ -162,7 +164,7 @@ function ParametersTab({
               </select>
             </label>
             <label className="field">
-              <span>Timeout, сек.</span>
+              <span>Тайм-аут, сек.</span>
               <input type="number" min={1} max={120} value={node.config.timeoutSeconds ?? 30} onChange={(event) => updateConfig({ ...node.config, timeoutSeconds: Number(event.target.value) })} />
             </label>
           </div>
@@ -171,7 +173,7 @@ function ParametersTab({
             <input value={node.config.url ?? ""} maxLength={4_000} placeholder="https://api.example.com/items/{{ json.id }}" onChange={(event) => updateConfig({ ...node.config, url: event.target.value })} />
           </label>
           <label className="field">
-            <span>Idempotency header</span>
+            <span>Заголовок защиты от повторов</span>
             <input
               value={node.config.idempotencyHeader ?? "Idempotency-Key"}
               maxLength={80}
@@ -180,13 +182,13 @@ function ParametersTab({
             <small>Ключ стабилен для повторной попытки одного шага.</small>
           </label>
           <label className="field">
-            <span>Credentials</span>
+            <span>Доступ к сервису</span>
             <select value={node.config.credentialId ?? ""} onChange={(event) => updateConfig({ ...node.config, credentialId: event.target.value || undefined })}>
               <option value="">Без авторизации</option>
               {credentials.filter((credential) => credential.scope.kind === "project").map((credential) => <option value={credential.id} key={credential.id}>{credential.name}</option>)}
             </select>
           </label>
-          <button className="process-inline-action" type="button" onClick={onManageCredentials}><Icon name="shield" size={15} />Управлять credentials</button>
+          <button className="process-inline-action" type="button" onClick={onManageCredentials}><Icon name="shield" size={15} />Настроить доступ</button>
           <HttpHeadersEditor node={node} onChange={onChange} />
           {!(["GET", "DELETE"] as string[]).includes(node.config.method ?? "GET") ? (
             <label className="field">
@@ -210,7 +212,7 @@ function ParametersTab({
                 } : undefined,
               })}
             />
-            <span><strong>Saga compensation</strong><small>Выполнится в обратном порядке при ошибке или отмене.</small></span>
+            <span><strong>Действие при откате</strong><small>Выполнится в обратном порядке при ошибке или отмене.</small></span>
           </label>
           {node.config.compensation ? (
             <fieldset className="process-compensation-fields">
@@ -229,7 +231,7 @@ function ParametersTab({
                   </select>
                 </label>
                 <label className="field">
-                  <span>Timeout, сек.</span>
+                  <span>Тайм-аут, сек.</span>
                   <input type="number" min={1} max={120} value={node.config.compensation.timeoutSeconds} onChange={(event) => updateConfig({
                     ...node.config,
                     compensation: { ...node.config.compensation!, timeoutSeconds: Number(event.target.value) },
@@ -244,7 +246,7 @@ function ParametersTab({
                 })} />
               </label>
               <label className="field">
-                <span>Credentials</span>
+                <span>Доступ к сервису</span>
                 <select value={node.config.compensation.credentialId ?? ""} onChange={(event) => updateConfig({
                   ...node.config,
                   compensation: { ...node.config.compensation!, credentialId: event.target.value || undefined },
@@ -380,7 +382,7 @@ function ParametersTab({
         <label className="field">
           <span>Парный fork gateway</span>
           <select value={node.config.forkId ?? ""} onChange={(event) => updateConfig({ ...node.config, forkId: event.target.value })}>
-            <option value="" disabled>Выберите fork</option>
+            <option value="" disabled>Выберите начало веток</option>
             {processNodes.filter((candidate) => candidate.type === "parallel_fork").map((candidate) => (
               <option value={candidate.id} key={candidate.id}>{candidate.name}</option>
             ))}
@@ -391,15 +393,15 @@ function ParametersTab({
       {node.type === "signal" ? (
         <>
           <label className="field">
-            <span>Signal name</span>
+            <span>Имя события</span>
             <input value={node.config.signalName ?? ""} maxLength={128} placeholder="order.confirmed" onChange={(event) => updateConfig({ ...node.config, signalName: event.target.value })} />
           </label>
           <label className="field">
-            <span>Correlation key</span>
+            <span>Ключ сопоставления</span>
             <input value={node.config.signalCorrelationKey ?? ""} maxLength={1_000} placeholder="{{ json.orderId }}" onChange={(event) => updateConfig({ ...node.config, signalCorrelationKey: event.target.value })} />
           </label>
           <label className="field">
-            <span>Timeout, сек. · 0 без ограничения</span>
+            <span>Тайм-аут, сек. · 0 без ограничения</span>
             <input type="number" min={0} max={31_536_000} value={node.config.signalTimeoutSeconds ?? 0} onChange={(event) => updateConfig({ ...node.config, signalTimeoutSeconds: Number(event.target.value) })} />
           </label>
           <ExpressionHelp />
@@ -543,10 +545,10 @@ export function ProcessInspector({
   if (!node) return null;
 
   const inspectorTabs: readonly TabDefinition<InspectorTab>[] = [
-    { id: "parameters", label: "Параметры" },
-    { id: "input", label: "Вход" },
-    { id: "output", label: "Выход" },
-    { id: "logs", label: `Логи${execution?.events.length ? ` · ${execution.events.length}` : ""}` },
+    { id: "parameters", label: "Настройка" },
+    { id: "input", label: "Тест" },
+    { id: "output", label: "Результат" },
+    { id: "logs", label: `Журнал${execution?.events.length ? ` · ${execution.events.length}` : ""}` },
   ];
 
   return (
@@ -586,7 +588,7 @@ export function ProcessInspector({
         <TabPanel active={tab === "input"} idPrefix="process-inspector" tabId="input">
           <div className="process-inspector__io">
             <label className="field">
-              <span>Вход для теста или запуска отсюда</span>
+              <span>Входные данные для проверки</span>
               <textarea
                 rows={8}
                 maxLength={100_000}
@@ -605,7 +607,7 @@ export function ProcessInspector({
           <div className="process-inspector__io">
             {testResult ? (
               <section className="process-inspector__test-result">
-                <header><strong>Результат теста</strong><small>{testResult.branch ? `ветка: ${testResult.branch}` : testResult.status}</small></header>
+                <header><strong>Результат теста</strong><small>{testResult.branch && testResult.branch !== "default" ? `ветка: ${testResult.branch === "true" ? "да" : testResult.branch === "false" ? "нет" : testResult.branch === "repeat" ? "повтор" : "выход"}` : "Готово"}</small></header>
                 <pre>{testResult.output || "Тестовый запуск добавлен в очередь"}</pre>
                 {testResult.runId ? <button type="button" onClick={() => onOpenRun(testResult.runId!)}>Открыть тестовый запуск <Icon name="chevron" size={14} /></button> : null}
               </section>
@@ -635,17 +637,17 @@ export function ProcessInspector({
           <Icon name="trash" size={16} />
         </button>
         <div>
-          <button className="button button--secondary" type="button" disabled={testBusy || !testInput.trim()} onClick={() => onTest(node, testInput)}>
-            <Icon name="terminal" size={15} />{testBusy ? "Тестируем…" : "Тест шага"}
+          <button className="button button--secondary" type="button" disabled={testBusy} onClick={() => { if (!testInput.trim()) setTab("input"); else { onTest(node, testInput); setTab("output"); } }}>
+            <Icon name="play" size={15} />{testBusy ? "Тестируем…" : "Тестировать шаг"}
           </button>
           <button
-            className="button button--primary"
+            className="button button--secondary"
             type="button"
             disabled={testBusy || !canRunFrom || !testInput.trim()}
             title={canRunFrom ? "Запустить опубликованный процесс с этого шага" : "Сначала сохраните и опубликуйте процесс"}
             onClick={() => onRunFrom(node, testInput)}
           >
-            <Icon name="play" size={15} />Отсюда
+            <Icon name="runs" size={15} />Запустить отсюда
           </button>
         </div>
       </footer>

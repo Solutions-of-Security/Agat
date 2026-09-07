@@ -4,7 +4,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ActionDialogProvider } from "./components/ActionDialog";
 import { initializeAuth } from "./lib/auth";
+import "@xyflow/react/dist/style.css";
 import "./styles.css";
+import "./workspace.css";
 
 const root = createRoot(document.getElementById("root")!);
 

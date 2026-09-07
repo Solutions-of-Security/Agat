@@ -16,13 +16,14 @@ import {
   MiniMap,
   Panel,
   ReactFlow,
+  useNodesInitialized,
+  useReactFlow,
   type Connection,
   type EdgeChange,
   type NodeChange,
   type ReactFlowInstance,
   type XYPosition,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 
 import type {
   AgatEvent,
@@ -40,8 +41,11 @@ import type {
   UpdateProcessRequest,
 } from "../types";
 import { api } from "../lib/api";
-import { useActionDialog } from "./ActionDialog";
+import { processReadiness } from "../processReadiness";
+import { autoLayout, hasOverlappingSteps } from "../processLayout";
+import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
+import { ProcessChecks } from "./ProcessChecks";
 import {
   processEdgeTypes,
   type ProcessEdgeData,
@@ -60,6 +64,13 @@ import {
 import { processNodeTypes, type ProcessFlowNode } from "./ProcessNodes";
 
 type LeftPanel = "processes" | "nodes" | null;
+type WorkspaceTab = "schema" | "triggers" | "executions" | "versions";
+const workspaceTabs: readonly TabDefinition<WorkspaceTab>[] = [
+  { id: "schema", label: "Схема" },
+  { id: "triggers", label: "Триггеры" },
+  { id: "executions", label: "Выполнения" },
+  { id: "versions", label: "Версии" },
+];
 
 interface PickerState {
   screenPosition: XYPosition;
@@ -96,7 +107,7 @@ const executionStatusLabels: Record<ProcessNodeExecutionDetails["status"], strin
   queued: "В очереди",
   running: "Выполняется",
   waiting_approval: "Ждёт решения",
-  waiting_external: "Ждёт signal",
+  waiting_external: "Ждёт события",
   completed: "Готово",
   failed: "Ошибка",
   cancelled: "Остановлено",
@@ -116,6 +127,22 @@ function useMobileEditor(): boolean {
 
 function cloneGraph(graph: ProcessGraph): ProcessGraph {
   return structuredClone(graph);
+}
+
+function ProcessViewportFit({ processId, mobile }: { processId: string | null; mobile: boolean }) {
+  const initialized = useNodesInitialized();
+  const { fitView } = useReactFlow();
+  const fitted = useRef("");
+  useEffect(() => {
+    const key = `${processId}:${mobile}`;
+    if (!initialized || fitted.current === key) return;
+    const frame = window.requestAnimationFrame(() => {
+      fitted.current = key;
+      void fitView({ padding: 0.3, maxZoom: mobile ? 0.8 : 1.1 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialized, processId, mobile, fitView]);
+  return null;
 }
 
 function graphSignature(graph: ProcessGraph): string {
@@ -140,8 +167,8 @@ function nodeSubtitle(node: ProcessGraphNode, agentsById: Map<string, Agent>): s
   if (node.type === "approval") return "решение оператора";
   if (node.type === "artifact") return node.config.artifactName || "Настройте файл";
   if (node.type === "parallel_fork") return "запустить все ветки";
-  if (node.type === "parallel_join") return node.config.forkId ? "дождаться парного fork" : "выберите fork";
-  if (node.type === "signal") return node.config.signalName || "Настройте signal";
+  if (node.type === "parallel_join") return node.config.forkId ? "дождаться всех веток" : "выберите начало веток";
+  if (node.type === "signal") return node.config.signalName || "Настройте событие";
   if (node.type === "subprocess") return node.config.subprocessVersion
     ? `закреплена v${node.config.subprocessVersion}`
     : "выберите процесс";
@@ -149,22 +176,13 @@ function nodeSubtitle(node: ProcessGraphNode, agentsById: Map<string, Agent>): s
 }
 
 function mobileNodeHeight(type: ProcessNodeType): number {
-  if (type === "condition" || type === "parallel_fork" || type === "parallel_join") return 126;
-  if (type === "loop") return 106;
-  return 82;
-}
-
-function mobileNodeX(type: ProcessNodeType): number {
-  if (type === "condition" || type === "parallel_fork" || type === "parallel_join") return 104;
-  if (type === "start" || type === "end") return 137;
-  if (type === "loop") return 101;
-  return 98;
+  return type === "condition" || type === "loop" ? 126 : 112;
 }
 
 function mobileNodePositions(nodes: ProcessGraphNode[]): Map<string, XYPosition> {
   let y = 24;
   return new Map(nodes.map((node) => {
-    const position = { x: mobileNodeX(node.type), y };
+    const position = { x: 96, y };
     y += mobileNodeHeight(node.type) + 34;
     return [node.id, position];
   }));
@@ -183,6 +201,7 @@ function graphToFlowNodes(
     position: compactPositions?.get(node.id) ?? node.position,
     data: {
       kind: node.type,
+      mobile,
       name: node.name,
       subtitle: nodeSubtitle(node, agentsById),
       config: structuredClone(node.config),
@@ -281,14 +300,14 @@ function defaultNode(
         maxIterations: 3,
       },
     },
-    parallel_fork: { name: "Параллельный fork", config: {} },
-    parallel_join: { name: "Параллельный join", config: {} },
+    parallel_fork: { name: "Параллельные ветки", config: {} },
+    parallel_join: { name: "Объединение веток", config: {} },
     signal: {
-      name: "Внешний signal",
+      name: "Ожидание события",
       config: { signalName: "external.signal", signalCorrelationKey: "", signalTimeoutSeconds: 0 },
     },
     subprocess: {
-      name: "Subprocess",
+      name: "Вложенный процесс",
       config: { subprocessInputTemplate: "{{ lastOutput }}" },
     },
     end: { name: "Завершение", config: {} },
@@ -299,8 +318,8 @@ function defaultNode(
     name: defaults[type].name,
     config: defaults[type].config,
     position: {
-      x: Math.round((position.x - (type === "start" || type === "end" ? 38 : 76)) / 16) * 16,
-      y: Math.round((position.y - 36) / 16) * 16,
+      x: Math.round((position.x - 92) / 16) * 16,
+      y: Math.round((position.y - 50) / 16) * 16,
     },
   };
 }
@@ -312,46 +331,6 @@ function primaryBranch(type: ProcessNodeType): ProcessBranch | null {
   return "default";
 }
 
-function autoLayout(graph: ProcessGraph): ProcessGraph {
-  if (graph.nodes.length === 0) return graph;
-  const outgoing = new Map<string, ProcessGraphEdge[]>();
-  for (const edge of graph.edges) {
-    if (edge.branch === "repeat") continue;
-    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
-  }
-  const start = graph.nodes.find((node) => node.type === "start") ?? graph.nodes[0]!;
-  const levels = new Map<string, number>([[start.id, 0]]);
-  const queue = [start.id];
-  while (queue.length > 0) {
-    const source = queue.shift()!;
-    const nextLevel = (levels.get(source) ?? 0) + 1;
-    for (const edge of outgoing.get(source) ?? []) {
-      if (levels.has(edge.target)) continue;
-      levels.set(edge.target, nextLevel);
-      queue.push(edge.target);
-    }
-  }
-  let fallbackLevel = Math.max(0, ...levels.values()) + 1;
-  for (const node of graph.nodes) {
-    if (!levels.has(node.id)) levels.set(node.id, fallbackLevel++);
-  }
-  const byLevel = new Map<number, ProcessGraphNode[]>();
-  for (const node of graph.nodes) {
-    const level = levels.get(node.id) ?? 0;
-    byLevel.set(level, [...(byLevel.get(level) ?? []), node]);
-  }
-  const positions = new Map<string, XYPosition>();
-  for (const [level, levelNodes] of byLevel) {
-    const totalHeight = Math.max(0, levelNodes.length - 1) * 154;
-    levelNodes.forEach((node, index) => {
-      positions.set(node.id, { x: 72 + level * 248, y: 92 + index * 154 - totalHeight / 2 });
-    });
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position })),
-  };
-}
 
 function isFormTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -421,6 +400,7 @@ function ProcessCatalogPanel({
   const normalizedQuery = query.trim().toLocaleLowerCase("ru");
   const tools = processNodeTools.filter((tool) => !normalizedQuery || [tool.label, tool.description, ...tool.keywords]
     .some((value) => value.toLocaleLowerCase("ru").includes(normalizedQuery)));
+  const filteredProcesses = processes.filter((process) => [process.name, process.description].join(" ").toLocaleLowerCase("ru").includes(normalizedQuery));
 
   return (
     <aside className="process-side-panel">
@@ -438,18 +418,20 @@ function ProcessCatalogPanel({
           <button className="process-side-panel__create" type="button" onClick={onCreate}>
             <Icon name="plus" size={16} />Новый процесс
           </button>
+          <label className="process-side-panel__search"><Icon name="search" size={15} /><input aria-label="Найти процесс" placeholder="Найти процесс" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <div className="process-side-panel__list">
-            {processes.map((process) => (
+            {filteredProcesses.map((process) => (
               <button
                 className={process.id === selectedProcessId ? "is-active" : ""}
                 type="button"
                 key={process.id}
                 onClick={() => onChooseProcess(process.id)}
               >
-                <span><strong>{process.name}</strong><small>{process.isTemplate ? "Шаблон" : process.activeInstances ? `${process.activeInstances} активн.` : `Версия ${process.publishedVersion}`}</small></span>
+                <span><strong>{process.name}</strong><small>{process.isTemplate ? "Шаблон" : process.activeInstances ? `${process.activeInstances} в работе` : process.publishedVersion ? `Опубликован · v${process.publishedVersion}` : "Черновик"}</small></span>
                 {process.hasUnpublishedChanges ? <i aria-label="Есть черновик" /> : null}
               </button>
             ))}
+            {!filteredProcesses.length ? <p className="process-side-panel__hint">Процессы не найдены. Измените запрос.</p> : null}
           </div>
           <label className="process-side-panel__description">
             <span>Описание процесса</span>
@@ -468,7 +450,7 @@ function ProcessCatalogPanel({
             <Icon name="search" size={15} />
             <input value={query} placeholder="Поиск шагов" onChange={(event) => setQuery(event.target.value)} />
           </label>
-          <p className="process-side-panel__hint">Перетащите шаг на canvas или нажмите, чтобы добавить по центру.</p>
+          <p className="process-side-panel__hint">Перетащите шаг на схему или нажмите, чтобы добавить.</p>
           <div className="process-side-panel__tools">
             {tools.map((tool) => (
               <button
@@ -493,6 +475,8 @@ function ProcessCatalogPanel({
 }
 
 interface ProcessesPageProps {
+  beforeLeaveRef: { current: (() => Promise<boolean>) | null };
+  requestedProcessId?: string | null;
   processes: ProcessDefinition[];
   instances: ProcessInstance[];
   agents: Agent[];
@@ -511,6 +495,8 @@ interface ProcessesPageProps {
 }
 
 export function ProcessesPage({
+  beforeLeaveRef,
+  requestedProcessId,
   processes,
   instances,
   agents,
@@ -527,8 +513,9 @@ export function ProcessesPage({
   onManageCredentials,
   onChanged,
 }: ProcessesPageProps) {
-  const requestAction = useActionDialog();
   const mobile = useMobileEditor();
+  const pendingSaveRef = useRef<Promise<boolean> | null>(null);
+  const latestDraftRef = useRef<{ id: string; payload: UpdateProcessRequest; revision: number; dirty: boolean } | null>(null);
   const agentSignature = agents.map((agent) => `${agent.id}:${agent.name}:${agent.model ?? ""}:${agent.updatedAt}`).join("|");
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agentSignature]);
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(processes[0]?.id ?? null);
@@ -548,7 +535,9 @@ export function ProcessesPage({
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
   const [executionsOpen, setExecutionsOpen] = useState(false);
-  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("schema");
+  const [checksOpen, setChecksOpen] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [executionTrace, setExecutionTrace] = useState<RunTrace | null>(null);
   const [executionLoading, setExecutionLoading] = useState(false);
@@ -571,6 +560,7 @@ export function ProcessesPage({
   const markDirty = useCallback(() => {
     revisionRef.current += 1;
     setDirty(true);
+    setSaveFailed(false);
   }, []);
 
   const selectNode = useCallback((nodeId: string) => {
@@ -650,13 +640,17 @@ export function ProcessesPage({
     if (loadedProcessIdRef.current === selectedProcess.id) return;
     loadedProcessIdRef.current = selectedProcess.id;
     revisionRef.current = 0;
-    setGraphState(selectedProcess.draftGraph);
-    resetHistory(selectedProcess.draftGraph);
+    const arrangeDraft = selectedProcess.publishedVersion === 0 && hasOverlappingSteps(selectedProcess.draftGraph);
+    const graph = arrangeDraft ? autoLayout(selectedProcess.draftGraph) : selectedProcess.draftGraph;
+    setGraphState(graph);
+    resetHistory(graph);
     setProcessName(selectedProcess.name);
     setProcessDescription(selectedProcess.description);
-    setDirty(false);
+    setDirty(arrangeDraft);
     setLastSavedAt(selectedProcess.updatedAt);
-    setEditorNotice(null);
+    setEditorNotice(arrangeDraft ? "Шаги черновика расположены с учётом нового размера карточек." : null);
+    setSaveFailed(false);
+    setChecksOpen(false);
     setPicker(null);
     setExecutionsOpen(false);
     setSelectedInstanceId(null);
@@ -794,25 +788,17 @@ export function ProcessesPage({
   }
 
   async function chooseProcess(processId: string) {
-    if (processId === selectedProcessId) return;
-    if (dirty) {
-      const target = processes.find((process) => process.id === processId);
-      const decision = await requestAction({
-        title: "Перейти без сохранения?",
-        description: target ? `Откроется процесс «${target.name}».` : "Откроется другой процесс.",
-        subject: processName || selectedProcess?.name,
-        subjectLabel: "Несохранённый процесс",
-        impact: "Локальные изменения схемы, названия и описания будут отброшены.",
-        recovery: "Последняя сохранённая версия останется доступна, но текущие несохранённые изменения восстановить нельзя.",
-        confirmLabel: "Отбросить и перейти",
-        cancelLabel: "Остаться",
-        tone: "warning",
-      });
-      if (!decision.confirmed) return;
-    }
+    if (processId === selectedProcessId) { setLeftPanel(null); return; }
+    if ((dirty || pendingSaveRef.current) && !await save(true)) return;
     loadedProcessIdRef.current = null;
     setSelectedProcessId(processId);
+    setWorkspaceTab("schema");
+    setLeftPanel(null);
   }
+
+  useEffect(() => {
+    if (requestedProcessId) void chooseProcess(requestedProcessId);
+  }, [requestedProcessId]);
 
   function insertNode(type: ProcessNodeType, state: PickerState) {
     setEditorNotice(null);
@@ -845,6 +831,7 @@ export function ProcessesPage({
     }
     const next = { nodes: [...graph.nodes, node], edges: nextEdges };
     commitGraph(next, node.id);
+    setLeftPanel(null);
     setPicker(null);
   }
 
@@ -949,7 +936,7 @@ export function ProcessesPage({
       setTestResult(result);
       setEditorNotice(result.runId
         ? "Тест шага добавлен в очередь"
-        : `Тест завершён${result.branch ? ` · ветка ${branchLabels[result.branch] || result.branch}` : ""}`);
+        : `Тест завершён${result.branch && result.branch !== "default" ? ` · ветка ${branchLabels[result.branch]}` : ""}`);
     } catch (requestError) {
       setEditorNotice(requestError instanceof Error ? requestError.message : "Не удалось протестировать шаг");
     } finally {
@@ -979,26 +966,60 @@ export function ProcessesPage({
     }
   }
 
-  async function save(quiet = false) {
-    const payload = currentPayload();
-    if (!selectedProcess || !payload) return;
-    const revision = revisionRef.current;
-    try {
-      const updated = await onSave(selectedProcess.id, payload);
-      if (revisionRef.current === revision) setDirty(false);
-      setLastSavedAt(updated.updatedAt);
-      if (!quiet) setEditorNotice("Черновик сохранён");
-    } catch {
-      // App exposes the actionable server error in the editor banner.
-    }
+  latestDraftRef.current = selectedProcess ? {
+    id: selectedProcess.id, payload: currentPayload()!, revision: revisionRef.current, dirty,
+  } : null;
+
+  async function save(quiet = false): Promise<boolean> {
+    const previous = pendingSaveRef.current;
+    const pending = (async () => {
+      if (previous) await previous;
+      const snapshot = latestDraftRef.current;
+      if (!snapshot || !snapshot.dirty) return true;
+      setSaveFailed(false);
+      try {
+        const updated = await onSave(snapshot.id, snapshot.payload);
+        const unchanged = revisionRef.current === snapshot.revision;
+        if (unchanged) setDirty(false);
+        setLastSavedAt(updated.updatedAt);
+        if (!quiet) setEditorNotice("Черновик сохранён");
+        return unchanged;
+      } catch {
+        setSaveFailed(true);
+        return false;
+      }
+    })();
+    pendingSaveRef.current = pending;
+    const saved = await pending;
+    if (pendingSaveRef.current === pending) pendingSaveRef.current = null;
+    return saved;
   }
+
+  useEffect(() => {
+    beforeLeaveRef.current = () => dirty || pendingSaveRef.current ? save(true) : Promise.resolve(true);
+    return () => { beforeLeaveRef.current = null; };
+  });
+
+  useEffect(() => {
+    if (!dirty) return;
+    const protectDraft = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", protectDraft);
+    return () => window.removeEventListener("beforeunload", protectDraft);
+  }, [dirty]);
 
   async function publish() {
     const payload = currentPayload();
     if (!selectedProcess || !payload) return;
+    if (!processName.trim()) { setEditorNotice("Укажите название процесса перед публикацией."); return; }
+    if (processReadiness(payload.graph!, agents).length) {
+      setWorkspaceTab("schema");
+      setChecksOpen(true);
+      return;
+    }
     try {
+      const revision = revisionRef.current;
       const published = await onPublish(selectedProcess.id, payload, dirty);
-      setDirty(false);
+      if (revision === revisionRef.current) setDirty(false);
       setLastSavedAt(published.updatedAt);
       setEditorNotice(`Опубликована версия ${published.publishedVersion}`);
     } catch {
@@ -1007,20 +1028,23 @@ export function ProcessesPage({
   }
 
   useEffect(() => {
-    if (!dirty || busy || !selectedProcess) return;
+    if (!dirty || busy || saveFailed || !selectedProcess) return;
     const timer = window.setTimeout(() => void save(true), 1_300);
     return () => window.clearTimeout(timer);
-  }, [busy, dirty, edges, nodes, processDescription, processName, selectedProcess?.id]);
+  }, [busy, dirty, edges, nodes, processDescription, processName, saveFailed, selectedProcess?.id]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isFormTarget(event.target)) return;
+      if (workspaceTab !== "schema" || document.querySelector("dialog[open]")) return;
       const modifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLocaleLowerCase("en");
       if (modifier && key === "s") {
         event.preventDefault();
         void save();
-      } else if (modifier && key === "z") {
+        return;
+      }
+      if (isFormTarget(event.target)) return;
+      if (modifier && key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo(); else undo();
       } else if (modifier && key === "c") {
@@ -1038,7 +1062,7 @@ export function ProcessesPage({
           event.preventDefault();
           deleteNodes(ids);
         }
-      } else if (event.key === "Tab" && !picker) {
+      } else if (event.shiftKey && key === "a" && !modifier && !picker) {
         event.preventDefault();
         openNodePicker();
       }
@@ -1065,8 +1089,9 @@ export function ProcessesPage({
     || selectedProcess.hasUnpublishedChanges
     || dirty;
   const publishLabel = selectedProcess?.publishedVersion ? "Новая версия" : "Опубликовать";
+  const issues = processReadiness(currentGraph(), agents);
   const savedLabel = dirty
-    ? "Сохраняем…"
+    ? saveFailed ? "Не сохранено" : busy ? "Сохраняем…" : "Есть изменения"
     : lastSavedAt
       ? `Сохранено ${new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date(lastSavedAt))}`
       : "Сохранено";
@@ -1079,9 +1104,9 @@ export function ProcessesPage({
             className="process-commandbar__library"
             type="button"
             aria-label="Открыть библиотеку процессов"
-            onClick={() => setLeftPanel((current) => current === "processes" ? null : "processes")}
+            onClick={() => { setWorkspaceTab("schema"); setLeftPanel((current) => current === "processes" ? null : "processes"); }}
           >
-            <Icon name="menu" size={18} />
+            <Icon name="workflow" size={18} /><span>Процессы</span><Icon name="down" size={14} />
           </button>
           <select
             className="process-mobile-select"
@@ -1099,42 +1124,47 @@ export function ProcessesPage({
             onChange={(event) => { setProcessName(event.target.value); markDirty(); }}
           />
           <span className={`process-draft-state${dirty ? " is-dirty" : ""}`}>{savedLabel}</span>
-          <span className="mono process-version">v{selectedProcess?.publishedVersion ?? 0}</span>
-        </div>
-        <div className="process-commandbar__history" aria-label="История изменений">
-          <button type="button" disabled={!canUndo} title="Отменить (⌘Z)" onClick={undo}><Icon name="undo" size={16} /></button>
-          <button type="button" disabled={!canRedo} title="Повторить (⇧⌘Z)" onClick={redo}><Icon name="redo" size={16} /></button>
+          <span className="mono process-version">{selectedProcess?.publishedVersion ? `v${selectedProcess.publishedVersion}` : "Черновик"}</span>
         </div>
         <div className="process-commandbar__actions">
           <button className="button button--secondary process-save-action" type="button" disabled={busy || !dirty} onClick={() => void save()}>
             <Icon name="save" size={16} /><span>Сохранить</span>
           </button>
-          <button className="button button--secondary" type="button" disabled={busy} onClick={() => void publish()}>
-            <Icon name="publish" size={16} /><span>{publishLabel}</span>
-          </button>
-          <button className="button button--secondary" type="button" disabled={busy || !selectedProcess} onClick={() => setReleaseOpen(true)} title="Triggers, версии и BPMN">
-            <Icon name="dots" size={16} /><span>Релиз</span>
-          </button>
           <button
-            className="button button--primary"
+            className="button button--secondary"
             type="button"
             disabled={busy || runDisabled}
+            aria-label="Запустить процесс"
             title={runDisabled ? "Сохраните и опубликуйте текущий граф" : "Запустить процесс"}
             onClick={() => selectedProcess && onStart(selectedProcess)}
           >
             <Icon name="play" size={16} /><span>Запустить</span>
           </button>
+          <button className="button button--primary" type="button" aria-label={publishLabel} disabled={busy || !selectedProcess} onClick={() => void publish()}>
+            <Icon name="publish" size={16} /><span>{publishLabel}</span>
+          </button>
         </div>
       </header>
 
-      {(error || editorNotice) ? (
-        <button className={`process-editor-notice${error ? " is-error" : ""}`} type="button" onClick={() => setEditorNotice(null)}>
-          {error ?? editorNotice}
+      <div className="process-workspace-nav">
+        <AccessibleTabList activeTab={workspaceTab} ariaLabel="Рабочее пространство процесса" className="process-workspace-tabs" idPrefix="process-workspace" tabs={workspaceTabs} onChange={(tab) => { setWorkspaceTab(tab); setLeftPanel(null); setPicker(null); }} />
+        <button className={`process-readiness${issues.length ? " has-issues" : ""}`} type="button" onClick={() => { setWorkspaceTab("schema"); setChecksOpen((current) => !current); }} aria-label={issues.length ? `Проверить схему: ${issues.length} замечаний` : "Схема проверена"} aria-expanded={checksOpen}>
+          <Icon name={issues.length ? "warning" : "check"} size={16} /><span>{issues.length ? `Проверить схему · ${issues.length}` : "Схема проверена"}</span>
         </button>
+      </div>
+
+      {(error || editorNotice) ? (
+        <div className={`process-editor-notice${error ? " is-error" : ""}`} role={error ? "alert" : "status"}>
+          <span>{error ?? editorNotice}</span>
+          {saveFailed ? <button type="button" disabled={busy} onClick={() => void save()}>Повторить сохранение</button> : !error ? <button type="button" aria-label="Закрыть сообщение" onClick={() => setEditorNotice(null)}><Icon name="close" size={16} /></button> : null}
+        </div>
       ) : null}
 
+      <TabPanel active={workspaceTab === "schema"} idPrefix="process-workspace" tabId="schema">
+      {checksOpen ? <ProcessChecks issues={issues} onClose={() => setChecksOpen(false)} onSelect={(id) => { selectNode(id); setChecksOpen(false); }} /> : null}
       <div className="process-editor-layout">
         <section ref={canvasRef} className="process-canvas" aria-label="Визуальный редактор процесса">
+          <div className="process-flow-viewport">
           <ReactFlow<ProcessFlowNode, ProcessFlowEdge>
             nodes={nodes}
             edges={edges}
@@ -1240,38 +1270,37 @@ export function ProcessesPage({
             minZoom={0.16}
             maxZoom={2}
             nodesDraggable={!mobile}
+            nodesFocusable={false}
             snapToGrid
             snapGrid={[16, 16]}
             selectionOnDrag
             panOnScroll
             deleteKeyCode={null}
             defaultEdgeOptions={{ type: "process", markerEnd: { type: MarkerType.ArrowClosed } }}
-            colorMode="dark"
+            colorMode="light"
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="#344252" gap={22} size={1} />
-            <Controls showInteractive={false} />
-            {mobile ? null : <MiniMap pannable zoomable maskColor="rgb(5 12 21 / 72%)" />}
-            <Panel position="top-left" className="process-canvas-rail">
-              <button
-                className={leftPanel === "processes" ? "is-active" : ""}
-                type="button"
-                title="Процессы"
-                onClick={() => setLeftPanel((current) => current === "processes" ? null : "processes")}
-              ><Icon name="workflow" size={18} /></button>
+            <ProcessViewportFit processId={selectedProcessId} mobile={mobile} />
+            <Background color="#d3ded9" gap={22} size={1} />
+            <Controls showInteractive={false} fitViewOptions={{ padding: 0.3, maxZoom: mobile ? 0.8 : 1.1 }} />
+            {mobile ? null : <MiniMap pannable zoomable maskColor="rgb(245 247 248 / 72%)" />}
+            <Panel position="top-left" className="process-canvas-rail" aria-label="Инструменты схемы">
               <button
                 className={leftPanel === "nodes" ? "is-active" : ""}
                 type="button"
                 title="Добавить шаг"
                 onClick={() => setLeftPanel((current) => current === "nodes" ? null : "nodes")}
-              ><Icon name="plus" size={19} /></button>
+              ><Icon name="plus" size={19} /><span>Добавить шаг</span></button>
               <span />
+              <button type="button" disabled={!canUndo} title="Отменить (⌘Z)" aria-label="Отменить изменение" onClick={undo}><Icon name="undo" size={16} /></button>
+              <button type="button" disabled={!canRedo} title="Повторить (⇧⌘Z)" aria-label="Повторить изменение" onClick={redo}><Icon name="redo" size={16} /></button>
               <button type="button" title="Автоматически расположить" onClick={applyAutomaticLayout}><Icon name="layout" size={18} /></button>
             </Panel>
-            <Panel position="top-center" className="process-canvas-hint">
-              <button type="button" onClick={openNodePicker}><Icon name="plus" size={14} />Добавить шаг <kbd>Tab</kbd></button>
+            <Panel position="bottom-center" className="process-canvas-hint">
+              <span>Соединяйте выход шага со входом следующего · </span><button type="button" onClick={openNodePicker}>Добавить шаг <kbd>⇧ A</kbd></button>
             </Panel>
           </ReactFlow>
+          </div>
 
           {leftPanel ? (
             <ProcessCatalogPanel
@@ -1289,7 +1318,7 @@ export function ProcessesPage({
 
           {selectedInstance ? (
             <div className={`process-execution-banner process-execution-banner--${selectedInstance.status}`}>
-              <span><i /><strong>Выполнение v{selectedInstance.processVersion}</strong><small>{selectedInstance.status}{executionLoading ? " · загрузка трассы" : ""}</small></span>
+              <span><i /><strong>Выполнение v{selectedInstance.processVersion}</strong><small>{selectedInstance.status === "compensating" ? "Откат" : executionStatusLabels[selectedInstance.status]}{executionLoading ? " · загрузка трассы" : ""}</small></span>
               {executionError ? <em>{executionError}</em> : null}
               <button type="button" onClick={() => onOpenRun(selectedInstance.runId)}>Полный журнал <Icon name="chevron" size={13} /></button>
               <button className="icon-button" type="button" aria-label="Закрыть просмотр выполнения" onClick={() => setSelectedInstanceId(null)}><Icon name="close" size={15} /></button>
@@ -1348,6 +1377,17 @@ export function ProcessesPage({
           ) : null}
         </section>
       </div>
+      </TabPanel>
+
+      <TabPanel active={workspaceTab === "executions"} idPrefix="process-workspace" tabId="executions">
+        <section className="process-executions-page"><header><div><h2>Выполнения процесса</h2><p>Выберите выполнение, чтобы увидеть пройденные шаги, вход и результат на схеме.</p></div><span>{selectedInstances.length} всего · {activeInstanceCount} активных</span></header><ProcessInstances instances={selectedInstances} busy={busy} selectedInstanceId={selectedInstanceId} onSelect={(instance) => { setSelectedInstanceId(instance.id); setWorkspaceTab("schema"); }} onOpenRun={onOpenRun} onCancel={onCancel} onReplay={onReplay} /></section>
+      </TabPanel>
+      <TabPanel active={workspaceTab === "triggers"} idPrefix="process-workspace" tabId="triggers">
+        <ProcessReleasePanel embedded initialTab="triggers" open={workspaceTab === "triggers"} process={selectedProcess} onClose={() => setWorkspaceTab("schema")} onChanged={onChanged} />
+      </TabPanel>
+      <TabPanel active={workspaceTab === "versions"} idPrefix="process-workspace" tabId="versions">
+        <ProcessReleasePanel embedded initialTab="versions" open={workspaceTab === "versions"} process={selectedProcess} onClose={() => setWorkspaceTab("schema")} onChanged={onChanged} />
+      </TabPanel>
 
       <ProcessNodePicker
         open={picker !== null}
@@ -1355,12 +1395,6 @@ export function ProcessesPage({
         excludedTypes={picker?.edgeId ? ["start", "end"] : []}
         onClose={() => setPicker(null)}
         onSelect={(type) => picker && insertNode(type, picker)}
-      />
-      <ProcessReleasePanel
-        open={releaseOpen}
-        process={selectedProcess}
-        onClose={() => setReleaseOpen(false)}
-        onChanged={onChanged}
       />
     </main>
   );

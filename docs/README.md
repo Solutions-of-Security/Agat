@@ -99,6 +99,7 @@ python3 workers/agat_worker.py
 
 - [Архитектура и модель выполнения](./architecture.md)
 - [Установка и подключение машин](./getting-started.md)
+- [Локальный запуск в Docker Compose](./local-docker.md)
 - [Локальный Kubernetes в Docker Desktop](./kubernetes-docker-desktop.md)
 - [Локальный запуск нескольких workers](./local-workers.md)
 - [Web-доступ локальных агентов](./web-access.md)

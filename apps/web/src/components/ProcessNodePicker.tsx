@@ -16,14 +16,14 @@ export const processNodeTools: ProcessNodeTool[] = [
   {
     type: "start",
     label: "Старт",
-    description: "Ручная точка входа в процесс",
+    description: "Получить данные от ручного запуска или триггера",
     category: "trigger",
     icon: "play",
     keywords: ["начало", "manual", "trigger"],
   },
   {
     type: "signal",
-    label: "Внешний signal",
+    label: "Ожидание события",
     description: "Остановить поток до адресного внешнего события",
     category: "trigger",
     icon: "network",
@@ -40,7 +40,7 @@ export const processNodeTools: ProcessNodeTool[] = [
   {
     type: "http",
     label: "HTTP-запрос",
-    description: "Вызвать публичный API через защищённый worker",
+    description: "Получить или отправить данные во внешнюю систему",
     category: "data",
     icon: "terminal",
     keywords: ["api", "rest", "webhook", "request"],
@@ -87,7 +87,7 @@ export const processNodeTools: ProcessNodeTool[] = [
   },
   {
     type: "parallel_fork",
-    label: "Параллельный fork",
+    label: "Параллельные ветки",
     description: "Запустить несколько веток одновременно",
     category: "flow",
     icon: "network",
@@ -95,15 +95,15 @@ export const processNodeTools: ProcessNodeTool[] = [
   },
   {
     type: "parallel_join",
-    label: "Параллельный join",
-    description: "Дождаться всех веток парного fork",
+    label: "Объединение веток",
+    description: "Дождаться завершения всех параллельных веток",
     category: "flow",
     icon: "diamond",
     keywords: ["join", "parallel", "gateway", "объединить"],
   },
   {
     type: "subprocess",
-    label: "Subprocess",
+    label: "Вложенный процесс",
     description: "Вызвать опубликованную версию другого процесса",
     category: "flow",
     icon: "workflow",
@@ -112,7 +112,7 @@ export const processNodeTools: ProcessNodeTool[] = [
   {
     type: "artifact",
     label: "Артефакт",
-    description: "Сохранить файл в Artifact Store",
+    description: "Сохранить результат процесса в файл",
     category: "output",
     icon: "box",
     keywords: ["file", "save", "result", "output"],

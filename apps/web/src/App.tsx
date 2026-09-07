@@ -5,7 +5,7 @@ import { approvalIdentity, type ApprovalInboxItem } from "./approvalInbox";
 import { useActionDialog } from "./components/ActionDialog";
 import { AgentDialog } from "./components/AgentDialog";
 import { AdminTokenDialog } from "./components/AdminTokenDialog";
-import { AgentsPage } from "./components/AgentsPage";
+import { AgentsDirectory } from "./components/AgentsDirectory";
 import { BottomNav } from "./components/BottomNav";
 import { Breadcrumbs } from "./components/Breadcrumbs";
 import { CredentialsDialog } from "./components/CredentialsDialog";
@@ -68,6 +68,8 @@ export default function App() {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [agentTemplateRequest, setAgentTemplateRequest] = useState<CreateAgentRequest | null>(null);
   const [processDialogOpen, setProcessDialogOpen] = useState(false);
+  const processBeforeLeaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const [createdProcessId, setCreatedProcessId] = useState<string | null>(null);
   const [startingProcess, setStartingProcess] = useState<ProcessDefinition | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,9 +140,11 @@ export default function App() {
   }, [refresh]);
 
   async function changeProject(projectId: string) {
+    if (processBeforeLeaveRef.current && !await processBeforeLeaveRef.current()) return;
     setActiveProjectId(projectId);
     setCurrentProjectId(projectId);
     setSelectedRunId(null);
+    setCreatedProcessId(null);
     setSelectedApprovalId(null);
     setRunDetailOpen(false);
     window.history.replaceState(null, "", formatAppRoute(activeView));
@@ -167,8 +171,12 @@ export default function App() {
   useEffect(() => subscribeToAdminTokenRequests(setAdminTokenDialogOpen), []);
 
   useEffect(() => {
-    const onHistoryChange = () => {
+    const onHistoryChange = async () => {
       const route = routeFromLocation();
+      if (processBeforeLeaveRef.current && !await processBeforeLeaveRef.current()) {
+        window.history.replaceState(null, "", "#processes");
+        return;
+      }
       setActiveView(route.view);
       setRunDetailOpen(route.runId !== null);
       if (route.runId) setSelectedRunId(route.runId);
@@ -188,7 +196,8 @@ export default function App() {
     window.history.replaceState(null, "", "#overview");
   }, [activeView, user]);
 
-  const navigate = useCallback((view: ViewId) => {
+  const navigate = useCallback(async (view: ViewId) => {
+    if (processBeforeLeaveRef.current && !await processBeforeLeaveRef.current()) return;
     if (view === "approvals") {
       const currentApproval = overview?.approvals.find((approval) => approvalIdentity(approval) === selectedApprovalId);
       const firstApproval = currentApproval ?? overview?.approvals[0] ?? null;
@@ -208,7 +217,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [overview?.approvals, overview?.runs, selectedApprovalId]);
 
-  const openRun = useCallback((runId: string, view: "runs" | "approvals" = "runs") => {
+  const openRun = useCallback(async (runId: string, view: "runs" | "approvals" = "runs") => {
+    if (processBeforeLeaveRef.current && !await processBeforeLeaveRef.current()) return;
     setSelectedRunId(runId);
     setSelectedApprovalId(null);
     setRunDetailOpen(true);
@@ -217,7 +227,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const openApproval = useCallback((item: ApprovalInboxItem) => {
+  const openApproval = useCallback(async (item: ApprovalInboxItem) => {
+    if (processBeforeLeaveRef.current && !await processBeforeLeaveRef.current()) return;
     setSelectedRunId(item.approval.runId);
     setSelectedApprovalId(item.id);
     setRunDetailOpen(true);
@@ -358,9 +369,10 @@ export default function App() {
     setBusy(true);
     setProcessError(null);
     try {
-      await api.createProcess(payload);
+      const created = await api.createProcess(payload);
       setProcessDialogOpen(false);
       await refresh();
+      setCreatedProcessId(created.id);
       navigate("processes");
     } catch (requestError) {
       setProcessError(requestError instanceof Error ? requestError.message : "Не удалось создать процесс");
@@ -560,7 +572,7 @@ export default function App() {
       <div className="workspace">
         <Topbar
           notifications={notifications}
-          primaryAction={primaryAction}
+          primaryAction={activeView === "agents" || activeView === "processes" ? null : primaryAction}
           onPrimary={triggerPrimaryAction}
           onNotification={openNotification}
           onApprovals={() => navigate("approvals")}
@@ -571,7 +583,7 @@ export default function App() {
           onCreateProject={() => { setProjectError(null); setProjectDialogOpen(true); }}
           onLogout={() => void logout()}
         />
-        <Breadcrumbs activeView={activeView} onNavigate={navigate} />
+        {activeView !== "processes" ? <Breadcrumbs activeView={activeView} onNavigate={navigate} /> : null}
         <div className={`workspace__body${showNodeRail ? "" : " workspace__body--full"}`} id="main-content" tabIndex={-1}>
           {activeView === "overview" ? (
             <OverviewPage
@@ -614,7 +626,7 @@ export default function App() {
             />
           ) : null}
           {activeView === "agents" ? (
-            <AgentsPage
+            <AgentsDirectory
               agents={overview.agents}
               nodes={overview.nodes}
               onCreate={() => openAgentDialog()}
@@ -626,6 +638,8 @@ export default function App() {
           {activeView === "processes" ? (
             <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем редактор процессов</strong></div>}>
               <ProcessesPage
+                beforeLeaveRef={processBeforeLeaveRef}
+                requestedProcessId={createdProcessId}
                 processes={overview.processes}
                 instances={overview.processInstances}
                 agents={overview.agents}
@@ -638,7 +652,7 @@ export default function App() {
                 onStart={openStartProcessDialog}
                 onCancel={(instanceId) => void cancelProcessInstance(instanceId)}
                 onReplay={(instanceId, mode) => void replayProcessInstance(instanceId, mode)}
-                onOpenRun={(runId) => { setSelectedRunId(runId); navigate("runs"); }}
+                onOpenRun={(runId) => void openRun(runId)}
                 onManageCredentials={() => { setCredentialsError(null); setCredentialsDialogOpen(true); }}
                 onChanged={refresh}
               />

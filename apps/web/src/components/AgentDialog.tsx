@@ -78,10 +78,10 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
           <div>
             <h2 id="agent-dialog-title">{agent ? "Настройка агента" : initialValue ? "Установить шаблон" : "Новый агент"}</h2>
             <p>{agent
-              ? "Роль и runtime редактируются здесь; prompt/model продвигаются через Golden eval"
+              ? "Измените роль и способ выполнения. Новую инструкцию и модель сначала проверьте в разделе «Качество»."
               : initialValue
-                ? "Проверьте готовую роль, системный промпт, runtime и модель перед созданием копии в проекте"
-                : "Опишите ответственность, инструкции и предпочтительную локальную модель"}</p>
+                ? "Адаптируйте роль, инструкцию и модель. В проекте появится ваша копия агента."
+                : "Задайте агенту задачу, ожидаемый результат и правила работы."}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
@@ -110,7 +110,7 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
           />
         </label>
         <label className="field">
-          <span>Системный промпт</span>
+          <span>Инструкция агента</span>
           <textarea
             value={form.systemPrompt}
             required
@@ -120,7 +120,7 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
             disabled={Boolean(agent)}
             onChange={(event) => setForm((current) => ({ ...current, systemPrompt: event.target.value }))}
           />
-          {agent ? <small className="field-hint">Активная версия неизменяема. Создайте candidate в Golden eval → Prompt registry.</small> : null}
+          {agent ? <small className="field-hint">Действующая инструкция защищена от случайных изменений. Новая версия проходит проверку в разделе «Качество».</small> : null}
         </label>
         <label className="field">
           <span>Модель</span>
@@ -132,13 +132,13 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
             disabled={Boolean(agent)}
             onChange={(event) => setForm((current) => ({ ...current, model: event.target.value || null }))}
           />
-          <small className="field-hint">{agent ? "Смена model pin требует прошедшего golden experiment." : "Оставьте пустым для модели по умолчанию или укажите имя, которое публикует worker."}</small>
+          <small className="field-hint">{agent ? "Смена модели доступна после успешной проверки качества." : "Оставьте пустым для автоматического выбора или укажите доступную модель."}</small>
           <datalist id="agat-model-options">
             {models.map((model) => <option value={model} key={model} />)}
           </datalist>
         </label>
         <label className="field">
-          <span>Runtime агента</span>
+          <span>Способ выполнения</span>
           <select
             value={form.runtime}
             onChange={(event) => setForm((current) => ({
@@ -149,17 +149,17 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
                 : { profile: "tool_loop_v1", maxIterations: current.runtimeConfig.maxIterations },
             }))}
           >
-            <option value="single">Single · прямой model/tool loop</option>
-            <option value="langgraph">LangGraph · управляемый StateGraph</option>
+            <option value="single">Один агент · модель и инструменты</option>
+            <option value="langgraph">LangGraph · граф действий и команда</option>
           </select>
           <small className="field-hint">
-            LangGraph выполняется внутри одного lease. Temporal продолжает управлять всем бизнес-процессом.
+            Выберите LangGraph, если агенту нужны последовательные действия или команда специалистов.
           </small>
         </label>
         {form.runtime === "langgraph" ? (
           <>
             <label className="field">
-              <span>Профиль графа</span>
+              <span>Режим работы</span>
               <select
                 value={form.runtimeConfig.profile}
                 onChange={(event) => setForm((current) => ({
@@ -175,12 +175,12 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
                     : { profile: "tool_loop_v1", maxIterations: current.runtimeConfig.maxIterations },
                 }))}
               >
-                <option value="tool_loop_v1">Tool loop v1 · один агент</option>
-                <option value="specialist_team_v1">Specialist team v1 · supervisor + handoff</option>
+                <option value="tool_loop_v1">Один агент с инструментами</option>
+                <option value="specialist_team_v1">Команда специалистов с руководителем</option>
               </select>
             </label>
             <label className="field">
-              <span>Максимум итераций subgraph</span>
+              <span>Максимум итераций</span>
               <input
                 type="number"
                 min={1}
@@ -196,13 +196,13 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
                 }))}
               />
               <small className="field-hint">
-                Жёсткий предел 1–12 дополнительно ограничивается настройкой worker.
+                От 1 до 12 шагов рассуждения; доступный предел зависит от исполнителя.
               </small>
             </label>
             {teamConfig ? (
               <div className="agent-team-config">
                 <label className="field">
-                  <span>Максимум handoff</span>
+                  <span>Максимум передач между специалистами</span>
                   <input
                     type="number"
                     min={1}
@@ -219,8 +219,8 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
                   />
                 </label>
                 <fieldset className="agent-team-picker">
-                  <legend>Specialists · {teamConfig.specialistAgentIds.length}/8</legend>
-                  <p>Участники фиксируются immutable snapshots при создании run.</p>
+                  <legend>Специалисты · {teamConfig.specialistAgentIds.length}/8</legend>
+                  <p>Каждый запуск сохраняет состав команды и версии инструкций.</p>
                   <div>
                     {specialistCandidates.map((candidate) => {
                       const selected = teamConfig.specialistAgentIds.includes(candidate.id);
@@ -252,7 +252,7 @@ export function AgentDialog({ open, agent, initialValue, agents, models, busy, e
                   {specialistCandidates.length === 0 ? <small className="field-hint">Сначала создайте как минимум двух обычных агентов.</small> : null}
                   {teamMemberError ? <small className="form-error">{teamMemberError}</small> : null}
                 </fieldset>
-                <p className="agent-team-schema">State schema <code>{teamConfig.stateSchema}</code> · произвольные schemas и вложенные teams запрещены.</p>
+                <p className="agent-team-schema">Схема состояния <code>{teamConfig.stateSchema}</code> · участниками команды могут быть отдельные агенты.</p>
               </div>
             ) : null}
           </>

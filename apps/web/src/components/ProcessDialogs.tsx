@@ -43,10 +43,10 @@ export function NewProcessDialog({ open, busy, error, processes, onClose, onSubm
   }
 
   return (
-    <dialog className="run-dialog process-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog process-dialog" ref={dialogRef} aria-labelledby="new-process-dialog-title" onCancel={onClose} onClose={onClose}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
-          <div><h2>Новый процесс</h2><p>Начните с готового безопасного графа и настройте шаги на полотне</p></div>
+          <div><h2 id="new-process-dialog-title">Новый процесс</h2><p>Начните с готового безопасного графа и настройте шаги на полотне</p></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
           </button>
@@ -129,11 +129,11 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
   }
 
   return (
-    <dialog className="run-dialog process-dialog" ref={dialogRef} onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog process-dialog" ref={dialogRef} aria-labelledby="start-process-dialog-title" onCancel={onClose} onClose={onClose}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
           <div>
-            <h2>Запустить процесс</h2>
+            <h2 id="start-process-dialog-title">Запустить процесс</h2>
             <p>{process ? `${process.name} · версия ${process.publishedVersion}` : "Опубликованный процесс"}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">

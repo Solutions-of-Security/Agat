@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:${AGAT_HTTP_PORT:-8787}:8787"
     environment:
       AGAT_HOST: 0.0.0.0
       AGAT_PORT: 8787

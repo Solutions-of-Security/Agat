@@ -62,8 +62,8 @@ export function Sidebar({ activeView, health, roles, onNavigate }: SidebarProps)
           const childActive = group.items.some((item) => item.id === activeView);
           const sections = group.sections ?? [{ id: group.id, label: "", items: group.items }];
           return (
-            <div className={`sidebar__group${childActive ? " has-active-child" : ""}`} key={group.id}>
-              <button
+            <div className={`sidebar__group sidebar__group--${group.id}${childActive ? " has-active-child" : ""}`} key={group.id}>
+              {group.id === "creation" ? <p className="sidebar__group-label">{group.label}</p> : <button
                 className="sidebar__group-toggle"
                 type="button"
                 aria-expanded={open}
@@ -73,8 +73,8 @@ export function Sidebar({ activeView, health, roles, onNavigate }: SidebarProps)
                 <Icon name={group.icon} size={19} />
                 <span>{group.label}</span>
                 <Icon className="sidebar__group-chevron" name={open ? "up" : "down"} size={15} />
-              </button>
-              <div className="sidebar__group-content" id={`sidebar-group-${group.id}`} hidden={!open}>
+              </button>}
+              <div className="sidebar__group-content" id={`sidebar-group-${group.id}`} hidden={group.id !== "creation" && !open}>
                 {sections.map((section) => (
                   <div className="sidebar__subgroup" key={section.id}>
                     {section.label ? <p>{section.label}</p> : null}

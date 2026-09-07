@@ -17,6 +17,7 @@ import type {
 } from "../types";
 import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
+import { ModalLayer } from "./ModalLayer";
 
 interface A2APageProps {
   projectId: string;
@@ -569,7 +570,7 @@ export function A2APage({
         </div> : <p className="a2a-tasks__empty">Outbound вызовов ещё не было. Invoke сохраняет только redacted task mirror и audit correlation.</p>}
       </section>
 
-      {editor ? <div className="eval-modal" role="dialog" aria-modal="true" aria-labelledby="a2a-editor-title">
+      {editor ? <ModalLayer className="eval-modal" labelledBy="a2a-editor-title" onClose={() => setEditor(null)}>
         <div className="eval-modal__surface a2a-editor">
           <header><div><h2 id="a2a-editor-title">{editor.endpointId ? "Настройка A2A endpoint" : "Новый A2A endpoint"}</h2><p>Один агент, фиксированный boundary и project-scoped token</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={() => setEditor(null)}><Icon name="close" /></button></header>
           <form className="eval-form" onSubmit={save}>
@@ -596,9 +597,9 @@ export function A2APage({
             <div className="dialog-actions"><button className="button button--secondary" type="button" onClick={() => setEditor(null)}>Отмена</button><button className="button button--primary" type="submit" disabled={busyKey === "save" || !editor.form.agentId}>{busyKey === "save" ? "Сохраняем…" : editor.endpointId ? "Сохранить" : "Создать и выдать token"}</button></div>
           </form>
         </div>
-      </div> : null}
+      </ModalLayer> : null}
 
-      {remoteEditor ? <div className="eval-modal" role="dialog" aria-modal="true" aria-labelledby="a2a-remote-editor-title">
+      {remoteEditor ? <ModalLayer className="eval-modal" labelledBy="a2a-remote-editor-title" onClose={() => setRemoteEditor(null)}>
         <div className="eval-modal__surface a2a-editor a2a-remote-editor">
           <header><div><h2 id="a2a-remote-editor-title">Новый outbound peer</h2><p>Discovery Agent Card и фиксированный transport boundary</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={() => setRemoteEditor(null)}><Icon name="close" /></button></header>
           <form className="eval-form" onSubmit={saveRemote}>
@@ -623,9 +624,9 @@ export function A2APage({
             <div className="dialog-actions"><button className="button button--secondary" type="button" onClick={() => setRemoteEditor(null)}>Отмена</button><button className="button button--primary" type="submit" disabled={busyKey === "save-remote"}>{busyKey === "save-remote" ? "Проверяем Agent Card…" : "Discover и сохранить"}</button></div>
           </form>
         </div>
-      </div> : null}
+      </ModalLayer> : null}
 
-      {invokeRemote ? <div className="eval-modal" role="dialog" aria-modal="true" aria-labelledby="a2a-invoke-title">
+      {invokeRemote ? <ModalLayer className="eval-modal" labelledBy="a2a-invoke-title" onClose={() => { setInvokeRemote(null); setInvokeResult(null); }}>
         <div className="eval-modal__surface a2a-editor a2a-invoke">
           <header><div><h2 id="a2a-invoke-title">Invoke {invokeRemote.remote.name}</h2><p>{invokeRemote.remote.skillId} · {invokeRemote.remote.authMode === "oauth2_token_exchange" ? "delegated OAuth" : invokeRemote.remote.authMode}</p></div><button className="icon-button" type="button" aria-label="Закрыть" onClick={() => { setInvokeRemote(null); setInvokeResult(null); }}><Icon name="close" /></button></header>
           <form className="eval-form" onSubmit={sendRemote}>
@@ -636,11 +637,11 @@ export function A2APage({
             <div className="dialog-actions"><button className="button button--secondary" type="button" onClick={() => { setInvokeRemote(null); setInvokeResult(null); }}>Закрыть</button><button className="button button--primary" type="submit" disabled={busyKey === `invoke:${invokeRemote.remote.id}` || !invokeRemote.input.trim()}>{busyKey === `invoke:${invokeRemote.remote.id}` ? "Вызываем…" : "Отправить"}</button></div>
           </form>
         </div>
-      </div> : null}
+      </ModalLayer> : null}
 
-      {secret ? <div className="eval-modal" role="dialog" aria-modal="true" aria-labelledby="a2a-secret-title">
+      {secret ? <ModalLayer className="eval-modal" labelledBy="a2a-secret-title" onClose={() => setSecret(null)}>
         <div className="eval-modal__surface a2a-secret"><header><div><h2 id="a2a-secret-title">Сохраните bearer token</h2><p>После закрытия АГАТ больше не покажет его целиком</p></div><Icon name="shield" size={23} /></header><div><p>Передайте token только доверенному A2A client по защищённому каналу. В базе хранится SHA-256 hash.</p><textarea readOnly rows={3} value={secret.accessToken} aria-label="Новый A2A bearer token" /><button className="button button--primary" type="button" onClick={() => void copyValue("secret", secret.accessToken)}><Icon name={copied === "secret" ? "check" : "publish"} size={16} />{copied === "secret" ? "Token скопирован" : "Скопировать token"}</button></div><footer><button className="button button--secondary" type="button" onClick={() => setSecret(null)}>Я сохранил token</button></footer></div>
-      </div> : null}
+      </ModalLayer> : null}
     </main>
   );
 }
