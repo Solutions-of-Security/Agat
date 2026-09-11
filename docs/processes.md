@@ -136,3 +136,9 @@ Instance использует состояния `queued`, `running`, `waiting_a
 - distributed HA coordinator поверх SQLite;
 - автоматическое доказательство бизнес-корректности compensation;
 - произвольные connector binaries или shell/code nodes.
+
+## Каталог типовых процессов
+
+В форме **Новый процесс** можно выбрать одну из 7 категорий и 13 встроенных схем подготовки и согласования материала. Каталог содержит задания этапов, роли, входы, результаты и критерии приёмки. Назначения агентов необязательны при создании черновика, но обязательны для публикации. API: `GET /api/v1/process-templates`, создание через `POST /api/v1/processes` с `catalogTemplateId`, `catalogTemplateVersion` и `templateBindings`.
+
+Полные описания и границы: [процессы с LLM-агентами](./llm-processes/README.md). Поставляемые шаблоны не являются готовыми интеграциями с внешними системами и не закрывают qualification соответствующих solution packs.

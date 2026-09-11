@@ -68,7 +68,8 @@ Node token возвращается один раз при регистраци�
 | `DELETE` | `/knowledge/memory/:id` | Удалить memory (`admin/designer`) |
 | `GET` | `/knowledge/export` | Скачать project JSON (`admin/designer/auditor`) |
 | `GET` | `/processes` | Список процессов с черновиками и опубликованными версиями |
-| `POST` | `/processes` | Создать процесс с начальным графом |
+| `GET` | `/process-templates` | Категории, паспорта и графы встроенного каталога процессов (read-roles) |
+| `POST` | `/processes` | Создать процесс с графом, из шаблона проекта или каталога (`admin/designer`) |
 | `POST` | `/processes/import/bpmn` | Импортировать BPMN 2.0 XML в новый draft (`admin/designer`) |
 | `GET` | `/processes/:id` | Получить процесс |
 | `PATCH` | `/processes/:id` | Сохранить название, описание и черновой граф |
@@ -264,6 +265,8 @@ Staged rollout имеет независимый revision для project/region/
 При следующем изменении новый release становится target, а прежний target — fallback. Coordinator использует стабильный cohort worker ID; `0` допускает только fallback, `100` — только target. Revoke release имеет приоритет над rollout и немедленно запрещает новые leases этому release.
 
 ## Процессы
+
+Встроенный каталог: `GET /api/v1/process-templates`. Для копирования в новый draft передайте в `POST /api/v1/processes` поля `catalogTemplateId`, обязательный `catalogTemplateVersion` и необязательный `templateBindings` (ID роли → ID доступного агента). Эти поля несовместимы с `graph`/`templateId`; источник проверяется сервером, а неназначенные роли блокируют публикацию. Контракты, примеры и границы: [каталог процессов с LLM-агентами](./llm-processes/README.md#создать-через-api).
 
 Schedule принимает bounded input и явный вид `interval`, `cron` или `calendar`. Для interval минимальное значение — 60 секунд, максимальное — один год:
 

@@ -24,6 +24,7 @@ import {
 } from "./process-engine.js";
 import { exportProcessBpmn as serializeProcessBpmn, importProcessBpmn as parseProcessBpmn } from "./process-bpmn.js";
 import { diffProcessDocuments } from "./process-versioning.js";
+import { instantiateCatalogTemplate } from "./process-catalog.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { createToken, hashToken, tokensEqual } from "./security.js";
@@ -9266,6 +9267,17 @@ export class AgatStore {
       .get(identity.name, project) as Row | undefined;
     if (duplicate) throw new Error("Процесс с таким названием уже существует");
     let sourceGraph = input.graph;
+    const fromCatalog = input.catalogTemplateId !== undefined;
+    if (fromCatalog && (input.graph !== undefined || input.templateId !== undefined)) {
+      throw new Error("Выберите один источник: граф, шаблон проекта или шаблон каталога");
+    }
+    if (!fromCatalog && (input.catalogTemplateVersion !== undefined || input.templateBindings !== undefined)) {
+      throw new Error("Версия и назначения агентов требуют шаблон каталога");
+    }
+    const catalog = fromCatalog ? instantiateCatalogTemplate(
+      input.catalogTemplateId, input.catalogTemplateVersion, input.templateBindings, this.knownAgentIds(project),
+    ) : null;
+    if (catalog) sourceGraph = catalog.graph;
     if (!sourceGraph && input.templateId) {
       const template = this.db.prepare(`
         SELECT * FROM processes WHERE id = ? AND project_id = ? AND is_template = 1
@@ -9280,7 +9292,10 @@ export class AgatStore {
         sourceGraph = parseJson<ProcessGraph>(template.draft_graph_json, { nodes: [], edges: [] });
       }
     }
-    const graph = normalizeProcessGraph(sourceGraph ?? defaultProcessGraph(), this.knownAgentIds(project));
+    // Catalog copies may have unassigned roles. Publishing still uses strict validation.
+    const graph = (catalog || (!input.graph && input.templateId) ? normalizeProcessDraftGraph : normalizeProcessGraph)(
+      sourceGraph ?? defaultProcessGraph(), this.knownAgentIds(project),
+    );
     const processId = randomUUID();
     const timestamp = nowIso();
     this.db
@@ -9294,6 +9309,9 @@ export class AgatStore {
     this.addEvent(null, null, null, "info", "process.created", `Создан процесс «${identity.name}»`, {
       processId,
       templateId: input.templateId ?? null,
+      catalogTemplateId: catalog?.template.id ?? null,
+      catalogTemplateVersion: catalog?.template.version ?? null,
+      categoryId: catalog?.template.categoryId ?? null,
       isTemplate: input.isTemplate === true,
     });
     return this.getProcess(processId, project)!;

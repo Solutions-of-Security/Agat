@@ -49,6 +49,10 @@ MVP уже включает:
 - Worker supply-chain trust: OCI/SLSA provenance admission, distinct trust roots, one-time SPIFFE-compatible runtime attestation и expiry refresh без token rotation.
 - SIEM conformance: exact batch acknowledgement, bounded retry, redacted retained DLQ, RBAC replay/resolve и operational retention без удаления audit ledger.
 
+## Каталог процессов с LLM-агентами
+
+[Анализ, категории, требования и шаблоны](./llm-processes/README.md): 7 категорий, 13 предметных процессов и создание независимых черновиков через **Процессы → Новый процесс → Каталог типовых процессов**. В каждом шаблоне указаны результат, вход, роли, критерии приёмки и граница автоматизации.
+
 ## Быстрый запуск
 
 ```bash
@@ -141,6 +145,7 @@ python3 workers/agat_worker.py
 - [Безопасность](./security.md)
 - [Операции и восстановление](./operations.md)
 - [Roadmap и дополнительные фичи](./roadmap.md)
+- [Использование Агата: сценарии, барьеры и приоритеты — 8 сентября 2026](./product-usage-research-2026-09-08.md)
 - [Приоритеты агентов и процессов: сентябрь 2026 — август 2027](./agent-process-priorities-2026.md)
 - [Дизайн-система и visual QA](./design-system.md)
 - [UX/UI-аудит всех страниц и пользовательских сценариев](./ux-ui-audit.md)

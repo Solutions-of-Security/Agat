@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { getProcessTemplateCatalog } from "./process-catalog.js";
 
 import {
   loadConfig,
@@ -1723,6 +1724,12 @@ export function createCoordinatorServer(
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         if (!store.deleteMemory(memoryId, auth.projectId)) throw new HttpError(404, "Memory entry не найдена");
         noContent(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/v1/process-templates") {
+        await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        json(response, 200, getProcessTemplateCatalog());
         return;
       }
 

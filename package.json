@@ -7,6 +7,8 @@
     "apps/*"
   ],
   "scripts": {
+    "docs:processes": "node --import tsx scripts/export-process-catalog.ts",
+    "docs:processes:check": "node --import tsx scripts/export-process-catalog.ts --check",
     "build": "npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web && npm run build --workspace @agat/temporal-worker",
     "dev:api": "npm run dev --workspace @agat/coordinator",
     "dev:web": "npm run dev --workspace @agat/web",

@@ -37,6 +37,7 @@ import type {
   ModelRouterPolicy,
   Overview,
   ProcessDefinition,
+  ProcessTemplateCatalog,
   ProcessGraphNode,
   ProcessInstance,
   ProcessSchedule,
@@ -364,6 +365,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled, reason }),
     }),
+  processTemplates: () => request<ProcessTemplateCatalog>("/process-templates"),
   createProcess: (payload: CreateProcessRequest) =>
     request<ProcessDefinition>("/processes", {
       method: "POST",

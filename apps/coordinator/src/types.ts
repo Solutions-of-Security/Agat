@@ -133,6 +133,9 @@ export interface CreateProcessInput {
   description?: string;
   graph?: ProcessGraph;
   templateId?: string;
+  catalogTemplateId?: string;
+  catalogTemplateVersion?: number;
+  templateBindings?: Record<string, string>;
   isTemplate?: boolean;
 }
 

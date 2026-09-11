@@ -1420,7 +1420,43 @@ export interface CreateProcessRequest {
   description: string;
   graph?: ProcessGraph;
   templateId?: string;
+  catalogTemplateId?: string;
+  catalogTemplateVersion?: number;
+  templateBindings?: Record<string, string>;
   isTemplate?: boolean;
+}
+
+export interface ProcessTemplateCatalog {
+  version: number;
+  categories: Array<{
+    id: string;
+    name: string;
+    description: string;
+    inclusion: string;
+    requirements: string[];
+    metrics: string[];
+  }>;
+  templates: Array<{
+    id: string;
+    version: number;
+    categoryId: string;
+    name: string;
+    description: string;
+    priority: "P0" | "P1" | "P2";
+    roadmapId: string;
+    ownerRole: string;
+    trigger: string;
+    inputs: string[];
+    inputExample: string;
+    outcome: string;
+    boundary: string;
+    requirements: string[];
+    acceptance: string[];
+    exceptions: string[];
+    roles: Array<{ id: string; name: string; responsibility: string }>;
+    stages: Array<{ id: string; name: string; roleId: string; instruction: string }>;
+    graph: ProcessGraph;
+  }>;
 }
 
 export interface UpdateProcessRequest {

@@ -785,6 +785,7 @@ export default function App() {
       <NewProcessDialog
         open={processDialogOpen}
         processes={overview.processes}
+        agents={overview.agents}
         busy={busy}
         error={processError}
         onClose={() => { setProcessDialogOpen(false); setProcessError(null); }}
