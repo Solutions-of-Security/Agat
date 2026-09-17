@@ -59,6 +59,7 @@ npm start
 ```dotenv
 AGAT_ADMIN_TOKEN=<64 hex символа>
 AGAT_ENROLLMENT_TOKEN=<другие 64 hex символа>
+AGAT_CREDENTIALS_KEY=<отдельные 64 hex символа>
 AGAT_SEARCH_SECRET=<ещё 64 hex символа>
 AGAT_SEED_DEMO=false
 AGAT_A2A_ENABLED=true
@@ -72,6 +73,7 @@ AGAT_A2A_MAX_RESPONSE_BYTES=1048576
 Сгенерировать значения:
 
 ```bash
+openssl rand -hex 32
 openssl rand -hex 32
 openssl rand -hex 32
 openssl rand -hex 32
