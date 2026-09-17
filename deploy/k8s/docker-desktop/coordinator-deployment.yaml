@@ -1,0 +1,244 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-coordinator
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: coordinator
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 180
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: coordinator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: coordinator
+        app.kubernetes.io/part-of: agat
+    spec:
+      serviceAccountName: agat-coordinator
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-postgres-schema
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until test "$(psql \
+                --host agat-coordinator-postgres \
+                --username agat_system \
+                --dbname agat \
+                --tuples-only \
+                --no-align \
+                --command "SELECT COUNT(*) FROM agat_schema_migrations WHERE version = 25 AND admission_status = 'passed'" \
+                2>/dev/null)" = "1"; do
+                sleep 2
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-password
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: wait-for-temporal
+          image: temporalio/temporal:1.8.1@sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until temporal operator namespace describe \
+                --namespace agat \
+                --address agat-temporal:7233 \
+                --command-timeout 5s \
+                --output none; do
+                sleep 2
+              done
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: coordinator
+          image: agat-local/coordinator:1.7.0
+          # Docker Desktop's kind registry mirror resolves this mutable local tag.
+          # Always is intentional so a rebuild with the same tag is not served from node cache.
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: agat-coordinator-config
+          env:
+            - name: AGAT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: admin-token
+            - name: AGAT_ENROLLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: enrollment-token
+            - name: AGAT_CREDENTIALS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: credentials-key
+            - name: AGAT_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: system-url
+            - name: AGAT_POSTGRES_TENANT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: tenant-url
+            - name: AGAT_ARTIFACT_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: artifact-access-key
+            - name: AGAT_ARTIFACT_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: artifact-secret-key
+            - name: AGAT_COORDINATOR_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: AGAT_SIEM_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: siem-bearer-token
+                  optional: true
+            - name: AGAT_TEMPORAL_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: temporal-internal-token
+            - name: AGAT_EDGE_ATTESTATION_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: edge-attestation-broker-token
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8787
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agat-coordinator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: coordinator

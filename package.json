@@ -1,0 +1,53 @@
+{
+  "name": "agat-platform",
+  "private": true,
+  "version": "1.7.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "docs:processes": "node --import tsx scripts/export-process-catalog.ts",
+    "docs:processes:check": "node --import tsx scripts/export-process-catalog.ts --check",
+    "build": "npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web && npm run build --workspace @agat/temporal-worker",
+    "dev:api": "npm run dev --workspace @agat/coordinator",
+    "dev:web": "npm run dev --workspace @agat/web",
+    "fleet:migrate-state": "node --import tsx apps/coordinator/src/sqlite-postgres-migrator.ts",
+    "fleet:migrate-schema": "node --import tsx apps/coordinator/src/postgres-schema-migrator.ts",
+    "fleet:admit-postgres": "node --import tsx apps/coordinator/src/postgres-admission.ts",
+    "fleet:postgres-resilience": "node --import tsx apps/coordinator/src/postgres-resilience.ts",
+    "fleet:region-loss-dr": "node --import tsx apps/coordinator/src/region-loss-dr.ts",
+    "fleet:artifact-store": "node --import tsx apps/coordinator/src/artifact-store-admin.ts",
+    "fleet:bootstrap-artifact-store": "node --import tsx apps/coordinator/src/artifact-store-bootstrap.ts",
+    "fleet:test-postgres-dr": "bash scripts/test-postgres-physical-dr.sh",
+    "fleet:test-ha-postgres": "bash scripts/test-fleet-ha-postgres.sh",
+    "fleet:test-state-migration": "bash scripts/test-sqlite-postgres-migration.sh",
+    "fleet:test-region-loss-dr": "bash scripts/test-region-loss-dr.sh",
+    "fleet:test-artifact-store": "bash scripts/test-s3-artifact-store.sh",
+    "fleet:sign-worker": "node scripts/sign-worker-release.mjs",
+    "fleet:sign-worker-provenance": "node scripts/sign-worker-provenance.mjs",
+    "k8s:admin-token": "bash scripts/k8s-admin-token.sh",
+    "k8s:enrollment-token": "bash scripts/k8s-enrollment-token.sh",
+    "k8s:forward": "bash scripts/k8s-port-forward.sh",
+    "k8s:keycloak-password": "bash scripts/k8s-keycloak-password.sh",
+    "k8s:status": "bash scripts/k8s-status.sh",
+    "k8s:stop": "bash scripts/k8s-stop.sh",
+    "k8s:token": "bash scripts/k8s-admin-token.sh",
+    "k8s:up": "bash scripts/k8s-up.sh",
+    "start": "npm run start --workspace @agat/coordinator",
+    "test": "npm run test:coordinator && npm run test:web && npm run test:worker && npm run test:temporal",
+    "test:coordinator": "npm run test --workspace @agat/coordinator",
+    "test:ollama-rag": "bash scripts/test-real-ollama-rag.sh",
+    "test:temporal": "npm run test --workspace @agat/temporal-worker",
+    "test:web": "npm test --workspace @agat/web",
+    "test:worker": "python3 -m unittest discover -s workers -p 'test_*.py'",
+    "temporal:promote": "bash scripts/temporal-rollout.sh promote",
+    "temporal:ramp": "bash scripts/temporal-rollout.sh ramp",
+    "temporal:status": "bash scripts/temporal-rollout.sh status",
+    "temporal:version": "bash scripts/temporal-rollout.sh version",
+    "typecheck": "npm run typecheck --workspace @agat/coordinator && npm run typecheck --workspace @agat/web && npm run typecheck --workspace @agat/temporal-worker"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

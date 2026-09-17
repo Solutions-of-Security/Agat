@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "policyId": "agat-eu-region-loss-dr-v1",
+  "transitions": [
+    {
+      "residencyDomain": "eu",
+      "sourceRegion": "eu-west-1",
+      "targetRegion": "eu-central-1"
+    },
+    {
+      "residencyDomain": "eu",
+      "sourceRegion": "eu-central-1",
+      "targetRegion": "eu-west-1"
+    }
+  ],
+  "objectives": {
+    "rpoSeconds": 900,
+    "rtoSeconds": 3600,
+    "maximumCrossSystemSkewSeconds": 300
+  },
+  "artifacts": {
+    "requireVersioning": true,
+    "requireVersionIdPreservation": true,
+    "maximumReplicationLagSeconds": 900
+  },
+  "evidence": {
+    "maximumAgeSeconds": 900,
+    "requiredDistinctApprovers": 2,
+    "requiredApprovalRoles": [
+      "incident_commander",
+      "data_owner"
+    ]
+  }
+}

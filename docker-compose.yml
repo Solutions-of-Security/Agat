@@ -1,0 +1,240 @@
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGAT_HTTP_PORT:-8787}:8787"
+    environment:
+      AGAT_HOST: 0.0.0.0
+      AGAT_PORT: 8787
+      AGAT_DB_PATH: /data/agat.db
+      AGAT_STATE_STORE_DRIVER: ${AGAT_STATE_STORE_DRIVER:-sqlite}
+      AGAT_POSTGRES_URL: ${AGAT_POSTGRES_URL:-postgresql://agat_system:agat-local-system-only@postgres:5432/agat}
+      AGAT_POSTGRES_TENANT_URL: ${AGAT_POSTGRES_TENANT_URL:-postgresql://agat_tenant:agat-local-tenant-only@postgres:5432/agat}
+      AGAT_POSTGRES_POOL_MAX: ${AGAT_POSTGRES_POOL_MAX:-4}
+      AGAT_POSTGRES_CONNECT_TIMEOUT_MS: ${AGAT_POSTGRES_CONNECT_TIMEOUT_MS:-5000}
+      AGAT_POSTGRES_IDLE_TIMEOUT_MS: ${AGAT_POSTGRES_IDLE_TIMEOUT_MS:-30000}
+      AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: ${AGAT_POSTGRES_STATEMENT_TIMEOUT_MS:-30000}
+      AGAT_POSTGRES_SSL_MODE: ${AGAT_POSTGRES_SSL_MODE:-disable}
+      AGAT_POSTGRES_EXPECTED_REPLICAS: ${AGAT_POSTGRES_EXPECTED_REPLICAS:-1}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+      AGAT_WORKER_RELEASE_PUBLIC_KEYS: ${AGAT_WORKER_RELEASE_PUBLIC_KEYS:-{}}
+      AGAT_REQUIRE_SIGNED_WORKER_RELEASES: ${AGAT_REQUIRE_SIGNED_WORKER_RELEASES:-false}
+      AGAT_SIEM_ENABLED: ${AGAT_SIEM_ENABLED:-false}
+      AGAT_SIEM_URL: ${AGAT_SIEM_URL:-}
+      AGAT_SIEM_BEARER_TOKEN: ${AGAT_SIEM_BEARER_TOKEN:-}
+      AGAT_SIEM_BATCH_SIZE: ${AGAT_SIEM_BATCH_SIZE:-100}
+      AGAT_SIEM_INTERVAL_SECONDS: ${AGAT_SIEM_INTERVAL_SECONDS:-5}
+      AGAT_SIEM_TIMEOUT_SECONDS: ${AGAT_SIEM_TIMEOUT_SECONDS:-10}
+      AGAT_ARTIFACTS_DIR: /data/artifacts
+      AGAT_ADMIN_TOKEN: ${AGAT_ADMIN_TOKEN:?Set AGAT_ADMIN_TOKEN in .env}
+      AGAT_ENROLLMENT_TOKEN: ${AGAT_ENROLLMENT_TOKEN:?Set AGAT_ENROLLMENT_TOKEN in .env}
+      AGAT_CREDENTIALS_KEY: ${AGAT_CREDENTIALS_KEY:?Set AGAT_CREDENTIALS_KEY in .env}
+      AGAT_SEED_DEMO: ${AGAT_SEED_DEMO:-false}
+      AGAT_SERVE_WEB: "true"
+      AGAT_ALLOWED_ORIGINS: ${AGAT_ALLOWED_ORIGINS:-}
+      AGAT_OTEL_ENABLED: ${AGAT_OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: ${AGAT_OTEL_COORDINATOR_SERVICE_NAME:-agat-coordinator}
+      AGAT_MCP_ENABLED: ${AGAT_MCP_ENABLED:-true}
+      AGAT_MCP_REFRESH_SECONDS: ${AGAT_MCP_REFRESH_SECONDS:-30}
+      AGAT_MCP_REQUEST_TIMEOUT_SECONDS: ${AGAT_MCP_REQUEST_TIMEOUT_SECONDS:-60}
+      AGAT_MCP_MAX_RESPONSE_BYTES: ${AGAT_MCP_MAX_RESPONSE_BYTES:-4194304}
+      AGAT_MCP_APPROVAL_TTL_SECONDS: ${AGAT_MCP_APPROVAL_TTL_SECONDS:-600}
+      AGAT_SANDBOX_ENABLED: ${AGAT_SANDBOX_ENABLED:-false}
+      AGAT_SANDBOX_NAMESPACE: ${AGAT_SANDBOX_NAMESPACE:-agat}
+      AGAT_SANDBOX_WASI_IMAGE: ${AGAT_SANDBOX_WASI_IMAGE:-agat-local/sandbox-wasi:1.7.0}
+      AGAT_SANDBOX_RUNTIME_CLASS: ${AGAT_SANDBOX_RUNTIME_CLASS:-}
+      AGAT_SANDBOX_NETWORK_POLICY_ENFORCED: ${AGAT_SANDBOX_NETWORK_POLICY_ENFORCED:-false}
+      AGAT_A2A_ENABLED: ${AGAT_A2A_ENABLED:-true}
+      AGAT_A2A_PUBLIC_BASE_URL: ${AGAT_A2A_PUBLIC_BASE_URL:-http://127.0.0.1:8787}
+      AGAT_A2A_OUTBOUND_ENABLED: ${AGAT_A2A_OUTBOUND_ENABLED:-true}
+      AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND: ${AGAT_A2A_ALLOW_LOOPBACK_OUTBOUND:-false}
+      AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS: ${AGAT_A2A_OUTBOUND_TIMEOUT_SECONDS:-15}
+      AGAT_A2A_MAX_RESPONSE_BYTES: ${AGAT_A2A_MAX_RESPONSE_BYTES:-1048576}
+      AGAT_EDGE_ENABLED: ${AGAT_EDGE_ENABLED:-false}
+      AGAT_EDGE_ATTESTATION_MODE: ${AGAT_EDGE_ATTESTATION_MODE:-disabled}
+      AGAT_EDGE_ATTESTATION_BROKER_URL: ${AGAT_EDGE_ATTESTATION_BROKER_URL:-}
+      AGAT_EDGE_ATTESTATION_BROKER_TOKEN: ${AGAT_EDGE_ATTESTATION_BROKER_TOKEN:-}
+      AGAT_EDGE_ATTESTATION_TIMEOUT_SECONDS: ${AGAT_EDGE_ATTESTATION_TIMEOUT_SECONDS:-10}
+      AGAT_EDGE_CHALLENGE_TTL_SECONDS: ${AGAT_EDGE_CHALLENGE_TTL_SECONDS:-180}
+      AGAT_EDGE_ANDROID_APPLICATION_ID: ${AGAT_EDGE_ANDROID_APPLICATION_ID:-}
+      AGAT_EDGE_IOS_APPLICATION_ID: ${AGAT_EDGE_IOS_APPLICATION_ID:-}
+      AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION: ${AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION:-false}
+      AGAT_EDGE_ANDROID_REQUIRED_VERDICTS: ${AGAT_EDGE_ANDROID_REQUIRED_VERDICTS:-MEETS_DEVICE_INTEGRITY,PLAY_RECOGNIZED}
+      AGAT_EDGE_IOS_REQUIRED_VERDICTS: ${AGAT_EDGE_IOS_REQUIRED_VERDICTS:-APP_ATTEST_VALID}
+      AGAT_LOCAL_WORKER_EMBEDDING_MODELS: ${AGAT_LOCAL_WORKER_EMBEDDING_MODELS:-embeddinggemma}
+    volumes:
+      - agat-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: workers/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      coordinator:
+        condition: service_healthy
+      search:
+        condition: service_healthy
+    environment:
+      AGAT_COORDINATOR_URL: http://coordinator:8787
+      AGAT_ENROLLMENT_TOKEN: ${AGAT_ENROLLMENT_TOKEN:?Set AGAT_ENROLLMENT_TOKEN in .env}
+      AGAT_WORKER_NAME: ${AGAT_WORKER_NAME:-docker-worker}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+      AGAT_WORKER_RELEASE_ID: ${AGAT_WORKER_RELEASE_ID:-}
+      AGAT_WORKER_ARTIFACT_DIGEST: ${AGAT_WORKER_ARTIFACT_DIGEST:-}
+      AGAT_WORKER_RELEASE_KEY_ID: ${AGAT_WORKER_RELEASE_KEY_ID:-}
+      AGAT_WORKER_RELEASE_SIGNATURE: ${AGAT_WORKER_RELEASE_SIGNATURE:-}
+      AGAT_WORKER_MODELS: ${AGAT_WORKER_MODELS:-qwen3:8b}
+      AGAT_EMBEDDING_MODELS: ${AGAT_EMBEDDING_MODELS:-embeddinggemma}
+      AGAT_MODEL_BASE_URL: ${AGAT_MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
+      AGAT_MODEL_API_KEY: ${AGAT_MODEL_API_KEY:-ollama}
+      AGAT_MODEL_DISCOVERY: ${AGAT_MODEL_DISCOVERY:-auto}
+      AGAT_MODEL_PROFILES_JSON: ${AGAT_MODEL_PROFILES_JSON:-}
+      AGAT_WORKER_CONCURRENCY: ${AGAT_WORKER_CONCURRENCY:-1}
+      AGAT_WORKER_GPU: ${AGAT_WORKER_GPU:-}
+      AGAT_WORKER_VRAM_MB: ${AGAT_WORKER_VRAM_MB:-0}
+      AGAT_WORKER_VRAM_USED_MB: ${AGAT_WORKER_VRAM_USED_MB:-}
+      AGAT_WORKER_POWER_WATTS: ${AGAT_WORKER_POWER_WATTS:-}
+      AGAT_WORKER_TEMPERATURE_C: ${AGAT_WORKER_TEMPERATURE_C:-}
+      AGAT_WORKER_CREDENTIALS: /state/worker.json
+      AGAT_WEB_ENABLED: ${AGAT_WEB_ENABLED:-true}
+      AGAT_WEB_SEARCH_URL: ${AGAT_WEB_SEARCH_URL:-http://search:8080/search}
+      AGAT_WEB_TIMEOUT: ${AGAT_WEB_TIMEOUT:-12}
+      AGAT_WEB_FETCH_MAX_BYTES: ${AGAT_WEB_FETCH_MAX_BYTES:-1000000}
+      AGAT_WEB_FETCH_MAX_CHARS: ${AGAT_WEB_FETCH_MAX_CHARS:-12000}
+      AGAT_WEB_SEARCH_MAX_RESULTS: ${AGAT_WEB_SEARCH_MAX_RESULTS:-6}
+      AGAT_WEB_MAX_TOOL_ROUNDS: ${AGAT_WEB_MAX_TOOL_ROUNDS:-6}
+      AGAT_MCP_APPROVAL_TIMEOUT_SECONDS: ${AGAT_MCP_APPROVAL_TIMEOUT_SECONDS:-690}
+      AGAT_OTEL_ENABLED: ${AGAT_OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: ${AGAT_OTEL_WORKER_SERVICE_NAME:-agat-worker}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - agat-worker-state:/state
+
+  postgres:
+    profiles: ["ha"]
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGAT_POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: agat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${AGAT_POSTGRES_ADMIN_PASSWORD:-agat-local-admin-only}
+      AGAT_POSTGRES_SYSTEM_PASSWORD: ${AGAT_POSTGRES_SYSTEM_PASSWORD:-agat-local-system-only}
+      AGAT_POSTGRES_MIGRATION_PASSWORD: ${AGAT_POSTGRES_MIGRATION_PASSWORD:-agat-local-migration-only}
+      AGAT_POSTGRES_TENANT_PASSWORD: ${AGAT_POSTGRES_TENANT_PASSWORD:-agat-local-tenant-only}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agat"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - agat-postgres-data:/var/lib/postgresql/data
+      - ./deploy/k8s/docker-desktop/postgres-init.sh:/docker-entrypoint-initdb.d/10-agat-roles.sh:ro
+
+  postgres-migrate:
+    profiles: ["ha"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    command: ["node", "apps/coordinator/dist/postgres-schema-migrator.js"]
+    depends_on:
+      postgres-role-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      AGAT_POSTGRES_MIGRATION_URL: ${AGAT_POSTGRES_MIGRATION_URL:-postgresql://agat_migrator:agat-local-migration-only@postgres:5432/agat}
+      AGAT_POSTGRES_URL: ${AGAT_POSTGRES_URL:-postgresql://agat_system:agat-local-system-only@postgres:5432/agat}
+      AGAT_POSTGRES_TENANT_URL: ${AGAT_POSTGRES_TENANT_URL:-postgresql://agat_tenant:agat-local-tenant-only@postgres:5432/agat}
+      AGAT_POSTGRES_POOL_MAX: ${AGAT_POSTGRES_POOL_MAX:-4}
+      AGAT_POSTGRES_EXPECTED_REPLICAS: ${AGAT_POSTGRES_EXPECTED_REPLICAS:-1}
+      AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT: ${AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT:-80}
+      AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE: ${AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE:-5}
+      AGAT_POSTGRES_ADMISSION_DURATION_MS: ${AGAT_POSTGRES_ADMISSION_DURATION_MS:-3000}
+      AGAT_POSTGRES_ADMISSION_P99_MS: ${AGAT_POSTGRES_ADMISSION_P99_MS:-250}
+      AGAT_POSTGRES_ADMISSION_REPORT_PATH: /tmp/postgres-admission.json
+      AGAT_POSTGRES_SSL_MODE: ${AGAT_POSTGRES_SSL_MODE:-disable}
+      AGAT_REGION: ${AGAT_REGION:-local}
+      AGAT_RESIDENCY_DOMAIN: ${AGAT_RESIDENCY_DOMAIN:-local}
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+
+  postgres-role-bootstrap:
+    profiles: ["ha"]
+    image: postgres:17.6-alpine
+    restart: "no"
+    command: ["/bin/sh", "/opt/agat/init-agat.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      POSTGRES_DB: agat
+      POSTGRES_USER: postgres
+      PGPASSWORD: ${AGAT_POSTGRES_ADMIN_PASSWORD:-agat-local-admin-only}
+      AGAT_POSTGRES_MIGRATION_PASSWORD: ${AGAT_POSTGRES_MIGRATION_PASSWORD:-agat-local-migration-only}
+      AGAT_POSTGRES_SYSTEM_PASSWORD: ${AGAT_POSTGRES_SYSTEM_PASSWORD:-agat-local-system-only}
+      AGAT_POSTGRES_TENANT_PASSWORD: ${AGAT_POSTGRES_TENANT_PASSWORD:-agat-local-tenant-only}
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    volumes:
+      - ./deploy/k8s/docker-desktop/postgres-init.sh:/opt/agat/init-agat.sh:ro
+
+  search:
+    profiles: ["worker", "web-search"]
+    image: ${AGAT_SEARCH_IMAGE:-docker.io/searxng/searxng:2026.8.12-cdfdaa5a8@sha256:c2dc2d9e6b910653e8628361c23443222490e4cabbb9e02667b7847143db843b}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    environment:
+      SEARXNG_SECRET: ${AGAT_SEARCH_SECRET:-agat-local-search-only}
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+      FORCE_OWNERSHIP: "false"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./deploy/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+      - agat-search-cache:/var/cache/searxng
+
+volumes:
+  agat-data:
+  agat-worker-state:
+  agat-search-cache:
+  agat-postgres-data:

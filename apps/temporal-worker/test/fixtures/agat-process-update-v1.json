@@ -1,0 +1,488 @@
+{
+  "workflowId": "agat-replay-update-v1",
+  "description": "agatProcessWorkflow acknowledges processChangedV1 while waiting and completes after the update",
+  "history": {
+    "events": [
+      {
+        "eventId": "1",
+        "eventTime": "2026-08-16T22:34:37.713386294Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+        "taskId": "1048587",
+        "workflowExecutionStartedEventAttributes": {
+          "workflowType": {
+            "name": "agatProcessWorkflow"
+          },
+          "taskQueue": {
+            "name": "agat-replay-update-v1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJwcm9jZXNzSWQiOiJmaXh0dXJlLXVwZGF0ZS1wcm9jZXNzLXYxIiwicHJvamVjdElkIjoiZml4dHVyZS1wcm9qZWN0In0="
+              }
+            ]
+          },
+          "workflowTaskTimeout": "10s",
+          "originalExecutionRunId": "01a00cb6-6f11-75e0-ad91-8aafd8ae1b1d",
+          "identity": "agat-replay-client",
+          "firstExecutionRunId": "01a00cb6-6f11-75e0-ad91-8aafd8ae1b1d",
+          "attempt": 1,
+          "firstWorkflowTaskBackoff": "0s",
+          "header": {},
+          "workflowId": "agat-replay-update-v1"
+        }
+      },
+      {
+        "eventId": "2",
+        "eventTime": "2026-08-16T22:34:37.713483377Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048588",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "agat-replay-update-v1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "3",
+        "eventTime": "2026-08-16T22:34:37.716347294Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048593",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "2",
+          "identity": "agat-replay-update-capture",
+          "requestId": "67a615dd-4b69-4604-9dbe-16538c0a21ff",
+          "historySizeBytes": "429",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "4",
+        "eventTime": "2026-08-16T22:34:37.757022294Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048597",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "2",
+          "startedEventId": "3",
+          "identity": "agat-replay-update-capture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          },
+          "sdkMetadata": {
+            "coreUsedFlags": [
+              1,
+              3,
+              2
+            ],
+            "sdkName": "temporal-typescript",
+            "sdkVersion": "1.22.0"
+          },
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "5",
+        "eventTime": "2026-08-16T22:34:37.757584544Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "taskId": "1048598",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "1",
+          "activityType": {
+            "name": "tickProcess"
+          },
+          "taskQueue": {
+            "name": "agat-replay-update-v1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "header": {},
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJwcm9jZXNzSWQiOiJmaXh0dXJlLXVwZGF0ZS1wcm9jZXNzLXYxIiwicHJvamVjdElkIjoiZml4dHVyZS1wcm9qZWN0In0="
+              }
+            ]
+          },
+          "scheduleToCloseTimeout": "120s",
+          "scheduleToStartTimeout": "120s",
+          "startToCloseTimeout": "15s",
+          "heartbeatTimeout": "0s",
+          "workflowTaskCompletedEventId": "4",
+          "retryPolicy": {
+            "initialInterval": "1s",
+            "backoffCoefficient": 2,
+            "maximumInterval": "15s",
+            "maximumAttempts": 8,
+            "nonRetryableErrorTypes": [
+              "ConfigurationError",
+              "CoordinatorRequestError"
+            ]
+          },
+          "useWorkflowBuildId": true
+        }
+      },
+      {
+        "eventId": "6",
+        "eventTime": "2026-08-16T22:34:37.759659502Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "taskId": "1048605",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "5",
+          "identity": "agat-replay-update-capture",
+          "requestId": "ed790514-7a9b-414e-9509-d0d6658e8d65",
+          "attempt": 1,
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "7",
+        "eventTime": "2026-08-16T22:34:37.774397252Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+        "taskId": "1048606",
+        "activityTaskCompletedEventAttributes": {
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJzdGF0dXMiOiJ3YWl0aW5nX2FwcHJvdmFsIiwiY3VycmVudE5vZGVJZCI6ImFwcHJvdmFsIiwiY3VycmVudE5vZGVUeXBlIjoiYXBwcm92YWwiLCJ3YWl0VW50aWwiOm51bGwsInRyYW5zaXRpb25Db3VudCI6MiwidXBkYXRlZEF0IjoiMjAyNi0wOC0xN1QwMDowMDowMC4wMDBaIn0="
+              }
+            ]
+          },
+          "scheduledEventId": "5",
+          "startedEventId": "6",
+          "identity": "agat-replay-update-capture"
+        }
+      },
+      {
+        "eventId": "8",
+        "eventTime": "2026-08-16T22:34:37.774409752Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048607",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "agat-replay-update-capture-f004cc4f95284e17b414f3629f153f98",
+            "kind": "TASK_QUEUE_KIND_STICKY",
+            "normalName": "agat-replay-update-v1"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "9",
+        "eventTime": "2026-08-16T22:34:37.775974086Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048611",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "8",
+          "identity": "agat-replay-update-capture",
+          "requestId": "5197fa11-6f55-4a34-a9db-bc004980e298",
+          "historySizeBytes": "1728",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "10",
+        "eventTime": "2026-08-16T22:34:37.783492294Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048615",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "8",
+          "startedEventId": "9",
+          "identity": "agat-replay-update-capture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          },
+          "sdkMetadata": {},
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "11",
+        "eventTime": "2026-08-16T22:34:37.783561877Z",
+        "eventType": "EVENT_TYPE_TIMER_STARTED",
+        "taskId": "1048616",
+        "timerStartedEventAttributes": {
+          "timerId": "1",
+          "startToFireTimeout": "3600s",
+          "workflowTaskCompletedEventId": "10"
+        }
+      },
+      {
+        "eventId": "12",
+        "eventTime": "2026-08-16T22:34:37.839647294Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048623",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "agat-replay-update-capture-f004cc4f95284e17b414f3629f153f98",
+            "kind": "TASK_QUEUE_KIND_STICKY",
+            "normalName": "agat-replay-update-v1"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "13",
+        "eventTime": "2026-08-16T22:34:37.840268794Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048624",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "12",
+          "identity": "agat-replay-update-capture",
+          "requestId": "6b25b761-f623-40a8-80a7-e9c2e5041748",
+          "historySizeBytes": "2116",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "14",
+        "eventTime": "2026-08-16T22:34:37.850662002Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048625",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "12",
+          "startedEventId": "13",
+          "identity": "agat-replay-update-capture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          },
+          "sdkMetadata": {},
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "15",
+        "eventTime": "2026-08-16T22:34:37.850753752Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED",
+        "taskId": "1048626",
+        "workflowExecutionUpdateAcceptedEventAttributes": {
+          "protocolInstanceId": "1f1ca66e-4f38-46b5-9984-6bbe155fbc13",
+          "acceptedRequestMessageId": "1f1ca66e-4f38-46b5-9984-6bbe155fbc13/request",
+          "acceptedRequestSequencingEventId": "12",
+          "acceptedRequest": {
+            "meta": {
+              "updateId": "1f1ca66e-4f38-46b5-9984-6bbe155fbc13",
+              "identity": "agat-replay-client"
+            },
+            "input": {
+              "header": {},
+              "name": "processChangedV1",
+              "args": {
+                "payloads": [
+                  {
+                    "metadata": {
+                      "encoding": "anNvbi9wbGFpbg=="
+                    },
+                    "data": "ImZpeHR1cmUtYXBwcm92ZWQi"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "eventId": "16",
+        "eventTime": "2026-08-16T22:34:37.850859086Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED",
+        "taskId": "1048627",
+        "workflowExecutionUpdateCompletedEventAttributes": {
+          "meta": {
+            "updateId": "1f1ca66e-4f38-46b5-9984-6bbe155fbc13",
+            "identity": "agat-replay-client"
+          },
+          "acceptedEventId": "15",
+          "outcome": {
+            "success": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJhY2NlcHRlZFJldmlzaW9uIjoxLCJyZWFzb24iOiJmaXh0dXJlLWFwcHJvdmVkIiwic3RhdGUiOnsiaW5zdGFuY2VJZCI6ImZpeHR1cmUtdXBkYXRlLWluc3RhbmNlLXYxIiwic3RhdHVzIjoid2FpdGluZ19hcHByb3ZhbCIsImN1cnJlbnROb2RlSWQiOiJhcHByb3ZhbCIsImN1cnJlbnROb2RlVHlwZSI6ImFwcHJvdmFsIiwid2FpdFVudGlsIjpudWxsLCJ0cmFuc2l0aW9uQ291bnQiOjIsInVwZGF0ZWRBdCI6IjIwMjYtMDgtMTdUMDA6MDA6MDAuMDAwWiJ9fQ=="
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "eventId": "17",
+        "eventTime": "2026-08-16T22:34:37.850898377Z",
+        "eventType": "EVENT_TYPE_TIMER_CANCELED",
+        "taskId": "1048628",
+        "timerCanceledEventAttributes": {
+          "timerId": "1",
+          "startedEventId": "11",
+          "workflowTaskCompletedEventId": "14",
+          "identity": "agat-replay-update-capture"
+        }
+      },
+      {
+        "eventId": "18",
+        "eventTime": "2026-08-16T22:34:37.850913086Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "taskId": "1048629",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "2",
+          "activityType": {
+            "name": "tickProcess"
+          },
+          "taskQueue": {
+            "name": "agat-replay-update-v1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "header": {},
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJwcm9jZXNzSWQiOiJmaXh0dXJlLXVwZGF0ZS1wcm9jZXNzLXYxIiwicHJvamVjdElkIjoiZml4dHVyZS1wcm9qZWN0In0="
+              }
+            ]
+          },
+          "scheduleToCloseTimeout": "120s",
+          "scheduleToStartTimeout": "120s",
+          "startToCloseTimeout": "15s",
+          "heartbeatTimeout": "0s",
+          "workflowTaskCompletedEventId": "14",
+          "retryPolicy": {
+            "initialInterval": "1s",
+            "backoffCoefficient": 2,
+            "maximumInterval": "15s",
+            "maximumAttempts": 8,
+            "nonRetryableErrorTypes": [
+              "ConfigurationError",
+              "CoordinatorRequestError"
+            ]
+          },
+          "useWorkflowBuildId": true
+        }
+      },
+      {
+        "eventId": "19",
+        "eventTime": "2026-08-16T22:34:37.852621961Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "taskId": "1048636",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "18",
+          "identity": "agat-replay-update-capture",
+          "requestId": "293fbeb5-4780-4a31-99c7-262e5a0a664a",
+          "attempt": 1,
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "20",
+        "eventTime": "2026-08-16T22:34:37.855168752Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+        "taskId": "1048637",
+        "activityTaskCompletedEventAttributes": {
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJjdXJyZW50Tm9kZUlkIjoiZW5kIiwiY3VycmVudE5vZGVUeXBlIjoiZW5kIiwid2FpdFVudGlsIjpudWxsLCJ0cmFuc2l0aW9uQ291bnQiOjMsInVwZGF0ZWRBdCI6IjIwMjYtMDgtMTdUMDA6MDE6MDAuMDAwWiJ9"
+              }
+            ]
+          },
+          "scheduledEventId": "18",
+          "startedEventId": "19",
+          "identity": "agat-replay-update-capture"
+        }
+      },
+      {
+        "eventId": "21",
+        "eventTime": "2026-08-16T22:34:37.855179211Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048638",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "agat-replay-update-capture-f004cc4f95284e17b414f3629f153f98",
+            "kind": "TASK_QUEUE_KIND_STICKY",
+            "normalName": "agat-replay-update-v1"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "22",
+        "eventTime": "2026-08-16T22:34:37.856360002Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048642",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "21",
+          "identity": "agat-replay-update-capture",
+          "requestId": "e4bfb520-ee81-4caa-b0e1-c3ece3b57754",
+          "historySizeBytes": "4209",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          }
+        }
+      },
+      {
+        "eventId": "23",
+        "eventTime": "2026-08-16T22:34:37.861224586Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048646",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "21",
+          "startedEventId": "22",
+          "identity": "agat-replay-update-capture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.22.0+45361df2adba223c28b049cac6b81568530dba93beb68f4e0ecfd4528d8c3990"
+          },
+          "sdkMetadata": {},
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "24",
+        "eventTime": "2026-08-16T22:34:37.861293752Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+        "taskId": "1048647",
+        "workflowExecutionCompletedEventAttributes": {
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJpbnN0YW5jZUlkIjoiZml4dHVyZS11cGRhdGUtaW5zdGFuY2UtdjEiLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJjdXJyZW50Tm9kZUlkIjoiZW5kIiwiY3VycmVudE5vZGVUeXBlIjoiZW5kIiwid2FpdFVudGlsIjpudWxsLCJ0cmFuc2l0aW9uQ291bnQiOjMsInVwZGF0ZWRBdCI6IjIwMjYtMDgtMTdUMDA6MDE6MDAuMDAwWiJ9"
+              }
+            ]
+          },
+          "workflowTaskCompletedEventId": "23"
+        }
+      }
+    ]
+  }
+}

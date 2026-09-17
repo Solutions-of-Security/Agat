@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-worker
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 180
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-coordinator
+          image: agat-local/worker:1.7.0
+          imagePullPolicy: Always
+          command:
+            - python
+            - -c
+            - |
+              import os
+              import time
+              import urllib.error
+              import urllib.request
+
+              health_url = os.environ["AGAT_COORDINATOR_URL"].rstrip("/") + "/api/v1/health"
+              for _ in range(60):
+                  try:
+                      with urllib.request.urlopen(health_url, timeout=2) as response:
+                          if response.status == 200:
+                              raise SystemExit(0)
+                  except (OSError, urllib.error.URLError):
+                      pass
+                  time.sleep(1)
+              raise SystemExit("coordinator did not become ready in 60 seconds")
+          env:
+            - name: AGAT_COORDINATOR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agat-worker-config
+                  key: AGAT_COORDINATOR_URL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: worker
+          image: agat-local/worker:1.7.0
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: agat-worker-config
+          env:
+            - name: AGAT_ENROLLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: enrollment-token
+            - name: AGAT_MODEL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: model-api-key
+            - name: AGAT_WORKER_RUNTIME_ATTESTATION_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: worker-runtime-attestation-broker-token
+                  optional: true
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - test -s /state/worker.json
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 45
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - test -s /state/worker.json
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: agat-worker-state
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi

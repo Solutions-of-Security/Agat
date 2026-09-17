@@ -1,0 +1,2 @@
+-keep class io.agat.edge.NativeLlama { *; }
+-keepclasseswithmembernames class * { native <methods>; }

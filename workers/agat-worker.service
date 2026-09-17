@@ -1,0 +1,21 @@
+[Unit]
+Description=AGAT local model worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agat
+Group=agat
+EnvironmentFile=/etc/agat/worker.env
+ExecStart=/usr/bin/python3 /opt/agat/agat_worker.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/agat
+
+[Install]
+WantedBy=multi-user.target

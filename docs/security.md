@@ -1,0 +1,231 @@
+# Безопасность
+
+## Реализовано
+
+- coordinator отказывается слушать non-loopback адрес без admin token;
+- стандартный enrollment token запрещён при non-loopback bind;
+- node token случайный, в authoritative state store хранится только SHA-256 hash;
+- native edge token выдаётся только после одноразового challenge и server-side Play Integrity/App Attest verdict; raw evidence и raw challenge в audit/state store не сохраняются;
+- hardware-attested node credential ограничен worker/control API, не получает MCP/HTTP/embedding work и хранится в Android Keystore либо ThisDeviceOnly Keychain;
+- admin remote wipe немедленно блокирует scheduling/work API, возвращает leases в recovery и оставляет pending token только для получения/acknowledgement wipe command;
+- wiped/revoked attestation key нельзя повторно активировать новым bootstrap enrollment;
+- сравнение секретов выполняется constant-time;
+- dashboard mutation отделена от worker authorization;
+- Kubernetes-панель использует Keycloak Authorization Code + PKCE S256; implicit и password grants отключены;
+- coordinator самостоятельно проверяет RS256 signature/JWKS, issuer, audience/authorized party, срок действия и роли;
+- роли `admin/designer/operator/viewer/auditor` проверяются на каждом маршруте, а project claim — повторно на backend;
+- agents, runs, processes, credentials, events и artifacts изолированы по project ID;
+- HTTP credentials зашифрованы AES-256-GCM с отдельным `AGAT_CREDENTIALS_KEY`; secret values никогда не возвращаются list API;
+- process webhook использует отдельный project-scoped bearer token, показываемый только при create/rotation; в state store хранится SHA-256, а start receipt требует `Idempotency-Key`;
+- non-GET process HTTP автоматически получает deterministic per-instance/node/visit idempotency key; compensation регистрируется только после подтверждённого source success и использует отдельный стабильный key;
+- signal delivery ограничена process/project/name и optional instance/correlation key; payload и correlation проходят bounded validation;
+- BPMN import ограничен 1 MiB, запрещает DTD/entities и создаёт только draft, который повторно проходит backend validation при публикации;
+- создание и изменение system prompt агента требует роли `admin/designer` либо legacy admin token;
+- произвольный browser Origin не получает CORS-доступ;
+- CSP запрещает сторонние scripts, objects и embedding панели во frame;
+- model API key остаётся на worker;
+- upstream MCP endpoint и credentials остаются только в coordinator; worker получает lease-scoped schemas и вызывает tool через node-authenticated proxy;
+- MCP servers создаются с deny-by-default legacy policy, annotations недоверенные по умолчанию, а versioned policy-as-code назначает risk tier/effect поверх более строгой legacy-границы;
+- destructive и любой critical MCP-вызов требуют двух approvals от разных проверенных OIDC `sub`; один субъект не может подтвердить call повторно;
+- MCP arguments/results шифруются AES-256-GCM, operator preview/diff редактирует sensitive keys, а audit хранит policy version/hash/rule, approvers и result hash/size;
+- MCP credentials ограничиваются namespace/tool/risk/catalog/expiry, а глобальный persisted emergency deny повторно проверяется непосредственно перед upstream side effect;
+- повтор MCP-вызова дедуплицируется по `lease_id + client_call_id`; retry stage блокируется после потенциального non-read side effect;
+- A2A task API аутентифицируется отдельным project-scoped endpoint bearer до поиска task; token показывается один раз, а в state store хранится только SHA-256 hash;
+- публичный A2A Agent Card минимален и не содержит system prompt, memory, model pin, tools или credentials; text/JSON/files, SSE и push доступны только по явной endpoint policy;
+- A2A `messageId` дедуплицирует запрос внутри endpoint, лимиты размера/files/активных tasks применяются до dispatch, а protocol messages, push и peer credentials шифруются `AGAT_CREDENTIALS_KEY`;
+- outbound A2A использует exact 1.0 discovery, HTTPS без redirects, DNS/IP pinning и deny private/link-local/mapped ranges; delegated OIDC token обменивается по RFC 8693 только в памяти вызова;
+- model/hardware profiles считаются worker telemetry, нормализуются и ограничиваются coordinator; они влияют на scheduling, но не дают worker новых полномочий или доступ к чужому project data;
+- knowledge collections/documents/memory изолированы по project; worker search ограничен collections snapshot активного stage lease, а vectors проходят лимит размерности и finite-number validation;
+- RAG snippets и memory маркируются как недоверенный контекст, source/chunk provenance и hashes сохраняются в audit, а embedding запроса — только как SHA-256 и размерность;
+- модель не получает произвольный HTTP-клиент: web-доступ ограничен `web_search`/`web_fetch`, публичными IP, портами 80/443, типами контента, размером, таймаутом и числом раундов;
+- LangGraph runtime ограничен известными профилями `tool_loop_v1` и `specialist_team_v1`, 1–12 model-итерациями и 1–8 handoffs; пользователь не загружает произвольный Python-код, graph module или state schema;
+- specialist team содержит только 2–8 обычных агентов того же project; self-reference, duplicates, внутренние служебные system/eval agents, nested teams и изменение используемого specialist в team отклоняются coordinator;
+- supervisor может делегировать только точному ID из immutable lease snapshot; worker валидирует structured decision и bounded state на каждом graph transition;
+- scheduler выдаёт team только worker, который объявил `specialist_team_v1` и все pinned модели; legacy workers fail-closed не получают team stage;
+- поисковая строка и содержимое прочитанной страницы не записываются в журнал tool calls;
+- скрытая chain-of-thought и provider-поля reasoning/thinking не записываются; trace содержит только наблюдаемые действия;
+- полный trace и скачивание артефакта требуют authenticated dashboard access;
+- пользователь задаёт только относительный каталог артефактов; абсолютные пути, traversal и symlink-сегменты отклоняются;
+- скачивание принимает artifact ID, а не путь, и всегда отдаёт файл как attachment;
+- worker открывает только исходящие соединения;
+- approval gate стоит перед финальным этапом;
+- body size ограничен 1 MiB; только authenticated Kong/coordinator routes загрузки knowledge document и embedding batch имеют отдельный лимит 8 MiB при доменном лимите текста 2 млн символов;
+- systemd unit использует `NoNewPrivileges`, `ProtectSystem` и отдельный writable path.
+- локальный worker launcher требует роли `admin` (либо legacy admin token), валидирует модель и лимиты и не принимает произвольный manifest/image/command;
+- coordinator service account ограничен namespace Role для worker Deployments и sandbox Jobs/Pods-log/Secrets/NetworkPolicies; создаваемые pods не получают Kubernetes token, запускаются non-root и с read-only root filesystem.
+- Kong — единственный публичный API service: 1 MiB body limit, rate limit, correlation ID; Admin API выключен, `/api/v1/internal` закрыт отдельным маршрутом;
+- Temporal internal tick дополнительно защищён отдельным случайным token и недоступен через Gateway;
+- LangGraph не импортируется в Temporal Workflow и не использует отдельный durable checkpointer, поэтому graph/team state не создаёт ещё один backup/trust boundary;
+- Keycloak PostgreSQL, Temporal, coordinator и workers запускаются non-root; root init используется только для одноразовой установки владельца конкретного PostgreSQL PVC с capabilities `CHOWN/FOWNER`.
+- Fleet/HA mode использует отдельные PostgreSQL system и tenant credentials; tenant role не имеет `BYPASSRLS`, project-owned tables включают `FORCE ROW LEVEL SECURITY`, а request-scoped project context сбрасывается вместе с транзакцией;
+- tenant role получает только DML для RLS-защищённых таблиц и read-only доступ к разрешённым global справочникам; изменение settings, migrations, release registry и SIEM delivery state остаётся system/admin boundary;
+- signed worker release admission проверяет Ed25519 manifest, configured trust root, digest, expiry/revoke, region/platform/ring и deterministic rollout cohort перед выдачей нового lease;
+- OCI/SLSA admission подписывается отдельным provenance root после внешней Sigstore verification и связывает exact image digest, builder/source commit и bundle hash; release key не может подменить provenance key;
+- обычный production worker получает одноразовый hash-only challenge и предъявляет fresh runtime statement отдельного local attestor: exact cell/release/provenance/image digest, allowlisted provider, SPIFFE-compatible identity и selector hash; evidence истекает и обновляется без ротации node token;
+- runtime-attestor bearer является отдельным worker-only scoped secret; coordinator хранит только public attestation roots, а неизвестный/удалённый root, replay, просрочка или несовпадение binding закрывают authentication и lease;
+- SIEM outbox экспортирует только allowlisted/redacted metadata и hash исходного event payload; Bearer sink credential не входит в event, log или batch ID; exact acknowledgement обязателен, retry ограничен, terminal failure атомарно сохраняет redacted retained DLQ evidence.
+
+## Production checklist
+
+- [ ] Сгенерированы разные `AGAT_ADMIN_TOKEN` и `AGAT_ENROLLMENT_TOKEN` длиной не менее 32 случайных байт.
+- [ ] Coordinator доступен только по HTTPS или внутри authenticated overlay-сети.
+- [ ] Выбран ровно один authoritative backend: SQLite только для single-process development либо PostgreSQL для Fleet/HA; dual-write отсутствует.
+- [ ] SQLite volume и `AGAT_ARTIFACTS_DIR` шифруются и backup-ятся вместе, если используется developer backend.
+- [ ] Production PostgreSQL использует TLS `verify-full`, разные system/tenant roles, multi-AZ/PITR и проверенный restore; runtime role не получает лишний DDL.
+- [ ] Knowledge store, PostgreSQL artifact metadata/legacy backfill, S3-compatible artifact objects и JSON exports классифицированы как внутренние данные; database, bucket и export хранятся и передаются по защищённому каналу в разрешённой residency cell.
+- [ ] Golden inputs, references, prompt versions, human rationale и judge outputs классифицированы как trace data; доступ и retention проверены.
+- [ ] `.env`, worker credentials и model API keys не попадают в Git или logs.
+- [ ] Reverse proxy ограничивает request rate и размер body.
+- [ ] Keycloak переведён с `start-dev` на optimized production build, используется TLS и корпоративный IdP; demo-user удалён.
+- [ ] Temporal dev server заменён на Temporal Cloud/полный self-hosted cluster с TLS/mTLS и внешней БД.
+- [ ] Production Temporal workers используют immutable build ID, Worker Deployment Versioning и replay gate до ramp.
+- [ ] Старые pinned worker builds не удаляются до завершения или безопасного Continue-As-New executions.
+- [ ] Kong опубликован по TLS; при нескольких replicas rate limit использует Redis.
+- [ ] `AGAT_ALLOWED_ORIGINS` содержит только реальные адреса панели.
+- [ ] Enrollment token ротируется после подключения парка.
+- [ ] Для server workers одновременно включены signed release, OCI/SLSA provenance и runtime-attestation gates; три private keys находятся вне coordinator и разделены, trust roots ротируются с overlap, baseline rollout имеет fallback, revoke/expiry/broker outage отрепетированы. Native edge отдельно проверяется Play Integrity/App Attest.
+- [ ] CI проверяет digest-pinned OCI signature и SLSA v1 provenance закреплённым `cosign`, а local attestor получает workload selectors сам; worker-supplied labels не считаются evidence.
+- [ ] Runtime broker доступен worker только по HTTPS либо loopback sidecar, не следует redirects и получает отдельный ingest/attest-only token; challenge replay, wrong cell/digest/identity и expired evidence входят в negative test.
+- [ ] Project `homeRegion/allowedRegions/residencyDomain`, queue и quotas утверждены владельцем данных; online cross-residency relocation запрещён.
+- [ ] Region-loss policy содержит только same-residency transitions; source полностью fenced внешним control plane, PostgreSQL/S3/Temporal evidence свежее и согласовано, activation подтверждена двумя distinct OIDC subject, target runtime использует exact activation ID/write epoch/bucket.
+- [ ] Startup role-profile gate подтверждает разные фактические system/tenant users; tenant не имеет powerful attributes/membership, database/schema `CREATE`, DDL/global write; negative cross-project read/write тест запускается после каждой privilege migration.
+- [ ] System database credential рассматривается как cell-wide secret, доступен только coordinator/migration job и имеет отдельную rotation/incident procedure.
+- [ ] SIEM sink использует HTTPS, ingest-only Bearer, exact `X-Agat-Audit-Ack`, дедупликацию `idempotencyKey`, мониторинг oldest pending/open DLQ и утверждённые delivered/DLQ retention сроки; replay/resolve доступны только через audited admin procedure.
+- [ ] Обычные неиспользуемые node credentials отзываются повторной регистрацией/ротацией; потерянные native edge devices проходят admin remote wipe.
+- [ ] Edge включён только с отдельным HTTPS attestation broker, egress allowlist, secret rotation и проверкой Google/Apple evidence на server side.
+- [ ] `AGAT_EDGE_ALLOW_DEVELOPMENT_ATTESTATION=false`; package/bundle/App IDs и required verdicts совпадают с production signing configuration.
+- [ ] Android foreground-service policy проверена в Play Console; iOS background mode не используется как SLA.
+- [ ] Для offline mobile storage действует MDM/device encryption procedure: AGAT не обещает физическое remote erase до следующего control poll.
+- [ ] Tools с внешними эффектами идемпотентны по `stage.id`.
+- [ ] Process HTTP и compensation endpoints реально дедуплицируют переданный `Idempotency-Key`; обратная операция проверена на staging.
+- [ ] Process webhook tokens сохранены в secret manager, ротируются и не присутствуют в logs/URL; producer повторяет один source event с тем же key.
+- [ ] BPMN import проходит review/version diff перед публикацией; неподдерживаемые BPMN elements не считаются исполненными.
+- [ ] Egress coordinator к MCP endpoints ограничен NetworkPolicy/firewall; HTTP transport не разрешён за пределами доверенной локальной сети.
+- [ ] Для каждого MCP server проверены владелец, namespace, credentials, catalog и per-tool policy; `trustAnnotations` не включён автоматически.
+- [ ] MCP policy candidate просмотрен через effective diff, опубликован с актуальным `baseSha256`, а critical tools не используют legacy local auth вместо двух OIDC-аккаунтов.
+- [ ] MCP credentials имеют `kind=mcp`, минимальные namespaces/tool patterns/risks, ограниченный upstream IAM, expiry и проверенную rotation procedure.
+- [ ] Isolated profile изменяет только `admin`; WASI module hash или OCI image digest прошёл review и сопоставлен с исходниками/build provenance.
+- [ ] Для OCI установлен enforcing CNI и только после negative egress test задано `AGAT_SANDBOX_NETWORK_POLICY_ENFORCED=true`; allowlist содержит exact public IP/port.
+- [ ] Sandbox Pod Security проверена: non-root, read-only root, RuntimeDefault seccomp, drop ALL, no service-account token; optional RuntimeClass действительно установлен и протестирован.
+- [ ] После success/failure/emergency deny не остаются Secrets или Jobs с `sandbox.agat.dev/managed=true`; NetworkPolicy удалена после подтверждённой остановки Pod либо намеренно сохранена fail-closed и поставлена в операторскую очистку.
+- [ ] Дежурная смена умеет включить emergency deny, проверить `executingCalls`, остановить side effect во внешней системе и снять switch только с новой причиной.
+- [ ] Для каждого A2A endpoint проверены владелец внешнего клиента, агент, публичное описание, knowledge collections, approval/limits; token передан через secret channel и имеет rotation procedure.
+- [ ] `AGAT_A2A_PUBLIC_BASE_URL` совпадает с реальным HTTPS origin; Agent Card URL не публикуется как доказательство авторизации.
+- [ ] Для каждого outbound A2A peer проверены TLS identity, Agent Card/skill hash, auth mode, минимальные OAuth audience/scopes, response/file limits и владелец внешней системы.
+- [ ] Push callback использует уникальный Bearer, идемпотентно обрабатывает дубликаты и не указывает на private/link-local service; production не включает loopback policy.
+- [ ] Дежурная смена умеет независимо отключить `AGAT_A2A_OUTBOUND_ENABLED` либо весь inbound/push adapter через `AGAT_A2A_ENABLED`.
+- [ ] Если оператор вручную включил LangSmith/сторонний tracing, настроены egress, redaction, retention и договорные основания передачи данных.
+- [ ] Backup выбранного state store регулярно проверяется восстановлением; PostgreSQL restore включает reconciliation events/artifacts/outbox и timed RPO/RTO exercise.
+- [ ] `agat-coordinator` RoleBinding не расширен за пределы локального namespace и необходимых Deployments/Jobs/Pods-log/Secrets/NetworkPolicies.
+- [ ] `AGAT_CREDENTIALS_KEY`, пароль Keycloak PostgreSQL и imported user passwords не «ротируются» заменой Secret без миграции данных.
+
+## Kubernetes worker launcher и tool sandbox
+
+В локальном Docker Desktop контуре coordinator получает service-account token для worker Deployments и одноразовых sandbox Jobs/Pods-log/Secrets/NetworkPolicies. Kubernetes RBAC не умеет ограничить `create` по label или префиксу имени, поэтому Role технически действует на эти resource types всего namespace `agat`. Прикладной слой управляет только объектами с `agat.local/managed=true` или `sandbox.agat.dev/managed=true` и не предоставляет пользователю raw Kubernetes API. Не переносите этот RoleBinding в общий production namespace; выделите отдельный namespace, admission policy или отдельный executor service.
+
+Docker socket намеренно не монтируется. Docker Compose и обычный host-запуск coordinator не создают процессы по запросу браузера: без локального Kubernetes launcher возвращает явный статус `available: false`.
+
+WASI runner не preopen-ит directories и не предоставляет network imports. OCI разрешён только по image digest и fail-closed без подтверждённого NetworkPolicy enforcement. Ephemeral Secret ограничивает lifetime, но module/container видит переданный ему scoped credential по назначению и потому остаётся недоверенным кодом. Для production предпочтителен отдельный namespace/node pool и gVisor/Kata RuntimeClass. Полная граница: [Изолированное выполнение MCP tools](./isolated-tool-execution.md).
+
+## Dashboard auth и RBAC
+
+При `AGAT_OIDC_ENABLED=true` все dashboard API, включая overview, SSE, trace и artifact download, требуют Bearer access token. Browser adapter использует Authorization Code flow с PKCE, обновляет token до истечения и не кладёт access token в URL. CSP разрешает `connect-src` только same-origin и точный origin OIDC issuer.
+
+`admin` управляет projects/scheduler/local workers, native edge remote wipe и исполняемыми WASI/OCI profiles; `designer` — agents, credentials, definitions, HTTP MCP и policy-as-code; `operator` — launches, cancel и approvals; `viewer/auditor` — read-only. Точная матрица приведена в [identity и gateway](./identity-and-gateway.md).
+
+При `AGAT_OIDC_ENABLED=false` сохраняется legacy local mode: изменяющие/чувствительные запросы используют `X-Agat-Admin-Token`. Этот режим предназначен для loopback/разработки и не заменяет SSO при сетевой публикации.
+
+## Чувствительные данные в trace
+
+Trace повышает наблюдаемость, но становится журналом внутренней информации. Не передавайте секреты в prompt; если это неизбежно, до production добавьте redaction/retention policy и RBAC. Экспортированный из браузера `trace.json` имеет ту же чувствительность, что input и output запуска.
+
+Web tool arguments по умолчанию редактируются: сохраняется длина search query и host для fetch, но не полный запрос или URL path/query. Tool output представлен статусом, типом и размером; содержимое внешней страницы остаётся только в краткоживущем model context worker.
+
+Для specialist team authenticated execution manifest содержит pinned system prompts участников. События `agent_handoff` намеренно ограничены ID/name/definition hash, phase и размерами: raw assignment, specialist output и скрытое reasoning в audit/OTLP не попадают. Экспорт trace поэтому всё равно считается чувствительным, но не становится дополнительным журналом внутренних делегирований.
+
+Artifact Store разрешает только UTF-8 text artifacts через текущий worker API и ограничивает количество/размер. Имена нормализуются, реальный storage filename для agent artifact получает случайный префикс, а UI скачивает файл по UUID metadata. `AGAT_ARTIFACTS_DIR` является trusted operator config; не разрешайте пользователю менять эту переменную.
+
+## Trust boundary
+
+Worker получает вход задачи и результаты предыдущих этапов, поэтому worker-host должен считаться доверенным для соответствующих данных. Local-first означает, что inference не уходит к внешнему model provider, но не означает автоматическую изоляцию разных внутренних команд.
+
+В PostgreSQL Fleet/HA mode project boundary защищают одновременно OIDC/RBAC, request-scoped tenant role, `FORCE RLS`, project queues/quotas и residency placement. Cross-project read/mutation через tenant credential возвращает пустой результат либо permission error даже при ошибке application filter. Coordinator scheduler/migrations и system credential остаются trusted computing base всей HA-cell; компрометация system role имеет cell-wide blast radius. Для tenants, которым требуется отдельный cryptographic key, worker pool, backup lifecycle или regulatory boundary, используйте dedicated cell/database/keys: RLS не превращает общую БД и общий system process в физически раздельные системы.
+
+Hardware attestation подтверждает разрешённое приложение и состояние устройства на момент enrollment, но не делает mobile host доверенным для данных всех проектов и не доказывает корректность модели. Поэтому native edge получает только agent stages без MCP/HTTP side effects. Attestation broker входит в trusted computing base: `hardwareBacked=true` в его JSON нельзя принимать без реальной provider verification. Threat model, canonical binding и provider checks описаны в [Native edge worker 1.6](./native-edge-worker.md).
+
+## Local RAG и memory
+
+Document text, chunks, memory и retrieval excerpts могут содержать коммерческую тайну, PII и инструкции злоумышленника. Local inference предотвращает отправку этих данных внешнему model provider только при условии, что сам model endpoint действительно локальный и контролируемый. Worker-host получает query, chunks и memory текущего проекта и потому входит в доверенную границу данных.
+
+Indirect prompt injection остаётся возможным: системная политика worker запрещает выполнять инструкции из `[K…]/[M…]`, но модель может ошибиться. Не используйте RAG-ответ как автоматическое разрешение внешнего side effect. MCP write/destructive calls по-прежнему проходят policy/approval независимо от содержимого найденного документа.
+
+Удаление collection каскадно удаляет её текущие chunks/vectors/jobs, но provenance уже выполненных runs остаётся в audit до удаления самих runs. Export содержит полный chunk text и memory, поэтому требует роли `admin/designer/auditor`, `no-store` response и той же защиты, что backup SQLite. Подробная модель lifecycle: [Local RAG, provenance и управляемая память](./local-rag-and-memory.md).
+
+## Golden eval и prompt registry
+
+Prompt versions, golden inputs, reference outputs, candidate outputs и reviewer rationale хранятся в project-scoped state store и возвращаются только authenticated API. Они не экспортируются в OpenTelemetry, но имеют ту же чувствительность, что полный run trace. `viewer` и `auditor` могут читать eval data; создание versions/promotion ограничено `admin/designer`, запуск — `admin/designer/operator`, append-only human review — также `auditor`.
+
+Model judge выполняется обычным worker run. Это не создаёт cloud egress в coordinator, но выбранный model endpoint должен быть действительно локальным и доверенным. Judge получает candidate/reference content; не используйте внешний OpenAI-compatible endpoint без отдельного legal/security решения. Его score не является независимой истиной и уступает последней human review.
+
+Promotion сверяет project, prompt/version, model, bound agent и PASS gates. Knowledge fingerprint обнаруживает drift, но не является защитой от содержательной prompt injection внутри зафиксированного документа. Approval/MCP policy не ослабляются даже при высоком eval score. Полный контракт: [Golden eval и prompt registry](./golden-eval-prompt-registry.md).
+
+## A2A boundary
+
+Agent Card доступен без bearer token и должен считаться публичным metadata-документом. UUID endpoint уменьшает случайное обнаружение, но не является контролем доступа. Все task, streaming и push-config operations требуют отдельный endpoint token; coordinator проверяет его одновременно с `enabled=1` до чтения task, поэтому token одного endpoint или проекта не раскрывает существование task другого.
+
+Token не возвращается list API, не сохраняется в браузере после закрытия one-time окна и при rotation немедленно инвалидирует старый hash. Это долгоживущий opaque secret: production-владелец обязан задать retention/rotation и защищённый канал выдачи.
+
+Adapter принимает inline `text/plain`, явно включённый `application/json` и opt-in file MIME modes. File input — только bounded canonical base64 `raw`; URL parts не скачиваются. Bytes сохраняются в Artifact Store, а в model input попадают filename/MIME/size/SHA-256. Output публикует только разрешённые bounded agent artifacts. Выбранные knowledge collections принадлежат конфигурации endpoint и не управляются внешним request.
+
+Push callback URL проходит SSRF-safe transport check; HTTPS обязателен вне явно включённого loopback dev mode. Callback Bearer и opaque token хранятся encrypted, audit содержит только origin/scheme/suffix, retries ограничены. Отключение endpoint/push capability останавливает новые и ожидающие deliveries.
+
+Outbound peer создаётся `admin/designer` после bounded Agent Card discovery, но доверие к RFC 8693 token endpoint может создать или заменить только `admin`: этот endpoint получает точный user OIDC access token как `subject_token`. Designer сохраняет управление `none`/static bearer peers и может выключить delegated peer без замены его auth. Одобренный `tokenEndpointOrigin` виден read roles и audit; client secret, исходный и exchanged tokens не возвращаются. Transport запрещает redirects и credentials в URL, проверяет все DNS answers и pin-ит разрешённый адрес на соединение. Dashboard/audit показывают redacted task mirror, но encrypted request/response имеют чувствительность внешнего prompt и результата.
+
+Вход A2A становится обычным run input и сохраняется в execution trace проекта. Зашифрованная копия исходного message нужна для protocol history; обе формы имеют чувствительность пользовательского prompt. Входной `traceparent` валидируется, но trace ID не является секретом и не даёт доступ к `/api/v1/runs`. Подробности: [A2A interoperability](./a2a-adapter.md).
+
+## MCP и tools
+
+MCP-интеграцию нельзя подключать как неограниченный shell. Coordinator АГАТ является host и применяет consent/risk policy до upstream `tools/call`; token passthrough отсутствует. Реализация закрепляет современную ревизию, не делает silent downgrade и не исполняет `input_required` автоматически. См. [tools 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), [authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) и [отдельное описание gateway](./mcp-gateway.md).
+
+В 1.1 реализованы:
+
+- allowlist server/tool;
+- risk-классы чтения, записи, destructive и unknown плюс tiers `low/elevated/high/critical`;
+- immutable project policy-as-code с preview и optimistic hash activation;
+- approval непосредственно перед side effect и distinct four-eyes для critical/destructive;
+- scoped credentials и запрет MCP-secret в HTTP process steps;
+- redaction секретов в traces/operator diff и глобальный admin-only emergency deny.
+
+Legacy server/tool policy не заменена: её `deny` остаётся абсолютным, а `approval` — нижней границей. Актуальная policy, lease и kill switch перепроверяются до secret injection/upstream `tools/call`. Однако kill switch не может отозвать HTTP-запрос, уже принятый внешним MCP server; такой incident требует внешней остановки/компенсации. Один `local-admin` субъект также не удовлетворяет four-eyes — production critical approvals требуют OIDC.
+
+Произвольные PII-поля автоматически не классифицируются: для них нужны project-specific schema/data-classification rules. До их появления не передавайте персональные данные в MCP arguments без необходимости и ограничивайте доступ к overview/audit через RBAC.
+
+Egress NetworkPolicy/firewall, полная schema validation arguments на стороне host и sandbox/microVM для локальных STDIO servers остаются production-hardening этапами. STDIO subprocess намеренно не поддерживается. Полный контракт: [Risk-tier approvals и emergency deny](./mcp-risk-tier-approvals.md).
+
+## Temporal production boundary
+
+- `local` допускает незашифрованный loopback/ClusterIP `start-dev`; `cloud` и `self-hosted` fail-closed требуют TLS и authentication;
+- API key используется только вместе с TLS, mTLS cert/key принимаются только полной парой и читаются из mounted files;
+- Activity API защищён отдельным `AGAT_TEMPORAL_INTERNAL_TOKEN`; он не совпадает с Temporal API key;
+- health snapshot и rollout argv не содержат secrets;
+- production worker требует immutable build ID и Worker Deployment Versioning;
+- replay fixtures проходят sanitization: пользовательские payloads и credentials не коммитятся в repository;
+- SQLite mode ограничивает deployment одним coordinator. Fleet/HA mode использует PostgreSQL authority; несколько coordinator replicas не дают HA без отдельной multi-AZ database, backup/restore и failover проверки.
+
+Runbook и список параметров: [Production hardening durable runtime](./production-durable-runtime.md).
+
+## Fleet/HA boundary
+
+Одна HA-cell имеет фиксированную пару `AGAT_REGION/AGAT_RESIDENCY_DOMAIN`, одну PostgreSQL metadata authority и один S3 payload authority. Project payload не реплицируется приложением между cells; `allowedRegions` не является разрешением произвольной replica забрать данные другого residency domain. Обычное изменение home cell требует остановки writes, offline migration и reconciliation. Region-loss — отдельный break-glass whole-cell transition: source database/object/ingress/enrollment/credentials полностью fenced, target остаётся изолированным до sealed evidence и two-person approval, а runtime admission требует exact monotonic activation marker. Подробная процедура: [Region-loss DR](./region-loss-dr.md).
+
+Release signature доказывает авторизацию canonical manifest, отдельный provenance admission — внешнюю проверку exact OCI digest/SLSA evidence, а fresh runtime statement — связь запущенного workload с этим digest и cell. Ни один root не подменяет остальные; challenge одноразовый, stored nonce hash-only, evidence ограничено lifetime и повторно проверяется на authentication/lease. Полный contract: [OCI provenance и runtime attestation](./worker-supply-chain-attestation.md).
+
+SIEM delivery имеет at-least-once семантику даже при exact batch acknowledgement: истёкший exporter lease или timeout после sink commit приводит к повтору, поэтому sink обязан дедуплицировать `agat-audit-<eventId>`. Redirect запрещён; raw prompt/output/tool arguments, response body и secrets в export/DLQ не включаются. Permanent failure или исчерпанный retry переводит событие в retained DLQ; open evidence не удаляется без audited replay/resolve. Полная модель: [SIEM retention и DLQ](./siem-retention-dlq.md).
+
+## Web tools
+
+Реализованный `web_fetch` сначала требует точное совпадение URL с результатом `web_search` текущего этапа или URL, явно указанным пользователем во входе запуска. Allowlist не разделяется между параллельными этапами. Затем reader проверяет исходный URL и каждый redirect, разрешает DNS и отклоняет весь hostname при наличии хотя бы одного непубличного адреса. Это прикладной барьер против prompt-driven exfiltration и SSRF, но production-контур должен дублировать его egress firewall/proxy с запретом loopback, RFC1918, link-local, metadata и внутренних сетей. Kubernetes NetworkPolicy полезна только при CNI, который реально реализует её egress-правила.
+
+HTML и результаты поиска считаются недоверенным вводом. Worker удаляет исполняемую/служебную разметку, ограничивает текст и добавляет модели явный запрет следовать инструкциям страницы. Это уменьшает, но не устраняет prompt injection; будущие инструменты записи или иных side effects должны требовать отдельный approval после чтения web-контента.
+
+Inference остаётся локальным, однако поисковая строка уходит в SearXNG и выбранные им внешние поисковые системы, а `web_fetch` обращается к исходному сайту. Не отправляйте в search секреты, персональные данные и внутренние идентификаторы.

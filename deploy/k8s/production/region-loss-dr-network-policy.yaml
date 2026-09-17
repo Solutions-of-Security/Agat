@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agat-region-loss-dr-default-deny
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: region-loss-dr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agat
+      app.kubernetes.io/component: region-loss-dr
+  policyTypes:
+    - Egress
+  egress: []

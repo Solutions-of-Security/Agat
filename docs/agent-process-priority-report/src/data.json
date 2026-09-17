@@ -1,0 +1,160 @@
+{
+  "id": "651a6e23-cd81-48c8-ab6e-a4fff2805480",
+  "surface": "report",
+  "title": "Agat: сначала knowledge, document, IT и governance-процессы",
+  "generatedAt": "2026-08-31T23:15:02Z",
+  "status": "reviewed",
+  "report": { "asOf": "2026-09-01" },
+  "filters": [],
+  "queries": {
+    "market_signals": {
+      "rows": [
+        { "signalId": "m365-active-agents", "source": "Microsoft Work Trend Index 2026", "metric": "Рост активных агентов Microsoft 365 год к году", "value": 15, "unit": "x", "scope": "Телеметрия Microsoft 365, март 2025 — март 2026", "interpretation": "Корпоративное использование агентов быстро переходит от единичных экспериментов к повторяемым рабочим практикам." },
+        { "signalId": "production-agents", "source": "LangChain State of Agent Engineering 2026", "metric": "Респонденты с агентами в production", "value": 57.3, "unit": "%", "scope": "Опрос более 1 300 специалистов", "interpretation": "Главные текущие use cases: клиентская поддержка, исследования и анализ данных, внутренняя автоматизация." },
+        { "signalId": "russia-agents", "source": "СберАналитика, автоматизация бизнеса", "metric": "Российские компании, использующие ИИ-агентов или ИИ-ассистентов", "value": 39, "unit": "%", "scope": "Опрос российских компаний, ноябрь 2025", "interpretation": "Смежный спрос уже сформирован вокруг документооборота, финансов, HR и клиентской поддержки." },
+        { "signalId": "human-verification", "source": "Dynatrace Pulse of Agentic AI 2026", "metric": "Агентные решения, всё ещё проверяемые человеком", "value": 69, "unit": "%", "scope": "919 руководителей, отвечающих за агентные внедрения", "interpretation": "На горизонте года control, approvals, tracing и rollback остаются обязательной частью production-процесса." }
+      ],
+      "source": {
+        "label": "Проверенные рыночные сигналы 2025–2026",
+        "links": [
+          { "label": "Microsoft Work Trend Index 2026", "href": "https://www.microsoft.com/en-us/worklab/work-trend-index/agents-human-agency-and-the-opportunity-for-every-organization" },
+          { "label": "LangChain State of Agent Engineering 2026", "href": "https://www.langchain.com/state-of-agent-engineering" },
+          { "label": "СберАналитика: автоматизация российского бизнеса", "href": "https://sberanalytics.ru/researches/automation" },
+          { "label": "Dynatrace Pulse of Agentic AI 2026", "href": "https://www.dynatrace.com/news/press-release/pulse-of-agentic-ai-2026/" }
+        ],
+        "assumptions": [
+          "Показатели имеют разную базу и не складываются в единый market-share metric.",
+          "Данные поставщиков могут отражать их клиентскую базу; они используются как направленные сигналы вместе с независимыми опросами."
+        ],
+        "metricDefinitions": [
+          { "label": "Рост активных агентов Microsoft 365", "definition": "Изменение числа уникальных активных агентов в rolling 28-day периоде с марта 2025 по март 2026 по агрегированной телеметрии Microsoft 365.", "componentIds": ["signal-m365"] },
+          { "label": "Агенты в production", "definition": "Доля респондентов LangChain State of Agent Engineering 2026, сообщивших о работающих production-агентах.", "componentIds": ["signal-production"] },
+          { "label": "Использование ИИ-агентов или ассистентов в России", "definition": "Доля российских компаний в опросе СберАналитики, использующих объединённую категорию ИИ-агентов и ИИ-ассистентов; это не доля только автономных агентов.", "componentIds": ["signal-russia"] },
+          { "label": "Решения с human verification", "definition": "Доля решений в агентных системах, которые, по данным опроса Dynatrace, всё ещё проверяются людьми.", "componentIds": ["signal-hitl"] }
+        ]
+      }
+    },
+    "agent_priorities": {
+      "rows": [
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "Корпоративный исследователь / RAG", "role": "Ищет, сопоставляет и цитирует внутренние и внешние источники", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "rationale": "Research и knowledge management входят в лидирующие сценарии; local RAG и provenance уже готовы." },
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "Документный оператор", "role": "Классифицирует, извлекает поля, сверяет и готовит документы к решению", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "rationale": "Документооборот и заявки — самый автоматизируемый класс процессов в российском опросе; хорошо ограничивается схемой и approval." },
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "ITSM / ITOps специалист", "role": "Триажит обращения и инциденты, сверяется с runbook и предлагает действие", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "rationale": "IT и service desk — один из наиболее зрелых agentic-сценариев; outbound workers и approvals усиливают sovereign-позиционирование." },
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "Аналитик данных и отчётности", "role": "Собирает показатели, объясняет отклонения и формирует проверяемый отчёт", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "rationale": "Research/data analysis — второй по частоте основной use case в опросе LangChain; schedules дают повторяемый продукт." },
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "Supervisor / координатор специалистов", "role": "Декомпозирует задачу и передаёт её фиксированным специалистам", "popularNow": 3, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 92, "rationale": "Сейчас production чаще task-specific; к 2027 ожидается рост collaborative agents, а specialist_team_v1 уже реализован." },
+        { "priority": "P0", "wave": "0–3 мес.", "agent": "Reviewer / guardian / quality gate", "role": "Проверяет факты, политику, риск, полноту и право на действие", "popularNow": 3, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 92, "rationale": "Наблюдаемость уже стала table stakes, а governance failures заставляют откатывать production-агентов." },
+        { "priority": "P1", "wave": "3–6 мес.", "agent": "Агент разработки ПО", "role": "Планирует изменение, пишет код, запускает тесты и готовит review", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 4, "priorityScore": 96, "rationale": "Один из самых зрелых классов; для solution pack нужны Git/CI/repository connectors и sandbox policy." },
+        { "priority": "P1", "wave": "3–6 мес.", "agent": "Финансовый аналитик / контролёр", "role": "Сверяет, прогнозирует, объясняет отклонения и подготавливает sign-off", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "rationale": "AI уже широко используется в finance, а audit, segregation of duties и локальные данные совпадают с сильными сторонами Agat." },
+        { "priority": "P1", "wave": "3–6 мес.", "agent": "Клиентская поддержка", "role": "Классифицирует запрос, ищет ответ, выполняет безопасное действие или эскалирует", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 4, "priorityScore": 96, "rationale": "Самый частый use case в LangChain и быстро растущий у Salesforce, но требует каналов, контекста, monitoring и human escape." },
+        { "priority": "P1", "wave": "3–6 мес.", "agent": "Юридический / договорный специалист", "role": "Выделяет условия, риски и расхождения, готовит redline для утверждения", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "rationale": "Высокий рост использования в legal и сильная потребность в локальности, provenance и обязательном человеческом решении." },
+        { "priority": "P1", "wave": "3–6 мес.", "agent": "Закупки / сравнение поставщиков", "role": "Сопоставляет КП, риски и условия, формирует рекомендацию и заявку", "popularNow": 4, "neededNow": 4, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 92, "rationale": "Соединяет document intelligence, finance, policy и approvals; заявлен российскими платформами как многошаговый сценарий." },
+        { "priority": "P2", "wave": "6–12 мес.", "agent": "Продажи / RFP / коммерческое предложение", "role": "Исследует клиента, готовит ответ и предложение, обновляет CRM после review", "popularNow": 4, "neededNow": 4, "popular12m": 5, "needed12m": 4, "agatFit": 4, "priorityScore": 84, "rationale": "Использование быстро растёт, но ценность зависит от CRM, актуальных цен, legal review и контроля исходящих коммуникаций." },
+        { "priority": "P2", "wave": "6–12 мес.", "agent": "HR / рекрутинг / онбординг", "role": "Собирает документы, отвечает по политике и координирует шаги сотрудников", "popularNow": 4, "neededNow": 4, "popular12m": 4, "needed12m": 4, "agatFit": 4, "priorityScore": 80, "rationale": "HR-процессы уже широко автоматизируются, но требуют PII controls, HRIS/IdP connectors и запрета автономных кадровых решений." },
+        { "priority": "Watch", "wave": "после 6 мес.", "agent": "Голосовой фронт-офис", "role": "Принимает звонок, уточняет задачу, бронирует или переводит человеку", "popularNow": 4, "neededNow": 3, "popular12m": 5, "needed12m": 4, "agatFit": 2, "priorityScore": 72, "rationale": "Спрос растёт, но real-time speech, телефония и channel operations находятся вне текущего клина Agat." },
+        { "priority": "Watch", "wave": "после 9 мес.", "agent": "Browser / computer-use оператор", "role": "Выполняет действия в системах без API через пользовательский интерфейс", "popularNow": 3, "neededNow": 3, "popular12m": 5, "needed12m": 4, "agatFit": 2, "priorityScore": 68, "rationale": "Cross-app execution будет расти, но риск, хрупкость и отсутствие текущего runtime делают это наблюдаемым направлением." },
+        { "priority": "Defer", "wave": "после PMF", "agent": "Маркетинг / генерация контента", "role": "Создаёт и адаптирует материалы по brand guide", "popularNow": 5, "neededNow": 3, "popular12m": 5, "needed12m": 3, "agatFit": 2, "priorityScore": 72, "rationale": "Очень популярно, но commoditized и слабо использует sovereign fleet, durability и risk-tier differentiation Agat." }
+      ],
+      "source": {
+        "label": "Экспертная приоритизация типов агентов для Agat",
+        "files": ["docs/README.md", "docs/agents.md", "docs/agent-runtimes.md", "docs/langgraph-specialist-teams.md", "docs/local-rag-and-memory.md", "docs/mcp-risk-tier-approvals.md", "docs/golden-eval-prompt-registry.md"],
+        "links": [
+          { "label": "LangChain State of Agent Engineering 2026", "href": "https://www.langchain.com/state-of-agent-engineering" },
+          { "label": "McKinsey State of AI 2025", "href": "https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai" },
+          { "label": "OpenAI: From assistance to execution", "href": "https://openai.com/index/how-enterprises-put-ai-to-work/" },
+          { "label": "Dynatrace Pulse of Agentic AI 2026", "href": "https://www.dynatrace.com/news/press-release/pulse-of-agentic-ai-2026/" },
+          { "label": "KPMG Global AI in Finance 2026", "href": "https://kpmg.com/xx/en/our-insights/ai-and-technology/kpmg-global-ai-in-finance-report.html" },
+          { "label": "СберАналитика: автоматизация российского бизнеса", "href": "https://sberanalytics.ru/researches/automation" },
+          { "label": "Yandex AI Studio: популярные agent use cases", "href": "https://yandex.ru/company/news/15-04-2026-01" },
+          { "label": "Gartner: task-specific и collaborative agents", "href": "https://www.gartner.com/en/newsroom/press-releases/2025-08-26-gartner-predicts-40-percent-of-enterprise-apps-will-feature-task-specific-ai-agents-by-2026-up-from-less-than-5-percent-in-2025" },
+          { "label": "Gartner: proportional agent governance", "href": "https://www.gartner.com/en/newsroom/press-releases/2026-05-26-gartner-says-applying-uniform-governance-across-ai-agents-will-lead-to-enterprise-ai-agent-failure" }
+        ],
+        "assumptions": ["Оценки 1–5 являются порядковым синтезом, а не измерением доли рынка.", "Необходимость оценивает повторяемость, бизнес-критичность и риск; Agat fit — соответствие local-first, durable, governed архитектуре 1.7.", "Прогноз покрывает сентябрь 2026 — август 2027 при базовом сценарии сохранения текущих инвестиций и требований к governance."],
+        "metricDefinitions": [
+          { "label": "Популярность сейчас", "definition": "Порядковая оценка 1–5 по частоте среди ведущих deployment/use-case категорий и подтверждённой динамике внедрения.", "componentIds": ["agents-table", "portfolio-table"] },
+          { "label": "Необходимость сейчас", "definition": "Порядковая оценка 1–5 по повторяемости, измеримой ценности, бизнес-критичности и потребности в контроле.", "componentIds": ["agents-table", "portfolio-table"] },
+          { "label": "Популярность через 12 месяцев", "definition": "Сценарная оценка 1–5 на август 2027 с учётом заявленного масштабирования, task-specific и multi-agent трендов.", "componentIds": ["agents-table", "portfolio-table"] },
+          { "label": "Необходимость через 12 месяцев", "definition": "Сценарная оценка 1–5 ожидаемой бизнес-необходимости к августу 2027.", "componentIds": ["agents-table", "portfolio-table"] },
+          { "label": "Соответствие Agat", "definition": "Оценка 1–5 соответствия текущей local-first, durable, auditable и approval-oriented архитектуре Agat 1.7.", "componentIds": ["agents-table", "portfolio-table"] },
+          { "label": "Итоговый приоритет", "definition": "Невзвешенное среднее пяти оценок, умноженное на 20; используется только для сортировки.", "formula": "20 * (popularNow + neededNow + popular12m + needed12m + agatFit) / 5", "componentIds": ["agents-table", "portfolio-table"] }
+        ]
+      }
+    },
+    "process_priorities": {
+      "rows": [
+        { "priority": "P0", "wave": "0–3 мес.", "process": "Исследование → анализ → проверка → отчёт", "flow": "Researcher → Analyst → Reviewer → Artifact", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "why": "Прямой путь монетизировать RAG, specialist team, citations, approvals и artifact store." },
+        { "priority": "P0", "wave": "0–3 мес.", "process": "Документ / заявка → извлечение → сверка → approval → архив", "flow": "Intake → Extract → Validate → Human approve → Artifact/API", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "why": "В России документооборот и заявки — лидер автоматизации; процесс bounded, измерим и хорошо аудитируется." },
+        { "priority": "P0", "wave": "0–3 мес.", "process": "IT-инцидент / service request → решение → контролируемое действие", "flow": "Trigger → Triage → RAG/runbook → Approval → MCP action → Postmortem", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 100, "why": "ITOps лидирует по deployment и ожидаемому ROI; risk-tier action и rollback — естественный дифференциатор." },
+        { "priority": "P0", "wave": "0–3 мес.", "process": "Мониторинг данных → диагностика отклонения → управленческий отчёт", "flow": "Schedule/signal → Collect → Diagnose → Review → Report", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "why": "Data processing/reporting имеет высокий ожидаемый ROI и не требует автономного high-risk action на первом этапе." },
+        { "priority": "P0", "wave": "0–3 мес.", "process": "Eval → policy review → release → observe → rollback", "flow": "Golden eval → Reviewer → Four-eyes → Publish → Trace/SIEM → Rollback", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "why": "Обязательная horizontal-система для всех packs; governance failures часто вскрываются уже после production." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "Issue → план → код → тесты → review → release gate", "flow": "Planner → Coder → Tester → Security reviewer → Approval", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 4, "priorityScore": 96, "why": "Высокий спрос; Agat добавляет локальные модели и governance, но нуждается в Git/CI pack." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "Запрос клиента → ответ / действие → эскалация → QA", "flow": "Channel → Triage → RAG → Safe action → Human fallback → QA", "popularNow": 5, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 4, "priorityScore": 96, "why": "Максимальный спрос, но production требует контекста, latency SLO, audit и постоянной human escape." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "Финансовое закрытие / сверка / прогноз → sign-off", "flow": "Collect → Reconcile → Variance analysis → Control → Approve", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "why": "Finance быстро переходит к orchestration; нужна прослеживаемость каждого допущения и segregation of duties." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "Договор → clauses → risk → redline → approval → учёт", "flow": "Ingest → Extract → Legal RAG → Reviewer → Human approve → Archive", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "why": "Высокая ценность для регулируемых компаний; автономное подписание исключается." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "КП поставщиков → сравнение → риск → заявка → approval", "flow": "Document intake → Compare → Risk/finance → Approve → ERP action", "popularNow": 4, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 96, "why": "Объединяет два крупнейших российских automation-класса — документы и финансы — с контролируемым side effect." },
+        { "priority": "P1", "wave": "3–6 мес.", "process": "Security / compliance alert → evidence → risk → response", "flow": "Signal → Evidence collector → Guardian → Four-eyes → Action/SIEM", "popularNow": 3, "neededNow": 5, "popular12m": 5, "needed12m": 5, "agatFit": 5, "priorityScore": 92, "why": "Текущая доля ниже ITOps, но скорость угроз и рост автономии делают автоматизированный контроль обязательным." },
+        { "priority": "P2", "wave": "6–12 мес.", "process": "Lead / RFP → исследование → предложение → review → CRM", "flow": "Account research → Draft → Pricing/legal review → Approve → CRM update", "popularNow": 4, "neededNow": 4, "popular12m": 5, "needed12m": 4, "agatFit": 4, "priorityScore": 84, "why": "Высокий рост в sales, но результат определяется CRM/CPQ/legal connectors и качеством коммерческих данных." },
+        { "priority": "P2", "wave": "6–12 мес.", "process": "Онбординг / офбординг сотрудника", "flow": "Request → Documents → Knowledge → Access tasks → Approvals → Audit", "popularNow": 4, "neededNow": 4, "popular12m": 4, "needed12m": 4, "agatFit": 4, "priorityScore": 80, "why": "Понятный процесс, но ценность приходит после HRIS/IdP/email pack и строгих PII controls." },
+        { "priority": "Watch", "wave": "после 6 мес.", "process": "Голосовой запрос → бронирование / первая линия → человек", "flow": "Voice → Intent → Availability/action → Confirm → Human fallback", "popularNow": 4, "neededNow": 3, "popular12m": 5, "needed12m": 4, "agatFit": 2, "priorityScore": 72, "why": "Рынок растёт, но потребует отдельной real-time channel platform и не должен отвлекать от sovereign workflow клина." },
+        { "priority": "Watch", "wave": "после 9 мес.", "process": "Cross-app browser execution без API", "flow": "Plan → UI action → Verify state → Approval/circuit breaker", "popularNow": 3, "neededNow": 3, "popular12m": 5, "needed12m": 4, "agatFit": 2, "priorityScore": 68, "why": "Возможный мост к legacy UI, но нужен отдельный deterministic evidence и rollback contract." },
+        { "priority": "Defer", "wave": "после PMF", "process": "Контент-кампания → brand review → публикация", "flow": "Brief → Generate → Brand/legal review → Publish", "popularNow": 5, "neededNow": 3, "popular12m": 5, "needed12m": 3, "agatFit": 2, "priorityScore": 72, "why": "Популярно, но рынок переполнен и процесс мало использует уникальную fleet/governance архитектуру Agat." }
+      ],
+      "source": {
+        "label": "Экспертная приоритизация процессов для Agat",
+        "files": ["docs/README.md", "docs/processes.md", "docs/process-builder-1.2.md", "docs/mcp-risk-tier-approvals.md", "docs/golden-eval-prompt-registry.md", "docs/siem-retention-dlq.md"],
+        "links": [
+          { "label": "СберАналитика: частота автоматизации процессов в России", "href": "https://sberanalytics.ru/researches/automation" },
+          { "label": "Microsoft Work Trend Index 2026", "href": "https://www.microsoft.com/en-us/worklab/work-trend-index/agents-human-agency-and-the-opportunity-for-every-organization" },
+          { "label": "LangChain State of Agent Engineering 2026", "href": "https://www.langchain.com/state-of-agent-engineering" },
+          { "label": "Dynatrace Pulse of Agentic AI 2026", "href": "https://www.dynatrace.com/news/press-release/pulse-of-agentic-ai-2026/" },
+          { "label": "Salesforce State of Service: AI Agents Edition", "href": "https://www.salesforce.com/news/stories/ai-service-agents-improve-customer-satisfaction/" },
+          { "label": "Sinch AI Production Paradox", "href": "https://sinch.com/news/sinch-releases-ai-production-paradox/" },
+          { "label": "KPMG Global AI in Finance 2026", "href": "https://kpmg.com/xx/en/our-insights/ai-and-technology/kpmg-global-ai-in-finance-report.html" },
+          { "label": "Yandex: универсальный бизнес-агент и skills", "href": "https://yandex.ru/company/news/30-07-2026-03" },
+          { "label": "ТеДо: ИИ-агенты в российском бизнесе", "href": "https://data.tedo.ru/publications/AI-agents-current-realities-and-prospects.pdf" }
+        ],
+        "assumptions": ["Частота традиционной автоматизации используется как индикатор process demand, а не как фактическая доля agentic deployments.", "Процесс получает высокий Agat fit, когда выигрывает от локальных данных, длительного состояния, approvals, provenance, replay и контролируемых side effects."],
+        "metricDefinitions": [
+          { "label": "Популярность сейчас", "definition": "Порядковая оценка 1–5 текущей распространённости процесса в AI/automation deployments.", "componentIds": ["processes-table", "portfolio-table"] },
+          { "label": "Необходимость сейчас", "definition": "Оценка 1–5 бизнес-критичности, повторяемости и ценности контролируемого исполнения.", "componentIds": ["processes-table", "portfolio-table"] },
+          { "label": "Популярность через 12 месяцев", "definition": "Сценарная оценка 1–5 ожидаемой распространённости к августу 2027.", "componentIds": ["processes-table", "portfolio-table"] },
+          { "label": "Необходимость через 12 месяцев", "definition": "Сценарная оценка 1–5 ожидаемой необходимости к августу 2027.", "componentIds": ["processes-table", "portfolio-table"] },
+          { "label": "Соответствие Agat", "definition": "Оценка 1–5 соответствия shipped-возможностям Agat 1.7 и sovereign control-plane позиционированию.", "componentIds": ["processes-table", "portfolio-table"] },
+          { "label": "Итоговый приоритет", "definition": "Невзвешенное среднее пяти оценок, умноженное на 20; используется только для сортировки.", "formula": "20 * (popularNow + neededNow + popular12m + needed12m + agatFit) / 5", "componentIds": ["processes-table", "portfolio-table"] }
+        ]
+      }
+    },
+    "roadmap_waves": {
+      "rows": [
+        { "wave": "0–3 месяца", "objective": "Сделать первый повторяемый каталог", "agents": "Researcher, Document Operator, Data Analyst, Supervisor, Reviewer, ITSM", "processes": "Research-to-report; document approval; IT incident; data reporting; agent release governance", "dependencies": "Solution-pack format; structured outputs; 3 connector packs; baseline evals", "exitCriteria": "5 запускаемых шаблонов, каждый с golden dataset, policy, KPI и human escape" },
+        { "wave": "3–6 месяцев", "objective": "Закрыть regulated operations", "agents": "Software, Support, Finance, Legal, Procurement", "processes": "SDLC; support; finance close; contract review; procurement; compliance response", "dependencies": "Git/CI, ITSM, CRM, ERP/1C, ЭДО, SIEM connector packs", "exitCriteria": "Не менее 2 production pilots с измеримыми cycle-time, error-rate и approval-rate" },
+        { "wave": "6–12 месяцев", "objective": "Расширить front/middle office без потери контроля", "agents": "Sales/RFP, HR/Onboarding", "processes": "Lead-to-proposal; onboarding/offboarding", "dependencies": "CRM/CPQ, HRIS/IdP/email, PII policy templates", "exitCriteria": "Repeat demand и положительный ROI после connector/support cost" },
+        { "wave": "Watch / после PMF", "objective": "Не распылять roadmap", "agents": "Voice, browser/computer-use, generic marketing", "processes": "Voice booking, UI-only RPA, mass content publishing", "dependencies": "Отдельный channel/runtime security contract и повторяемый платный спрос", "exitCriteria": "Минимум 3 целевых клиента запрашивают один сценарий и готовы финансировать pack" }
+      ],
+      "source": {
+        "label": "Рекомендуемая последовательность продуктовой упаковки",
+        "files": ["docs/README.md", "docs/roadmap.md", "docs/processes.md"],
+        "assumptions": ["Горизонты — последовательность, а не оценка трудоёмкости без capacity plan.", "Пилот считается успешным только при измеримом бизнес-KPI и пройденном safety/eval gate."],
+        "metricDefinitions": [{ "label": "Волна", "definition": "Рекомендуемый календарный порядок начала productization при старте в сентябре 2026; сроки зависят от команды и коннекторов.", "componentIds": ["waves-table"] }]
+      }
+    },
+    "agat_readiness": {
+      "rows": [
+        { "capability": "Local RAG, provenance, managed memory", "status": "Ready", "evidence": "Local RAG и knowledge snapshots shipped", "implication": "Research/document packs можно собирать сейчас" },
+        { "capability": "Durable process runtime", "status": "Ready", "evidence": "Temporal, schedules, signals, subprocess, compensation", "implication": "Поддерживает многошаговые и длительные процессы" },
+        { "capability": "MCP policy, approvals, credentials", "status": "Ready", "evidence": "Risk tiers, four-eyes, emergency deny, sandbox", "implication": "Подходит для контролируемых side effects" },
+        { "capability": "Multi-agent supervisor", "status": "Ready", "evidence": "specialist_team_v1 с bounded handoffs", "implication": "Можно выпускать фиксированные specialist teams" },
+        { "capability": "Eval, replay, prompt registry", "status": "Ready", "evidence": "Golden datasets, judge, promotion gate", "implication": "Каждый pack должен поставляться с eval-набором" },
+        { "capability": "Fleet, HA, SIEM и audit", "status": "Ready", "evidence": "PostgreSQL HA-cell, S3 authority, SIEM DLQ", "implication": "Есть enterprise control-plane основа" },
+        { "capability": "Solution-pack bundle", "status": "Gap", "evidence": "Есть process template cloning, но нет bundle агенты+процесс+tools+policy+eval+KPI", "implication": "Главный продуктовый приоритет" },
+        { "capability": "Готовые business connectors", "status": "Gap", "evidence": "Есть generic MCP/HTTP gateway; готовые 1C/ERP/ЭДО/ITSM/Git/CRM packs не документированы", "implication": "Выбирать узкий набор по первым вертикалям" },
+        { "capability": "Общий structured output contract", "status": "Gap", "evidence": "Есть валидируемое team state, но нет документированного JSON Schema для business agent outputs", "implication": "Нужен для надёжных условий, таблиц и side effects" },
+        { "capability": "Business KPI/SLO по шаблону", "status": "Gap", "evidence": "Есть технические trace/metrics; pack-level cycle time, accuracy и escalation KPI не оформлены", "implication": "Без этого нельзя доказать ROI пилота" }
+      ],
+      "source": {
+        "label": "Проверка готовности Agat 1.7 по репозиторию",
+        "files": ["docs/README.md", "docs/agents.md", "docs/processes.md", "docs/process-builder-1.2.md", "docs/local-rag-and-memory.md", "docs/mcp-risk-tier-approvals.md", "docs/golden-eval-prompt-registry.md", "docs/fleet-ha-1.7.md", "docs/siem-retention-dlq.md"],
+        "assumptions": ["Ready означает документированную shipped capability, а не сертификацию конкретного production deployment.", "Gap означает отсутствие документированного готового продуктового слоя; generic primitives могут уже существовать."],
+        "metricDefinitions": [{ "label": "Статус готовности", "definition": "Ready — capability документирована как shipped; Gap — продуктовый слой или общий контракт не обнаружен в актуальной документации.", "componentIds": ["readiness-table"] }]
+      }
+    }
+  }
+}

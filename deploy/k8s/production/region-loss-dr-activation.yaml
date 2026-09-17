@@ -1,0 +1,108 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agat-region-loss-dr-activation-v25
+  labels:
+    app.kubernetes.io/name: agat
+    app.kubernetes.io/component: region-loss-dr
+spec:
+  suspend: true
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat
+        app.kubernetes.io/component: region-loss-dr
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: activate
+          image: registry.invalid/agat/coordinator:1.7.0
+          imagePullPolicy: Always
+          command:
+            - node
+            - apps/coordinator/dist/region-loss-dr.js
+            - activate
+            - --policy
+            - /etc/agat/region-loss/policy.json
+            - --evidence
+            - /var/run/agat-region-loss/evidence.json
+            - --plan
+            - /var/run/agat-region-loss/plan.json
+            - --confirm
+            - SOURCE_FENCED_TARGET_ISOLATED
+          env:
+            - name: AGAT_POSTGRES_MIGRATION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agat-postgres-secrets
+                  key: migration-url
+            - name: AGAT_POSTGRES_SSL_MODE
+              value: verify-full
+            - name: AGAT_POSTGRES_CA_CERT_PATH
+              value: /var/run/agat-postgres/ca.crt
+            - name: AGAT_DR_EVIDENCE_KEY_PATH
+              value: /var/run/agat-region-loss/evidence.key
+            - name: AGAT_DR_ACTOR
+              valueFrom:
+                configMapKeyRef:
+                  name: agat-production-cell
+                  key: region-loss-activation-actor
+            - name: AGAT_ARTIFACT_S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: agat-production-cell
+                  key: artifact-bucket
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/agat/region-loss
+              readOnly: true
+            - name: database-ca
+              mountPath: /var/run/agat-postgres
+              readOnly: true
+            - name: evidence
+              mountPath: /var/run/agat-region-loss
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: agat-region-loss-dr-policy
+        - name: database-ca
+          secret:
+            secretName: agat-postgres-secrets
+            defaultMode: 0440
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: evidence
+          secret:
+            secretName: agat-region-loss-dr-evidence
+            defaultMode: 0440
+            items:
+              - key: evidence.json
+                path: evidence.json
+              - key: plan.json
+                path: plan.json
+              - key: evidence.key
+                path: evidence.key

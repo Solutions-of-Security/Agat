@@ -1,0 +1,322 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agat-temporal-data
+  labels:
+    app.kubernetes.io/name: agat-temporal
+    app.kubernetes.io/part-of: agat
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-temporal
+  labels:
+    app.kubernetes.io/name: agat-temporal
+    app.kubernetes.io/component: durable-runtime
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 180
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat-temporal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat-temporal
+        app.kubernetes.io/component: durable-runtime
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: temporal
+          image: temporalio/temporal:1.8.1@sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6
+          imagePullPolicy: IfNotPresent
+          args:
+            - server
+            - start-dev
+            - --ip
+            - 0.0.0.0
+            - --port
+            - "7233"
+            - --ui-ip
+            - 0.0.0.0
+            - --ui-port
+            - "8233"
+            - --http-port
+            - "7243"
+            - --metrics-port
+            - "9090"
+            - --db-filename
+            - /var/lib/temporal/temporal.db
+            - --namespace
+            - agat
+            - --ui-disable-news-fetch
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          ports:
+            - name: grpc
+              containerPort: 7233
+              protocol: TCP
+            - name: http
+              containerPort: 7243
+              protocol: TCP
+            - name: ui
+              containerPort: 8233
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/temporal
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: agat-temporal-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-temporal
+  labels:
+    app.kubernetes.io/name: agat-temporal
+    app.kubernetes.io/part-of: agat
+spec:
+  selector:
+    app.kubernetes.io/name: agat-temporal
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: grpc
+    - name: http
+      port: 7243
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-temporal-ui
+  labels:
+    app.kubernetes.io/name: agat-temporal
+    app.kubernetes.io/component: durable-runtime-ui
+    app.kubernetes.io/part-of: agat
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: agat-temporal
+  ports:
+    - name: http
+      port: 8233
+      targetPort: ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-temporal-worker
+  labels:
+    app.kubernetes.io/name: agat-temporal-worker
+    app.kubernetes.io/component: durable-runtime-worker
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 180
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat-temporal-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat-temporal-worker
+        app.kubernetes.io/component: durable-runtime-worker
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-temporal
+          image: temporalio/temporal:1.8.1@sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until temporal operator namespace describe \
+                --namespace agat \
+                --address agat-temporal:7233 \
+                --command-timeout 5s \
+                --output none; do
+                sleep 2
+              done
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: temporal-worker
+          image: agat-local/temporal-worker:1.7.0
+          imagePullPolicy: Always
+          env:
+            - name: AGAT_TEMPORAL_ADDRESS
+              value: agat-temporal:7233
+            - name: AGAT_TEMPORAL_NAMESPACE
+              value: agat
+            - name: AGAT_TEMPORAL_TASK_QUEUE
+              value: agat-processes-v1
+            - name: AGAT_TEMPORAL_TARGET
+              value: local
+            - name: AGAT_TEMPORAL_TLS
+              value: "false"
+            - name: AGAT_TEMPORAL_VERSIONING_ENABLED
+              value: "false"
+            - name: AGAT_TEMPORAL_DEPLOYMENT_NAME
+              value: agat-processes
+            - name: AGAT_TEMPORAL_BUILD_ID
+              value: local-dev
+            - name: AGAT_TEMPORAL_DEPLOYMENT_RING
+              value: stable
+            - name: AGAT_TEMPORAL_METRICS_ADDRESS
+              value: 0.0.0.0:9091
+            - name: AGAT_COORDINATOR_INTERNAL_URL
+              value: http://agat-coordinator:8787
+            - name: AGAT_TEMPORAL_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: temporal-internal-token
+          ports:
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: metrics
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-temporal-worker-metrics
+  labels:
+    app.kubernetes.io/name: agat-temporal-worker
+    app.kubernetes.io/part-of: agat
+spec:
+  selector:
+    app.kubernetes.io/name: agat-temporal-worker
+  ports:
+    - name: metrics
+      port: 9091
+      targetPort: metrics

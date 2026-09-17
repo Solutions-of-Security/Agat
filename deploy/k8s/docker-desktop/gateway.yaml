@@ -1,0 +1,242 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agat-gateway-config
+  labels:
+    app.kubernetes.io/name: agat-gateway
+    app.kubernetes.io/part-of: agat
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+      - name: agat-coordinator
+        url: http://agat-coordinator:8787
+        connect_timeout: 5000
+        read_timeout: 3600000
+        write_timeout: 60000
+        retries: 2
+        routes:
+          - name: agat-knowledge-api
+            paths:
+              - /api/v1/knowledge
+            protocols:
+              - http
+            preserve_host: true
+            strip_path: false
+          - name: agat-worker-knowledge-api
+            paths:
+              - /api/v1/workers/knowledge
+            protocols:
+              - http
+            preserve_host: true
+            strip_path: false
+          - name: agat-a2a-api
+            paths:
+              - /a2a/v1
+            protocols:
+              - http
+            preserve_host: true
+            strip_path: false
+          - name: agat-ui-and-api
+            paths:
+              - /
+            protocols:
+              - http
+            preserve_host: true
+            strip_path: false
+
+    routes:
+      - name: agat-internal-deny
+        paths:
+          - /api/v1/internal
+        protocols:
+          - http
+        strip_path: false
+
+    plugins:
+      - name: request-termination
+        route: agat-internal-deny
+        config:
+          status_code: 404
+          message: Маршрут API не найден
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid
+          echo_downstream: true
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 1048576
+          size_unit: bytes
+      - name: request-size-limiting
+        route: agat-knowledge-api
+        config:
+          allowed_payload_size: 8388608
+          size_unit: bytes
+      - name: request-size-limiting
+        route: agat-worker-knowledge-api
+        config:
+          allowed_payload_size: 8388608
+          size_unit: bytes
+      - name: rate-limiting
+        config:
+          minute: 600
+          policy: local
+          limit_by: ip
+          fault_tolerant: true
+          hide_client_headers: false
+      - name: rate-limiting
+        route: agat-a2a-api
+        config:
+          minute: 120
+          policy: local
+          limit_by: ip
+          fault_tolerant: true
+          hide_client_headers: false
+      - name: prometheus
+        config:
+          status_code_metrics: true
+          latency_metrics: true
+          bandwidth_metrics: true
+          upstream_health_metrics: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-gateway
+  labels:
+    app.kubernetes.io/name: agat-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 180
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat-gateway
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kong
+          image: kong:3.9.3
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong/declarative/kong.yml
+            - name: KONG_PREFIX
+              value: /tmp/kong
+            - name: KONG_PROXY_LISTEN
+              value: 0.0.0.0:8000 reuseport
+            - name: KONG_STATUS_LISTEN
+              value: 0.0.0.0:8100
+            - name: KONG_ADMIN_LISTEN
+              value: "off"
+            - name: KONG_ADMIN_GUI_LISTEN
+              value: "off"
+            - name: KONG_STREAM_LISTEN
+              value: "off"
+            - name: KONG_NGINX_WORKER_PROCESSES
+              value: "1"
+            - name: KONG_MEM_CACHE_SIZE
+              value: 32m
+            - name: KONG_PROXY_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PROXY_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_STATUS_ACCESS_LOG
+              value: "off"
+          ports:
+            - name: proxy
+              containerPort: 8000
+              protocol: TCP
+            - name: status
+              containerPort: 8100
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /status/ready
+              port: status
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /status/ready
+              port: status
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: status
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /kong/declarative/kong.yml
+              subPath: kong.yml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: agat-gateway-config
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-gateway
+  labels:
+    app.kubernetes.io/name: agat-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: agat
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: agat-gateway
+  ports:
+    - name: http
+      port: 8787
+      targetPort: proxy
+      protocol: TCP

@@ -1,0 +1,281 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agat-keycloak-postgres
+  labels:
+    app.kubernetes.io/name: agat-keycloak-postgres
+    app.kubernetes.io/part-of: agat
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-keycloak-postgres
+  labels:
+    app.kubernetes.io/name: agat-keycloak-postgres
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat-keycloak-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat-keycloak-postgres
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-data-permissions
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - chown 70:70 /var/lib/postgresql/data && chmod 0700 /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres
+          image: postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: keycloak
+            - name: POSTGRES_USER
+              value: keycloak
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: keycloak-postgres-password
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pg_isready -U keycloak -d keycloak"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pg_isready -U keycloak -d keycloak"]
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: agat-keycloak-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-keycloak-postgres
+  labels:
+    app.kubernetes.io/name: agat-keycloak-postgres
+    app.kubernetes.io/part-of: agat
+spec:
+  selector:
+    app.kubernetes.io/name: agat-keycloak-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agat-keycloak
+  labels:
+    app.kubernetes.io/name: agat-keycloak
+    app.kubernetes.io/part-of: agat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agat-keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agat-keycloak
+        app.kubernetes.io/part-of: agat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:17.6-alpine
+          command: ["/bin/sh", "-ec", "until pg_isready -h agat-keycloak-postgres -U keycloak -d keycloak; do sleep 2; done"]
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: keycloak-postgres-password
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.7.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - start-dev
+            - --import-realm
+            - --health-enabled=true
+            - --metrics-enabled=true
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://agat-keycloak-postgres:5432/keycloak
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: keycloak-postgres-password
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: keycloak-bootstrap-password
+            - name: AGAT_KEYCLOAK_DEMO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agat-secrets
+                  key: keycloak-demo-password
+            - name: KC_HOSTNAME
+              value: http://localhost:8080
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: JAVA_OPTS_KC_HEAP
+              value: -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30 -XX:MaxRAMPercentage=65
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import/agat-realm.json
+              subPath: agat-realm.json
+              readOnly: true
+      volumes:
+        - name: realm
+          configMap:
+            name: agat-keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agat-keycloak
+  labels:
+    app.kubernetes.io/name: agat-keycloak
+    app.kubernetes.io/part-of: agat
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: agat-keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
