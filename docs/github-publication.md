@@ -12,8 +12,9 @@ Website: `https://github.com/Solutions-of-Security/Agat/blob/main/docs/index.md`
 Topics: `ai-agents`, `local-first`, `self-hosted`, `local-llm`, `workflow-automation`,
 `ollama`, `human-in-the-loop`, `rag`, `mcp`, `temporal`.
 
-Исходник карточки ссылки — [social-preview.html](./assets/social-preview.html).
-Её PNG назначается через Settings → General → Social preview. Карточка содержит
+Карточка ссылки: [JPEG 1280 × 640](./assets/social-preview.jpg),
+[исходник HTML](./assets/social-preview.html).
+JPEG назначается через Settings → General → Social preview. Карточка содержит
 название и назначение продукта; статус проверок берётся из badges и Actions.
 
 ## Правила main

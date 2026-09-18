@@ -41,16 +41,17 @@ docker run --detach \
   --publish 127.0.0.1::9000 \
   --env MINIO_ROOT_USER="${minio_user}" \
   --env MINIO_ROOT_PASSWORD="${minio_password}" \
-  minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null
+  quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data >/dev/null
 
 postgres_port="$(docker port "${postgres_container}" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
 minio_port="$(docker port "${minio_container}" 9000/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
 
 for _ in $(seq 1 60); do
-  if docker exec "${postgres_container}" pg_isready --username postgres --dbname agat >/dev/null 2>&1; then break; fi
+  # The image's initialization server accepts Unix sockets before the final TCP server starts.
+  if docker exec "${postgres_container}" pg_isready --host 127.0.0.1 --username postgres --dbname agat >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec "${postgres_container}" pg_isready --username postgres --dbname agat >/dev/null
+docker exec "${postgres_container}" pg_isready --host 127.0.0.1 --username postgres --dbname agat >/dev/null
 
 for _ in $(seq 1 60); do
   if curl --fail --silent "http://127.0.0.1:${minio_port}/minio/health/ready" >/dev/null; then break; fi

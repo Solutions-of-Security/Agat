@@ -29,10 +29,11 @@ docker run --detach \
 
 postgres_port="$(docker port "${postgres_container}" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
 for _ in $(seq 1 60); do
-  if docker exec "${postgres_container}" pg_isready --username postgres --dbname agat >/dev/null 2>&1; then break; fi
+  # The image's initialization server accepts Unix sockets before the final TCP server starts.
+  if docker exec "${postgres_container}" pg_isready --host 127.0.0.1 --username postgres --dbname agat >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec "${postgres_container}" pg_isready --username postgres --dbname agat >/dev/null
+docker exec "${postgres_container}" pg_isready --host 127.0.0.1 --username postgres --dbname agat >/dev/null
 
 docker exec "${postgres_container}" createdb --username postgres agat_rehearsal
 docker exec \
