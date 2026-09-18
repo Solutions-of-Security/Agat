@@ -2,13 +2,40 @@
 
 [![CI](https://github.com/Solutions-of-Security/Agat/actions/workflows/ci.yml/badge.svg)](https://github.com/Solutions-of-Security/Agat/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
+[![Status: Public preview](https://img.shields.io/badge/status-public_preview-orange)](./releases/1.7.0.md)
 
-**Платформа для запуска AI-агентов и визуальных процессов на локальных моделях.**
+**Запускайте AI-агентов и визуальные процессы на своих моделях — с согласованиями и журналом выполнения.**
+
+[English](./README.en.md) · [Первый результат](./first-run.md) · [Документация](./index.md) · [Релизы](https://github.com/Solutions-of-Security/Agat/releases) · [Участие](./CONTRIBUTING.md)
 
 АГАТ объединяет модели, вычислительные узлы и задачи в одном веб-интерфейсе.
 Подходит для работы с документами, поиска по базе знаний и процессов, в которых
 несколько агентов выполняют шаги с участием человека. Модели работают на ваших
 машинах через Ollama, LM Studio, vLLM или llama.cpp.
+
+![Каталог агентов АГАТ: роли, модели, готовность и запуск задачи](./design/2026-09-workspace/agents-desktop.png)
+
+*Интерфейс приложения с тестовыми данными. [Редактор процессов](./design/2026-09-workspace/process-editor-desktop.png) · [Знакомство за минуту](./product-tour.md).*
+
+## Что можно сделать
+
+| Задача | Как работает АГАТ | Результат |
+| --- | --- | --- |
+| Разобрать документ | Передать текст агенту на локальной модели | Краткое содержание и сохранённый ответ |
+| Найти ответ в своих материалах | Подключить Local RAG и локальную embedding-модель | Ответ с источниками использованных фрагментов |
+| Подготовить материал с проверкой | Собрать агентов и согласование в визуальную цепочку | Результат, решения человека и журнал шагов |
+
+## Статус версии
+
+**1.7.0 — public preview**, публикуемый как GitHub prerelease для локального знакомства
+и оценки в своём контуре. Номер версии не означает прохождения production qualification.
+
+| Доступно в локальном запуске | Требует отдельной настройки | Открытые работы |
+| --- | --- | --- |
+| SQLite, агенты, процессы, согласования, журнал | RAG/embeddings, MCP/A2A, OIDC, PostgreSQL, Temporal | Полные solution packs и production gates |
+
+Ограничения и обновление: [release notes 1.7.0](./releases/1.7.0.md).
+Дальнейшие работы: [roadmap](./roadmap.md).
 
 ## Возможности
 
@@ -22,12 +49,12 @@
 
 Для локального знакомства нужны Git, **Node.js 24** (минимум 22.13),
 **Python 3.10+** и запущенная [Ollama](https://ollama.com/download).
-Объём памяти зависит от выбранной модели; ниже используется `qwen3:8b`.
+Объём памяти зависит от модели, квантования и контекста; ниже используется `llama3.2:latest`.
 
 В первом терминале:
 
 ```bash
-git clone https://github.com/Solutions-of-Security/Agat.git
+git clone --branch v1.7.0 https://github.com/Solutions-of-Security/Agat.git
 cd Agat
 npm ci
 npm run build
@@ -37,23 +64,25 @@ npm start
 Во втором терминале, из корня репозитория, загрузите модель и подключите воркер:
 
 ```bash
-ollama pull qwen3:8b
+ollama pull llama3.2:latest
 python3 workers/agat_worker.py \
   --enrollment-token agat-local-enrollment \
-  --models qwen3:8b
+  --models llama3.2:latest \
+  --no-web
 ```
 
 Откройте **[http://127.0.0.1:8787](http://127.0.0.1:8787)**.
-В разделе **«Узлы»** проверьте подключение воркера, затем в **«Агенты»** создайте
-агента, выберите модель и запустите задачу. Результат появится в **«Запуски»**.
+В разделе **«Узлы»** проверьте подключение воркера, затем откройте
+**Создание → Агенты → Новый агент**. В [первом сценарии](./first-run.md) даны
+готовые имя, инструкция, входной текст и критерии ответа. Результат появится в **«Запуски»**.
 
 Этот сценарий использует один coordinator, SQLite и локальный доступ без
 администраторского токена. Встроенный enrollment token предназначен для
 знакомства на своём компьютере. Для сети настройте отдельные секреты и HTTPS
 по [руководству по установке](./getting-started.md).
 
-Docker Compose, подключение других моделей и удалённых машин описаны
-в том же руководстве; Kubernetes — в [инструкции для Docker Desktop](./kubernetes-docker-desktop.md).
+Альтернативы: [Docker Compose](./local-docker.md), [другие модели и удалённые машины](./getting-started.md),
+[Kubernetes в Docker Desktop](./kubernetes-docker-desktop.md).
 
 ## Документация
 
@@ -76,15 +105,24 @@ Docker Compose, подключение других моделей и удалё
 npm run typecheck
 npm test
 npm run build
+npm run docs:check
 ```
 
 Обычные тесты не требуют запущенной модели. Интеграционные проверки с Ollama,
 PostgreSQL и другими сервисами описаны в [оглавлении](./index.md#разработка-и-проверки).
 
 Проект поддерживает [Solutions-of-Security](https://github.com/Solutions-of-Security).
-Об ошибках и предложениях сообщайте через [Issues](https://github.com/Solutions-of-Security/Agat/issues).
-В pull request опишите изменение и выполненные проверки; для крупной доработки
-сначала заведите issue.
+Подготовка окружения, браузерные проверки и правила PR: [CONTRIBUTING](./CONTRIBUTING.md).
+Ошибки и вопросы: [SUPPORT](./SUPPORT.md). Уязвимости: [приватный канал](./security.md).
+
+| Каталог | Назначение |
+| --- | --- |
+| `apps/coordinator` | API, очередь, состояние и оркестрация |
+| `apps/web` | Веб-интерфейс |
+| `apps/temporal-worker` | Durable workflows |
+| `workers`, `edge` | Python runtime и нативные мобильные клиенты |
+| `deploy`, `scripts` | Развёртывание и проверки |
+| `docs` | Руководства, решения, исследования и дизайн |
 
 ## Лицензия
 

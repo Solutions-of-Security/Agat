@@ -1,0 +1,39 @@
+name: Ошибка / Bug report
+description: Воспроизводимая ошибка в Agat
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Не публикуйте секреты и рабочие документы. Уязвимости отправляйте через Security → Report a vulnerability.
+  - type: input
+    id: version
+    attributes:
+      label: Версия и способ запуска
+      placeholder: v1.7.0, SQLite / Docker Compose / Kubernetes
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Окружение
+      description: ОС, Node.js, Python, Docker, модель и runtime — что относится к ошибке.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      description: Минимальные действия и обезличенные входные данные.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемый и фактический результат
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Журнал или снимки
+      description: Удалите токены, пароли и персональные данные перед отправкой.

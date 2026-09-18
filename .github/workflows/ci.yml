@@ -4,6 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -24,6 +29,8 @@ jobs:
       - run: npm ci
       - run: python -m pip install --requirement workers/requirements.txt
       - run: npm run typecheck
+      - name: Documentation links, catalog and checker tests
+        run: npm run docs:check
       - name: Unit and Temporal history replay tests
         run: npm test
       - run: npm run build
@@ -37,3 +44,63 @@ jobs:
           for script in scripts/*.sh; do
             bash -n "$script"
           done
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web
+      - name: Clean SQLite startup and first run on desktop and mobile
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-smoke
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  integration:
+    name: integration (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ha-postgres, state-migration, artifact-store, region-loss-dr]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Run against disposable PostgreSQL and S3 services
+        run: npm run fleet:test-${{ matrix.suite }}
+
+  required:
+    if: ${{ always() }}
+    needs: [test, browser, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every verification job to pass
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          test "$TEST_RESULT" = success
+          test "$BROWSER_RESULT" = success
+          test "$INTEGRATION_RESULT" = success

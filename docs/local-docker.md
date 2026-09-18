@@ -1,40 +1,68 @@
 # Локальный запуск в Docker Compose
 
-## Текущий стенд
+Руководство для чистого checkout public preview 1.7.0. Нужны Git, Python 3.10+,
+Docker Engine/Desktop с Compose v2 и запущенная Ollama на хосте.
+Порт по умолчанию — **8787**. Протокол прежнего стенда на 8788 сохранён
+[отдельно](./local-docker-validation-2026-09-08.md).
 
-Панель и API доступны по адресу <http://127.0.0.1:8788>. Порт 8787 занят другим сервисом Docker Desktop; опубликованный порт задаётся переменной `AGAT_HTTP_PORT` в `.env`. Внутри контейнера coordinator использует порт 8787.
+## Подготовка
 
-Стек включает coordinator с интерфейсом, Python-воркер и SearXNG. Данные SQLite и состояние воркера сохраняются в именованных Docker volumes. Этот профиль использует встроенный runtime процессов; Temporal и Kubernetes в него не входят.
+```bash
+git clone --branch v1.7.0 https://github.com/Solutions-of-Security/Agat.git
+cd Agat
+ollama pull llama3.2:latest
+python3 scripts/setup-local-env.py
+```
 
-Воркер подключён к Ollama на хосте через `host.docker.internal:11434`. В локальном `.env` выбраны уже установленные `qwen3.5:4b` и `nomic-embed-text:latest`; обнаружение остальных локальных моделей включено. Перед запуском стека Ollama должна работать.
+Скрипт создаёт `.env` из `.env.example` с четырьмя независимыми случайными секретами
+и правами `0600`. Существующий `.env` он не заменяет. Токены не выводятся в терминал.
+Если порт занят, при первом создании используйте `--port 8788`; для другой модели
+добавьте `--model имя-модели`. На существующем стенде меняйте конфигурацию явно,
+сохраняя действующие секреты.
 
-## Команды
+SearXNG публикуется на loopback-порту 8888. Если он занят, измените
+`AGAT_SEARCH_HTTP_PORT` в созданном `.env`; внутренний адрес worker не меняется.
 
-Выполнять из корня репозитория:
+Worker использует `host.docker.internal:11434`. На Docker Desktop это адрес хоста;
+на Linux Compose добавляет `host-gateway`, но Ollama должна быть доступна из Docker-сети.
+Если Ollama слушает только loopback Linux-хоста, настройте доступ к ней из выбранной
+локальной Docker-сети с ограничением firewall или используйте Python worker на хосте
+из [быстрого запуска](./README.md#быстрый-запуск).
 
-```sh
+## Запуск
+
+```bash
 docker compose --profile worker up -d --build --wait
 docker compose --profile worker ps
 docker compose --profile worker logs --tail=100 coordinator worker
-curl --fail http://127.0.0.1:8788/api/v1/health
+curl --fail http://127.0.0.1:8787/api/v1/health
 ```
 
-Остановить стек с сохранением данных:
+Если выбрали другой порт, замените его в URL проверки и браузера. Ожидается успешный
+health response и зарегистрированный worker. Откройте `http://127.0.0.1:8787`.
+Для защищённых действий UI попросит `AGAT_ADMIN_TOKEN` из вашего `.env`.
+Передавать этот файл или токен в issue не нужно.
 
-```sh
+Повторите [первый сценарий](./first-run.md). Контейнерный worker использует
+`AGAT_WORKER_MODELS=llama3.2:latest`, а coordinator и worker разделяют enrollment token.
+Для Local RAG дополнительно загрузите `embeddinggemma` в Ollama либо измените
+`AGAT_EMBEDDING_MODELS` и `AGAT_LOCAL_WORKER_EMBEDDING_MODELS` под доступную модель.
+
+Для первого сценария скрипт задаёт `AGAT_WEB_ENABLED=false`: worker использует
+только входной текст и локальную модель. Для задач с интернет-поиском явно включите
+`AGAT_WEB_ENABLED=true` и пересоздайте worker через `docker compose --profile worker up -d worker`.
+
+Этот профиль включает coordinator с UI, Python worker и SearXNG. Данные SQLite,
+артефакты и credential worker сохраняются в именованных volumes. Используется
+встроенный runtime процессов; Temporal и production HA требуют отдельной настройки.
+
+## Остановка и обновление
+
+```bash
 docker compose --profile worker down
 ```
 
-Для доступа к защищённым действиям интерфейс запрашивает `AGAT_ADMIN_TOKEN` из локального `.env`. Файл содержит отдельные случайные ключи, имеет права `0600` и исключён из Git и Docker build context. Не публикуйте его.
-
-При настройке другой машины создайте `.env` на основе `.env.example`, задайте отдельные случайные значения для `AGAT_ADMIN_TOKEN`, `AGAT_ENROLLMENT_TOKEN`, `AGAT_CREDENTIALS_KEY` и `AGAT_SEARCH_SECRET`. Настройте `AGAT_WORKER_MODELS`, `AGAT_EMBEDDING_MODELS` и `AGAT_LOCAL_WORKER_EMBEDDING_MODELS` под установленные модели. Если меняете внешний порт, обновите и `AGAT_A2A_PUBLIC_BASE_URL`.
-
-## Проверка запуска — 8 сентября 2026
-
-- Docker собрал coordinator и интерфейс из исходников текущего рабочего дерева; TypeScript-проверки прошли.
-- Все 32 frontend-теста прошли; контрольные суммы 75 файлов исходников, тестов и публичных ресурсов совпали с проверенной локальной копией.
-- `docker compose --profile worker up -d --no-build --wait` завершился успешно. Coordinator и SearXNG получили состояние `healthy`; воркер зарегистрирован как `docker-worker`.
-- `/api/v1/health` вернул `status: ok` и подключённый runtime `database`.
-- В браузере открыт новый каталог агентов; все три встроенных агента показывают готовность и один совместимый узел.
-
-При первом запуске SearXNG получил `Input/output error` на bind mount конфигурации, которую iCloud выгрузил с диска. После загрузки `deploy/searxng/settings.yml` и `deploy/searxng/limiter.toml` на локальный диск контейнер поиска был пересоздан командой `docker compose --profile worker up -d --no-build --force-recreate search`. Для стабильного повторного запуска держите эти файлы локально доступными.
+Команда сохраняет volumes. Инструкция обновления и backup — в
+[release notes](./releases/1.7.0.md). Удаление volumes не является обычной остановкой.
+При изменении внешнего порта обновляйте также `AGAT_A2A_PUBLIC_BASE_URL`.
+Ошибки модели, регистрации и очереди разобраны в [первом сценарии](./first-run.md).
