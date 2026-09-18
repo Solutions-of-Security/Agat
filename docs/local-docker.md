@@ -48,6 +48,10 @@ health response и зарегистрированный worker. Откройте
 Для Local RAG дополнительно загрузите `embeddinggemma` в Ollama либо измените
 `AGAT_EMBEDDING_MODELS` и `AGAT_LOCAL_WORKER_EMBEDDING_MODELS` под доступную модель.
 
+Для первого сценария скрипт задаёт `AGAT_WEB_ENABLED=false`: worker использует
+только входной текст и локальную модель. Для задач с интернет-поиском явно включите
+`AGAT_WEB_ENABLED=true` и пересоздайте worker через `docker compose --profile worker up -d worker`.
+
 Этот профиль включает coordinator с UI, Python worker и SearXNG. Данные SQLite,
 артефакты и credential worker сохраняются в именованных volumes. Используется
 встроенный runtime процессов; Temporal и production HA требуют отдельной настройки.

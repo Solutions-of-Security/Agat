@@ -17,7 +17,8 @@ def create_config(example: Path, output: Path, port: int, model: str) -> None:
     )}
     values.update({"AGAT_HTTP_PORT": str(port),
                    "AGAT_A2A_PUBLIC_BASE_URL": f"http://127.0.0.1:{port}",
-                   "AGAT_WORKER_MODELS": model})
+                   "AGAT_WORKER_MODELS": model,
+                   "AGAT_WEB_ENABLED": "false"})
     lines = []
     for line in example.read_text().splitlines():
         key = line.split("=", 1)[0]

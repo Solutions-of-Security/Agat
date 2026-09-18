@@ -23,6 +23,7 @@ class SetupLocalEnvTest(unittest.TestCase):
             self.assertEqual(values["AGAT_HTTP_PORT"], "18787")
             self.assertEqual(values["AGAT_A2A_PUBLIC_BASE_URL"], "http://127.0.0.1:18787")
             self.assertEqual(values["AGAT_SEED_DEMO"], "false")
+            self.assertEqual(values["AGAT_WEB_ENABLED"], "false")
             original = output.read_text()
             with self.assertRaises(FileExistsError):
                 module.create_config(example, output, 8787, "different-model")
