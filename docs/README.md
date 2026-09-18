@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Solutions-of-Security/Agat/actions/workflows/ci.yml/badge.svg)](https://github.com/Solutions-of-Security/Agat/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
-[![Status: Public preview](https://img.shields.io/badge/status-public_preview-amber)](./releases/1.7.0.md)
+[![Status: Public preview](https://img.shields.io/badge/status-public_preview-orange)](./releases/1.7.0.md)
 
 **Запускайте AI-агентов и визуальные процессы на своих моделях — с согласованиями и журналом выполнения.**
 
