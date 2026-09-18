@@ -7,6 +7,8 @@
 
 ## Установка и запуск
 
+- [Первый полезный результат](./first-run.md) и [обзор за минуту](./product-tour.md)
+- [Public preview 1.7.0: установка, ограничения и обновление](./releases/1.7.0.md)
 - [Установка и подключение машин](./getting-started.md)
 - [Локальный запуск в Docker Compose](./local-docker.md)
 - [Локальный Kubernetes в Docker Desktop](./kubernetes-docker-desktop.md)
@@ -69,6 +71,7 @@
 
 ## Продукт, исследования и интерфейс
 
+- [История публичных поставок](./CHANGELOG.md)
 - [Roadmap и дополнительные фичи](./roadmap.md)
 - [Использование Агата: сценарии, барьеры и приоритеты — 8 сентября 2026](./product-usage-research-2026-09-08.md)
 - [Приоритеты агентов и процессов: сентябрь 2026 — август 2027](./agent-process-priorities-2026.md)
@@ -80,6 +83,10 @@
 
 ## Разработка и проверки
 
+- [Участие и подготовка окружения](./CONTRIBUTING.md)
+- [Поддержка](./SUPPORT.md) и [правила общения](./CODE_OF_CONDUCT.md)
+- [Публикация GitHub и релизов](./github-publication.md)
+
 Команды выполняются из корня репозитория после `npm ci`:
 
 ```bash
@@ -87,6 +94,7 @@ npm run typecheck
 npm test
 npm run build
 npm run docs:processes:check
+npm run docs:check
 ```
 
 `npm test` включает проверки coordinator, интерфейса, Python-воркера и replay
@@ -96,6 +104,10 @@ GitHub Actions использует Node.js 24 и Python 3.13.
 
 Интеграционные проверки запускаются отдельно. Необходимые сервисы и настройки
 указаны в соответствующих руководствах.
+
+CI выполняет четыре PostgreSQL/S3 suites и браузерный сценарий в отдельных jobs.
+`npm run test:browser` проверяет desktop/mobile Chromium с временной SQLite и dry-run worker;
+он не оценивает качество LLM. Подготовка браузера: `npx playwright install chromium`.
 
 | Проверка | Команда | Руководство |
 | --- | --- | --- |

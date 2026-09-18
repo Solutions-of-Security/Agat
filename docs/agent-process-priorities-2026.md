@@ -112,6 +112,6 @@ Voice и computer use будут заметны и популярны, но дл
 ## Связанные артефакты
 
 - Общий roadmap с эпиками Solution packs: [`roadmap.md`](./roadmap.md)
-- Интерактивный отчёт: [`agent-process-priority-report/dist/index.html`](./agent-process-priority-report/dist/index.html)
+- [Исходники интерактивного отчёта](./agent-process-priority-report/): выполните в его каталоге `npm ci` и `npm run build`; локальный результат появится в `dist/index.html` и не хранится в Git.
 - Исходные данные и provenance: [`agent-process-priority-report/src/data.json`](./agent-process-priority-report/src/data.json)
 - Компонент отчёта: [`agent-process-priority-report/src/content/report/ReportContent.jsx`](./agent-process-priority-report/src/content/report/ReportContent.jsx)

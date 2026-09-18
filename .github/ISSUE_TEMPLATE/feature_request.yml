@@ -1,0 +1,28 @@
+name: Предложение или вопрос / Feature or question
+description: Сценарий, улучшение или вопрос о работе Agat
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Тип обращения
+      options: [Предложение, Вопрос по использованию, Документация]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Задача пользователя
+      description: Что пытаетесь сделать, какой результат нужен и что мешает?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Предлагаемое поведение и критерий готовности
+      description: Для вопроса укажите версию и способ запуска; для улучшения — наблюдаемый результат.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Рассмотренные варианты

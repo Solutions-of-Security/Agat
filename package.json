@@ -46,9 +46,16 @@
     "temporal:ramp": "bash scripts/temporal-rollout.sh ramp",
     "temporal:status": "bash scripts/temporal-rollout.sh status",
     "temporal:version": "bash scripts/temporal-rollout.sh version",
-    "typecheck": "npm run typecheck --workspace @agat/coordinator && npm run typecheck --workspace @agat/web && npm run typecheck --workspace @agat/temporal-worker"
+    "typecheck": "npm run typecheck --workspace @agat/coordinator && npm run typecheck --workspace @agat/web && npm run typecheck --workspace @agat/temporal-worker",
+    "docs:links:check": "node scripts/check-doc-links.mjs",
+    "docs:check": "node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p \"test_*.py\" && npm run docs:links:check && npm run docs:processes:check",
+    "test:browser": "playwright test"
   },
   "engines": {
     "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "markdown-it": "15.0.2"
   }
 }
