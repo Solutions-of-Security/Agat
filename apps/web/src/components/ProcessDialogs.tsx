@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
-import type { Agent, CreateProcessRequest, KnowledgeCollection, ProcessDefinition, ProcessTemplateCatalog, ResultDestination, StartProcessRequest } from "../types";
+import type { Agent, AgatRole, CreateProcessRequest, KnowledgeCollection, ProcessDefinition, ProcessTemplateCatalog, ResultDestination, StartProcessRequest } from "../types";
 import { api } from "../lib/api";
 import { catalogProcessRequest, suggestedProcessName, type CatalogProcessTemplate } from "../processTemplates";
 import { Icon } from "./Icon";
 import { KnowledgeCollectionPicker } from "./KnowledgeCollectionPicker";
 import { ResultStorageFields } from "./ResultStorageFields";
 import { ProcessTemplatePicker } from "./ProcessTemplatePicker";
+import { ProcessInputField } from "./ProcessInputField";
+import { ProcessPackInstaller } from "./ProcessPackInstaller";
+import { ScenarioPreflightPanel } from "./ScenarioPreflightPanel";
+import { useScenarioPreflight } from "../hooks/useScenarioPreflight";
+import { recoveryTarget, scenarioStartAllowed } from "../scenarioPreflight";
 
 interface DialogStateProps {
+  roles: AgatRole[];
   open: boolean;
   busy: boolean;
   error: string | null;
@@ -19,12 +25,14 @@ interface NewProcessDialogProps extends DialogStateProps {
   processes: ProcessDefinition[];
   agents: Agent[];
   onSubmit: (payload: CreateProcessRequest) => void;
+  onPackInstalled: () => void;
+  onPackRun: (runId: string) => void;
 }
 
-export function NewProcessDialog({ open, busy, error, processes, agents, onClose, onSubmit }: NewProcessDialogProps) {
+export function NewProcessDialog({ open, busy, error, processes, agents, onClose, onSubmit, roles, onPackInstalled, onPackRun }: NewProcessDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const [source, setSource] = useState("catalog");
+  const [source, setSource] = useState("pack");
   const [catalog, setCatalog] = useState<ProcessTemplateCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -32,6 +40,21 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const preflight = useScenarioPreflight("process-templates", selected?.id ?? null, {
+    catalogTemplateVersion: selected?.version, templateBindings: bindings,
+  }, open && source === "catalog");
+
+  function recoverTemplate(event: MouseEvent<HTMLAnchorElement>, href: string) {
+    if (href.startsWith("#processes")) {
+      event.preventDefault();
+      if (recoveryTarget(href).has("templateId")) { setSelected(null); setLoadAttempt((value) => value + 1); return; }
+      const nodeId = recoveryTarget(href).get("nodeId");
+      const roleId = selected?.stages.find((stage) => stage.id === nodeId)?.roleId;
+      const control = roleId ? document.getElementById(`template-role-${roleId}`) : formRef.current?.querySelector<HTMLButtonElement>('button[type="submit"]');
+      control?.focus();
+      control?.scrollIntoView({ block: "center" });
+    } else onClose();
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -51,7 +74,7 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
     if (!dialog) return;
     if (open && !dialog.open) {
       formRef.current?.reset();
-      setSource("catalog");
+      setSource("pack");
       setSelected(null);
       setBindings({});
       setName("");
@@ -63,6 +86,7 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (source === "pack") return;
     const data = new FormData(event.currentTarget);
     if (source === "catalog") {
       if (selected) onSubmit(catalogProcessRequest(selected, name, description, bindings, data.get("isTemplate") === "on"));
@@ -88,7 +112,7 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
     <dialog className="run-dialog process-dialog process-catalog-dialog" ref={dialogRef} aria-labelledby="new-process-dialog-title" onCancel={onClose} onClose={onClose}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
-          <div><h2 id="new-process-dialog-title">Новый процесс</h2><p>Выберите задачу, назначьте агентов и получите готовую схему для настройки</p></div>
+          <div><h2 id="new-process-dialog-title">Новый процесс</h2><p>Установите готовый пакет или выберите схему для настройки</p></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
           </button>
@@ -96,17 +120,21 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
         <label className="field">
           <span>Источник процесса</span>
           <select value={source} onChange={(event) => setSource(event.target.value)} disabled={busy}>
+            <option value="pack">Готовый пакет: внутренний отчёт</option>
             <option value="catalog">Каталог типовых процессов</option>
             <option value="project">Шаблон проекта</option>
             <option value="basic">Базовый граф</option>
           </select>
         </label>
+        {source === "pack" && open ? <ProcessPackInstaller roles={roles} onClose={onClose} onInstalled={onPackInstalled} onRun={onPackRun} /> : null}
         {source === "catalog" ? (
           catalog ? <ProcessTemplatePicker catalog={catalog} selected={selected} agents={agents} bindings={bindings} disabled={busy}
             onSelect={selectTemplate} onBindingChange={(roleId, agentId) => setBindings((current) => ({ ...current, [roleId]: agentId }))} />
             : catalogError ? <div><p className="form-error" role="alert">{catalogError}</p><button type="button" className="button button--secondary" onClick={() => setLoadAttempt((value) => value + 1)}>Повторить загрузку каталога</button></div>
               : <p role="status">Загружаем каталог процессов…</p>
         ) : null}
+        {source === "catalog" && selected ? <ScenarioPreflightPanel {...preflight} roles={roles} onRefresh={preflight.refresh} onRecover={recoverTemplate} /> : null}
+        {source !== "pack" ? <>
         <label className="field">
           <span>Название</span>
           <input name="name" required maxLength={100} placeholder="Например, еженедельный отчёт" value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
@@ -140,6 +168,7 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
             <Icon name="plus" size={17} />{busy ? "Создаём…" : "Создать процесс"}
           </button>
         </div>
+        </> : null}
       </form>
     </dialog>
   );
@@ -151,13 +180,19 @@ interface StartProcessDialogProps extends DialogStateProps {
   onSubmit: (payload: StartProcessRequest) => void;
 }
 
-export function StartProcessDialog({ process, collections, open, busy, error, onClose, onSubmit }: StartProcessDialogProps) {
+export function StartProcessDialog({ process, collections, open, busy, error, onClose, onSubmit, roles }: StartProcessDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [priority, setPriority] = useState(50);
   const [resultDestination, setResultDestination] = useState<ResultDestination>("artifacts");
   const [artifactPath, setArtifactPath] = useState("");
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
+  const [startMode, setStartMode] = useState<"queue" | "now">("now");
+  const [pinnedVersion, setPinnedVersion] = useState<number | undefined>();
+  const [inputReady, setInputReady] = useState(false);
+  const draftOnly = !process?.publishedVersion;
+  const preflight = useScenarioPreflight("processes", process?.id ?? null, { version: pinnedVersion, knowledgeCollectionIds: selectedCollections }, open && !draftOnly);
+  useEffect(() => { if (error) preflight.refresh(); }, [error]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -167,7 +202,9 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
       setPriority(50);
       setResultDestination("artifacts");
       setArtifactPath("");
-      setSelectedCollections([]);
+      setSelectedCollections(process?.draftGraph.requiredKnowledgeCollectionIds ?? []);
+      setStartMode("now");
+      setPinnedVersion(process?.publishedVersion);
       dialog.showModal();
     }
     if (!open && dialog.open) dialog.close();
@@ -175,6 +212,7 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (draftOnly || !inputReady || !scenarioStartAllowed(preflight.result, startMode)) return;
     const data = new FormData(event.currentTarget);
     onSubmit({
       input: String(data.get("input") ?? ""),
@@ -182,6 +220,8 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
       resultDestination,
       artifactPath: resultDestination === "artifacts" ? artifactPath : "",
       knowledgeCollectionIds: selectedCollections,
+      version: pinnedVersion,
+      startMode,
     });
   }
 
@@ -190,24 +230,16 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
           <div>
-            <h2 id="start-process-dialog-title">Запустить процесс</h2>
-            <p>{process ? `${process.name} · версия ${process.publishedVersion}` : "Опубликованный процесс"}</p>
+            <h2 id="start-process-dialog-title">{draftOnly ? "Входные данные процесса" : "Запустить процесс"}</h2>
+            <p>{process ? `${process.name} · ${draftOnly ? "черновик" : `версия ${pinnedVersion ?? process.publishedVersion}`}` : "Опубликованный процесс"}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Закрыть">
             <Icon name="close" />
           </button>
         </div>
-        <label className="field">
-          <span>Входные данные</span>
-          <textarea
-            name="input"
-            required
-            rows={7}
-            maxLength={100_000}
-            placeholder="Задача, исходные данные, ограничения и критерии результата"
-            autoFocus
-          />
-        </label>
+        <ProcessInputField processId={process?.id ?? null} version={pinnedVersion || process?.publishedVersion || "draft"}
+          open={open} busy={busy} onReadyChange={setInputReady} />
+        {draftOnly ? <p className="process-field-help">Шаблон сохранён в стартовом шаге. Запуск станет доступен после подготовки и публикации процесса.</p> : null}
         <label className="field">
           <span>Приоритет · {priority}</span>
           <input type="range" min="0" max="100" value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
@@ -227,11 +259,15 @@ export function StartProcessDialog({ process, collections, open, busy, error, on
           onDestinationChange={setResultDestination}
           onArtifactPathChange={setArtifactPath}
         />
+        {!draftOnly ? <ScenarioPreflightPanel {...preflight} roles={roles} onRefresh={preflight.refresh} onRecover={() => onClose()} /> : null}
+        <label className="field"><span>Способ запуска</span><select value={startMode} onChange={(event) => setStartMode(event.target.value as "queue" | "now")} disabled={busy}>
+          <option value="now">Выполнить сейчас</option><option value="queue">Поставить в очередь и ждать готовности</option>
+        </select></label>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <div className="dialog-actions">
           <button className="button button--secondary" type="button" onClick={onClose}>Отмена</button>
-          <button className="button button--primary" type="submit" disabled={busy || !process}>
-            <Icon name="play" size={17} />{busy ? "Запускаем…" : "Запустить"}
+          <button className="button button--primary" type="submit" disabled={busy || !process || draftOnly || !inputReady || !scenarioStartAllowed(preflight.result, startMode)}>
+            <Icon name="play" size={17} />{busy ? "Запускаем…" : startMode === "queue" ? "Поставить в очередь" : "Выполнить сейчас"}
           </button>
         </div>
       </form>

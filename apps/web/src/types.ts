@@ -68,10 +68,29 @@ export type ProcessConditionOperator = "always" | "contains" | "not_contains" | 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ProcessCondition {
-  source: "last_output";
+  source: "last_output" | "json";
+  path?: string;
   operator: ProcessConditionOperator;
   value: string;
   caseSensitive: boolean;
+}
+
+export type ProcessFormFieldType = "text" | "textarea" | "number" | "date" | "select" | "checkbox";
+export type ProcessFormData = Record<string, string | number | boolean>;
+
+export interface ProcessFormField {
+  id: string;
+  label: string;
+  type: ProcessFormFieldType;
+  required: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
+export interface ProcessApprovalForm {
+  title: string;
+  description: string;
+  fields: ProcessFormField[];
 }
 
 export interface ProcessCompensationConfig {
@@ -93,6 +112,7 @@ export interface ProcessGraphNode {
     approvalRequired?: boolean;
     condition?: ProcessCondition;
     maxIterations?: number;
+    inputTemplate?: string;
     template?: string;
     url?: string;
     method?: HttpMethod;
@@ -102,6 +122,8 @@ export interface ProcessGraphNode {
     timeoutSeconds?: number;
     waitSeconds?: number;
     approvalMessage?: string;
+    approvalMode?: "approval" | "input";
+    approvalForm?: ProcessApprovalForm;
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;
@@ -127,6 +149,10 @@ export interface ProcessGraphEdge {
 export interface ProcessGraph {
   nodes: ProcessGraphNode[];
   edges: ProcessGraphEdge[];
+  requiredTools?: string[];
+  requiredKnowledgeCollectionIds?: string[];
+  mcpToolAllowlist?: string[];
+  allowPartialStart?: boolean;
 }
 
 export interface Stage {
@@ -376,10 +402,37 @@ export interface KnowledgeDocument {
   contentSha256: string;
   status: "pending" | "indexing" | "ready" | "failed";
   error: string | null;
+  parseError?: string | null;
+  originalSha256?: string | null;
+  hasOriginal?: boolean;
+  pageCount?: number;
   chunkCount: number;
   embeddedCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface KnowledgeDocumentPreview extends KnowledgeDocument {
+  content: string;
+  pages: Array<{ pageNumber: number; charStart: number; charEnd: number }>;
+  chunks: Array<{ id: string; ordinal: number; content: string; charStart: number; charEnd: number;
+    pageNumber: number | null; contentSha256: string }>;
+}
+
+export interface KnowledgeSource {
+  retrievalId: string;
+  stageId: string;
+  createdAt: string;
+  marker: string;
+  excerpt: string;
+  content?: string;
+  provenance: {
+    projectId: string; collectionId: string; collectionName: string;
+    documentId: string; documentName: string; documentSha256: string;
+    sourceUri: string | null; originalSha256?: string | null;
+    chunkId: string; chunkOrdinal: number; charStart: number; charEnd: number; chunkSha256: string;
+    pageNumber?: number | null;
+  };
 }
 
 export interface MemoryEntry {
@@ -427,6 +480,13 @@ export interface IngestKnowledgeDocumentRequest {
   sourceUri?: string;
   mediaType?: string;
   content: string;
+}
+
+export interface UploadKnowledgeDocumentRequest {
+  name: string;
+  sourceUri?: string;
+  mediaType: string;
+  contentBase64: string;
 }
 
 export interface SaveMemoryRequest {
@@ -741,6 +801,9 @@ export interface StageApproval {
   runName: string;
   agentName: string;
   summary: string;
+  form?: ProcessApprovalForm;
+  mode?: "approval" | "input";
+  input?: string;
 }
 
 export interface McpToolApproval {
@@ -776,6 +839,7 @@ export interface ApprovalDecisionInput {
   decision: ApprovalDecision;
   comment?: string;
   reason?: string;
+  formData?: ProcessFormData;
 }
 
 export type McpDefaultPolicy = "deny" | "approval" | "auto";
@@ -1468,6 +1532,8 @@ export interface UpdateProcessRequest {
 
 export interface StartProcessRequest {
   input: string;
+  version?: number;
+  startMode?: "queue" | "now";
   priority: number;
   resultDestination: ResultDestination;
   artifactPath: string;

@@ -57,7 +57,7 @@ export function getRoleCapabilities(roles: readonly AgatRole[]): RoleCapabilitie
 }
 
 export function parseAppRoute(hash: string): AppRoute {
-  const [rawView = "", rawRunId, rawApprovalId, ...rest] = hash.replace(/^#\/?/, "").split("/");
+  const [rawView = "", rawRunId, rawApprovalId, ...rest] = hash.split("?", 1)[0]!.replace(/^#\/?/, "").split("/");
   const view = rawView as ViewId;
   const knownView = Object.prototype.hasOwnProperty.call(viewMeta, view) ? view : "overview";
   if ((knownView !== "runs" && knownView !== "approvals") || !rawRunId) {
@@ -95,7 +95,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
 const creationItems: readonly NavigationItem[] = [
   { id: "agents", label: "Агенты", icon: "agents", roles: CREATOR_ROLES },
   { id: "processes", label: "Процессы", icon: "workflow", roles: CREATOR_ROLES },
-  { id: "knowledge", label: "Знания", icon: "knowledge", roles: WORK_ROLES },
+  { id: "knowledge", label: "Знания", icon: "knowledge", roles: ALL_ROLES },
   { id: "evals", label: "Качество", icon: "repeat", roles: WORK_ROLES },
 ];
 

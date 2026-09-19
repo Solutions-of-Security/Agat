@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { formatApprovalDeadline, formatApprovalWait, type ApprovalInboxItem } from "../approvalInbox";
-import type { ApprovalDecisionInput } from "../types";
+import type { ApprovalDecisionInput, ProcessFormData } from "../types";
+import { prepareProcessFormData } from "../processForms";
 import { Icon } from "./Icon";
+import { ProcessFormFields } from "./ProcessFormFields";
 
 interface ApprovalPanelProps {
   item: ApprovalInboxItem | null;
@@ -33,6 +35,10 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
   const commentId = useId();
   const reasonId = useId();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const decisionRef = useRef<HTMLFormElement>(null);
+  const submitting = useRef(false);
+  const [formValues, setFormValues] = useState<ProcessFormData>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
   const [reason, setReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
@@ -43,6 +49,8 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
     setReason("");
     setRejecting(false);
     setError(null);
+    setFormValues({});
+    setFieldErrors({});
   }, [item?.id, item?.status]);
 
   useEffect(() => {
@@ -62,21 +70,33 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
   const resolved = item.status !== "pending";
 
   async function submit(decision: "approve" | "reject") {
-    if (!item) return;
+    if (!item || busy || submitting.current) return;
     if (decision === "reject" && !reason.trim()) {
       setError("Укажите причину отклонения");
       reasonRef.current?.focus();
       return;
     }
+    const form = item.approval.kind === "stage" ? item.approval.form : undefined;
+    const prepared = decision === "approve" && form ? prepareProcessFormData(form, formValues) : undefined;
+    if (prepared && Object.keys(prepared.errors).length) {
+      setFieldErrors(prepared.errors);
+      setError("Проверьте поля формы");
+      window.requestAnimationFrame(() => decisionRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
+      return;
+    }
     setError(null);
+    submitting.current = true;
     try {
       await onDecision(item, {
         decision,
         ...(comment.trim() ? { comment: comment.trim() } : {}),
         ...(decision === "reject" ? { reason: reason.trim() } : {}),
+        ...(prepared ? { formData: prepared.data } : {}),
       });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось сохранить решение");
+    } finally {
+      submitting.current = false;
     }
   }
 
@@ -118,6 +138,7 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
           <h3>Почему это риск</h3>
           <p>{item.riskReason}</p>
         </section>
+        {approval.kind === "stage" && approval.input ? <details className="approval-form-input"><summary>Данные предыдущего шага</summary><pre>{approval.input}</pre></details> : null}
       </div>
 
       {approval.kind === "mcp_tool" ? (
@@ -153,10 +174,12 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
             {item.rejectionReason ? <p>Причина: {item.rejectionReason}</p> : null}
             {item.decisionComment ? <p>Комментарий: {item.decisionComment}</p> : null}
             {item.decidedAt ? <time dateTime={item.decidedAt}>{formatDate(item.decidedAt)}</time> : null}
+            {approval.kind === "stage" && approval.form ? <ProcessFormFields form={approval.form} values={item.formData ?? {}} disabled onChange={() => {}} /> : null}
           </div>
         </div>
       ) : canDecide ? (
-        <form className={`approval-decision${rejecting ? " is-rejecting" : ""}`} onSubmit={(event) => event.preventDefault()}>
+        <form ref={decisionRef} className={`approval-decision${rejecting ? " is-rejecting" : ""}`} noValidate onSubmit={(event) => { event.preventDefault(); void submit(rejecting ? "reject" : "approve"); }}>
+          {approval.kind === "stage" && approval.form ? <ProcessFormFields form={approval.form} values={formValues} errors={fieldErrors} disabled={busy || rejecting} onChange={(values) => { setFormValues(values); setFieldErrors({}); setError(null); }} /> : null}
           <label htmlFor={commentId}>Комментарий к решению <span>необязательно</span></label>
           <textarea
             id={commentId}
@@ -185,22 +208,25 @@ export function ApprovalPanel({ item, busy, canDecide, variant = "full", onBack,
             {rejecting ? (
               <>
                 <button className="button button--secondary" type="button" disabled={busy} onClick={() => { setRejecting(false); setError(null); }}>Отмена</button>
-                <button className="button button--danger" type="button" disabled={busy} onClick={() => void submit("reject")}>
+                <button className="button button--danger" type="submit" disabled={busy}>
                   {busy ? "Сохраняем…" : "Подтвердить отклонение"}
                 </button>
               </>
             ) : (
               <>
                 <button className="button button--secondary" type="button" disabled={busy} onClick={() => setRejecting(true)}>Отклонить</button>
-                <button className="button button--primary" type="button" disabled={busy} onClick={() => void submit("approve")}>
-                  {busy ? "Сохраняем…" : approval.kind === "mcp_tool" ? "Разрешить вызов" : "Разрешить продолжение"}
+                <button className="button button--primary" type="submit" disabled={busy}>
+                  {busy ? "Сохраняем…" : approval.kind === "mcp_tool" ? "Разрешить вызов" : approval.mode === "input" ? "Передать данные и продолжить" : "Разрешить продолжение"}
                 </button>
               </>
             )}
           </div>
         </form>
       ) : (
+        <div className="approval-decision">
+        {approval.kind === "stage" && approval.form ? <ProcessFormFields form={approval.form} values={{}} disabled onChange={() => {}} /> : null}
         <p className="approval__readonly"><Icon name="shield" size={16} />Режим просмотра: решение может принять оператор или администратор.</p>
+        </div>
       )}
 
       {variant === "full" ? (

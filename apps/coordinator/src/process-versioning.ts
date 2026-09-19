@@ -27,12 +27,16 @@ export function diffProcessDocuments(input: {
   after: ProcessDocument;
 }): ProcessVersionDiff {
   const entries: ProcessVersionDiffEntry[] = [];
-  if (input.before.name !== input.after.name || input.before.description !== input.after.description) {
+  if (input.before.name !== input.after.name || input.before.description !== input.after.description
+    || changed(input.before.graph.requiredTools ?? [], input.after.graph.requiredTools ?? [])
+    || changed(input.before.graph.requiredKnowledgeCollectionIds ?? [], input.after.graph.requiredKnowledgeCollectionIds ?? [])
+    || changed(input.before.graph.mcpToolAllowlist, input.after.graph.mcpToolAllowlist)
+    || changed(input.before.graph.allowPartialStart, input.after.graph.allowPartialStart)) {
     entries.push({
       kind: "metadata_changed",
       id: input.processId,
-      before: { name: input.before.name, description: input.before.description },
-      after: { name: input.after.name, description: input.after.description },
+      before: { name: input.before.name, description: input.before.description, requiredTools: input.before.graph.requiredTools ?? [], requiredKnowledgeCollectionIds: input.before.graph.requiredKnowledgeCollectionIds ?? [], mcpToolAllowlist: input.before.graph.mcpToolAllowlist, allowPartialStart: input.before.graph.allowPartialStart },
+      after: { name: input.after.name, description: input.after.description, requiredTools: input.after.graph.requiredTools ?? [], requiredKnowledgeCollectionIds: input.after.graph.requiredKnowledgeCollectionIds ?? [], mcpToolAllowlist: input.after.graph.mcpToolAllowlist, allowPartialStart: input.after.graph.allowPartialStart },
     });
   }
 

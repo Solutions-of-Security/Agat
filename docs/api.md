@@ -63,6 +63,11 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/knowledge/collections` | Создать project-scoped collection (`admin/designer`) |
 | `DELETE` | `/knowledge/collections/:id` | Каскадно удалить collection (`admin/designer`) |
 | `POST` | `/knowledge/collections/:id/documents` | Добавить `text/*` document (`admin/designer`) |
+| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX в `contentBase64` до 5 МиБ (`admin/designer`); parse error возвращается в сохранённом документе |
+| `GET` | `/knowledge/documents/:id` | Предпросмотр: текст, страницы, chunks, hashes и parse error |
+| `GET` | `/knowledge/documents/:id/file` | Исходный PDF/DOCX (attachment, no-store) |
+| `POST` | `/knowledge/documents/:id/reindex` | Повторный разбор/индексация сохранённого документа (`admin/designer`) |
+| `GET` | `/runs/:id/knowledge` | Сохранённые цитаты/provenance результата, project-scoped `{ sources: [...] }` |
 | `DELETE` | `/knowledge/documents/:id` | Удалить document/chunks (`admin/designer`) |
 | `POST` | `/knowledge/memory` | Явно сохранить working/episodic memory (`admin/designer/operator`) |
 | `DELETE` | `/knowledge/memory/:id` | Удалить memory (`admin/designer`) |
@@ -100,7 +105,7 @@ Node token возвращается один раз при регистраци�
 | `GET` | `/artifacts/:id/download` | Скачать authenticated артефакт по ID |
 | `PATCH` | `/settings/scheduler` | Изменить глобальный режим |
 | `PATCH` | `/settings/model-router` | Изменить глобальную Model Router policy (`admin`) |
-| `POST` | `/approvals/:stageId` | `approve` или `reject` |
+| `POST` | `/approvals/:stageId` | `approve` с ответами формы или `reject` с причиной |
 | `GET` | `/events` | SSE с `Last-Event-ID` |
 
 Управление `/fleet`, `/local-workers`, scheduler, Model Router, MCP emergency deny и создание проекта требуют роли `admin`. Agents/process definitions/credentials и MCP policy доступны `admin` и `designer`; запуск/отмена — также `operator`; approval — `admin/operator`; чтение — любой роли АГАТ. В legacy mode те же mutating endpoints требуют admin token, но один субъект `local-admin` не может выполнить обязательный MCP four-eyes.
@@ -374,6 +379,43 @@ Content-Type: application/json
 Экземпляр возвращает `processId`, `processVersion`, связанный `runId`, `currentNode`, `activeNodes`, `pendingSignals`, `compensations`, счётчики `loopCounts`, replay metadata, `runtime` (`database|temporal|embedded`) и `workflowId`. Для agent/HTTP/compensation lease поле `stage.processNodeId` показывает исходный шаг визуального graph.
 
 Помимо узлов примера поддерживаются `http`, `transform`, `wait`, `approval`, `artifact`, `parallel_fork`, `parallel_join`, `signal` и `subprocess`. Шаблоны используют только `{{input}}`, `{{lastOutput}}`, `{{json.path}}` и `{{loop.nodeId}}`; произвольный JavaScript не выполняется.
+
+### Формы человеческого шага
+
+`approval.config` поддерживает `approvalMode: "approval" | "input"` (по умолчанию `approval`) и `approvalForm`. У шага `agent` форма применяется при `approvalRequired: true`. Пример конфигурации:
+
+```json
+{
+  "approvalMode": "input",
+  "approvalMessage": "Проверьте материал и укажите результат",
+  "approvalForm": {
+    "title": "Проверка материала",
+    "description": "При необходимости укажите доработки",
+    "fields": [
+      { "id": "decision", "label": "Решение", "type": "select", "required": true, "options": ["Доработать", "Готово"] },
+      { "id": "details", "label": "Пояснение", "type": "textarea", "required": false, "placeholder": "Что нужно дополнить" }
+    ]
+  }
+}
+```
+
+Типы: `text`, `textarea`, `number`, `date`, `select`, `checkbox`. До 20 полей, уникальные ключи `[A-Za-z][A-Za-z0-9_]{0,63}` (без `constructor`/`prototype`), названия до 160 символов, подсказки до 300, описание формы до 2000. Список содержит 1–50 уникальных непустых вариантов до 200 символов. Черновик допускает незаполненные названия/варианты; опубликованная форма должна быть полной.
+
+`GET /overview` возвращает в ожидающем stage approval поля `form`, `mode`, `input`. Для продолжения вызовите `POST /approvals/:stageId`:
+
+```json
+{
+  "decision": "approve",
+  "formData": { "decision": "Доработать", "details": "Добавить источники" },
+  "comment": "Проверено редактором"
+}
+```
+
+Ответ `204` означает принятие решения. `number` передаётся JSON-числом (включая 0), `checkbox` — boolean (обязательный — только `true`), дата — реальным календарным днём `YYYY-MM-DD`. Пустые обязательные ответы, лишние поля, неверные типы/варианты дают `400` без изменения состояния. Необязательные пустые ответы пропускаются; строки ограничены 10000 символами, весь `formData` — 100000. Уже обработанный или чужой для проекта stage возвращает `404`. `reject` требует `reason`, заполнение формы не требуется.
+
+Результат формы: `{ "input": <предыдущий результат или ввод запуска>, "form": <проверенные ответы> }`; исходный JSON разбирается, текст сохраняется строкой. Следующий шаг читает `{{ json.form.decision }}`. Ответы сохраняются в stage и событии `approval.decision.recorded.formData`, схема и режим — в snapshot события. Старые согласования без формы работают без `formData`.
+
+Для ветвления по ответу используйте `condition: { "source": "json", "path": "form.decision", "operator": "equals", "value": "Доработать", "caseSensitive": false }`. В `loop` это условие выбирает `repeat` до лимита `maxIterations` (1–50), затем `exit`. `operator: "always"` задаёт фиксированное число переходов по `repeat`. Публикация отклоняет циклы, которые обходят ограниченный `repeat`, и ветки повторения без пути обратно к своему `loop`.
 
 `POST /process-instances/:id/replay` принимает `{ "mode": "safe" | "live", "priority"?: 0..100 }`. Diff принимает `from`/`to` как номер либо `draft`. BPMN import принимает XML body до 1 MiB; export возвращает attachment `application/xml`. Полный контракт и security invariants: [Process Builder 1.2](./process-builder-1.2.md).
 

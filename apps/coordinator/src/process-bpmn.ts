@@ -111,7 +111,7 @@ export function exportProcessBpmn(input: {
   }).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="${BPMN_NS}" xmlns:bpmndi="${BPMNDI_NS}" xmlns:dc="${DC_NS}" xmlns:di="${DI_NS}" xmlns:agat="${AGAT_NS}" id="${bpmnId("Definitions", input.processId)}" targetNamespace="${AGAT_NS}">
-  <bpmn:process id="${processElementId}" name="${xmlEscape(input.name)}" isExecutable="true" agat:version="${input.version}">
+  <bpmn:process id="${processElementId}" name="${xmlEscape(input.name)}" isExecutable="true" agat:version="${input.version}"${(["requiredTools", "requiredKnowledgeCollectionIds", "mcpToolAllowlist"] as const).filter((key) => input.graph[key] !== undefined).map((key) => ` agat:${key}="${xmlEscape(JSON.stringify(input.graph[key]))}"`).join("")}${input.graph.allowPartialStart === undefined ? "" : ` agat:allowPartialStart="${input.graph.allowPartialStart}"`}>
 ${nodes}
 ${edges}
   </bpmn:process>
@@ -309,5 +309,23 @@ export function importProcessBpmn(xml: string): { name: string; graph: ProcessGr
     });
     if (candidates.length === 1) join.config.forkId = candidates[0]!.id;
   }
-  return { name, graph: { nodes, edges } };
+  const requiredTools: unknown = processAttributes["agat:requiredTools"] ? JSON.parse(processAttributes["agat:requiredTools"]) : undefined;
+  if (requiredTools !== undefined && (!Array.isArray(requiredTools) || requiredTools.length > 100 || requiredTools.some((tool) => typeof tool !== "string" || tool.length > 200 || !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(tool)))) {
+    throw new Error("BPMN содержит некорректные agat:requiredTools");
+  }
+  const requirements: Pick<ProcessGraph, "requiredKnowledgeCollectionIds" | "mcpToolAllowlist" | "allowPartialStart"> = {};
+  if (processAttributes["agat:allowPartialStart"] !== undefined) {
+    const value = processAttributes["agat:allowPartialStart"];
+    if (value !== "true" && value !== "false") throw new Error("BPMN содержит некорректный agat:allowPartialStart");
+    requirements.allowPartialStart = value === "true";
+  }
+  for (const key of ["requiredKnowledgeCollectionIds", "mcpToolAllowlist"] as const) {
+    const attribute = processAttributes[`agat:${key}`];
+    const value: unknown = attribute ? JSON.parse(attribute) : undefined;
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.length > 100 || value.some((item) => typeof item !== "string" || !item.trim() || item.length > 200
+      || (key === "mcpToolAllowlist" && !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(item)))) throw new Error(`BPMN содержит некорректный agat:${key}`);
+    requirements[key] = value as string[];
+  }
+  return { name, graph: { nodes, edges, ...requirements, ...(requiredTools === undefined ? {} : { requiredTools: requiredTools as string[] }) } };
 }

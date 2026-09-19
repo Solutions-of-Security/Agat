@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { knowledgeDocumentHref, readKnowledgeFile } from "../knowledge";
+import { KnowledgeDocumentPreview } from "./KnowledgeDocumentPreview";
 import { api } from "../lib/api";
 import type {
   Agent,
@@ -12,6 +14,7 @@ import type {
 } from "../types";
 import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
+import { useRecoveryTarget, useRecoveryFocus } from "../hooks/useRecoveryTarget";
 
 interface KnowledgePageProps {
   overview: KnowledgeOverview;
@@ -56,6 +59,7 @@ function accessAllowed(roles: AgatRole[], allowed: AgatRole[]): boolean {
 }
 
 export function KnowledgePage({ overview, projectId, agents, nodes, roles, onChanged }: KnowledgePageProps) {
+  const recovery = useRecoveryTarget();
   const requestAction = useActionDialog();
   const [snapshot, setSnapshot] = useState<KnowledgeSnapshot | null>(null);
   const [snapshotProjectId, setSnapshotProjectId] = useState<string | null>(null);
@@ -67,7 +71,11 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [documentContent, setDocumentContent] = useState("");
   const [documentName, setDocumentName] = useState("");
+  const [documentBase64, setDocumentBase64] = useState<string | null>(null);
+  const [fileReading, setFileReading] = useState(false);
+  const fileReadId = useRef(0);
   const [documentMediaType, setDocumentMediaType] = useState("text/plain");
+  useRecoveryFocus(recovery.get("collectionId") ? `knowledge-${recovery.get("collectionId")}` : null, snapshot);
 
   const revision = `${overview.counts.collections}:${overview.counts.documents}:${overview.counts.embeddedChunks}:${overview.counts.pendingJobs}:${overview.counts.activeMemory}:${overview.collections.map((collection) => collection.updatedAt).join(",")}`;
   const embeddingModels = useMemo(
@@ -132,39 +140,49 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
     }), () => setCreateOpen(false));
   }
 
+  function resetDocumentForm() {
+    fileReadId.current += 1;
+    setFileReading(false);
+    setDocumentContent("");
+    setDocumentName("");
+    setDocumentMediaType("text/plain");
+    setDocumentBase64(null);
+  }
+
   function ingestDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!ingestCollectionId) return;
+    if (!ingestCollectionId || fileReading) return;
     const data = new FormData(event.currentTarget);
-    void mutate(() => api.ingestKnowledgeDocument(ingestCollectionId, {
-      name: documentName,
-      sourceUri: String(data.get("sourceUri") ?? ""),
-      mediaType: documentMediaType,
-      content: documentContent,
-    }), () => {
+    const metadata = { name: documentName, sourceUri: String(data.get("sourceUri") ?? ""), mediaType: documentMediaType };
+    void mutate(async () => {
+      const document = documentBase64 !== null
+        ? await api.uploadKnowledgeDocument(ingestCollectionId, { ...metadata, contentBase64: documentBase64 })
+        : await api.ingestKnowledgeDocument(ingestCollectionId, { ...metadata, content: documentContent });
+      window.location.hash = knowledgeDocumentHref(projectId, document.id);
+    }, () => {
       setIngestCollectionId(null);
-      setDocumentContent("");
-      setDocumentName("");
-      setDocumentMediaType("text/plain");
+      resetDocumentForm();
     });
   }
 
   async function readDocumentFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    resetDocumentForm();
     if (!file) return;
-    if (file.size > 2_000_000) {
-      setError("Файл больше 2 МБ. Для первого релиза загрузите текст меньшего размера.");
-      event.target.value = "";
-      return;
-    }
+    const readId = fileReadId.current;
+    setFileReading(true);
+    setError(null);
     try {
-      const content = await file.text();
-      setDocumentContent(content);
-      setDocumentName(file.name);
-      setDocumentMediaType(file.type.startsWith("text/") ? file.type : "text/plain");
-      setError(null);
-    } catch {
-      setError("Не удалось прочитать выбранный файл как текст");
+      const selection = await readKnowledgeFile(file);
+      if (readId !== fileReadId.current) return;
+      setDocumentName(selection.name);
+      setDocumentMediaType(selection.mediaType);
+      if ("contentBase64" in selection) setDocumentBase64(selection.contentBase64);
+      else setDocumentContent(selection.content);
+    } catch (reason) {
+      if (readId === fileReadId.current) setError(reason instanceof Error ? reason.message : "Не удалось прочитать файл");
+    } finally {
+      if (readId === fileReadId.current) setFileReading(false);
     }
   }
 
@@ -278,6 +296,12 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
 
       {error ? <button className="connection-toast knowledge-page__error" type="button" onClick={() => setError(null)}>{error}</button> : null}
 
+      {recovery.get("documentId") ? <KnowledgeDocumentPreview
+        key={`${projectId}:${recovery.get("documentId")}`} documentId={recovery.get("documentId")!} projectId={projectId}
+        requestedProjectId={recovery.get("projectId")} chunkId={recovery.get("chunkId")} expectedSha256={recovery.get("sha256")}
+        pageNumber={Number(recovery.get("page") || 1)} revision={revision}
+        onClose={() => { window.location.hash = "#knowledge"; }} /> : null}
+
       {createOpen ? (
         <form className="knowledge-form" onSubmit={createCollection}>
           <header><div><strong>Новая коллекция</strong><small>Embedding-модель закрепляется и не меняется после индексации</small></div><button className="icon-button" type="button" onClick={() => setCreateOpen(false)} aria-label="Закрыть"><Icon name="close" /></button></header>
@@ -311,7 +335,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
         <section className="large-empty-state">
           <Icon name="knowledge" size={34} />
           <h2>Коллекций пока нет</h2>
-          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
+          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте PDF, DOCX или текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
           {canManage ? <button className="button button--primary" type="button" onClick={() => setCreateOpen(true)}><Icon name="plus" size={16} />Создать первую коллекцию</button> : null}
         </section>
       ) : (
@@ -320,7 +344,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
             const documents = data.documents.filter((document) => document.collectionId === collection.id);
             const progress = collection.chunkCount === 0 ? 0 : Math.round(collection.embeddedChunks / collection.chunkCount * 100);
             return (
-              <article className="knowledge-collection" key={collection.id}>
+              <article className="knowledge-collection" id={`knowledge-${collection.id}`} tabIndex={-1} key={collection.id}>
                 <header>
                   <span className="knowledge-collection__icon"><Icon name="knowledge" size={21} /></span>
                   <div>
@@ -329,7 +353,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                   </div>
                   <span className={`knowledge-worker-state${collection.embeddingWorkers > 0 ? " is-online" : ""}`}><i />{collection.embeddingWorkers > 0 ? `${collection.embeddingWorkers} worker` : "нет embedding worker"}</span>
                   <div className="knowledge-collection__actions">
-                    <button className="button button--secondary" type="button" disabled={!canManage || busy} onClick={() => { setIngestCollectionId(collection.id); setDocumentContent(""); setDocumentName(""); }}><Icon name="plus" size={14} />Документ</button>
+                    <button className="button button--secondary" type="button" disabled={!canManage || busy} onClick={() => { resetDocumentForm(); setIngestCollectionId(collection.id); }}><Icon name="plus" size={14} />Документ</button>
                     <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => void removeCollection(collection.id, collection.name)} aria-label={`Удалить коллекцию ${collection.name}`}><Icon name="trash" size={16} /></button>
                   </div>
                 </header>
@@ -343,15 +367,15 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
 
                 {ingestCollectionId === collection.id ? (
                   <form className="knowledge-ingest" onSubmit={ingestDocument}>
-                    <header><strong>Добавить текстовый документ</strong><button className="icon-button" type="button" onClick={() => setIngestCollectionId(null)} aria-label="Закрыть"><Icon name="close" size={17} /></button></header>
+                    <header><strong>Добавить документ</strong><button className="icon-button" type="button" onClick={() => { resetDocumentForm(); setIngestCollectionId(null); }} aria-label="Закрыть"><Icon name="close" size={17} /></button></header>
                     <div className="knowledge-form__grid">
                       <label className="field"><span>Название</span><input required maxLength={180} value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Privacy policy.md" /></label>
                       <label className="field"><span>Source URI</span><input name="sourceUri" maxLength={2_048} placeholder="agat://handbook/privacy" /></label>
-                      <label className="field"><span>Media type</span><input required maxLength={120} value={documentMediaType} onChange={(event) => setDocumentMediaType(event.target.value)} /></label>
-                      <label className="field knowledge-file"><span>Файл до 2 МБ</span><input type="file" accept="text/*,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
+                      <label className="field"><span>Media type</span><input required readOnly={documentBase64 !== null} maxLength={120} value={documentMediaType} onChange={(event) => setDocumentMediaType(event.target.value)} /></label>
+                      <label className="field knowledge-file"><span>PDF/DOCX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*,.pdf,.docx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
                     </div>
-                    <label className="field"><span>Текст</span><textarea required rows={7} maxLength={2_000_000} value={documentContent} onChange={(event) => setDocumentContent(event.target.value)} placeholder="Вставьте текст или выберите файл" /></label>
-                    <footer><small>Coordinator разобьёт текст на chunks; embedding выполнит только подходящий локальный worker.</small><button className="button button--primary" type="submit" disabled={busy}>{busy ? "Ставим в очередь…" : "Индексировать"}</button></footer>
+                    {documentBase64 !== null ? <p>Файл выбран. После загрузки откроется предпросмотр извлечённого текста.</p> : <label className="field"><span>Текст</span><textarea required rows={7} maxLength={2_000_000} value={documentContent} onChange={(event) => setDocumentContent(event.target.value)} placeholder="Вставьте текст или выберите файл" /></label>}
+                    <footer><small>Текст извлекается локально. PDF-сканы без текстового слоя требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и индексировать"}</button></footer>
                   </form>
                 ) : null}
 
@@ -359,9 +383,10 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                   {documents.length === 0 ? <p>Документов пока нет.</p> : documents.map((document) => (
                     <div className="knowledge-document" key={document.id}>
                       <span className={`knowledge-document__status is-${document.status}`}><i />{documentStatusCopy[document.status]}</span>
-                      <div><strong>{document.name}</strong><small>{document.sourceUri ?? document.mediaType} · SHA {document.contentSha256.slice(0, 10)}</small>{document.error ? <em>{document.error}</em> : null}</div>
+                      <div><a href={knowledgeDocumentHref(projectId, document.id)}>{document.name}</a><small>{document.sourceUri ?? document.mediaType} · SHA {document.contentSha256.slice(0, 10)}</small>{document.error ? <em role="alert">{document.error}</em> : null}</div>
                       <span>{document.embeddedCount}/{document.chunkCount} chunks</span>
                       <time>{formatDate(document.updatedAt)}</time>
+                      <button className="button button--secondary" type="button" disabled={!canManage || busy} onClick={() => void mutate(() => api.reindexKnowledgeDocument(document.id))} aria-label={`Переиндексировать ${document.name}`}>Переиндексировать</button>
                       <button className="icon-button icon-button--danger" type="button" disabled={!canManage || busy} onClick={() => void removeDocument(document)} aria-label={`Удалить документ ${document.name}`}><Icon name="trash" size={15} /></button>
                     </div>
                   ))}

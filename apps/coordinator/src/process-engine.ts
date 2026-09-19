@@ -7,6 +7,7 @@ import type {
   ProcessGraphNode,
   ProcessNodeType,
 } from "./types.js";
+import { normalizeProcessApprovalForm } from "./process-forms.js";
 
 const NODE_TYPES = new Set<ProcessNodeType>([
   "start",
@@ -104,8 +105,15 @@ function normalizeCondition(raw: unknown, field: string, strict: boolean): Proce
   }
   const value = operator === "always" ? "" : optionalText(condition.value, `${field}: значение`, 2_000);
   if (strict && operator !== "always" && !value) throw new Error(`${field}: значение обязательно`);
+  const source = condition.source ?? "last_output";
+  if (source !== "last_output" && source !== "json") throw new Error(`${field}: неизвестный источник`);
+  const path = source === "json" ? optionalText(condition.path, `${field}: путь JSON`, 300) : "";
+  if (source === "json" && ((strict && !path) || (path && !/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/.test(path)))) {
+    throw new Error(`${field}: укажите путь JSON, например form.decision`);
+  }
   return {
-    source: "last_output",
+    source,
+    ...(source === "json" ? { path } : {}),
     operator: operator as ProcessConditionOperator,
     value,
     caseSensitive: condition.caseSensitive === true,
@@ -158,6 +166,10 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
       1,
       50,
     );
+  }
+  if (normalized.type === "start") {
+    const inputTemplate = optionalText(config.inputTemplate, `Шаг ${normalized.name || id}: шаблон входных данных`, 100_000);
+    if (inputTemplate) normalized.config.inputTemplate = inputTemplate;
   }
   if (normalized.type === "transform") {
     const template = optionalText(config.template, `Шаг ${normalized.name || id}: шаблон`, 100_000);
@@ -226,6 +238,19 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
       `Шаг ${normalized.name || id}: пояснение`,
       2_000,
     );
+    if (config.approvalMode !== undefined && config.approvalMode !== "approval" && config.approvalMode !== "input") {
+      throw new Error(`Шаг ${normalized.name || id}: неизвестный режим формы`);
+    }
+    if (config.approvalMode !== undefined) normalized.config.approvalMode = config.approvalMode;
+    if (strict && config.approvalMode === "input" && config.approvalForm === undefined) {
+      throw new Error(`Шаг ${normalized.name || id}: добавьте форму для ввода данных`);
+    }
+  }
+  if ((normalized.type === "approval" || normalized.type === "agent") && config.approvalForm !== undefined) {
+    normalized.config.approvalForm = normalizeProcessApprovalForm(config.approvalForm, strict);
+    if (strict && normalized.type === "agent" && !normalized.config.approvalRequired) {
+      throw new Error(`Шаг ${normalized.name || id}: форма требует подтверждения оператора`);
+    }
   }
   if (normalized.type === "artifact") {
     const artifactName = optionalText(config.artifactName, `Шаг ${normalized.name || id}: имя файла`, 160);
@@ -427,8 +452,28 @@ function normalizeGraphShape(raw: unknown, knownAgentIds: Set<string>, strict: b
   if (nodeIds.size !== nodes.length) throw new Error("ID шагов должны быть уникальными");
   const edges = graph.edges.map((edge) => normalizeEdge(edge, nodeIds));
   if (new Set(edges.map((edge) => edge.id)).size !== edges.length) throw new Error("ID связей должны быть уникальными");
+  if (graph.requiredTools !== undefined && (!Array.isArray(graph.requiredTools) || graph.requiredTools.length > 100
+    || graph.requiredTools.some((tool) => typeof tool !== "string" || !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(tool) || tool.length > 200))) {
+    throw new Error("requiredTools должен содержать до 100 MCP public names namespace__tool");
+  }
+  const requirements: Pick<ProcessGraph, "requiredTools" | "requiredKnowledgeCollectionIds" | "mcpToolAllowlist" | "allowPartialStart"> =
+    graph.requiredTools === undefined ? {} : { requiredTools: [...new Set(graph.requiredTools as string[])].sort() };
+  if (graph.allowPartialStart !== undefined) {
+    if (typeof graph.allowPartialStart !== "boolean") throw new Error("allowPartialStart должен быть boolean");
+    requirements.allowPartialStart = graph.allowPartialStart;
+  }
+  for (const field of ["requiredKnowledgeCollectionIds", "mcpToolAllowlist"] as const) {
+    const values = graph[field];
+    if (values === undefined) continue;
+    if (!Array.isArray(values) || values.length > 100 || values.some((value) => typeof value !== "string" || !value.trim() || value.length > 200
+      || (field === "mcpToolAllowlist" && !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(value)))) throw new Error(`Некорректный ${field}`);
+    requirements[field] = [...new Set(values as string[])].sort();
+  }
+  if (requirements.mcpToolAllowlist && requirements.requiredTools?.some((tool) => !requirements.mcpToolAllowlist!.includes(tool))) {
+    throw new Error("Обязательный инструмент запрещён mcpToolAllowlist процесса");
+  }
 
-  if (!strict) return { nodes, edges };
+  if (!strict) return { nodes, edges, ...requirements };
 
   const starts = nodes.filter((node) => node.type === "start");
   const ends = nodes.filter((node) => node.type === "end");
@@ -480,7 +525,28 @@ function normalizeGraphShape(raw: unknown, knownAgentIds: Set<string>, strict: b
   if (trapped.length > 0) {
     throw new Error(`Нет пути к завершению из шагов: ${trapped.map((node) => node.name).join(", ")}`);
   }
-  return { nodes, edges };
+  // Every back edge must pass through a bounded loop's repeat branch.
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
+    if (visiting.has(id)) throw new Error(`Замкнутый путь у шага «${nodesById.get(id)!.name}»: используйте шаг «Цикл» и ветку «повтор»`);
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const edge of outgoingByNode.get(id) ?? []) {
+      if (nodesById.get(id)?.type === "loop" && edge.branch === "repeat") continue;
+      visit(edge.target);
+    }
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const node of nodes) visit(node.id);
+  for (const node of nodes.filter((item) => item.type === "loop")) {
+    const repeat = outgoingByNode.get(node.id)!.find((edge) => edge.branch === "repeat")!;
+    if (!canReachNode(repeat.target, node.id, outgoingByNode, nodesById)) {
+      throw new Error(`Цикл «${node.name}»: ветка «повтор» должна возвращаться к этому циклу`);
+    }
+  }
+  return { nodes, edges, ...requirements };
 }
 
 export function normalizeProcessDraftGraph(raw: unknown, knownAgentIds: Set<string>): ProcessGraph {
@@ -544,7 +610,18 @@ export function defaultProcessGraph(): ProcessGraph {
 
 export function evaluateProcessCondition(condition: ProcessCondition, lastOutput: string | null): boolean {
   if (condition.operator === "always") return true;
-  const source = lastOutput ?? "";
+  let source = lastOutput ?? "";
+  if (condition.source === "json") {
+    let value: unknown;
+    try { value = JSON.parse(source); } catch { return false; }
+    if (!condition.path) return false;
+    for (const segment of condition.path.split(".")) {
+      if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, segment)) return false;
+      value = (value as Record<string, unknown>)[segment];
+    }
+    if (value === null || typeof value === "object") return false;
+    source = String(value);
+  }
   const left = condition.caseSensitive ? source : source.toLocaleLowerCase("ru");
   const right = condition.caseSensitive ? condition.value : condition.value.toLocaleLowerCase("ru");
   if (condition.operator === "contains") return left.includes(right);
