@@ -165,11 +165,11 @@ function nodeSubtitle(node: ProcessGraphNode, agentsById: Map<string, Agent>): s
     if (condition.operator === "always") return "всегда";
     return condition.value ? `результат: «${condition.value}»` : "Настройте значение";
   }
-  if (node.type === "loop") return `не более ${node.config.maxIterations ?? 3} итераций`;
+  if (node.type === "loop") return `${node.config.condition?.operator === "always" ? "" : "не более "}${node.config.maxIterations ?? 3} повторов`;
   if (node.type === "http") return `${node.config.method ?? "GET"} · ${node.config.url || "Настройте URL"}`;
   if (node.type === "transform") return node.config.template ? "шаблон выражений" : "Настройте шаблон";
   if (node.type === "wait") return `${node.config.waitSeconds ?? 60} сек.`;
-  if (node.type === "approval") return "решение оператора";
+  if (node.type === "approval") return node.config.approvalForm ? `форма · ${node.config.approvalForm.fields.length} полей` : "решение оператора";
   if (node.type === "artifact") return node.config.artifactName || "Настройте файл";
   if (node.type === "parallel_fork") return "запустить все ветки";
   if (node.type === "parallel_join") return node.config.forkId ? "дождаться всех веток" : "выберите начало веток";
@@ -1366,6 +1366,12 @@ export function ProcessesPage({
             processes={processes}
             currentProcessId={selectedProcess?.id ?? null}
             processNodes={currentGraph().nodes}
+            processEdges={currentGraph().edges}
+            onConnectBranch={(nodeId, branch, targetId) => {
+              const graph = currentGraph();
+              const retained = graph.edges.filter((edge) => !(edge.source === nodeId && edge.branch === branch));
+              commitGraph({ ...graph, edges: targetId ? [...retained, { id: crypto.randomUUID(), source: nodeId, target: targetId, branch }] : retained }, nodeId);
+            }}
             execution={selectedNodeExecution}
             executionLoading={executionLoading}
             defaultInput={selectedInstance?.input ?? ""}

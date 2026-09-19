@@ -32,6 +32,8 @@ import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
 import { renderProcessTemplate } from "./process-expressions.js";
+import { processFormOutput, validateProcessFormData } from "./process-forms.js";
+import type { ProcessApprovalForm } from "./types.js";
 import { createToken, hashToken, tokensEqual } from "./security.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import {
@@ -12260,12 +12262,12 @@ export class AgatStore {
     return result;
   }
 
-  decideApproval(stageId: string, approved: boolean, projectId = "default"): string | null {
+  decideApproval(stageId: string, approved: boolean, projectId = "default", formData?: unknown): string | null {
     const project = this.requireProject(projectId);
     return this.transaction(() => {
       const stage = this.db
         .prepare(`
-          SELECT s.* FROM stages s JOIN runs r ON r.id = s.run_id
+          SELECT s.*, r.input AS run_input FROM stages s JOIN runs r ON r.id = s.run_id
           WHERE s.id = ? AND s.status = 'waiting_approval' AND r.project_id = ?
         `)
         .get(stageId, project) as Row | undefined;
@@ -12274,16 +12276,26 @@ export class AgatStore {
         .get(String(stage.run_id)) as Row | undefined;
       const timestamp = nowIso();
       if (approved) {
+        const activity = parseJson<{ form?: ProcessApprovalForm; formData?: unknown }>(stage.activity_json, {});
+        const values = validateProcessFormData(activity.form, formData);
+        const output = activity.form
+          ? processFormOutput(typeof stage.stage_input === "string" ? stage.stage_input : String(stage.run_input), values)
+          : typeof stage.stage_input === "string" ? stage.stage_input : null;
+        if (activity.form) {
+          this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?")
+            .run(JSON.stringify({ ...activity, formData: values }), stageId);
+        }
         if (stage.stage_kind === "approval") {
           this.db.prepare(`
             UPDATE stages
             SET status = 'completed', output = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
             WHERE id = ?
-          `).run(stage.stage_input ?? "", timestamp, timestamp, timestamp, String(stage.id));
+          `).run(output ?? "", timestamp, timestamp, timestamp, String(stage.id));
           this.db.prepare("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?").run(timestamp, String(stage.run_id));
           this.addEvent(String(stage.run_id), stageId, null, "info", "approval.approved", "Действие разрешено оператором", {
             processNodeId: stage.process_node_id,
             stageKind: "approval",
+            ...(activity.form ? { formData: values } : {}),
           });
           if (!processInstance || typeof stage.process_node_id !== "string") {
             return processInstance ? String(processInstance.id) : null;
@@ -12303,17 +12315,20 @@ export class AgatStore {
             String(processInstance.id),
             tokenId,
             edge.target,
-            typeof stage.stage_input === "string" ? stage.stage_input : null,
+            output,
           );
           this.syncProcessAggregateStatus(String(processInstance.id));
           return String(processInstance.id);
+        }
+        if (activity.form) {
+          this.db.prepare("UPDATE stages SET stage_input = ? WHERE id = ?").run(output, stageId);
         }
         this.db.prepare("UPDATE stages SET status = 'queued', updated_at = ? WHERE id = ?").run(timestamp, String(stage.id));
         this.db.prepare("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?").run(timestamp, String(stage.run_id));
         this.db
           .prepare("UPDATE process_instances SET status = 'queued', updated_at = ? WHERE run_id = ?")
           .run(timestamp, String(stage.run_id));
-        this.addEvent(String(stage.run_id), stageId, null, "info", "approval.approved", "Действие разрешено оператором", null);
+        this.addEvent(String(stage.run_id), stageId, null, "info", "approval.approved", "Действие разрешено оператором", activity.form ? { formData: values } : null);
         if (processInstance) this.syncProcessAggregateStatus(String(processInstance.id));
       } else {
         this.db.prepare("UPDATE stages SET status = 'cancelled', updated_at = ? WHERE id = ?").run(timestamp, String(stage.id));
@@ -12376,7 +12391,7 @@ export class AgatStore {
       .map((row) => this.eventDto(row));
     const approvals = this.db
       .prepare(`
-        SELECT s.id AS stage_id, s.run_id, s.stage_kind, s.activity_json,
+        SELECT s.id AS stage_id, s.run_id, s.stage_kind, s.activity_json, s.stage_input,
           r.name AS run_name, a.name AS agent_name, r.input
         FROM stages s
         JOIN runs r ON r.id = s.run_id
@@ -12496,16 +12511,22 @@ export class AgatStore {
       nodes,
       models,
       approvals: [
-        ...approvals.map((row) => ({
-        kind: "stage",
-        stageId: row.stage_id,
-        runId: row.run_id,
-        runName: row.run_name,
-        agentName: row.stage_kind === "approval" ? "Ручное подтверждение" : row.agent_name,
-        summary: row.stage_kind === "approval"
-          ? String(parseJson<Record<string, unknown>>(row.activity_json, {}).message ?? row.input).slice(0, 180)
-          : String(row.input).slice(0, 180),
-      })),
+        ...approvals.map((row) => {
+          const activity = parseJson<{ form?: ProcessApprovalForm; mode?: string; message?: string }>(row.activity_json, {});
+          return {
+            kind: "stage",
+            stageId: row.stage_id,
+            runId: row.run_id,
+            runName: row.run_name,
+            agentName: row.stage_kind === "approval" ? "Ручное подтверждение" : row.agent_name,
+            summary: row.stage_kind === "approval"
+              ? String(activity.message || row.input).slice(0, 180)
+              : String(row.input).slice(0, 180),
+            ...(activity.form ? { form: activity.form } : {}),
+            ...(activity.mode ? { mode: activity.mode } : {}),
+            input: row.stage_input ?? row.input,
+          };
+        }),
         ...mcpApprovals.map((row) => {
           const approvers = (this.db.prepare(`
             SELECT actor_display FROM mcp_tool_call_approvals
@@ -14459,10 +14480,7 @@ export class AgatStore {
     });
     let currentNodeId = initialNodeId;
     let transitionCount = Number(instance.transition_count);
-    let internalTransitions = 0;
-
-    while (internalTransitions < 128) {
-      internalTransitions += 1;
+    while (true) {
       transitionCount += 1;
       if (transitionCount > 1_000) {
         this.failProcessInstance(instanceId, runId, "Превышен общий лимит переходов процесса (1000)");
@@ -14757,9 +14775,6 @@ export class AgatStore {
       });
       currentNodeId = edge.target;
     }
-
-    this.failProcessInstance(instanceId, runId, "Превышен лимит мгновенных переходов процесса (128)");
-    return false;
   }
 
   private queueProcessAgent(
@@ -14794,8 +14809,8 @@ export class AgatStore {
       .prepare(`
         INSERT INTO stages(
           id, run_id, agent_id, position, status, requires_approval,
-          process_node_id, process_token_id, stage_kind, stage_input, agent_snapshot_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?)
+          process_node_id, process_token_id, stage_kind, stage_input, agent_snapshot_json, activity_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?, ?)
       `)
       .run(
         stageId,
@@ -14808,6 +14823,7 @@ export class AgatStore {
         tokenId,
         lastOutput,
         JSON.stringify(this.captureAgentSnapshot(agentRow, "process_queue", projectId, timestamp)),
+        JSON.stringify(requiresApproval && node.config.approvalForm ? { form: node.config.approvalForm } : {}),
         timestamp,
         timestamp,
       );
@@ -15063,7 +15079,7 @@ export class AgatStore {
       node.id,
       tokenId,
       lastOutput,
-      JSON.stringify({ message: node.config.approvalMessage ?? "" }),
+      JSON.stringify({ message: node.config.approvalMessage ?? "", form: node.config.approvalForm, mode: node.config.approvalMode ?? "approval" }),
       timestamp,
       timestamp,
     );

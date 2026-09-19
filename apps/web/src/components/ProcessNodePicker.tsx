@@ -64,10 +64,10 @@ export const processNodeTools: ProcessNodeTool[] = [
   {
     type: "approval",
     label: "Подтверждение",
-    description: "Приостановить поток до решения оператора",
+    description: "Получить решение или дополнительные данные через форму",
     category: "flow",
     icon: "shield",
-    keywords: ["human", "approve", "gate"],
+    keywords: ["human", "approve", "gate", "форма", "ввод", "согласование", "дополнить"],
   },
   {
     type: "condition",

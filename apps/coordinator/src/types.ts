@@ -60,10 +60,29 @@ export type ProcessConditionOperator = "always" | "contains" | "not_contains" | 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ProcessCondition {
-  source: "last_output";
+  source: "last_output" | "json";
+  path?: string;
   operator: ProcessConditionOperator;
   value: string;
   caseSensitive: boolean;
+}
+
+export type ProcessFormFieldType = "text" | "textarea" | "number" | "date" | "select" | "checkbox";
+export type ProcessFormData = Record<string, string | number | boolean>;
+
+export interface ProcessFormField {
+  id: string;
+  label: string;
+  type: ProcessFormFieldType;
+  required: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
+export interface ProcessApprovalForm {
+  title: string;
+  description: string;
+  fields: ProcessFormField[];
 }
 
 export interface ProcessCompensationConfig {
@@ -98,6 +117,8 @@ export interface ProcessGraphNode {
     timeoutSeconds?: number;
     waitSeconds?: number;
     approvalMessage?: string;
+    approvalMode?: "approval" | "input";
+    approvalForm?: ProcessApprovalForm;
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;

@@ -27,6 +27,8 @@ import {
   type AuthContext,
 } from "./auth.js";
 import { AgatStore } from "./database.js";
+import { validateProcessFormData } from "./process-forms.js";
+import type { ProcessApprovalForm } from "./types.js";
 import { enterPostgresTenantScope, runWithPostgresSystemScope } from "./postgres-database.js";
 import {
   createLocalWorkerLauncher,
@@ -2261,7 +2263,11 @@ export function createCoordinatorServer(
         const currentApproval = overviewApprovalItems(store, auth.projectId)
           .find((item) => approvalMatches(item, "stage", "stageId", approvalStageId));
         if (!currentApproval) throw new HttpError(404, "Согласование не найдено или уже обработано");
-        const processInstanceId = store.decideApproval(approvalStageId, body.decision === "approve", auth.projectId);
+        const form = (currentApproval as { form?: ProcessApprovalForm }).form;
+        if (body.decision === "approve" && form) {
+          body.formData = validateProcessFormData(form, body.formData);
+        }
+        const processInstanceId = store.decideApproval(approvalStageId, body.decision === "approve", auth.projectId, body.formData);
         store.recordPlatformEvent(
           "approval.decision.recorded",
           body.decision === "reject" ? "Запрос отклонён оператором" : "Запрос согласован оператором",

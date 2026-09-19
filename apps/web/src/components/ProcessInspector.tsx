@@ -6,12 +6,15 @@ import type {
   CredentialSummary,
   ProcessConditionOperator,
   ProcessDefinition,
+  ProcessGraphEdge,
+  ProcessBranch,
   ProcessGraphNode,
   StageStatus,
   TestProcessNodeResult,
 } from "../types";
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
+import { ProcessFormBuilder } from "./ProcessFormBuilder";
 
 const operatorLabels: Record<ProcessConditionOperator, string> = {
   always: "Всегда",
@@ -52,6 +55,8 @@ interface ProcessInspectorProps {
   processes: ProcessDefinition[];
   currentProcessId: string | null;
   processNodes: ProcessGraphNode[];
+  processEdges?: ProcessGraphEdge[];
+  onConnectBranch?: (nodeId: string, branch: ProcessBranch, targetId: string) => void;
   execution: ProcessNodeExecutionDetails | null;
   executionLoading: boolean;
   defaultInput: string;
@@ -97,6 +102,8 @@ function ParametersTab({
   processes,
   currentProcessId,
   processNodes,
+  processEdges = [],
+  onConnectBranch,
   onManageCredentials,
   onChange,
 }: {
@@ -106,6 +113,8 @@ function ParametersTab({
   processes: ProcessDefinition[];
   currentProcessId: string | null;
   processNodes: ProcessGraphNode[];
+  processEdges?: ProcessGraphEdge[];
+  onConnectBranch?: (nodeId: string, branch: ProcessBranch, targetId: string) => void;
   onManageCredentials: () => void;
   onChange: (node: ProcessGraphNode) => void;
 }) {
@@ -161,7 +170,7 @@ function ParametersTab({
             <input
               type="checkbox"
               checked={node.config.approvalRequired === true}
-              onChange={(event) => updateConfig({ ...node.config, approvalRequired: event.target.checked })}
+              onChange={(event) => updateConfig({ ...node.config, approvalRequired: event.target.checked, approvalForm: event.target.checked ? node.config.approvalForm : undefined })}
             />
             <span><strong>Подтверждение оператора</strong><small>Шаг попадёт в очередь только после решения.</small></span>
           </label>
@@ -302,10 +311,20 @@ function ParametersTab({
       ) : null}
 
       {node.type === "approval" ? (
+        <>
+        <label className="field"><span>Действие человека</span><select value={node.config.approvalMode ?? "approval"} onChange={(event) => updateConfig({
+          ...node.config, approvalMode: event.target.value as "approval" | "input",
+          approvalForm: node.config.approvalForm ?? (event.target.value === "input" ? { title: "Дополните вводные", description: "", fields: [{ id: "details", label: "Дополнительные данные", type: "textarea", required: true }] } : undefined),
+        })}><option value="approval">Согласовать</option><option value="input">Дополнить вводные</option></select></label>
         <label className="field">
           <span>Сообщение оператору</span>
           <textarea rows={5} maxLength={2_000} value={node.config.approvalMessage ?? ""} onChange={(event) => updateConfig({ ...node.config, approvalMessage: event.target.value })} />
         </label>
+        </>
+      ) : null}
+
+      {node.type === "approval" || (node.type === "agent" && node.config.approvalRequired) ? (
+        <ProcessFormBuilder key={node.id} form={node.config.approvalForm} onChange={(approvalForm) => updateConfig({ ...node.config, approvalForm })} />
       ) : null}
 
       {node.type === "artifact" ? (
@@ -330,8 +349,17 @@ function ParametersTab({
         <>
           <label className="field">
             <span>{node.type === "loop" ? "Режим" : "Проверять"}</span>
-            <select disabled><option>{node.type === "loop" ? "Пока условие истинно" : "Последний результат"}</option></select>
+            {node.type === "loop" ? <select value={condition.operator === "always" ? "count" : "condition"} onChange={(event) => updateConfig({ ...node.config, condition: event.target.value === "count" ? { source: "last_output", operator: "always", value: "", caseSensitive: false } : { ...condition, operator: "contains" } })}>
+              <option value="condition">Пока условие истинно</option><option value="count">Заданное число повторов</option>
+            </select> : <select value={condition.source} onChange={(event) => updateConfig({ ...node.config, condition: { ...condition, source: event.target.value as "last_output" | "json", path: event.target.value === "json" ? "form.decision" : undefined } })}>
+              <option value="last_output">Последний результат целиком</option><option value="json">Поле JSON / ответ формы</option>
+            </select>}
           </label>
+          {node.type === "loop" && condition.operator !== "always" ? <label className="field"><span>Проверять</span><select value={condition.source} onChange={(event) => updateConfig({ ...node.config, condition: { ...condition, source: event.target.value as "last_output" | "json", path: event.target.value === "json" ? "form.decision" : undefined } })}>
+            <option value="last_output">Последний результат целиком</option><option value="json">Поле JSON / ответ формы</option>
+          </select></label> : null}
+          {condition.source === "json" && condition.operator !== "always" ? <label className="field"><span>Путь к полю</span><input maxLength={300} value={condition.path ?? ""} placeholder="form.decision" onChange={(event) => updateConfig({ ...node.config, condition: { ...condition, path: event.target.value } })} /><small>Например, form.decision для ответа из формы.</small></label> : null}
+          {node.type !== "loop" || condition.operator !== "always" ? <>
           <label className="field">
             <span>Условие</span>
             <select
@@ -341,9 +369,10 @@ function ParametersTab({
                 condition: { ...condition, operator: event.target.value as ProcessConditionOperator },
               })}
             >
-              {Object.entries(operatorLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+              {Object.entries(operatorLabels).filter(([value]) => node.type !== "loop" || value !== "always").map(([value, label]) => <option value={value} key={value}>{label}</option>)}
             </select>
           </label>
+          </> : null}
           {condition.operator !== "always" ? (
             <label className="field">
               <span>Значение</span>
@@ -375,7 +404,7 @@ function ParametersTab({
       {node.type === "loop" ? (
         <>
           <label className="field">
-            <span>Максимум итераций</span>
+            <span>{condition.operator === "always" ? "Число повторов" : "Максимум повторов"}</span>
             <input
               type="number"
               min={1}
@@ -384,6 +413,15 @@ function ParametersTab({
               onChange={(event) => updateConfig({ ...node.config, maxIterations: Number(event.target.value) })}
             />
           </label>
+          <p className="process-field-help">Считаются переходы по ветке «повтор». Если фрагмент выполнен до первого входа в цикл, это выполнение не входит в число повторов.</p>
+          {onConnectBranch ? (["repeat", "exit"] as const).map((branch) => <label className="field" key={branch}>
+            <span>{branch === "repeat" ? "Повторять с шага" : "После цикла перейти к"}</span>
+            <select value={processEdges.find((edge) => edge.source === node.id && edge.branch === branch)?.target ?? ""} onChange={(event) => onConnectBranch(node.id, branch, event.target.value)}>
+              <option value="">Выберите шаг</option>
+              {processNodes.filter((candidate) => candidate.id !== node.id && candidate.type !== "start" && (branch !== "repeat" || candidate.type !== "end")).map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}
+            </select>
+          </label>) : null}
+          <p className="process-field-help">Последний шаг повторяемого фрагмента соедините с этим циклом. Ветка «выход» продолжит процесс, когда условие перестанет выполняться или будет достигнут лимит.</p>
           <div className="process-loop-warning"><Icon name="warning" size={18} /><span>Лимит защищает процесс от бесконечного цикла.</span></div>
         </>
       ) : null}
@@ -530,6 +568,8 @@ export function ProcessInspector({
   processes,
   currentProcessId,
   processNodes,
+  processEdges,
+  onConnectBranch,
   execution,
   executionLoading,
   defaultInput,
@@ -595,6 +635,8 @@ export function ProcessInspector({
             processes={processes}
             currentProcessId={currentProcessId}
             processNodes={processNodes}
+            processEdges={processEdges}
+            onConnectBranch={onConnectBranch}
             onManageCredentials={onManageCredentials}
             onChange={onChange}
           />

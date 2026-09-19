@@ -1,4 +1,4 @@
-import type { AgatEvent, Approval, McpRiskTier, McpToolPolicy, McpToolRisk, Run } from "./types";
+import type { AgatEvent, Approval, McpRiskTier, McpToolPolicy, McpToolRisk, ProcessFormData, Run, StageApproval } from "./types";
 
 export type ApprovalStateFilter = "pending" | "resolved" | "all";
 export type ApprovalRiskFilter = "all" | "high" | "standard";
@@ -42,6 +42,7 @@ export interface ApprovalInboxItem {
   decisionActor: string | null;
   decisionComment: string | null;
   rejectionReason: string | null;
+  formData?: ProcessFormData;
   audit: ApprovalAuditEntry[];
 }
 
@@ -98,7 +99,10 @@ function snapshotApproval(value: unknown): Approval | null {
   const agentName = text(candidate.agentName);
   const summary = text(candidate.summary);
   if (!stageId || !runId || !runName || !agentName || !summary) return null;
-  if (kind === "stage") return { kind, stageId, runId, runName, agentName, summary };
+  if (kind === "stage") return { kind, stageId, runId, runName, agentName, summary,
+    ...(record(candidate.form) && Array.isArray((candidate.form as Record<string, unknown>).fields) ? { form: candidate.form as StageApproval["form"] } : {}),
+    ...(candidate.mode === "input" || candidate.mode === "approval" ? { mode: candidate.mode } : {}),
+  };
   if (kind !== "mcp_tool") return null;
   const callId = text(candidate.callId);
   const toolName = text(candidate.toolName);
@@ -167,6 +171,7 @@ export function approvalRiskTier(approval: Approval): McpRiskTier {
 
 export function approvalActionLabel(approval: Approval): string {
   if (approval.kind === "mcp_tool") return `Разрешить вызов ${approval.toolName}`;
+  if (approval.mode === "input") return `Дополнить вводные для «${approval.runName}»`;
   if (approval.agentName === "Ручное подтверждение") return `Разрешить продолжить «${approval.runName}»`;
   return `Разрешить ${approval.agentName} продолжить «${approval.runName}»`;
 }
@@ -256,7 +261,7 @@ function makeItem(approval: Approval, source: ApprovalInboxSource, pending: bool
     approval,
     status: pending ? "pending" : decision.status,
     action: approvalActionLabel(approval),
-    kindLabel: approval.kind === "mcp_tool" ? "MCP-вызов" : "Этап процесса",
+    kindLabel: approval.kind === "mcp_tool" ? "MCP-вызов" : approval.mode === "input" ? "Ввод данных" : "Этап процесса",
     riskTier,
     riskLabel: riskCopy[riskTier],
     requester,
@@ -274,6 +279,7 @@ function makeItem(approval: Approval, source: ApprovalInboxSource, pending: bool
     decisionActor: decision.decisionActor,
     decisionComment: decision.decisionComment,
     rejectionReason: decision.rejectionReason,
+    ...(record(decisionEvent?.data?.formData) ? { formData: decisionEvent!.data!.formData as ProcessFormData } : {}),
     audit: approvalAudit(approval, source.events, requester, requestedAt),
   };
 }

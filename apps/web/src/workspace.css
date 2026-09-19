@@ -1,4 +1,34 @@
 /* Shared workspace composition. Color primitives live in styles.css. */
+.process-form-builder { display: grid; gap: 12px; min-width: 0; }
+.process-form-builder h3 { margin: 0; font-size: 14px; }
+.process-form-builder__field { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.process-form-builder__field legend { padding: 0 6px; font-size: 12px; color: var(--muted); }
+.process-form-builder__field .process-field-grid { grid-template-columns: 1fr; gap: 0; }
+.process-form-builder__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.process-form-builder__actions button { min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+.process-form-builder__actions button:disabled { opacity: .45; }
+.process-form-builder__preview { border-top: 1px solid var(--line); padding-top: 12px; }
+.process-form-builder__preview > summary { cursor: pointer; font-size: 13px; }
+.process-form-builder__preview .process-human-form { margin-top: 16px; }
+.process-form-builder code { overflow-wrap: anywhere; font-size: 11px; }
+.process-human-form { min-width: 0; width: 100%; margin: 0 0 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.process-human-form legend { padding: 0 6px; color: var(--text); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.process-human-form > p { margin: 0 0 16px; color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.process-human-form__field { display: grid; gap: 6px; min-width: 0; margin-top: 14px; }
+.process-human-form__field label { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.process-human-form__field label span { color: #aa3838; }
+.process-human-form__field :is(input:not([type="checkbox"]), select, textarea) { min-width: 0; width: 100%; min-height: 42px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: #fff; font: inherit; font-size: 14px; }
+.process-human-form__field textarea { resize: vertical; }
+.process-human-form__field :is(input, select, textarea):focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.process-human-form__field [aria-invalid="true"] { border-color: #aa3838; }
+.process-human-form__field--checkbox { grid-template-columns: 20px 1fr; align-items: center; }
+.process-human-form__field--checkbox input { width: 18px; height: 18px; accent-color: var(--accent); }
+.process-human-form__field--checkbox small { grid-column: 2; }
+.process-human-form__error { color: #aa3838; font-size: 12px; }
+.approval-form-input { grid-column: 1 / -1; min-width: 0; font-size: 13px; }
+.approval-form-input summary { cursor: pointer; color: var(--muted); }
+.approval-form-input pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.approval-resolution .process-human-form { margin-top: 16px; }
 :root {
   --topbar: 64px;
   --border: var(--line);

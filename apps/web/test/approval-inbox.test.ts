@@ -138,3 +138,24 @@ test("risk, type, deadline и state filters комбинируются", () => {
   }, now);
   assert.deepEqual(filtered.map((item) => item.id), ["mcp:call-1"]);
 });
+
+test("история формы сохраняет схему и ответы отдельно для каждого повторного согласования", () => {
+  const form = { title: "Проверка", description: "", fields: [{ id: "decision", label: "Решение", type: "text" as const, required: true }] };
+  const snapshot = { ...stageApproval, mode: "input" as const, form };
+  const next = { ...snapshot, stageId: "stage-next" };
+  const event: AgatEvent = {
+    id: 10, runId: null, stageId: null, nodeId: null, level: "info", type: "approval.decision.recorded", message: "Данные приняты",
+    data: { approvalId: "stage:stage-2", stageId: "stage-2", runId: run.id, decision: "approve", actor: "Редактор", snapshot, formData: { decision: "Доработать" } },
+    createdAt: "2026-09-01T09:58:00.000Z",
+  };
+  const items = buildApprovalInboxItems({ approvals: [next], runs: [run], events: [event], generatedAt: new Date(now).toISOString() });
+  assert.equal(items[0]?.status, "pending");
+  assert.equal(items[0]?.id, "stage:stage-next");
+  assert.equal(items[0]?.formData, undefined);
+  const resolved = items.find((item) => item.id === "stage:stage-2")!;
+  assert.equal(resolved.status, "approved");
+  assert.deepEqual(resolved.formData, { decision: "Доработать" });
+  assert.ok(resolved.approval.kind === "stage");
+  assert.deepEqual(resolved.approval.form, form);
+  assert.equal(resolved.kindLabel, "Ввод данных");
+});
