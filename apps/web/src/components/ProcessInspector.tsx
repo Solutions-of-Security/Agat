@@ -128,6 +128,20 @@ function ParametersTab({
         <input value={node.name} maxLength={80} onChange={(event) => onChange({ ...node, name: event.target.value })} />
       </label>
 
+      {node.type === "start" ? (
+        <label className="field">
+          <span>Шаблон входных данных</span>
+          <textarea
+            rows={16}
+            maxLength={100_000}
+            value={node.config.inputTemplate ?? ""}
+            placeholder="Параметры, которые нужно заполнить перед запуском процесса"
+            onChange={(event) => updateConfig({ ...node.config, inputTemplate: event.target.value })}
+          />
+          <small>Этот текст подставляется в поле «Входные данные» при запуске. Укажите значения по умолчанию и отметьте параметры для заполнения. Для доступов используйте ссылки на сохранённые секреты.</small>
+        </label>
+      ) : null}
+
       {node.type === "agent" ? (
         <>
           <label className="field">

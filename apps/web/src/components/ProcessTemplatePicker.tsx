@@ -72,7 +72,7 @@ export function ProcessTemplatePicker({ catalog, selected, agents, bindings, dis
             {selected.roles.map((role) => (
               <label className="field" key={role.id}>
                 <span>{role.name}</span>
-                <select value={bindings[role.id] ?? ""} onChange={(event) => onBindingChange(role.id, event.target.value)} disabled={disabled}>
+                <select id={`template-role-${role.id}`} value={bindings[role.id] ?? ""} onChange={(event) => onBindingChange(role.id, event.target.value)} disabled={disabled}>
                   <option value="">Назначить позже в редакторе</option>
                   {agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name}</option>)}
                 </select>

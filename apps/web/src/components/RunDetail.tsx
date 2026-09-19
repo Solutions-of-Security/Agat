@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { buildApprovalInboxItems } from "../approvalInbox";
 import { api } from "../lib/api";
+import { knowledgeReport } from "../knowledge";
+import { KnowledgeLinkedOutput, KnowledgeSources } from "./KnowledgeSources";
 import type {
   AgatEvent,
   Approval,
@@ -14,6 +16,7 @@ import type {
   RunTrace,
   SchedulerMode,
   StageStatus,
+  KnowledgeSource,
 } from "../types";
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { ApprovalPanel } from "./ApprovalPanel";
@@ -239,9 +242,11 @@ function TraceTimeline({ run, events, loading, error, truncated, onExport }: Tra
 
 interface InputOutputPanelProps {
   run: Run;
+  sources: KnowledgeSource[];
+  sourcesReady: boolean;
 }
 
-function InputOutputPanel({ run }: InputOutputPanelProps) {
+function InputOutputPanel({ run, sources, sourcesReady }: InputOutputPanelProps) {
   const result = finalOutput(run);
   return (
     <div className="io-panel">
@@ -255,7 +260,8 @@ function InputOutputPanel({ run }: InputOutputPanelProps) {
             <span>{stage.position + 1}. {stage.agent.name} · output</span>
             <small>{stage.output ? `${stage.output.length} символов` : stageStatusCopy[stage.status]}</small>
           </div>
-          {stage.output ? <pre>{stage.output}</pre> : <p>Результат этапа ещё не сформирован.</p>}
+          {stage.output ? <KnowledgeLinkedOutput text={stage.output} sources={sources} /> : <p>Результат этапа ещё не сформирован.</p>}
+          <KnowledgeSources sources={sources.filter((source) => source.stageId === stage.id)} stages={run.stages} />
         </section>
       ))}
       <div className="io-download">
@@ -266,8 +272,8 @@ function InputOutputPanel({ run }: InputOutputPanelProps) {
         <button
           className="button button--secondary"
           type="button"
-          disabled={!result}
-          onClick={() => result && triggerDownload(new Blob([result], { type: "text/markdown;charset=utf-8" }), "result.md")}
+          disabled={!result || !sourcesReady}
+          onClick={() => result && triggerDownload(new Blob([knowledgeReport(result, sources, window.location.href)], { type: "text/markdown;charset=utf-8" }), "result.md")}
         >
           <Icon name="save" size={16} />Скачать result.md
         </button>
@@ -530,6 +536,20 @@ export function RunDetail({
   const runId = run?.id ?? null;
   const runUpdatedAt = run?.updatedAt ?? null;
   const eventRevision = events.at(-1)?.id ?? 0;
+  const [sourceState, setSourceState] = useState<{ runId: string; sources: KnowledgeSource[]; error: string | null } | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(true);
+  const [sourceRetry, setSourceRetry] = useState(0);
+  useEffect(() => {
+    if (!runId) return;
+    const controller = new AbortController();
+    setSourceLoading(true);
+    void api.runKnowledgeSources(runId, controller.signal).then(({ sources }) => {
+      if (!controller.signal.aborted) setSourceState({ runId, sources, error: null });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setSourceState({ runId, sources: [], error: error instanceof Error ? error.message : "Не удалось загрузить источники" });
+    }).finally(() => { if (!controller.signal.aborted) setSourceLoading(false); });
+    return () => controller.abort();
+  }, [runId, runUpdatedAt, sourceRetry]);
 
   useEffect(() => {
     setActiveTab("trace");
@@ -564,7 +584,9 @@ export function RunDetail({
     return <section className="run-detail empty-state" id="active-run">Выберите запуск, чтобы увидеть цепочку агентов.</section>;
   }
 
-  const detailedRun = trace?.run ?? run;
+  const detailedRun = trace?.run.id === run.id ? trace.run : run;
+  const sources = sourceState?.runId === run.id ? sourceState.sources : [];
+  const sourcesReady = sourceState?.runId === run.id && !sourceState.error && !sourceLoading;
   const fallbackEvents = events.filter((event) => event.runId === run.id);
   const traceEvents = trace?.events ?? fallbackEvents;
   const detailTabs: readonly TabDefinition<DetailTab>[] = [
@@ -782,13 +804,16 @@ export function RunDetail({
             <p>{result ? "Последний сохранённый ответ" : "Появится после завершения первого этапа"}</p>
           </div>
           {result ? (
-            <button className="button button--secondary" type="button" onClick={() => triggerDownload(new Blob([result], { type: "text/markdown;charset=utf-8" }), "result.md")}>
+            <button className="button button--secondary" type="button" disabled={!sourcesReady} onClick={() => triggerDownload(new Blob([knowledgeReport(result, sources, window.location.href)], { type: "text/markdown;charset=utf-8" }), "result.md")}>
               <Icon name="save" size={16} />Скачать
             </button>
           ) : null}
         </header>
         {latestError && detailedRun.status === "failed" ? <p className="run-result__error" role="alert">{latestError}</p> : null}
-        {result ? <pre>{result}</pre> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
+        {result ? <KnowledgeLinkedOutput text={result} sources={sources} /> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
+        {sourceLoading ? <p role="status">Загружаем источники…</p> : null}
+        {sourceState?.runId === run.id && sourceState.error ? <p role="alert">Источники недоступны: {sourceState.error} <button type="button" onClick={() => setSourceRetry((value) => value + 1)}>Повторить загрузку источников</button></p> : null}
+        <KnowledgeSources sources={sources} stages={detailedRun.stages} />
       </section>
 
       <details
@@ -821,7 +846,7 @@ export function RunDetail({
                 onExport={exportTrace}
               />
             </TabPanel>
-            <TabPanel active={activeTab === "io"} idPrefix="run-detail" tabId="io"><InputOutputPanel run={detailedRun} /></TabPanel>
+            <TabPanel active={activeTab === "io"} idPrefix="run-detail" tabId="io"><InputOutputPanel run={detailedRun} sources={sources} sourcesReady={sourcesReady} /></TabPanel>
             <TabPanel active={activeTab === "artifacts"} idPrefix="run-detail" tabId="artifacts">
               <ArtifactsPanel
                 run={detailedRun}

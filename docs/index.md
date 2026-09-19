@@ -22,6 +22,7 @@
 - [LangGraph specialist teams 1.3](./langgraph-specialist-teams.md)
 - [Системный промпт агента «Юрист РФ»](./prompts/lawyer-rf.md)
 - [Визуальные процессы и циклы](./processes.md)
+- [Установка пакета «Внутренний отчёт» и сквозные тесты](./internal-report-pack.md)
 - [Process Builder 1.2](./process-builder-1.2.md)
 - [Durable runtime процессов](./durable-runtime.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
@@ -72,7 +73,8 @@
 ## Продукт, исследования и интерфейс
 
 - [История публичных поставок](./CHANGELOG.md)
-- [Roadmap и дополнительные фичи](./roadmap.md)
+- [Roadmap: приоритеты, облачные агенты и SaaS-подключения](./roadmap.md)
+- [Сравнение Агата с Perplexity Portable Computer](./agat-vs-perplexity-portable-computer-2026-09-18.md)
 - [Использование Агата: сценарии, барьеры и приоритеты — 8 сентября 2026](./product-usage-research-2026-09-08.md)
 - [Приоритеты агентов и процессов: сентябрь 2026 — август 2027](./agent-process-priorities-2026.md)
 - [Дизайн-система и visual QA](./design-system.md)

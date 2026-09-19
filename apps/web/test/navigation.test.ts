@@ -19,7 +19,7 @@ const expectedGroupedViews: Record<AgatRole, ViewId[]> = {
   admin: ["agents", "processes", "knowledge", "evals", "nodes", "models", "fleet", "tools", "a2a"],
   designer: ["agents", "processes", "knowledge", "evals", "tools", "a2a"],
   operator: ["knowledge", "evals", "tools", "a2a"],
-  viewer: [],
+  viewer: ["knowledge"],
   auditor: ["knowledge", "evals", "nodes", "fleet", "tools", "a2a"],
 };
 

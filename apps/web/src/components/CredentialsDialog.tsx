@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CreateCredentialRequest, CredentialSummary, CredentialType, McpToolRisk } from "../types";
 import { Icon } from "./Icon";
+import { useRecoveryTarget } from "../hooks/useRecoveryTarget";
 
 interface CredentialsDialogProps {
   open: boolean;
@@ -22,6 +23,7 @@ export function CredentialsDialog({
   onSave,
   onDelete,
 }: CredentialsDialogProps) {
+  const recovery = useRecoveryTarget();
   const [editingId, setEditingId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
@@ -34,6 +36,26 @@ export function CredentialsDialog({
   const [scopeRisks, setScopeRisks] = useState<McpToolRisk[]>(["read", "write", "destructive", "unknown"]);
   const [scopeCatalog, setScopeCatalog] = useState(true);
   const [scopeExpiresAt, setScopeExpiresAt] = useState("");
+
+  function editCredential(credential: CredentialSummary) {
+    setEditingId(credential.id);
+    setName(credential.name);
+    setType(credential.type);
+    setHeaderName(credential.fields.includes("headerName") ? "Authorization" : "X-API-Key");
+    setSecret("");
+    setScopeKind(credential.scope.kind);
+    setScopeNamespaces(credential.scope.serverNamespaces.join(", "));
+    setScopeTools(credential.scope.toolPatterns.join(", ") || "*");
+    setScopeRisks(credential.scope.risks);
+    setScopeCatalog(credential.scope.allowCatalog);
+    setScopeExpiresAt(credential.scope.expiresAt ? credential.scope.expiresAt.slice(0, 16) : "");
+  }
+  const recoveryId = recovery.get("credentials");
+  useEffect(() => {
+    if (!open) return;
+    const credential = credentials.find((item) => item.id === recoveryId);
+    if (credential) editCredential(credential);
+  }, [open, recoveryId]);
 
   function reset() {
     setEditingId(null);
@@ -96,19 +118,7 @@ export function CredentialsDialog({
             {credentials.map((credential) => (
               <article className={editingId === credential.id ? "is-selected" : ""} key={credential.id}>
                 <span><Icon name="shield" size={17} /></span>
-                <button type="button" onClick={() => {
-                  setEditingId(credential.id);
-                  setName(credential.name);
-                  setType(credential.type);
-                  setHeaderName(credential.fields.includes("headerName") ? "Authorization" : "X-API-Key");
-                  setSecret("");
-                  setScopeKind(credential.scope.kind);
-                  setScopeNamespaces(credential.scope.serverNamespaces.join(", "));
-                  setScopeTools(credential.scope.toolPatterns.join(", ") || "*");
-                  setScopeRisks(credential.scope.risks);
-                  setScopeCatalog(credential.scope.allowCatalog);
-                  setScopeExpiresAt(credential.scope.expiresAt ? credential.scope.expiresAt.slice(0, 16) : "");
-                }}>
+                <button type="button" onClick={() => editCredential(credential)}>
                   <strong>{credential.name}</strong>
                   <small>{credential.type === "http_header" ? "HTTP header" : "Bearer API key"} · {credential.scope.kind === "mcp" ? `MCP: ${credential.scope.serverNamespaces.join(", ")}` : "project scope"}</small>
                 </button>

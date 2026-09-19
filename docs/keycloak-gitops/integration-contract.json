@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "status": "REQUIRED_NOT_CONNECTED",
+  "namespace": "kcops",
+  "warning": "This file describes a required adapter contract, not an installed MCP implementation.",
+  "tools": [
+    {
+      "name": "validate_request",
+      "publicName": "kcops__validate_request",
+      "risk": "read",
+      "allowedPhase": "architect"
+    },
+    {
+      "name": "inspect_environment",
+      "publicName": "kcops__inspect_environment",
+      "risk": "read",
+      "allowedPhase": "infrastructure"
+    },
+    {
+      "name": "plan_configuration",
+      "publicName": "kcops__plan_configuration",
+      "risk": "read",
+      "allowedPhase": "keycloak"
+    },
+    {
+      "name": "prepare_gitops_change",
+      "publicName": "kcops__prepare_gitops_change",
+      "risk": "write",
+      "allowedPhase": "gitops"
+    },
+    {
+      "name": "validate_change",
+      "publicName": "kcops__validate_change",
+      "risk": "read",
+      "allowedPhase": "gitops"
+    },
+    {
+      "name": "get_operation",
+      "publicName": "kcops__get_operation",
+      "risk": "read",
+      "allowedPhase": "all"
+    },
+    {
+      "name": "apply_release",
+      "publicName": "kcops__apply_release",
+      "risk": "write",
+      "allowedPhase": "release"
+    },
+    {
+      "name": "verify_release",
+      "publicName": "kcops__verify_release",
+      "risk": "read",
+      "allowedPhase": "acceptance"
+    }
+  ],
+  "signals": [
+    {
+      "name": "kc.environment.verified",
+      "phase": "environment",
+      "requiredPayload": [
+        "schemaVersion",
+        "requestId",
+        "instanceId",
+        "phase",
+        "target",
+        "desiredStateSha256",
+        "operationId",
+        "verifiedAt",
+        "checks",
+        "evidenceUri"
+      ],
+      "additionallyRequired": []
+    },
+    {
+      "name": "kc.change.verified",
+      "phase": "change",
+      "requiredPayload": [
+        "schemaVersion",
+        "requestId",
+        "instanceId",
+        "phase",
+        "target",
+        "desiredStateSha256",
+        "operationId",
+        "verifiedAt",
+        "checks",
+        "evidenceUri"
+      ],
+      "additionallyRequired": [
+        "commitSha"
+      ]
+    },
+    {
+      "name": "kc.release.verified",
+      "phase": "release",
+      "requiredPayload": [
+        "schemaVersion",
+        "requestId",
+        "instanceId",
+        "phase",
+        "target",
+        "desiredStateSha256",
+        "operationId",
+        "verifiedAt",
+        "checks",
+        "evidenceUri"
+      ],
+      "additionallyRequired": [
+        "commitSha"
+      ]
+    },
+    {
+      "name": "kc.acceptance.verified",
+      "phase": "acceptance",
+      "requiredPayload": [
+        "schemaVersion",
+        "requestId",
+        "instanceId",
+        "phase",
+        "target",
+        "desiredStateSha256",
+        "operationId",
+        "verifiedAt",
+        "checks",
+        "evidenceUri"
+      ],
+      "additionallyRequired": [
+        "commitSha"
+      ]
+    }
+  ],
+  "invariants": [
+    "Validate requirements.schema.json plus semantic checks; no raw secrets accepted.",
+    "Bind authorized target, namespace, repo/path and current Agat stage to credentials outside model control.",
+    "Persist operation before side effects; idempotency key requestId/phase/desiredStateSha256 survives leases, retries and Agat restarts.",
+    "prepare_gitops_change creates branch/commit/MR only; apply_release requires actual Agat approval for exact diff, SHA and target.",
+    "Never accept approved=true or PASS from model output as authority or evidence.",
+    "No deletion of PVC/database/realm/users; destructive actions require a separate process.",
+    "Emit verified signal only after deterministic PASS of all required checks; unknown/skip/fail cannot emit it.",
+    "Bind each signal to process ID and instanceId, compare requestId/target/fingerprint/revision against persisted operation, and reject replay/foreign evidence.",
+    "Wait until exact instance is waiting for the expected signal; persist undelivered evidence and retry delivery until delivered=true without replaying the operation.",
+    "On failure persist diagnostic evidence and cancel/fail the matching Agat instance; missing signals time out to failed. Do not send a synthetic success signal.",
+    "Argo resource reconciliation and realm configuration reconciliation continue independently of Agat after handover.",
+    "Argo selfHeal does not itself reconcile Keycloak Admin API state; configuration Job must compare/reapply managed state periodically and prove drift recovery.",
+    "Verification may create only declared disposable test objects within approved scope; authenticate tests via secret refs and redact tokens."
+  ]
+}

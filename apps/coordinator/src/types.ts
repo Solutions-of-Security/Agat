@@ -88,6 +88,7 @@ export interface ProcessGraphNode {
     approvalRequired?: boolean;
     condition?: ProcessCondition;
     maxIterations?: number;
+    inputTemplate?: string;
     template?: string;
     url?: string;
     method?: HttpMethod;
@@ -126,6 +127,12 @@ export interface ProcessGraphEdge {
 export interface ProcessGraph {
   nodes: ProcessGraphNode[];
   edges: ProcessGraphEdge[];
+  /** Explicit MCP public names required by this scenario. */
+  requiredTools?: string[];
+  requiredKnowledgeCollectionIds?: string[];
+  /** Undefined inherits project tools; an empty list denies every external MCP tool. */
+  mcpToolAllowlist?: string[];
+  allowPartialStart?: boolean;
 }
 
 export interface CreateProcessInput {
@@ -148,6 +155,8 @@ export interface UpdateProcessInput {
 
 export interface StartProcessInput {
   input: string;
+  version?: number;
+  startMode?: "queue" | "now";
   priority?: number;
   resultDestination?: ResultDestination;
   artifactPath?: string;
@@ -1167,6 +1176,19 @@ export interface IngestKnowledgeDocumentInput {
   content: string;
 }
 
+export interface UploadKnowledgeDocumentInput {
+  name: string;
+  sourceUri?: string;
+  mediaType: string;
+  contentBase64: string;
+}
+
+export interface KnowledgePageLocation {
+  pageNumber: number;
+  charStart: number;
+  charEnd: number;
+}
+
 export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed";
 export type MemoryKind = "working" | "episodic";
 
@@ -1214,6 +1236,7 @@ export interface KnowledgeSearchRequest {
 }
 
 export interface KnowledgeProvenance {
+  projectId: string;
   collectionId: string;
   collectionName: string;
   documentId: string;
@@ -1225,12 +1248,24 @@ export interface KnowledgeProvenance {
   charStart: number;
   charEnd: number;
   chunkSha256: string;
+  pageNumber: number | null;
+  originalSha256: string | null;
 }
 
 export interface KnowledgeSearchHit {
   marker: string;
   score: number;
   content: string;
+  provenance: KnowledgeProvenance;
+}
+
+export interface KnowledgeSource {
+  retrievalId: string;
+  stageId: string;
+  createdAt: string;
+  marker: string;
+  excerpt: string;
+  content?: string;
   provenance: KnowledgeProvenance;
 }
 

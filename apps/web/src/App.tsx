@@ -67,7 +67,7 @@ export default function App() {
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [agentTemplateRequest, setAgentTemplateRequest] = useState<CreateAgentRequest | null>(null);
-  const [processDialogOpen, setProcessDialogOpen] = useState(false);
+  const [processDialogOpen, setProcessDialogOpen] = useState(() => new URLSearchParams(window.location.hash.split("?")[1]).get("packId") === "internal-report");
   const processBeforeLeaveRef = useRef<(() => Promise<boolean>) | null>(null);
   const [createdProcessId, setCreatedProcessId] = useState<string | null>(null);
   const [startingProcess, setStartingProcess] = useState<ProcessDefinition | null>(null);
@@ -147,7 +147,10 @@ export default function App() {
     setCreatedProcessId(null);
     setSelectedApprovalId(null);
     setRunDetailOpen(false);
-    window.history.replaceState(null, "", formatAppRoute(activeView));
+    const sourceTarget = new URLSearchParams(window.location.hash.split("?")[1]);
+    if (!(activeView === "knowledge" && sourceTarget.get("projectId") === projectId && sourceTarget.has("documentId"))) {
+      window.history.replaceState(null, "", formatAppRoute(activeView));
+    }
     setOverview(null);
     await refresh();
   }
@@ -178,6 +181,7 @@ export default function App() {
         return;
       }
       setActiveView(route.view);
+      if (route.view === "processes" && new URLSearchParams(window.location.hash.split("?")[1]).get("packId") === "internal-report") setProcessDialogOpen(true);
       setRunDetailOpen(route.runId !== null);
       if (route.runId) setSelectedRunId(route.runId);
       setSelectedApprovalId(route.approvalId);
@@ -639,11 +643,13 @@ export default function App() {
             <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем редактор процессов</strong></div>}>
               <ProcessesPage
                 beforeLeaveRef={processBeforeLeaveRef}
+                roles={user?.roles ?? []}
                 requestedProcessId={createdProcessId}
                 processes={overview.processes}
                 instances={overview.processInstances}
                 agents={overview.agents}
                 credentials={overview.credentials}
+                collections={overview.knowledge.collections}
                 busy={busy}
                 error={processError}
                 onCreate={openProcessDialog}
@@ -673,6 +679,7 @@ export default function App() {
           {activeView === "knowledge" ? (
             <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем локальные знания</strong></div>}>
               <KnowledgePage
+                key={currentProjectId}
                 overview={overview.knowledge}
                 projectId={currentProjectId}
                 agents={overview.agents}
@@ -731,6 +738,7 @@ export default function App() {
             <Suspense fallback={<div className="process-page-loading"><span className="boot-mark" /><strong>Загружаем Fleet HA-cell</strong></div>}>
               <FleetPage
                 projectId={currentProjectId}
+                processRuntime={overview.processRuntime}
                 nodes={overview.nodes}
                 roles={user?.roles ?? []}
               />
@@ -783,6 +791,10 @@ export default function App() {
         onSubmit={(name, id) => void createProject(name, id)}
       />
       <NewProcessDialog
+        key={currentProjectId}
+        onPackInstalled={() => { void refresh(); }}
+        onPackRun={(runId) => { setProcessDialogOpen(false); void refresh(); openRun(runId); }}
+        roles={user?.roles ?? []}
         open={processDialogOpen}
         processes={overview.processes}
         agents={overview.agents}
@@ -792,6 +804,8 @@ export default function App() {
         onSubmit={(payload) => void createProcess(payload)}
       />
       <StartProcessDialog
+        roles={user?.roles ?? []}
+        key={startingProcess?.id ?? "closed"}
         open={startingProcess !== null}
         process={startingProcess}
         collections={overview.knowledge.collections}

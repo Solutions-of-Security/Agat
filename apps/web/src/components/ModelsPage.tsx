@@ -7,6 +7,7 @@ import type {
   NodeModelProfile,
 } from "../types";
 import { Icon } from "./Icon";
+import { useRecoveryTarget, useRecoveryFocus } from "../hooks/useRecoveryTarget";
 
 interface ModelProfileLocation {
   node: ComputeNode;
@@ -162,6 +163,9 @@ function ModelRouterPolicyCard({
 }
 
 export function ModelsPage({ models, nodes, agents, modelRouter, busy, onSavePolicy }: ModelsPageProps) {
+  const recovery = useRecoveryTarget();
+  useRecoveryFocus(recovery.get("model") ? `model-${recovery.get("model")}` : recovery.get("section") === "policy" ? "model-router-policy" : null, nodes);
+  const recoveryNode = nodes.find((node) => node.id === recovery.get("nodeId"));
   const inventory = useMemo<ModelInventory[]>(() => {
     const names = new Set(models);
     agents.forEach((agent) => {
@@ -204,12 +208,13 @@ export function ModelsPage({ models, nodes, agents, modelRouter, busy, onSavePol
         <strong>{inventory.filter((model) => model.onlineNodes.length > 0).length} online</strong>
       </div>
 
-      <ModelRouterPolicyCard
+      {recoveryNode && recovery.get("model") ? <p>Для сценария добавьте модель <strong>{recovery.get("model")}</strong> на worker <strong>{recoveryNode.name}</strong>, сохранив остальные модели команды.</p> : null}
+      <section id="model-router-policy" tabIndex={-1}><ModelRouterPolicyCard
         value={modelRouter.policy}
         stats={modelRouter}
         busy={busy}
         onSave={onSavePolicy}
-      />
+      /></section>
 
       {inventory.length === 0 ? (
         <section className="large-empty-state">
@@ -222,7 +227,7 @@ export function ModelsPage({ models, nodes, agents, modelRouter, busy, onSavePol
           {inventory.map((model) => {
             const available = model.onlineNodes.length > 0;
             return (
-              <article className={`model-card${available ? "" : " model-card--unavailable"}`} key={model.name}>
+              <article id={`model-${model.name}`} tabIndex={-1} className={`model-card${available ? "" : " model-card--unavailable"}`} key={model.name}>
                 <header>
                   <div className="model-icon"><Icon name="models" size={21} /></div>
                   <div><h2 className="mono">{model.name}</h2><p>{available ? "Участвует в policy routing" : "Нет online-узла с этой моделью"}</p></div>

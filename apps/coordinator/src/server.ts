@@ -4,6 +4,8 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getProcessTemplateCatalog } from "./process-catalog.js";
+import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
+import { getInternalReportPack, type ProcessPackInput } from "./process-packs.js";
 
 import {
   loadConfig,
@@ -94,6 +96,7 @@ import type {
   CreateMcpServerInput,
   LaunchLocalWorkersInput,
   IngestKnowledgeDocumentInput,
+  UploadKnowledgeDocumentInput,
   KnowledgeEmbeddingResult,
   KnowledgeSearchRequest,
   HumanEvalReviewInput,
@@ -617,6 +620,9 @@ export function createCoordinatorServer(
   }, undefined, createSandboxExecutor(config)),
   edgeAttestation: EdgeAttestationVerifier = createEdgeAttestationVerifier(config),
 ): http.Server {
+  const scenarioContext = (): ScenarioPreflightContext => ({
+    runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
+  });
   const a2aPublicBaseUrl = normalizeA2APublicBaseUrl(
     config.a2aPublicBaseUrl,
     `http://127.0.0.1:${config.port}`,
@@ -688,7 +694,7 @@ export function createCoordinatorServer(
         }
         const body = await readJson<DeliverProcessWebhookInput>(request);
         const idempotencyKey = singleHeader(request.headers["idempotency-key"]) ?? null;
-        const result = store.invokeProcessWebhook(publicProcessWebhookId, token, body, idempotencyKey);
+        const result = store.invokeProcessWebhook(publicProcessWebhookId, token, body, idempotencyKey, scenarioContext());
         if (!result) {
           response.setHeader("www-authenticate", 'Bearer realm="agat-process-webhook"');
           throw new HttpError(401, "Process webhook не найден или token недействителен");
@@ -957,7 +963,7 @@ export function createCoordinatorServer(
         }
         const body = await readJson<StartProcessInput & { projectId?: unknown }>(request);
         if (typeof body.projectId !== "string") throw new HttpError(400, "projectId обязателен");
-        const instance = store.startProcess(scheduledProcessId, body, body.projectId);
+        const instance = store.startProcess(scheduledProcessId, body, body.projectId, { ...scenarioContext(), executionTrigger: { kind: "schedule" } });
         if (!instance) throw new HttpError(404, "Процесс расписания не найден");
         json(response, 201, {
           instanceId: String(instance.id),
@@ -1692,6 +1698,44 @@ export function createCoordinatorServer(
         return;
       }
 
+      const uploadKnowledgeId = routeParam(pathname, /^\/api\/v1\/knowledge\/collections\/([^/]+)\/documents\/upload$/);
+      if (request.method === "POST" && uploadKnowledgeId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const body = await readJson<UploadKnowledgeDocumentInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
+        json(response, 201, await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId));
+        return;
+      }
+
+      const reindexKnowledgeId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/reindex$/);
+      if (request.method === "POST" && reindexKnowledgeId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const document = await store.reindexKnowledgeDocument(reindexKnowledgeId, auth.projectId);
+        if (!document) throw new HttpError(404, "Документ не найден");
+        json(response, 200, document);
+        return;
+      }
+
+      const knowledgeFileId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/file$/);
+      if (request.method === "GET" && knowledgeFileId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const file = store.getKnowledgeDocumentFile(knowledgeFileId, auth.projectId);
+        if (!file) throw new HttpError(404, "Исходный файл не найден");
+        response.writeHead(200, { "content-type": file.mediaType, "content-length": file.bytes.length,
+          "content-disposition": attachmentDisposition(file.name), "cache-control": "private, no-store",
+          "x-content-type-options": "nosniff" });
+        response.end(file.bytes);
+        return;
+      }
+
+      const runKnowledgeId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/knowledge$/);
+      if (request.method === "GET" && runKnowledgeId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const sources = store.getRunKnowledgeSources(runKnowledgeId, auth.projectId);
+        if (!sources) throw new HttpError(404, "Запуск не найден");
+        json(response, 200, { sources });
+        return;
+      }
+
       const knowledgeCollectionId = routeParam(pathname, /^\/api\/v1\/knowledge\/collections\/([^/]+)$/);
       if (request.method === "DELETE" && knowledgeCollectionId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
@@ -1703,6 +1747,13 @@ export function createCoordinatorServer(
       }
 
       const knowledgeDocumentId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)$/);
+      if (request.method === "GET" && knowledgeDocumentId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const document = store.getKnowledgeDocument(knowledgeDocumentId, auth.projectId);
+        if (!document) throw new HttpError(404, "Документ не найден или удалён");
+        json(response, 200, document);
+        return;
+      }
       if (request.method === "DELETE" && knowledgeDocumentId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         if (!store.deleteKnowledgeDocument(knowledgeDocumentId, auth.projectId)) {
@@ -1727,9 +1778,48 @@ export function createCoordinatorServer(
         return;
       }
 
+      if (request.method === "GET" && pathname === "/api/v1/process-packs") {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const manifest = getInternalReportPack();
+        json(response, 200, { packs: [{ ...manifest, installation: store.getProcessPackInstallation(manifest.id, auth.projectId) }] });
+        return;
+      }
+
+      const packMatch = /^\/api\/v1\/process-packs\/([^/]+)\/(preflight|install)$/.exec(pathname);
+      if (request.method === "POST" && packMatch) {
+        const installing = packMatch[2] === "install";
+        const auth = await authorize(request, config, oidcVerifier, installing ? ["admin", "designer"] : READ_ROLES, installing);
+        const id = decodeURIComponent(packMatch[1]!);
+        if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
+        const body = await readJson<ProcessPackInput>(request);
+        const alreadyInstalled = store.getProcessPackInstallation(id, auth.projectId);
+        const result = installing ? store.installProcessPack(id, body, auth.projectId, scenarioContext()) : store.preflightProcessPack(id, body, auth.projectId, scenarioContext());
+        json(response, installing && !alreadyInstalled ? 201 : 200, result);
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/v1/process-templates") {
         await authorize(request, config, oidcVerifier, READ_ROLES, false);
         json(response, 200, getProcessTemplateCatalog());
+        return;
+      }
+
+      const preflightMatch = /^\/api\/v1\/(processes|process-templates)\/([^/]+)\/preflight$/.exec(pathname);
+      if (request.method === "POST" && preflightMatch) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const id = decodeURIComponent(preflightMatch[2]!);
+        const body = await readJson<ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }>(request);
+        const trigger = scenarioTrigger(body.trigger);
+        const context = scenarioContext();
+        if (preflightMatch[1] === "processes" && !store.getProcess(id, auth.projectId)) throw new HttpError(404, "Процесс не найден");
+        if (trigger.kind === "schedule" && context.runtime.mode === "temporal" && preflightMatch[1] === "processes") {
+          try { context.schedule = await processRuntime.getProcessSchedule(id, auth.projectId); }
+          catch { context.scheduleError = true; }
+        }
+        const result = preflightMatch[1] === "processes"
+          ? store.preflightProcess(id, body, auth.projectId, context)
+          : store.preflightTemplate(id, body, auth.projectId, context);
+        json(response, 200, result);
         return;
       }
 
@@ -1852,7 +1942,7 @@ export function createCoordinatorServer(
       if (request.method === "POST" && startProcessId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
         const body = await readJson<StartProcessInput>(request);
-        const instance = store.startProcess(startProcessId, body, auth.projectId);
+        const instance = store.startProcess(startProcessId, body, auth.projectId, scenarioContext());
         if (!instance) throw new HttpError(404, "Процесс не найден");
         const instanceId = String(instance.id);
         try {
@@ -2587,6 +2677,10 @@ export function createCoordinatorServer(
           ? { "www-authenticate": 'Bearer realm="agat-a2a"' }
           : {};
         a2aJson(response, protocolError.httpStatus, a2aErrorBody(protocolError), headers);
+        return;
+      }
+      if (error instanceof ScenarioPreflightError) {
+        json(response, 409, { error: safeMessage(error), preflight: error.preflight });
         return;
       }
       const status = error instanceof HttpError

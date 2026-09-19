@@ -63,6 +63,11 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/knowledge/collections` | Создать project-scoped collection (`admin/designer`) |
 | `DELETE` | `/knowledge/collections/:id` | Каскадно удалить collection (`admin/designer`) |
 | `POST` | `/knowledge/collections/:id/documents` | Добавить `text/*` document (`admin/designer`) |
+| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX в `contentBase64` до 5 МиБ (`admin/designer`); parse error возвращается в сохранённом документе |
+| `GET` | `/knowledge/documents/:id` | Предпросмотр: текст, страницы, chunks, hashes и parse error |
+| `GET` | `/knowledge/documents/:id/file` | Исходный PDF/DOCX (attachment, no-store) |
+| `POST` | `/knowledge/documents/:id/reindex` | Повторный разбор/индексация сохранённого документа (`admin/designer`) |
+| `GET` | `/runs/:id/knowledge` | Сохранённые цитаты/provenance результата, project-scoped `{ sources: [...] }` |
 | `DELETE` | `/knowledge/documents/:id` | Удалить document/chunks (`admin/designer`) |
 | `POST` | `/knowledge/memory` | Явно сохранить working/episodic memory (`admin/designer/operator`) |
 | `DELETE` | `/knowledge/memory/:id` | Удалить memory (`admin/designer`) |

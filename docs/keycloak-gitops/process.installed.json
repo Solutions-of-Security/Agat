@@ -1,0 +1,546 @@
+{
+  "id": "5f068a1c-d719-41e2-8457-20e9862bb1fd",
+  "name": "Keycloak + GitOps · установка и настройка",
+  "description": "ПОДГОТОВЛЕННЫЙ ЧЕРНОВИК. Шесть агентов: требования → инфраструктура → Keycloak → GitOps → развёртывание → приёмка. Нужны целевой Kubernetes, Git, PostgreSQL, DNS/TLS и kcops MCP. Четыре внешних evidence-gates, три решения оператора. Перед публикацией обязательны requiredTools, mcpToolAllowlist и запрет partial start; старый запущенный runtime этих защит не поддерживает. Инструкция: docs/keycloak-gitops/README.md. Без подключённого доверенного сервиса этот процесс не выполняет развёртывание.",
+  "isTemplate": false,
+  "status": "draft",
+  "draftGraph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "Требования к Keycloak",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "config": {
+          "inputTemplate": "Установить и настроить Keycloak, включить GitOps инфраструктуры и конфигурации через Argo CD.\n\nЗамените <ЗАПОЛНИТЬ: ...> и null реальными значениями. Для доступов укажите ссылки на сохранённые секреты.\n\nПАРАМЕТРЫ ЗАЯВКИ\n```json\n{\n  \"schemaVersion\": 1,\n  \"requestId\": \"<ЗАПОЛНИТЬ: уникальный ID заявки, 8–80 латинских букв, цифр, подчёркиваний или дефисов>\",\n  \"environment\": \"pilot\",\n  \"owner\": \"<ЗАПОЛНИТЬ: ответственный и способ связи>\",\n  \"target\": {\n    \"clusterRef\": \"<ЗАПОЛНИТЬ: имя/ID целевого Kubernetes-кластера>\",\n    \"namespace\": \"keycloak\",\n    \"hostname\": \"<ЗАПОЛНИТЬ: DNS-имя Keycloak без https://>\",\n    \"ingressClass\": \"<ЗАПОЛНИТЬ: имя IngressClass кластера>\",\n    \"tlsSecretRef\": \"<ЗАПОЛНИТЬ: ссылка на TLS-сертификат Keycloak>\",\n    \"clusterCredentialRef\": \"<ЗАПОЛНИТЬ: ссылка на сохранённый доступ к кластеру>\"\n  },\n  \"versions\": {\n    \"keycloak\": \"<ЗАПОЛНИТЬ: совместимая версия keycloak в формате X.Y.Z>\",\n    \"operator\": \"<ЗАПОЛНИТЬ: совместимая версия operator в формате X.Y.Z>\",\n    \"configCli\": \"<ЗАПОЛНИТЬ: совместимая версия configCli в формате X.Y.Z>\",\n    \"argoCd\": \"<ЗАПОЛНИТЬ: совместимая версия argoCd в формате X.Y.Z>\"\n  },\n  \"resources\": {\n    \"replicas\": 1,\n    \"cpuRequestMillicores\": 1000,\n    \"cpuLimitMillicores\": 2000,\n    \"memoryRequestMiB\": 2048,\n    \"memoryLimitMiB\": 3072\n  },\n  \"database\": {\n    \"host\": \"<ЗАПОЛНИТЬ: адрес PostgreSQL, доступный из кластера>\",\n    \"port\": 5432,\n    \"name\": \"keycloak\",\n    \"credentialsSecretRef\": \"<ЗАПОЛНИТЬ: ссылка на логин/пароль PostgreSQL>\",\n    \"tlsCaSecretRef\": \"<ЗАПОЛНИТЬ: ссылка на CA для TLS PostgreSQL>\",\n    \"highAvailability\": false,\n    \"backupDestinationRef\": \"<ЗАПОЛНИТЬ: ссылка на хранилище резервных копий>\",\n    \"rpoMinutes\": null,\n    \"rtoMinutes\": null\n  },\n  \"git\": {\n    \"repoUrl\": \"<ЗАПОЛНИТЬ: HTTPS URL Git-репозитория без токена>\",\n    \"branch\": \"main\",\n    \"path\": \"environments/pilot/keycloak\",\n    \"credentialRef\": \"<ЗАПОЛНИТЬ: ссылка на сохранённый доступ к Git>\"\n  },\n  \"gitops\": {\n    \"controller\": \"argocd\",\n    \"namespace\": \"argocd\",\n    \"application\": \"keycloak-pilot\",\n    \"credentialRef\": \"<ЗАПОЛНИТЬ: ссылка на сохранённый доступ к Argo CD>\",\n    \"selfHeal\": true,\n    \"pruneData\": false,\n    \"configurationReconcileSeconds\": 300\n  },\n  \"identity\": {\n    \"realm\": \"<ЗАПОЛНИТЬ: имя нового realm, не master и не agat>\",\n    \"clients\": [\n      {\n        \"clientId\": \"<ЗАПОЛНИТЬ: ID приложения; добавьте отдельный объект для каждого client>\",\n        \"type\": \"public-browser\",\n        \"redirectUris\": [\n          \"<ЗАПОЛНИТЬ: точный HTTPS callback приложения без wildcard>\"\n        ],\n        \"roles\": [\n          \"<ЗАПОЛНИТЬ: роль приложения; [] если роли не требуются>\"\n        ]\n      }\n    ],\n    \"adminMfaRequired\": true,\n    \"registrationAllowed\": false,\n    \"passwordGrantAllowed\": false\n  },\n  \"acceptance\": {\n    \"testClientId\": \"<ЗАПОЛНИТЬ: clientId браузерного приложения из identity.clients>\",\n    \"testCredentialRef\": \"<ЗАПОЛНИТЬ: ссылка на тестовую учётную запись>\",\n    \"callbackUrl\": \"<ЗАПОЛНИТЬ: HTTPS callback из redirectUris тестового клиента>\",\n    \"peakLoginsPerSecond\": null,\n    \"p95LoginMilliseconds\": null,\n    \"allowedErrorRate\": 0.01\n  }\n}\n```\n\nПОЯСНЕНИЯ К ПАРАМЕТРАМ\nЕсли инфраструктуры ещё нет, сначала подготовьте её; неизвестные адреса и доступы не придумывать. Пароли, токены и kubeconfig сюда не вставлять.\nПредзаполнен pilot: 1 реплика, request 1 CPU / 2 GiB, limit 2 CPU / 3 GiB. Это стартовый бюджет для проверки нагрузкой. Для production-ha укажите минимум 2 реплики на разных узлах, HA PostgreSQL и измените Git path/Application под окружение.\nЗаполните числа вместо null: database.rpoMinutes — допустимая потеря данных в минутах; database.rtoMinutes — время восстановления в минутах; acceptance.peakLoginsPerSecond — пиковая частота входов; acceptance.p95LoginMilliseconds — предельный p95 входа в миллисекундах. allowedErrorRate=0.01 означает 1% ошибок.\nВ clients добавьте реальные приложения. type: public-browser, confidential-web или service. Для service используйте redirectUris: []; тестовый OIDC client должен быть браузерным. Закрепите совместимые версии, latest не использовать.\n\nКРИТЕРИЙ ГОТОВНОСТИ\nKeycloak доступен по HTTPS; вход, MFA администратора и роли проверены. Git содержит закреплённую конфигурацию без секретов. Argo CD синхронизирует инфраструктуру, отдельная reconciliation обновляет realm/clients. Подтверждены устранение drift, повторное применение без лишних изменений и восстановление из резервной копии. Недостающие параметры или проверки означают BLOCKED, а не успешную установку."
+        }
+      },
+      {
+        "id": "architect-input",
+        "type": "transform",
+        "name": "Задание: Архитектор требований",
+        "position": {
+          "x": 340,
+          "y": 0
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Проверь обязательные поля и сформируй паспорт требований. При пробелах верни BLOCKED.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "architect",
+        "type": "agent",
+        "name": "Архитектор требований",
+        "position": {
+          "x": 680,
+          "y": 0
+        },
+        "config": {
+          "agentId": "36354020-b3e1-4d29-b189-bffd74a286cf",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "requirements-artifact",
+        "type": "artifact",
+        "name": "Сохранить keycloak-requirements.json",
+        "position": {
+          "x": 1020,
+          "y": 0
+        },
+        "config": {
+          "artifactName": "keycloak-requirements.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "requirements-review",
+        "type": "approval",
+        "name": "Проверить требования и зависимости",
+        "position": {
+          "x": 0,
+          "y": 175
+        },
+        "config": {
+          "approvalMessage": "Подтвердите только полный паспорт: реальный target, repository, domain/TLS, PostgreSQL, нагрузка, secretRefs и критерии приёмки. BLOCKED/UNKNOWN, незаполненные поля или неподключённые инструменты требуют отклонения. Это решение не разрешает развёртывание."
+        }
+      },
+      {
+        "id": "infrastructure-input",
+        "type": "transform",
+        "name": "Задание: Проверка инфраструктуры",
+        "position": {
+          "x": 340,
+          "y": 175
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Выполни read-only проверки и запусти сбор environment evidence.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "infrastructure",
+        "type": "agent",
+        "name": "Проверка инфраструктуры",
+        "position": {
+          "x": 680,
+          "y": 175
+        },
+        "config": {
+          "agentId": "a4cac228-1d11-4702-810b-9f78832f3aef",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "environment-verified",
+        "type": "signal",
+        "name": "Ожидать подтверждённую готовность среды",
+        "position": {
+          "x": 1020,
+          "y": 175
+        },
+        "config": {
+          "signalName": "kc.environment.verified",
+          "signalCorrelationKey": "",
+          "signalTimeoutSeconds": 3600
+        }
+      },
+      {
+        "id": "environment-evidence",
+        "type": "artifact",
+        "name": "Сохранить keycloak-environment-evidence.json",
+        "position": {
+          "x": 0,
+          "y": 350
+        },
+        "config": {
+          "artifactName": "keycloak-environment-evidence.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "keycloak-input",
+        "type": "transform",
+        "name": "Задание: Конфигурация Keycloak",
+        "position": {
+          "x": 340,
+          "y": 350
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Сформируй декларативные конфигурации и план безопасного обновления.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "keycloak",
+        "type": "agent",
+        "name": "Конфигурация Keycloak",
+        "position": {
+          "x": 680,
+          "y": 350
+        },
+        "config": {
+          "agentId": "d35e4edc-ab94-4f26-b308-a39636836ded",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "configuration-artifact",
+        "type": "artifact",
+        "name": "Сохранить keycloak-configuration-plan.json",
+        "position": {
+          "x": 1020,
+          "y": 350
+        },
+        "config": {
+          "artifactName": "keycloak-configuration-plan.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "gitops-input",
+        "type": "transform",
+        "name": "Задание: Подготовка GitOps и MR",
+        "position": {
+          "x": 0,
+          "y": 525
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Подготовь изменение в Git, проверь его и сохрани immutable SHA.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "gitops",
+        "type": "agent",
+        "name": "Подготовка GitOps и MR",
+        "position": {
+          "x": 340,
+          "y": 525
+        },
+        "config": {
+          "agentId": "d53d409c-f366-413b-8bda-ae8e90e8613d",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "change-verified",
+        "type": "signal",
+        "name": "Ожидать успешные проверки Git-изменения",
+        "position": {
+          "x": 680,
+          "y": 525
+        },
+        "config": {
+          "signalName": "kc.change.verified",
+          "signalCorrelationKey": "",
+          "signalTimeoutSeconds": 3600
+        }
+      },
+      {
+        "id": "change-evidence",
+        "type": "artifact",
+        "name": "Сохранить keycloak-change-evidence.json",
+        "position": {
+          "x": 1020,
+          "y": 525
+        },
+        "config": {
+          "artifactName": "keycloak-change-evidence.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "release-review",
+        "type": "approval",
+        "name": "Согласовать конкретную ревизию",
+        "position": {
+          "x": 0,
+          "y": 700
+        },
+        "config": {
+          "approvalMessage": "Проверьте environment/change evidence: target, repository/path, полный diff, commit SHA, desiredStateSha256, совместимость и recovery plan. Решение относится только к этой ревизии. Разрушительные изменения запрещены данным пакетом; source credentials и общий policy не расширяются."
+        }
+      },
+      {
+        "id": "release-input",
+        "type": "transform",
+        "name": "Задание: Развёртывание через GitOps",
+        "position": {
+          "x": 340,
+          "y": 700
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Примени только согласованную ревизию через проверенный инструмент и сохрани operationId.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "release",
+        "type": "agent",
+        "name": "Развёртывание через GitOps",
+        "position": {
+          "x": 680,
+          "y": 700
+        },
+        "config": {
+          "agentId": "b46027c1-7ab3-4020-a8df-653f0febc225",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "release-verified",
+        "type": "signal",
+        "name": "Ожидать Synced / Healthy / Keycloak Ready",
+        "position": {
+          "x": 1020,
+          "y": 700
+        },
+        "config": {
+          "signalName": "kc.release.verified",
+          "signalCorrelationKey": "",
+          "signalTimeoutSeconds": 7200
+        }
+      },
+      {
+        "id": "release-evidence",
+        "type": "artifact",
+        "name": "Сохранить keycloak-release-evidence.json",
+        "position": {
+          "x": 0,
+          "y": 875
+        },
+        "config": {
+          "artifactName": "keycloak-release-evidence.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "acceptance-input",
+        "type": "transform",
+        "name": "Задание: Приёмка Keycloak и GitOps",
+        "position": {
+          "x": 340,
+          "y": 875
+        },
+        "config": {
+          "template": "Процесс keycloak-gitops-v1. Проведи настоящие тесты и подготовь документацию в /docs целевого репозитория.\nИсходные требования (JSON, секретов нет):\n{{ input }}\nПредыдущий результат или проверенное evidence:\n{{ lastOutput }}\nСохраняй ссылки на ранее полученные результаты. Если нужен полный контекст, запроси kcops__get_operation по requestId."
+        }
+      },
+      {
+        "id": "acceptance",
+        "type": "agent",
+        "name": "Приёмка Keycloak и GitOps",
+        "position": {
+          "x": 680,
+          "y": 875
+        },
+        "config": {
+          "agentId": "9fd1494c-b68f-4d53-abfd-5da74306a706",
+          "approvalRequired": false
+        }
+      },
+      {
+        "id": "acceptance-verified",
+        "type": "signal",
+        "name": "Ожидать подтверждённую приёмку",
+        "position": {
+          "x": 1020,
+          "y": 875
+        },
+        "config": {
+          "signalName": "kc.acceptance.verified",
+          "signalCorrelationKey": "",
+          "signalTimeoutSeconds": 7200
+        }
+      },
+      {
+        "id": "acceptance-evidence",
+        "type": "artifact",
+        "name": "Сохранить keycloak-acceptance-evidence.json",
+        "position": {
+          "x": 0,
+          "y": 1050
+        },
+        "config": {
+          "artifactName": "keycloak-acceptance-evidence.json",
+          "artifactMediaType": "application/json",
+          "artifactContent": "{{ lastOutput }}"
+        }
+      },
+      {
+        "id": "handover-review",
+        "type": "approval",
+        "name": "Принять результат по evidence",
+        "position": {
+          "x": 340,
+          "y": 1050
+        },
+        "config": {
+          "approvalMessage": "Примите установку только при совпадении target и deployed Git SHA, PASS обязательных OIDC/RBAC/GitOps/idempotency/recovery тестов и наличии /docs runbooks. Непроверенные пункты не считаются PASS. Отклонение завершает запуск без итогового акта."
+        }
+      },
+      {
+        "id": "handover-artifact",
+        "type": "artifact",
+        "name": "Сохранить keycloak-handover.md",
+        "position": {
+          "x": 680,
+          "y": 1050
+        },
+        "config": {
+          "artifactName": "keycloak-handover.md",
+          "artifactMediaType": "text/markdown; charset=utf-8",
+          "artifactContent": "# Keycloak + GitOps — приёмка\n\nИсходные требования:\n{{ input }}\n\nПроверенное evidence внешнего сервиса:\n{{ lastOutput }}\n\nПаспорт, планы и отчёты environment/change/release сохранены в артефактах этого запуска. Документация эксплуатации находится в /docs/keycloak целевого Git-репозитория по ссылкам evidence."
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "Установка принята по evidence",
+        "position": {
+          "x": 1020,
+          "y": 1050
+        },
+        "config": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-1",
+        "source": "start",
+        "target": "architect-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-2",
+        "source": "architect-input",
+        "target": "architect",
+        "branch": "default"
+      },
+      {
+        "id": "edge-3",
+        "source": "architect",
+        "target": "requirements-artifact",
+        "branch": "default"
+      },
+      {
+        "id": "edge-4",
+        "source": "requirements-artifact",
+        "target": "requirements-review",
+        "branch": "default"
+      },
+      {
+        "id": "edge-5",
+        "source": "requirements-review",
+        "target": "infrastructure-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-6",
+        "source": "infrastructure-input",
+        "target": "infrastructure",
+        "branch": "default"
+      },
+      {
+        "id": "edge-7",
+        "source": "infrastructure",
+        "target": "environment-verified",
+        "branch": "default"
+      },
+      {
+        "id": "edge-8",
+        "source": "environment-verified",
+        "target": "environment-evidence",
+        "branch": "default"
+      },
+      {
+        "id": "edge-9",
+        "source": "environment-evidence",
+        "target": "keycloak-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-10",
+        "source": "keycloak-input",
+        "target": "keycloak",
+        "branch": "default"
+      },
+      {
+        "id": "edge-11",
+        "source": "keycloak",
+        "target": "configuration-artifact",
+        "branch": "default"
+      },
+      {
+        "id": "edge-12",
+        "source": "configuration-artifact",
+        "target": "gitops-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-13",
+        "source": "gitops-input",
+        "target": "gitops",
+        "branch": "default"
+      },
+      {
+        "id": "edge-14",
+        "source": "gitops",
+        "target": "change-verified",
+        "branch": "default"
+      },
+      {
+        "id": "edge-15",
+        "source": "change-verified",
+        "target": "change-evidence",
+        "branch": "default"
+      },
+      {
+        "id": "edge-16",
+        "source": "change-evidence",
+        "target": "release-review",
+        "branch": "default"
+      },
+      {
+        "id": "edge-17",
+        "source": "release-review",
+        "target": "release-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-18",
+        "source": "release-input",
+        "target": "release",
+        "branch": "default"
+      },
+      {
+        "id": "edge-19",
+        "source": "release",
+        "target": "release-verified",
+        "branch": "default"
+      },
+      {
+        "id": "edge-20",
+        "source": "release-verified",
+        "target": "release-evidence",
+        "branch": "default"
+      },
+      {
+        "id": "edge-21",
+        "source": "release-evidence",
+        "target": "acceptance-input",
+        "branch": "default"
+      },
+      {
+        "id": "edge-22",
+        "source": "acceptance-input",
+        "target": "acceptance",
+        "branch": "default"
+      },
+      {
+        "id": "edge-23",
+        "source": "acceptance",
+        "target": "acceptance-verified",
+        "branch": "default"
+      },
+      {
+        "id": "edge-24",
+        "source": "acceptance-verified",
+        "target": "acceptance-evidence",
+        "branch": "default"
+      },
+      {
+        "id": "edge-25",
+        "source": "acceptance-evidence",
+        "target": "handover-review",
+        "branch": "default"
+      },
+      {
+        "id": "edge-26",
+        "source": "handover-review",
+        "target": "handover-artifact",
+        "branch": "default"
+      },
+      {
+        "id": "edge-27",
+        "source": "handover-artifact",
+        "target": "end",
+        "branch": "default"
+      }
+    ]
+  },
+  "publishedVersion": 0,
+  "hasUnpublishedChanges": true,
+  "versions": [],
+  "totalInstances": 0,
+  "activeInstances": 0,
+  "lastStartedAt": null,
+  "createdAt": "2026-09-19T20:21:38.558Z",
+  "updatedAt": "2026-09-19T20:54:10.558Z",
+  "publishedAt": null
+}

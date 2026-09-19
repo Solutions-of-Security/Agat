@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
+import { useRecoveryTarget, useRecoveryFocus } from "../hooks/useRecoveryTarget";
 
 const emptyServer: SaveMcpServerRequest = {
   name: "",
@@ -330,6 +331,12 @@ interface McpPageProps {
 }
 
 export function McpPage({ mcp, credentials, onChanged, onManageCredentials, createRequest, roles }: McpPageProps) {
+  const recovery = useRecoveryTarget();
+  const recoveryTool = recovery.get("tool");
+  const recoveryCredential = recovery.get("credentials");
+  const recoveryToolMissing = recoveryTool && !mcp.servers.some((server) => server.tools.some((tool) => tool.publicName === recoveryTool));
+  useRecoveryFocus(recoveryToolMissing ? "mcp-missing-tool" : recoveryTool ? `mcp-tool-${recoveryTool}` : recovery.get("serverId") ? `mcp-server-${recovery.get("serverId")}` : null, mcp.servers);
+  useEffect(() => { if (recoveryCredential) onManageCredentials(); }, [recoveryCredential]);
   const requestAction = useActionDialog();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<McpServer | null>(null);
@@ -485,6 +492,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
       </section>
 
       {!mcp.enabled ? <p className="mcp-banner mcp-banner--error"><Icon name="warning" size={18} />Gateway отключён через AGAT_MCP_ENABLED.</p> : null}
+      {recoveryToolMissing ? <section className="mcp-banner" id="mcp-missing-tool" tabIndex={-1}><p>Сценарию нужен <code>{recoveryTool}</code>. Подключите сервер с этим namespace и обновите его каталог.</p>{canManageMcp ? <button type="button" className="button button--secondary" onClick={() => { setEditing(null); setDialogOpen(true); }}>Добавить сервер</button> : null}</section> : null}
       {mcp.sandbox && !mcp.sandbox.available ? <p className="mcp-banner"><Icon name="shield" size={18} />Sandbox недоступен: {mcp.sandbox.reason}. HTTP MCP продолжает работать.</p> : null}
       {mcp.sandbox?.available && !mcp.sandbox.networkPolicyEnforced ? <p className="mcp-banner"><Icon name="warning" size={18} />WASI доступен; OCI tools fail-closed до подтверждения enforcement NetworkPolicy.</p> : null}
       {mcp.policy.emergencyDeny.enabled ? <p className="mcp-banner mcp-banner--error"><Icon name="warning" size={18} />Emergency deny включён: {mcp.policy.emergencyDeny.reason}. Новые вызовы запрещены; выполняются: {mcp.policy.emergencyDeny.executingCalls}.</p> : null}
@@ -523,7 +531,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
       ) : (
         <section className="mcp-server-list" aria-label="MCP-серверы">
           {mcp.servers.map((server) => (
-            <article className={`mcp-server${server.enabled ? "" : " is-disabled"}`} key={server.id}>
+            <article id={`mcp-server-${server.id}`} tabIndex={-1} className={`mcp-server${server.enabled ? "" : " is-disabled"}`} key={server.id}>
               <header className="mcp-server__head">
                 <span className="mcp-server__icon"><Icon name={server.transport === "http" ? "plug" : "shield"} /></span>
                 <div>
@@ -547,7 +555,7 @@ export function McpPage({ mcp, credentials, onChanged, onManageCredentials, crea
               <div className="mcp-tools">
                 <div className="mcp-tools__head"><strong>Tools · {server.tools.length}</strong><span>Effective policy применяется до передачи схемы worker</span></div>
                 {server.tools.length === 0 ? <p className="mcp-tools__empty">Каталог пуст. Проверьте endpoint, credentials и синхронизацию.</p> : server.tools.map((tool) => (
-                  <div className="mcp-tool" key={tool.name}>
+                  <div className="mcp-tool" id={`mcp-tool-${tool.publicName}`} tabIndex={-1} key={tool.name}>
                     <div><code>{tool.publicName}</code><p>{tool.title || tool.description || tool.name}</p></div>
                     <span className={`mcp-risk mcp-risk--${tool.risk}`}>{riskCopy[tool.risk]} · {tool.riskTier}</span>
                     <span className="mcp-tool__decision">{tool.policy} · {tool.requiredApprovals} eyes</span>

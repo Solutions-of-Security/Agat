@@ -4,6 +4,7 @@ import type { ComputeNode } from "../types";
 import { api } from "../lib/api";
 import { Icon } from "./Icon";
 import { LocalWorkerLauncherPanel } from "./LocalWorkerLauncherPanel";
+import { useRecoveryTarget, useRecoveryFocus } from "../hooks/useRecoveryTarget";
 
 const connectCommand = `AGAT_COORDINATOR_URL=http://127.0.0.1:8787 \\
 AGAT_ENROLLMENT_TOKEN=PASTE_ENROLLMENT_TOKEN_HERE \\
@@ -48,6 +49,9 @@ interface NodesPageProps {
 }
 
 export function NodesPage({ nodes, models, roles, onChanged }: NodesPageProps) {
+  const recovery = useRecoveryTarget();
+  const requirements = [recovery.get("runtime"), recovery.get("profile"), recovery.get("embeddingModel")].filter(Boolean);
+  useRecoveryFocus(requirements.length ? "worker-setup" : null);
   const [copied, setCopied] = useState(false);
   const [wipeNodeId, setWipeNodeId] = useState<string | null>(null);
   const [wipeReason, setWipeReason] = useState("");
@@ -107,7 +111,10 @@ export function NodesPage({ nodes, models, roles, onChanged }: NodesPageProps) {
         <div><strong>{nodes.reduce((sum, node) => sum + node.maxConcurrency, 0)}</strong><span>общий лимит этапов</span></div>
       </section>
 
-      <LocalWorkerLauncherPanel nodes={nodes} knownModels={models} />
+      <section id="worker-setup" tabIndex={-1}>
+        {requirements.length ? <p>Для сценария нужен worker с поддержкой: <strong>{requirements.join(", ")}</strong>.</p> : null}
+        <LocalWorkerLauncherPanel nodes={nodes} knownModels={models} />
+      </section>
 
       {nodes.length === 0 ? (
         <section className="large-empty-state large-empty-state--compact">

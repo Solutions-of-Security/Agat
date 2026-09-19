@@ -159,6 +159,10 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
       50,
     );
   }
+  if (normalized.type === "start") {
+    const inputTemplate = optionalText(config.inputTemplate, `Шаг ${normalized.name || id}: шаблон входных данных`, 100_000);
+    if (inputTemplate) normalized.config.inputTemplate = inputTemplate;
+  }
   if (normalized.type === "transform") {
     const template = optionalText(config.template, `Шаг ${normalized.name || id}: шаблон`, 100_000);
     if (strict && !template) throw new Error(`Шаг ${normalized.name || id}: шаблон обязателен`);
@@ -427,8 +431,28 @@ function normalizeGraphShape(raw: unknown, knownAgentIds: Set<string>, strict: b
   if (nodeIds.size !== nodes.length) throw new Error("ID шагов должны быть уникальными");
   const edges = graph.edges.map((edge) => normalizeEdge(edge, nodeIds));
   if (new Set(edges.map((edge) => edge.id)).size !== edges.length) throw new Error("ID связей должны быть уникальными");
+  if (graph.requiredTools !== undefined && (!Array.isArray(graph.requiredTools) || graph.requiredTools.length > 100
+    || graph.requiredTools.some((tool) => typeof tool !== "string" || !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(tool) || tool.length > 200))) {
+    throw new Error("requiredTools должен содержать до 100 MCP public names namespace__tool");
+  }
+  const requirements: Pick<ProcessGraph, "requiredTools" | "requiredKnowledgeCollectionIds" | "mcpToolAllowlist" | "allowPartialStart"> =
+    graph.requiredTools === undefined ? {} : { requiredTools: [...new Set(graph.requiredTools as string[])].sort() };
+  if (graph.allowPartialStart !== undefined) {
+    if (typeof graph.allowPartialStart !== "boolean") throw new Error("allowPartialStart должен быть boolean");
+    requirements.allowPartialStart = graph.allowPartialStart;
+  }
+  for (const field of ["requiredKnowledgeCollectionIds", "mcpToolAllowlist"] as const) {
+    const values = graph[field];
+    if (values === undefined) continue;
+    if (!Array.isArray(values) || values.length > 100 || values.some((value) => typeof value !== "string" || !value.trim() || value.length > 200
+      || (field === "mcpToolAllowlist" && !/^[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+$/.test(value)))) throw new Error(`Некорректный ${field}`);
+    requirements[field] = [...new Set(values as string[])].sort();
+  }
+  if (requirements.mcpToolAllowlist && requirements.requiredTools?.some((tool) => !requirements.mcpToolAllowlist!.includes(tool))) {
+    throw new Error("Обязательный инструмент запрещён mcpToolAllowlist процесса");
+  }
 
-  if (!strict) return { nodes, edges };
+  if (!strict) return { nodes, edges, ...requirements };
 
   const starts = nodes.filter((node) => node.type === "start");
   const ends = nodes.filter((node) => node.type === "end");
@@ -480,7 +504,7 @@ function normalizeGraphShape(raw: unknown, knownAgentIds: Set<string>, strict: b
   if (trapped.length > 0) {
     throw new Error(`Нет пути к завершению из шагов: ${trapped.map((node) => node.name).join(", ")}`);
   }
-  return { nodes, edges };
+  return { nodes, edges, ...requirements };
 }
 
 export function normalizeProcessDraftGraph(raw: unknown, knownAgentIds: Set<string>): ProcessGraph {
