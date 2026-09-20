@@ -16,7 +16,7 @@ test("готовая цепочка с назначенным агентом н�
 });
 
 test("проверка указывает конкретный шаг и недостающую ветку условия", () => {
-  const graph: ProcessGraph = { nodes: [node("start", "start"), node("if", "condition"), node("end", "end")], edges: [edge("start", "if"), edge("if", "end", "true")] };
+  const graph: ProcessGraph = { nodes: [node("start", "start"), node("if", "condition", { condition: { source: "last_output", operator: "always", value: "", caseSensitive: false } }), node("end", "end")], edges: [edge("start", "if"), edge("if", "end", "true")] };
   const issues = processReadiness(graph, []);
   assert.deepEqual(issues.map((issue) => [issue.id, issue.nodeId]), [["if:branches", "if"]]);
   graph.edges.push(edge("if", "end", "false"));

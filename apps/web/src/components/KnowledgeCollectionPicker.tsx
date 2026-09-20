@@ -15,6 +15,7 @@ export function KnowledgeCollectionPicker({
   return (
     <fieldset className="knowledge-picker">
       <legend>Локальные знания <small>необязательно</small></legend>
+      {selectedIds.filter((id) => !collections.some((collection) => collection.id === id)).map((id) => <p key={id}>Коллекция {id} недоступна. <button type="button" onClick={() => onToggle(id)}>Убрать из выбора</button></p>)}
       {collections.length === 0 ? (
         <div className="knowledge-picker__empty">
           <Icon name="knowledge" size={18} />

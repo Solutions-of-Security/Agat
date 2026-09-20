@@ -1,4 +1,5 @@
 import type { Agent, ProcessGraph } from "./types";
+import { formDefinitionIssues } from "./processForms";
 
 export interface ProcessIssue {
   id: string;
@@ -43,6 +44,34 @@ export function processReadiness(graph: ProcessGraph, agents: Pick<Agent, "id">[
     if (node.type === "signal" && !node.config.signalName?.trim()) add("signal", "укажите имя ожидаемого события.");
     if (node.type === "subprocess" && !node.config.subprocessProcessId) add("subprocess", "выберите вложенный процесс.");
     if (node.type === "parallel_join" && !node.config.forkId) add("fork", "выберите начало параллельных веток.");
+    if (node.config.approvalForm) {
+      formDefinitionIssues(node.config.approvalForm).forEach((issue, index) => add(`form-${index}`, issue));
+      if (node.type === "agent" && !node.config.approvalRequired) add("form-approval", "включите подтверждение оператора для формы.");
+    }
+    if (node.type === "approval" && node.config.approvalMode === "input" && !node.config.approvalForm) add("form", "добавьте форму для ввода данных.");
+    if (node.type === "loop" || node.type === "condition") {
+      const condition = node.config.condition;
+      if (!condition || (condition.operator !== "always" && !condition.value.trim())) add("condition", "задайте условие.");
+      if (condition?.source === "json" && !condition.path?.trim()) add("path", "укажите путь к полю JSON.");
+    }
+    if (node.type === "loop") {
+      const edges = outgoing.get(node.id) ?? [];
+      if (["repeat", "exit"].some((branch) => edges.filter((edge) => edge.branch === branch).length !== 1)) add("branches", "подключите ветки «повтор» и «выход».");
+      const limit = node.config.maxIterations ?? 3;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) add("limit", "задайте от 1 до 50 повторов.");
+      const repeat = edges.find((edge) => edge.branch === "repeat");
+      if (repeat) {
+        const seen = new Set<string>();
+        const pending = [repeat.target];
+        while (pending.length) {
+          const id = pending.pop()!;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          pending.push(...(outgoing.get(id) ?? []).map((edge) => edge.target));
+        }
+        if (!seen.has(node.id)) add("return", "соедините конец повторяемого фрагмента с этим циклом.");
+      }
+    }
     if (node.type === "condition") {
       const branches = new Set((outgoing.get(node.id) ?? []).map((edge) => edge.branch));
       if (!branches.has("true") || !branches.has("false")) add("branches", "подключите обе ветки: «да» и «нет».");

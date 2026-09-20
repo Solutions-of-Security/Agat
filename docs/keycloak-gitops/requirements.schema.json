@@ -1,0 +1,405 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "environment",
+    "owner",
+    "target",
+    "versions",
+    "resources",
+    "database",
+    "git",
+    "gitops",
+    "identity",
+    "acceptance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{7,79}$"
+    },
+    "environment": {
+      "enum": [
+        "pilot",
+        "production-ha"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clusterRef",
+        "namespace",
+        "hostname",
+        "ingressClass",
+        "tlsSecretRef",
+        "clusterCredentialRef"
+      ],
+      "properties": {
+        "clusterRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"
+        },
+        "hostname": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*\\.[a-z]{2,}$"
+        },
+        "ingressClass": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "tlsSecretRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "clusterCredentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keycloak",
+        "operator",
+        "configCli",
+        "argoCd"
+      ],
+      "properties": {
+        "keycloak": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        },
+        "operator": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        },
+        "configCli": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        },
+        "argoCd": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replicas",
+        "cpuRequestMillicores",
+        "cpuLimitMillicores",
+        "memoryRequestMiB",
+        "memoryLimitMiB"
+      ],
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpuRequestMillicores": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "cpuLimitMillicores": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "memoryRequestMiB": {
+          "type": "integer",
+          "minimum": 2048
+        },
+        "memoryLimitMiB": {
+          "type": "integer",
+          "minimum": 2048
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "name",
+        "credentialsSecretRef",
+        "tlsCaSecretRef",
+        "highAvailability",
+        "backupDestinationRef",
+        "rpoMinutes",
+        "rtoMinutes"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "credentialsSecretRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "tlsCaSecretRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "highAvailability": {
+          "type": "boolean"
+        },
+        "backupDestinationRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "rpoMinutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rtoMinutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repoUrl",
+        "branch",
+        "path",
+        "credentialRef"
+      ],
+      "properties": {
+        "repoUrl": {
+          "type": "string",
+          "pattern": "^https://[^/?#@ ]+(?:/[^ #]*)?$"
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9/_-]*$"
+        },
+        "credentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        }
+      }
+    },
+    "gitops": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controller",
+        "namespace",
+        "application",
+        "credentialRef",
+        "selfHeal",
+        "pruneData",
+        "configurationReconcileSeconds"
+      ],
+      "properties": {
+        "controller": {
+          "const": "argocd"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "application": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "credentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "selfHeal": {
+          "const": true
+        },
+        "pruneData": {
+          "const": false
+        },
+        "configurationReconcileSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 3600
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "realm",
+        "clients",
+        "adminMfaRequired",
+        "registrationAllowed",
+        "passwordGrantAllowed"
+      ],
+      "properties": {
+        "realm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "clients": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "clientId",
+              "type",
+              "redirectUris",
+              "roles"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+              },
+              "type": {
+                "enum": [
+                  "public-browser",
+                  "confidential-web",
+                  "service"
+                ]
+              },
+              "redirectUris": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^https://[^/?#@ ]+(?:/[^ #]*)?$"
+                }
+              },
+              "roles": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+                }
+              }
+            }
+          }
+        },
+        "adminMfaRequired": {
+          "const": true
+        },
+        "registrationAllowed": {
+          "const": false
+        },
+        "passwordGrantAllowed": {
+          "const": false
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testClientId",
+        "testCredentialRef",
+        "callbackUrl",
+        "peakLoginsPerSecond",
+        "p95LoginMilliseconds",
+        "allowedErrorRate"
+      ],
+      "properties": {
+        "testClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "testCredentialRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "callbackUrl": {
+          "type": "string",
+          "pattern": "^https://[^/?#@ ]+(?:/[^ #]*)?$"
+        },
+        "peakLoginsPerSecond": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "p95LoginMilliseconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowedErrorRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.05
+        }
+      }
+    }
+  }
+}

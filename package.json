@@ -36,7 +36,7 @@
     "k8s:token": "bash scripts/k8s-admin-token.sh",
     "k8s:up": "bash scripts/k8s-up.sh",
     "start": "npm run start --workspace @agat/coordinator",
-    "test": "npm run test:coordinator && npm run test:web && npm run test:worker && npm run test:temporal",
+    "test": "npm run test:coordinator && npm run test:web && npm run test:worker && npm run test:temporal && npm run test:process-pack",
     "test:coordinator": "npm run test --workspace @agat/coordinator",
     "test:ollama-rag": "bash scripts/test-real-ollama-rag.sh",
     "test:temporal": "npm run test --workspace @agat/temporal-worker",
@@ -49,7 +49,9 @@
     "typecheck": "npm run typecheck --workspace @agat/coordinator && npm run typecheck --workspace @agat/web && npm run typecheck --workspace @agat/temporal-worker",
     "docs:links:check": "node scripts/check-doc-links.mjs",
     "docs:check": "node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p \"test_*.py\" && npm run docs:links:check && npm run docs:processes:check",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:process-pack": "node --import tsx --test docs/tests/process-pack.test.ts",
+    "test:process-pack:ui": "node --import tsx docs/tests/process-pack-ui.mjs"
   },
   "engines": {
     "node": ">=22.13"
@@ -57,5 +59,8 @@
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "markdown-it": "15.0.2"
+  },
+  "dependencies": {
+    "protobufjs": "8.8.0"
   }
 }

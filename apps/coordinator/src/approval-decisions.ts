@@ -1,9 +1,13 @@
+import { parseProcessFormData } from "./process-forms.js";
+import type { ProcessFormData } from "./types.js";
+
 export type ApprovalDecision = "approve" | "reject";
 
 export interface ParsedApprovalDecision {
   decision: ApprovalDecision;
   comment: string | null;
   reason: string | null;
+  formData?: ProcessFormData;
 }
 
 interface ApprovalDecisionAuditInput {
@@ -49,6 +53,7 @@ export function parseApprovalDecision(value: unknown): ParsedApprovalDecision {
     decision: input.decision,
     comment,
     reason: input.decision === "reject" ? reason : null,
+    ...(input.decision === "approve" && input.formData !== undefined ? { formData: parseProcessFormData(input.formData) } : {}),
   };
 }
 
@@ -126,7 +131,7 @@ export function approvalDecisionAuditData(input: ApprovalDecisionAuditInput): Re
     "kind", "callId", "stageId", "runId", "runName", "agentName", "summary", "toolName",
     "risk", "riskTier", "policy", "requiredApprovals", "approvalCount", "approvers",
     "policyVersion", "policySha256", "policyRuleId", "policyReason", "arguments", "previewDiff",
-    "createdAt", "expiresAt",
+    "createdAt", "expiresAt", "form", "mode",
   ];
   const snapshot = Object.fromEntries(snapshotKeys
     .filter((key) => approval[key] !== undefined)
@@ -143,6 +148,7 @@ export function approvalDecisionAuditData(input: ApprovalDecisionAuditInput): Re
     actor: input.actorDisplay.slice(0, 200),
     comment: input.decision.comment,
     reason: input.decision.reason,
+    ...(input.decision.formData ? { formData: input.decision.formData } : {}),
     snapshot,
   };
 }

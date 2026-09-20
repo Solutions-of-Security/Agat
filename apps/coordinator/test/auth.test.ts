@@ -66,11 +66,14 @@ describe("OIDC authentication", () => {
     );
   });
 
-  it("rejects expired, wrong-client and unsigned tokens", async () => {
+  it("rejects expired, wrong-client and tampered tokens", async () => {
     const fixture = verifier();
     await assert.rejects(() => fixture.verifier.verify(token({ exp: 1 })), /истёк/);
     await assert.rejects(() => fixture.verifier.verify(token({ aud: "another", azp: "another" })), /другого client/);
-    const corrupted = `${token().slice(0, -2)}aa`;
+    const [header, payload, signature] = token().split(".") as [string, string, string];
+    const signatureBytes = Buffer.from(signature, "base64url");
+    signatureBytes[0] = signatureBytes[0]! ^ 1;
+    const corrupted = `${header}.${payload}.${signatureBytes.toString("base64url")}`;
     await assert.rejects(() => fixture.verifier.verify(corrupted), /Подпись/);
   });
 

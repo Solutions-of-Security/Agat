@@ -1,3 +1,4 @@
+import type { ProcessPackInput, ProcessPackManifest, ProcessPackInstallation, ProcessPackPreview } from "../processPacks";
 import type {
   A2AEndpoint,
   A2AEndpointSecret,
@@ -21,6 +22,9 @@ import type {
   IngestKnowledgeDocumentRequest,
   KnowledgeCollection,
   KnowledgeDocument,
+  KnowledgeDocumentPreview,
+  KnowledgeSource,
+  UploadKnowledgeDocumentRequest,
   KnowledgeSnapshot,
   EvalSnapshot,
   FleetSnapshot,
@@ -66,6 +70,7 @@ import type {
   UpdateProcessRequest,
 } from "../types";
 import { accessToken, activeProjectId, oidcEnabled } from "./auth";
+import type { ScenarioPreflight, ScenarioPreflightInput } from "../scenarioPreflight";
 
 const API_ROOT = "/api/v1";
 const TOKEN_KEY = "agat.admin-token.v1";
@@ -78,6 +83,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly preflight: ScenarioPreflight | null = null,
   ) {
     super(message);
   }
@@ -88,8 +94,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
-  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
-  throw new ApiError(response.status, body.error ?? "Ошибка запроса");
+  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string; preflight?: ScenarioPreflight };
+  throw new ApiError(response.status, body.error ?? "Ошибка запроса", body.preflight ?? null);
 }
 
 function notifyAdminTokenListeners(required: boolean) {
@@ -152,6 +158,8 @@ async function requestBlob(path: string): Promise<Blob> {
 }
 
 export const api = {
+  scenarioPreflight: (kind: "processes" | "process-templates", id: string, payload: ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }, signal?: AbortSignal) =>
+    request<ScenarioPreflight>(`/${kind}/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(payload), signal }),
   me: () => request<AuthUser>("/auth/me", undefined, false),
   projects: () => request<{ projects: ProjectSummary[]; activeProjectId: string }>("/projects", undefined, false),
   createProject: (name: string, id?: string) => request<ProjectSummary>("/projects", {
@@ -263,6 +271,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  uploadKnowledgeDocument: (collectionId: string, payload: UploadKnowledgeDocumentRequest) =>
+    request<KnowledgeDocument>(`/knowledge/collections/${encodeURIComponent(collectionId)}/documents/upload`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+  knowledgeDocument: (documentId: string, signal?: AbortSignal) =>
+    request<KnowledgeDocumentPreview>(`/knowledge/documents/${encodeURIComponent(documentId)}`, { signal }),
+  knowledgeDocumentFile: (documentId: string) => requestBlob(`/knowledge/documents/${encodeURIComponent(documentId)}/file`),
+  reindexKnowledgeDocument: (documentId: string) =>
+    request<KnowledgeDocument>(`/knowledge/documents/${encodeURIComponent(documentId)}/reindex`, { method: "POST" }),
+  runKnowledgeSources: (runId: string, signal?: AbortSignal) =>
+    request<{ sources: KnowledgeSource[] }>(`/runs/${encodeURIComponent(runId)}/knowledge`, { signal }),
   deleteKnowledgeCollection: (collectionId: string) =>
     request<void>(`/knowledge/collections/${encodeURIComponent(collectionId)}`, { method: "DELETE" }),
   deleteKnowledgeDocument: (documentId: string) =>
@@ -366,6 +385,9 @@ export const api = {
       body: JSON.stringify({ enabled, reason }),
     }),
   processTemplates: () => request<ProcessTemplateCatalog>("/process-templates"),
+  processPacks: (signal?: AbortSignal) => request<{ packs: Array<ProcessPackManifest & { installation: ProcessPackInstallation | null }> }>("/process-packs", { signal }),
+  previewProcessPack: (id: string, input: ProcessPackInput, signal?: AbortSignal) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(input), signal }),
+  installProcessPack: (id: string, input: ProcessPackInput) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify(input) }),
   createProcess: (payload: CreateProcessRequest) =>
     request<ProcessDefinition>("/processes", {
       method: "POST",

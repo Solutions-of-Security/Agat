@@ -5,16 +5,19 @@ import type {
   AgatRole,
   ComputeNode,
   FleetSnapshot,
+  Overview,
   ProjectFleetPolicy,
   RegisterWorkerReleaseRequest,
 } from "../types";
 import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
+import { useRecoveryFocus, useRecoveryTarget } from "../hooks/useRecoveryTarget";
 
 interface FleetPageProps {
   projectId: string;
   nodes: ComputeNode[];
   roles: AgatRole[];
+  processRuntime: Overview["processRuntime"];
 }
 
 type PolicyDraft = Omit<ProjectFleetPolicy, "revision"> & { revision: number };
@@ -49,9 +52,11 @@ function policyFromSnapshot(snapshot: FleetSnapshot): PolicyDraft {
   return { ...snapshot.policy, allowedRegions: [...snapshot.policy.allowedRegions] };
 }
 
-export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
+export function FleetPage({ projectId, nodes, roles, processRuntime }: FleetPageProps) {
   const requestAction = useActionDialog();
   const [snapshot, setSnapshot] = useState<FleetSnapshot | null>(null);
+  const recovery = useRecoveryTarget();
+  useRecoveryFocus(recovery.get("section") === "runtime" ? "fleet-process-runtime" : recovery.get("section") === "policy" ? "fleet-project-policy" : null, snapshot);
   const [policy, setPolicy] = useState<PolicyDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,7 +286,13 @@ export function FleetPage({ projectId, nodes, roles }: FleetPageProps) {
         </article>
       </section>
 
-      <section className="ha-card ha-policy-card">
+      <section className="ha-card" id="fleet-process-runtime" tabIndex={-1}>
+        <header><h2>Runtime процессов</h2><strong>{processRuntime.mode} · {processRuntime.connected ? "подключён" : "недоступен"}</strong></header>
+        {processRuntime.mode === "temporal" ? <p>Namespace: {processRuntime.namespace} · Task queue: {processRuntime.taskQueue}.</p> : <p>Ручные запуски доступны через database runtime. Расписания требуют Temporal.</p>}
+        {!processRuntime.connected || processRuntime.mode !== "temporal" ? <p>Администратору: проверьте доступность Temporal, настройки coordinator <code>AGAT_TEMPORAL_ENABLED</code>, <code>AGAT_TEMPORAL_ADDRESS</code>, <code>AGAT_TEMPORAL_NAMESPACE</code> и подключение Temporal worker к <code>AGAT_TEMPORAL_TASK_QUEUE</code>.</p> : null}
+      </section>
+
+      <section className="ha-card ha-policy-card" id="fleet-project-policy" tabIndex={-1}>
         <header><div><span className="eyebrow">PROJECT POLICY · REV {policy.revision}</span><h2>Queue quota и residency</h2></div><code>{projectId}</code></header>
         <form className="ha-form" onSubmit={savePolicy}>
           <label className="field"><span>Home region</span><input value={policy.homeRegion} disabled={!canManage || busy} onChange={(event) => setPolicy((current) => current && ({ ...current, homeRegion: event.target.value }))} /></label>

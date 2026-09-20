@@ -70,7 +70,7 @@
 - скачивание принимает artifact ID, а не путь, и всегда отдаёт файл как attachment;
 - worker открывает только исходящие соединения;
 - approval gate стоит перед финальным этапом;
-- body size ограничен 1 MiB; только authenticated Kong/coordinator routes загрузки knowledge document и embedding batch имеют отдельный лимит 8 MiB при доменном лимите текста 2 млн символов;
+- body size ограничен 1 MiB; только authenticated Kong/coordinator routes загрузки knowledge document и embedding batch имеют отдельный лимит 8 MiB при доменном лимите текста 2 млн символов; PDF/DOCX upload принимает до 5 МиБ исходных bytes (base64 внутри JSON);
 - systemd unit использует `NoNewPrivileges`, `ProtectSystem` и отдельный writable path.
 - локальный worker launcher требует роли `admin` (либо legacy admin token), валидирует модель и лимиты и не принимает произвольный manifest/image/command;
 - coordinator service account ограничен namespace Role для worker Deployments и sandbox Jobs/Pods-log/Secrets/NetworkPolicies; создаваемые pods не получают Kubernetes token, запускаются non-root и с read-only root filesystem.
@@ -250,3 +250,9 @@ SIEM delivery имеет at-least-once семантику даже при exact 
 HTML и результаты поиска считаются недоверенным вводом. Worker удаляет исполняемую/служебную разметку, ограничивает текст и добавляет модели явный запрет следовать инструкциям страницы. Это уменьшает, но не устраняет prompt injection; будущие инструменты записи или иных side effects должны требовать отдельный approval после чтения web-контента.
 
 Inference остаётся локальным, однако поисковая строка уходит в SearXNG и выбранные им внешние поисковые системы, а `web_fetch` обращается к исходному сайту. Не отправляйте в search секреты, персональные данные и внутренние идентификаторы.
+
+### Локальные файлы Knowledge
+
+PDF/DOCX разбираются локально в ограниченном worker thread; нет OCR-сервиса, выполнения DTD/вложенных объектов или скачивания внешних relationships. File size, XML expansion, text length, page count, число параллельных parser workers и время разбора ограничены. Полные лимиты и ограничения V8 memory guard описаны в [Local RAG](./local-rag-and-memory.md#локальная-загрузка-pdfdocx-ошибки-и-повторная-индексация). Предпросмотр, скачивание оригинала и источники run используют project-scoped READ_ROLES; viewer получает доступ только к чтению Knowledge. Upload/reindex доступны admin/designer. Скачивание оригинала использует attachment, nosniff и no-store.
+
+Повторная индексация блокируется при активном run, атомарно отзывает старые embedding leases и заменяет индекс. Полные цитаты с hashes сохраняются в retrieval snapshot завершённого run даже после удаления текущего документа. Это часть аудита, которая содержит внутренний текст. Knowledge export теперь содержит также исходные PDF/DOCX в base64 и требует прежних admin/designer/auditor прав.

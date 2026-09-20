@@ -27,8 +27,10 @@ import {
 
 import type {
   AgatEvent,
+  AgatRole,
   Agent,
   CredentialSummary,
+  KnowledgeCollection,
   ProcessBranch,
   ProcessDefinition,
   ProcessGraph,
@@ -46,6 +48,8 @@ import { autoLayout, hasOverlappingSteps } from "../processLayout";
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
 import { ProcessChecks } from "./ProcessChecks";
+import { ProcessScenarioReadiness } from "./ProcessScenarioReadiness";
+import { useRecoveryFocus, useRecoveryTarget } from "../hooks/useRecoveryTarget";
 import {
   processEdgeTypes,
   type ProcessEdgeData,
@@ -64,9 +68,10 @@ import {
 import { processNodeTypes, type ProcessFlowNode } from "./ProcessNodes";
 
 type LeftPanel = "processes" | "nodes" | null;
-type WorkspaceTab = "schema" | "triggers" | "executions" | "versions";
+type WorkspaceTab = "schema" | "triggers" | "executions" | "versions" | "readiness";
 const workspaceTabs: readonly TabDefinition<WorkspaceTab>[] = [
   { id: "schema", label: "Схема" },
+  { id: "readiness", label: "Готовность" },
   { id: "triggers", label: "Триггеры" },
   { id: "executions", label: "Выполнения" },
   { id: "versions", label: "Версии" },
@@ -160,11 +165,11 @@ function nodeSubtitle(node: ProcessGraphNode, agentsById: Map<string, Agent>): s
     if (condition.operator === "always") return "всегда";
     return condition.value ? `результат: «${condition.value}»` : "Настройте значение";
   }
-  if (node.type === "loop") return `не более ${node.config.maxIterations ?? 3} итераций`;
+  if (node.type === "loop") return `${node.config.condition?.operator === "always" ? "" : "не более "}${node.config.maxIterations ?? 3} повторов`;
   if (node.type === "http") return `${node.config.method ?? "GET"} · ${node.config.url || "Настройте URL"}`;
   if (node.type === "transform") return node.config.template ? "шаблон выражений" : "Настройте шаблон";
   if (node.type === "wait") return `${node.config.waitSeconds ?? 60} сек.`;
-  if (node.type === "approval") return "решение оператора";
+  if (node.type === "approval") return node.config.approvalForm ? `форма · ${node.config.approvalForm.fields.length} полей` : "решение оператора";
   if (node.type === "artifact") return node.config.artifactName || "Настройте файл";
   if (node.type === "parallel_fork") return "запустить все ветки";
   if (node.type === "parallel_join") return node.config.forkId ? "дождаться всех веток" : "выберите начало веток";
@@ -481,6 +486,8 @@ interface ProcessesPageProps {
   instances: ProcessInstance[];
   agents: Agent[];
   credentials: CredentialSummary[];
+  collections: KnowledgeCollection[];
+  roles: AgatRole[];
   busy: boolean;
   error: string | null;
   onCreate: () => void;
@@ -501,6 +508,8 @@ export function ProcessesPage({
   instances,
   agents,
   credentials,
+  collections,
+  roles,
   busy,
   error,
   onCreate,
@@ -513,12 +522,13 @@ export function ProcessesPage({
   onManageCredentials,
   onChanged,
 }: ProcessesPageProps) {
+  const recovery = useRecoveryTarget();
   const mobile = useMobileEditor();
   const pendingSaveRef = useRef<Promise<boolean> | null>(null);
   const latestDraftRef = useRef<{ id: string; payload: UpdateProcessRequest; revision: number; dirty: boolean } | null>(null);
   const agentSignature = agents.map((agent) => `${agent.id}:${agent.name}:${agent.model ?? ""}:${agent.updatedAt}`).join("|");
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agentSignature]);
-  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(processes[0]?.id ?? null);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(recovery.get("processId") ?? processes[0]?.id ?? null);
   const selectedProcess = useMemo(
     () => processes.find((process) => process.id === selectedProcessId) ?? null,
     [processes, selectedProcessId],
@@ -530,12 +540,15 @@ export function ProcessesPage({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [processName, setProcessName] = useState("");
   const [processDescription, setProcessDescription] = useState("");
+  const [requiredToolsText, setRequiredToolsText] = useState("");
+  const [requiredKnowledgeIds, setRequiredKnowledgeIds] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>(null);
   const [executionsOpen, setExecutionsOpen] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("schema");
+  useRecoveryFocus(recovery.get("field") === "requiredKnowledge" ? "process-required-knowledge" : null, workspaceTab);
   const [checksOpen, setChecksOpen] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -646,6 +659,8 @@ export function ProcessesPage({
     resetHistory(graph);
     setProcessName(selectedProcess.name);
     setProcessDescription(selectedProcess.description);
+    setRequiredToolsText((selectedProcess.draftGraph.requiredTools ?? []).join(", "));
+    setRequiredKnowledgeIds(selectedProcess.draftGraph.requiredKnowledgeCollectionIds ?? []);
     setDirty(arrangeDraft);
     setLastSavedAt(selectedProcess.updatedAt);
     setEditorNotice(arrangeDraft ? "Шаги черновика расположены с учётом нового размера карточек." : null);
@@ -756,7 +771,11 @@ export function ProcessesPage({
   useEffect(() => setTestResult(null), [selectedNodeId]);
 
   function currentGraph(): ProcessGraph {
-    return graphFromFlow(nodesRef.current, edgesRef.current, mobile);
+    const graph = { ...selectedProcess?.draftGraph, ...graphFromFlow(nodesRef.current, edgesRef.current, mobile) };
+    delete graph.requiredTools;
+    if (requiredKnowledgeIds.length || graph.requiredKnowledgeCollectionIds !== undefined) graph.requiredKnowledgeCollectionIds = requiredKnowledgeIds;
+    const requiredTools = requiredToolsText.split(/[\s,]+/).filter(Boolean);
+    return requiredTools.length ? { ...graph, requiredTools } : graph;
   }
 
   function currentPayload(): UpdateProcessRequest | null {
@@ -799,6 +818,19 @@ export function ProcessesPage({
   useEffect(() => {
     if (requestedProcessId) void chooseProcess(requestedProcessId);
   }, [requestedProcessId]);
+
+  const recoveryKey = recovery.toString();
+  useEffect(() => {
+    const id = recovery.get("processId");
+    if (id && id !== selectedProcessId && processes.some((process) => process.id === id)) void chooseProcess(id);
+  }, [recoveryKey]);
+  useEffect(() => {
+    if (recovery.get("processId") !== selectedProcessId) return;
+    const tab = recovery.get("tab") as WorkspaceTab;
+    if (workspaceTabs.some((item) => item.id === tab)) setWorkspaceTab(tab);
+    const nodeId = recovery.get("nodeId");
+    if (nodeId) selectNode(nodeId);
+  }, [recoveryKey, selectedProcess?.id, selectNode]);
 
   function insertNode(type: ProcessNodeType, state: PickerState) {
     setEditorNotice(null);
@@ -1031,7 +1063,7 @@ export function ProcessesPage({
     if (!dirty || busy || saveFailed || !selectedProcess) return;
     const timer = window.setTimeout(() => void save(true), 1_300);
     return () => window.clearTimeout(timer);
-  }, [busy, dirty, edges, nodes, processDescription, processName, saveFailed, selectedProcess?.id]);
+  }, [busy, dirty, edges, nodes, processDescription, processName, requiredToolsText, requiredKnowledgeIds, saveFailed, selectedProcess?.id]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1089,6 +1121,8 @@ export function ProcessesPage({
     || selectedProcess.hasUnpublishedChanges
     || dirty;
   const publishLabel = selectedProcess?.publishedVersion ? "Новая версия" : "Опубликовать";
+  const canPreviewInput = selectedProcess?.publishedVersion === 0 && !dirty
+    && Boolean(selectedProcess.draftGraph.nodes.find((node) => node.type === "start")?.config.inputTemplate);
   const issues = processReadiness(currentGraph(), agents);
   const savedLabel = dirty
     ? saveFailed ? "Не сохранено" : busy ? "Сохраняем…" : "Есть изменения"
@@ -1133,12 +1167,12 @@ export function ProcessesPage({
           <button
             className="button button--secondary"
             type="button"
-            disabled={busy || runDisabled}
-            aria-label="Запустить процесс"
-            title={runDisabled ? "Сохраните и опубликуйте текущий граф" : "Запустить процесс"}
+            disabled={busy || (runDisabled && !canPreviewInput)}
+            aria-label={canPreviewInput ? "Входные данные процесса" : "Запустить процесс"}
+            title={canPreviewInput ? "Посмотреть и заполнить шаблон входных данных" : runDisabled ? "Сохраните и опубликуйте текущий граф" : "Запустить процесс"}
             onClick={() => selectedProcess && onStart(selectedProcess)}
           >
-            <Icon name="play" size={16} /><span>Запустить</span>
+            <Icon name="play" size={16} /><span>{canPreviewInput ? "Входные данные" : "Запустить"}</span>
           </button>
           <button className="button button--primary" type="button" aria-label={publishLabel} disabled={busy || !selectedProcess} onClick={() => void publish()}>
             <Icon name="publish" size={16} /><span>{publishLabel}</span>
@@ -1332,6 +1366,12 @@ export function ProcessesPage({
             processes={processes}
             currentProcessId={selectedProcess?.id ?? null}
             processNodes={currentGraph().nodes}
+            processEdges={currentGraph().edges}
+            onConnectBranch={(nodeId, branch, targetId) => {
+              const graph = currentGraph();
+              const retained = graph.edges.filter((edge) => !(edge.source === nodeId && edge.branch === branch));
+              commitGraph({ ...graph, edges: targetId ? [...retained, { id: crypto.randomUUID(), source: nodeId, target: targetId, branch }] : retained }, nodeId);
+            }}
             execution={selectedNodeExecution}
             executionLoading={executionLoading}
             defaultInput={selectedInstance?.input ?? ""}
@@ -1384,6 +1424,17 @@ export function ProcessesPage({
       </TabPanel>
       <TabPanel active={workspaceTab === "triggers"} idPrefix="process-workspace" tabId="triggers">
         <ProcessReleasePanel embedded initialTab="triggers" open={workspaceTab === "triggers"} process={selectedProcess} onClose={() => setWorkspaceTab("schema")} onChanged={onChanged} />
+      </TabPanel>
+      <TabPanel active={workspaceTab === "readiness"} idPrefix="process-workspace" tabId="readiness">
+        {selectedProcess && workspaceTab === "readiness" ? <>
+          <label className="field process-required-tools"><span>Обязательные MCP-инструменты сценария</span><input value={requiredToolsText} onChange={(event) => { setRequiredToolsText(event.target.value); markDirty(); }} placeholder="namespace__tool, namespace__other" />
+            <small>Укажите public names через запятую. Требования сохраняются в черновике и закрепляются при публикации.</small></label>
+          <ProcessScenarioReadiness key={selectedProcess.id} process={{ ...selectedProcess, hasUnpublishedChanges: selectedProcess.hasUnpublishedChanges || dirty }} collections={collections} roles={roles} />
+          <label className="field"><span>Обязательные коллекции процесса</span><select id="process-required-knowledge" multiple value={requiredKnowledgeIds} onChange={(event) => { setRequiredKnowledgeIds(Array.from(event.target.selectedOptions, (option) => option.value)); markDirty(); }}>
+            {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
+            {requiredKnowledgeIds.filter((id) => !collections.some((collection) => collection.id === id)).map((id) => <option key={id} value={id}>Недоступная коллекция: {id}</option>)}
+          </select><small>Для замены удалённого источника создайте коллекцию в разделе «Знания», выберите её здесь вместо недоступной, сохраните и опубликуйте новую версию. Запускайте её из редактора процесса.</small></label>
+        </> : null}
       </TabPanel>
       <TabPanel active={workspaceTab === "versions"} idPrefix="process-workspace" tabId="versions">
         <ProcessReleasePanel embedded initialTab="versions" open={workspaceTab === "versions"} process={selectedProcess} onClose={() => setWorkspaceTab("schema")} onChanged={onChanged} />

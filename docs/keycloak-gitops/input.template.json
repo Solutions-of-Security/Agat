@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "requestId": null,
+  "environment": "pilot",
+  "owner": null,
+  "target": {
+    "clusterRef": null,
+    "namespace": "keycloak",
+    "hostname": null,
+    "ingressClass": null,
+    "tlsSecretRef": null,
+    "clusterCredentialRef": null
+  },
+  "versions": {
+    "keycloak": null,
+    "operator": null,
+    "configCli": null,
+    "argoCd": null
+  },
+  "resources": {
+    "replicas": 1,
+    "cpuRequestMillicores": 1000,
+    "cpuLimitMillicores": 2000,
+    "memoryRequestMiB": 2048,
+    "memoryLimitMiB": 3072
+  },
+  "database": {
+    "host": null,
+    "port": 5432,
+    "name": "keycloak",
+    "credentialsSecretRef": null,
+    "tlsCaSecretRef": null,
+    "highAvailability": false,
+    "backupDestinationRef": null,
+    "rpoMinutes": null,
+    "rtoMinutes": null
+  },
+  "git": {
+    "repoUrl": null,
+    "branch": "main",
+    "path": "environments/pilot/keycloak",
+    "credentialRef": null
+  },
+  "gitops": {
+    "controller": "argocd",
+    "namespace": "argocd",
+    "application": "keycloak-pilot",
+    "credentialRef": null,
+    "selfHeal": true,
+    "pruneData": false,
+    "configurationReconcileSeconds": 300
+  },
+  "identity": {
+    "realm": null,
+    "clients": [],
+    "adminMfaRequired": true,
+    "registrationAllowed": false,
+    "passwordGrantAllowed": false
+  },
+  "acceptance": {
+    "testClientId": null,
+    "testCredentialRef": null,
+    "callbackUrl": null,
+    "peakLoginsPerSecond": null,
+    "p95LoginMilliseconds": null,
+    "allowedErrorRate": 0.01
+  }
+}

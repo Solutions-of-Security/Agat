@@ -1,4 +1,5 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useRecoveryTarget } from "../hooks/useRecoveryTarget";
 import type { AgentMarketplaceTemplate } from "../agentMarketplace";
 import type { Agent, ComputeNode } from "../types";
 import { AccessibleTabList, TabPanel } from "./AccessibleTabs";
@@ -27,6 +28,12 @@ interface Props {
 }
 
 export function AgentsDirectory({ agents, nodes, onCreate, onEdit, onRun, onInstallTemplate }: Props) {
+  const recovery = useRecoveryTarget();
+  const recoveryAgent = recovery.get("agentId");
+  useEffect(() => {
+    const agent = agents.find((item) => item.id === recoveryAgent);
+    if (agent) onEdit(agent);
+  }, [recoveryAgent]);
   const [tab, setTab] = useState<AgentTab>("configured");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
