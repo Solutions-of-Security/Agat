@@ -34,6 +34,12 @@ npx playwright install chromium
 npm run test:browser
 ```
 
+Пакеты `@temporalio/*` обновляйте вместе до одной версии. Корневая зависимость
+`protobufjs` закрепляет общий экземпляр для Temporal SDK: отдельные копии у
+`@temporalio/common` и `@temporalio/proto` нарушают преобразование сохранённых
+историй с ошибкой `type must be a Type`. После обновления зависимостей проверяйте
+чистую установку через `npm ci` и `npm run test:temporal`, включая history replay.
+
 `docs:check` проверяет локальные Markdown-ссылки с учётом регистра имён,
 тесты проверяющих scripts и актуальность каталога процессов. Внешние URL, якоря
 внутри страниц и raw HTML этой проверкой не валидируются.

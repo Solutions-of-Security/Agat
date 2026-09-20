@@ -19,7 +19,8 @@ test("knowledge HTTP uploads and previews DOCX, persists parse errors, authorize
     const headers = { "content-type": "application/json", "x-agat-admin-token": "knowledge-http-test", "x-agat-project-id": "isolated" };
     const request = (url: string, method = "GET", body?: unknown, overrides = {}) => fetch(base + url, { method, headers: { ...headers, ...overrides }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const uploadUrl = `/knowledge/collections/${collection.id}/documents/upload`;
-    const input = { name: "Policy.docx", mediaType: KNOWLEDGE_DOCX_MEDIA_TYPE, contentBase64: docxFile().toString("base64") };
+    const originalFile = docxFile();
+    const input = { name: "Policy.docx", mediaType: KNOWLEDGE_DOCX_MEDIA_TYPE, contentBase64: originalFile.toString("base64") };
     assert.equal((await request(uploadUrl, "POST", input, { "x-agat-admin-token": "wrong" })).status, 401);
     const response = await request(uploadUrl, "POST", input);
     assert.equal(response.status, 201);
@@ -33,7 +34,7 @@ test("knowledge HTTP uploads and previews DOCX, persists parse errors, authorize
     const file = await request(`${documentUrl}/file`);
     assert.equal(file.headers.get("content-type"), KNOWLEDGE_DOCX_MEDIA_TYPE);
     assert.match(file.headers.get("content-disposition")!, /attachment/);
-    assert.deepEqual(Buffer.from(await file.arrayBuffer()), docxFile());
+    assert.deepEqual(Buffer.from(await file.arrayBuffer()), originalFile);
     assert.equal((await request(`${documentUrl}/reindex`, "POST", undefined, { "x-agat-admin-token": "wrong" })).status, 401);
     const reindex = await request(`${documentUrl}/reindex`, "POST");
     assert.equal(reindex.status, 200);
