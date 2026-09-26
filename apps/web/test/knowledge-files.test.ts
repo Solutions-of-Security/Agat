@@ -74,3 +74,27 @@ test("report source links target the precise document/page/chunk and preserve ci
   const ambiguous = renderToStaticMarkup(createElement(KnowledgeLinkedOutput, { text: "Fact [K1].", sources: [source, { ...source, retrievalId: "other" }] }));
   assert.ok(!ambiguous.includes("<a"));
 });
+
+test("each grouped citation links to its own source while preserving generated punctuation and whitespace", () => {
+  const second = { ...source, marker: "K2", retrievalId: "retrieval-b", provenance: {
+    ...source.provenance, documentId: "second", documentName: "Second.md", chunkId: "second-chunk" } };
+  for (const text of ["Sources [K1, K2]", "Sources [K1/K2]", "Sources [K1 ,\tK2/K1]", "Sources [K1] [K2]"]) {
+    const html = renderToStaticMarkup(createElement(KnowledgeLinkedOutput, { text, sources: [source, second] }));
+    assert.equal(html.replace(/<[^>]*>/g, ""), text);
+    assert.equal((html.match(/<a /g) ?? []).length, (text.match(/K\d+/g) ?? []).length);
+    assert.match(html, /documentId=document/);assert.match(html, /documentId=second/);
+    assert.match(html, /chunkId=chunk-2/);assert.match(html, /chunkId=second-chunk/);
+    assert.equal(knowledgeReport(text, [], "https://agat.example"), text);
+  }
+});
+
+test("grouped citations keep unknown, ambiguous and malformed references inert and escape model text", () => {
+  const second = { ...source, marker: "K2" };
+  const sources = [source, { ...source, retrievalId: "legacy-duplicate" }, second];
+  const text = "<img src=x onerror=alert(1)> [K1, K2/K9] [K1-K2] [K1, nope K2] [K1, K2,]";
+  const html = renderToStaticMarkup(createElement(KnowledgeLinkedOutput, { text, sources }));
+  assert.equal((html.match(/<a /g) ?? []).length, 1);
+  assert.match(html, />K2<\/a>/);
+  assert.ok(!html.includes("<img"));assert.ok(html.includes("&lt;img"));
+  assert.ok(html.includes("[K1-K2]"));assert.ok(html.includes("[K1, nope K2]"));assert.ok(html.includes("[K1, K2,]"));
+});

@@ -1,0 +1,44 @@
+name: internal-report qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: internal-report-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualification:
+    # Dedicated, trusted local-model runner. Never execute untrusted PR code here.
+    runs-on: [self-hosted, agat-qualification]
+    timeout-minutes: 45
+    env:
+      AGAT_QUALIFICATION_MODEL: qwen3:8b
+      AGAT_QUALIFICATION_OLLAMA_URL: http://127.0.0.1:11434
+      AGAT_QUALIFICATION_TEMPORAL_ADDRESS: 127.0.0.1:7233
+      AGAT_QUALIFICATION_NAMESPACE: default
+      AGAT_QUALIFICATION_OUTPUT: docs/qualification/internal-report/evidence/local-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm run test:qualification
+      - name: Квалификация с настоящими Qwen3, embeddings и Temporal
+        run: npm run qualify:internal-report
+      - name: Только обезличенные доказательства (включая FAIL)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: internal-report-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.AGAT_QUALIFICATION_OUTPUT }}/result.*
+          if-no-files-found: error
+          retention-days: 14

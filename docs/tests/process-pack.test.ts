@@ -112,6 +112,23 @@ test("clean project → preview → atomic/idempotent install → recovery → r
     assert.match(await download.text(), /SUPPORT-DEMO v1/);
     const verified = await preview(); assert.equal(verified.preflight.scenarioVerified, true);
     assert.equal(verified.preflight.verification?.runId, instance.runId);
+    const rejectedStart = await post(`/processes/${installation.processId}/start`, {
+      input: pack.sample.input, version: 1, startMode: "now", resultDestination: "history",
+    });
+    assert.equal(rejectedStart.status, 201);
+    const rejectedInstance = await rejectedStart.json() as { id: string; runId: string };
+    for (const _role of pack.roles) {
+      const lease = store.leaseNext(node)!;
+      store.completeLease(node, lease.leaseId, "Синтетический отчёт не прошёл квалификационную рубрику");
+    }
+    const rejectedStage = (store.getRun(rejectedInstance.runId, "reports")!.stages as Array<{ id: string; status: string }>)
+      .find((stage) => stage.status === "waiting_approval")!;
+    assert.equal((await post(`/approvals/${rejectedStage.id}`, { decision: "reject" })).status, 400, "rejection requires an explicit reason");
+    assert.equal((await post(`/approvals/${rejectedStage.id}`, {
+      decision: "reject", reason: "Синтетический отчёт не прошёл квалификационную рубрику",
+    })).status, 204);
+    assert.equal(store.getProcessInstance(rejectedInstance.id, "reports")!.status, "cancelled");
+    assert.equal(store.listRunArtifacts(rejectedInstance.runId).length, 0);
     store.ingestKnowledgeDocument(installation.knowledgeCollectionIds[0]!, { name: "Новые данные", content: "Обновление источников требует повторной проверки отчёта." }, "reports");
     assert.equal((await preview()).preflight.scenarioVerified, false);
   } finally {

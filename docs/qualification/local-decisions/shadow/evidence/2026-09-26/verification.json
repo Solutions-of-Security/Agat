@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "agat.decision-shadow-verification.v1",
+  "date": "2026-09-26",
+  "status": "pass",
+  "integrationImplementationSha256": "3bf18995fcabb0cd9a9f71353e772a1d7eaeb5085813c65afebc1d8ca220c9b6",
+  "checks": {
+    "typecheck": "pass",
+    "build": "pass",
+    "docsCheck": "pass",
+    "gitDiffCheck": "pass",
+    "coordinatorTests": {
+      "passed": 199,
+      "failed": 0
+    },
+    "webTests": {
+      "passed": 48,
+      "failed": 0
+    },
+    "workerTests": {
+      "run": 43,
+      "failed": 0,
+      "skipped": 1
+    },
+    "decisionRuntimeTests": {
+      "run": 67,
+      "failed": 0,
+      "skipped": 3
+    },
+    "temporalTests": {
+      "passed": 3,
+      "historyReplayFixtures": 3
+    },
+    "processPackTests": {
+      "passed": 3,
+      "failed": 0
+    },
+    "realMlxIntegration": "pass"
+  },
+  "limits": [
+    "The primary generation endpoint in the MLX integration probe is a test fixture.",
+    "Optional LangGraph and MLX tests are not covered by dependency-free suites; a separate real MLX HTTP smoke passed.",
+    "PostgreSQL HA-specific execution has not been run for this feature.",
+    "No independent qualification or holdout run."
+  ]
+}

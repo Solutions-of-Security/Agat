@@ -1,0 +1,459 @@
+{
+  "schemaVersion": "agat.decision.source-bindings.v1",
+  "poolSha256": "87459bd660c294afd10b5f8349a4a83ceb6b6770ffdb263de56cf6068004c4ad",
+  "sourcesSha256": "eb4a339fdcb923381e535e6b2fbe1a29cfea3bfee521baedaa6e02e2b9c087d9",
+  "definitionSha256": "449f5ce21a2de52543306cfdbfd50ab05ff780850a00ec0c073b6ab4b2a75897",
+  "cases": [
+    {
+      "id": "agat-source-001",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "f6c5cbaf179563a16980b43fba4fce1afd04a6468c5762abb59148af7ac6f3fb",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "snapshot": "sources/keycloak-verification.json",
+          "origin": "docs/keycloak-gitops/verification.json",
+          "jsonPointer": "/live",
+          "quote": "{\n  \"apiReadBack\": \"PASS\",\n  \"ui\": \"PASS: draft input preview opens with saved editable template; run submission disabled; 0 executions\",\n  \"agents\": 6,\n  \"nodes\": 28,\n  \"publishedVersion\": 0,\n  \"idempotentInstaller\": \"PASS: createdAgents=0, createdProcess=false on repeated run\",\n  \"mcpServers\": 0,\n  \"executionGuardsSupported\": false\n}",
+          "quoteSha256": "777f793ca9cad5534ccaa649fde94ede48ee72dfe2f8eb62125d427b3e2db363"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-002",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "ea560a479161994c1f0b78a487145d744f52bbc0ab6c53840685c0d5962f6814",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "snapshot": "sources/keycloak-verification.json",
+          "origin": "docs/keycloak-gitops/verification.json",
+          "jsonPointer": "/live",
+          "quote": "{\n  \"apiReadBack\": \"PASS\",\n  \"ui\": \"PASS: draft input preview opens with saved editable template; run submission disabled; 0 executions\",\n  \"agents\": 6,\n  \"nodes\": 28,\n  \"publishedVersion\": 0,\n  \"idempotentInstaller\": \"PASS: createdAgents=0, createdProcess=false on repeated run\",\n  \"mcpServers\": 0,\n  \"executionGuardsSupported\": false\n}",
+          "quoteSha256": "777f793ca9cad5534ccaa649fde94ede48ee72dfe2f8eb62125d427b3e2db363"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-003",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "938fcde3c4e6188fb1118e18490011ba821461e00ee17072766961405e72b527",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "preview-validation",
+          "sourceSha256": "f9fdf0da71e0db42c7dfa44ef07cb7f7a210ee8b46b8dd2039101db0dbc2a14d",
+          "snapshot": "sources/preview-validation.txt",
+          "origin": "docs/releases/1.7.0-validation.md",
+          "startLine": 23,
+          "endLine": 48,
+          "quote": "## Первый результат на реальной модели\n\nOllama 0.34.0, `llama3.2:latest` (3.2B, Q4_K_M). Вход и инструкция —\nиз [первого сценария](../first-run.md). Агент и запуск созданы через API,\nсогласование проверено; сохранённый ответ открыт в веб-интерфейсе.\nОтдельный браузерный тест проходит те же действия через формы UI.\n\nДля локального примера worker запускается с `AGAT_WEB_ENABLED=false`.\nПервый пробный запуск с включённым поиском добавил посторонние сведения;\nпосле отключения поиска повторная проверка сохранила числа и срок.\nФактический ответ модели, без редакторских исправлений:\n\n```text\nДавайте пересказываем входную заметку в трёх кратких пунктах:\n\n1. Команда получила 12 заявок и уже завершено 9 из них.\n2. Три заявки требуют согласования до пятницы, поэтому необходимо их уделить особое внимание.\n3. В общей сложности у нас есть 12 заявок, из которых 9 завершены, а 3 требуют согласования до пятницы.\n```\n\nСтатус — `completed`; повторное чтение возвращает тот же ответ. Ошибок в консоли\nбраузера нет. В ответе есть повтор и языковые огрехи: успешный запуск подтверждает\nработу сценария, но не заменяет оценку качества модели.\n\n![Сохранённый результат первого сценария на локальной модели](../design/2026-09-first-run/compose-result.jpg)",
+          "quoteSha256": "547b7aa0ffbe894ee8f7be598d78d871aa9e4e70f20e6b6d7a97e4ebe4643120"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-004",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "e07dc5f178cb499c847e0b57c83ce18c469a0d4b7c6efd59c264482de9b3ce43",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "preview-validation",
+          "sourceSha256": "f9fdf0da71e0db42c7dfa44ef07cb7f7a210ee8b46b8dd2039101db0dbc2a14d",
+          "snapshot": "sources/preview-validation.txt",
+          "origin": "docs/releases/1.7.0-validation.md",
+          "startLine": 49,
+          "endLine": 55,
+          "quote": "## Local RAG\n\n`AGAT_E2E_SKIP_BUILD=true npm run test:ollama-rag` прошёл на синтетическом handbook:\n`nomic-embed-text:latest`, 768 измерений, два проиндексированных фрагмента;\nответ `llama3.2:latest` содержит provenance-маркер. Trace подтверждает retrieval,\nсовпадение размерностей и hashes источника. Документ отправлялся только локальной Ollama.",
+          "quoteSha256": "25f9dc793083b35de3e44ae5b69d2b1a0849d197f8c40974f7f52dd5304d276e"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-005",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "0a19559c7d280decc203927ab701553ed916bd8bb20bb6cf00047e32424616fb",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "snapshot": "sources/report-results.txt",
+          "origin": "docs/qualification/internal-report/results.md",
+          "startLine": 13,
+          "endLine": 13,
+          "quote": "| Восстановление | Coordinator и Temporal worker действительно остановлены `SIGKILL`; согласование сохранено; после нового worker прежний Temporal run завершён, генерация не повторялась |",
+          "quoteSha256": "92839bdca8aed3d7be21f5560792a8ad1f4730168bc494f6da7857a3f669b90b"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-006",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "1a79befb620a5cc065a32742bede5349cfa7193d5f9f03ddf87c26f5e6bd6623",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "report-sdk-fail",
+          "sourceSha256": "d267d3bedf956227ceaa9329de583d7351ecdc5f55c0609620fea284ed14c5e5",
+          "snapshot": "sources/report-sdk-fail.txt",
+          "origin": "docs/qualification/internal-report/evidence/2026-09-20-infrastructure-absent/result.md",
+          "startLine": 1,
+          "endLine": 28,
+          "quote": "# Квалификация внутреннего отчёта\n\nРезультат: **FAIL**. Начало: 2026-09-20T19:40:44.784Z.\n\n| Проверка | Статус | Код причины |\n|---|---|---|\n| Безопасная конфигурация и версии зависимостей | FAIL | SDK_LOCK_MISMATCH |\n| Локальный Ollama | NOT_RUN | — |\n| Установленная локальная модель Qwen3 | NOT_RUN | — |\n| Установленная embeddinggemma | NOT_RUN | — |\n| Реальный запрос embeddings | NOT_RUN | — |\n| Temporal Server и namespace | NOT_RUN | — |\n| Сборка coordinator и Temporal worker | NOT_RUN | — |\n| Изолированный runtime и реальные pollers | NOT_RUN | — |\n| Установка пакета и блокировка неготового запуска | NOT_RUN | — |\n| Индексация синтетических источников | NOT_RUN | — |\n| Три этапа Qwen3 и проверяемые цитаты | NOT_RUN | — |\n| Контрольные числа, формулы и ограничения | NOT_RUN | — |\n| Согласование через API и защита итогового артефакта | NOT_RUN | — |\n| SIGKILL coordinator/worker и продолжение того же workflow | NOT_RUN | — |\n| Авторизованное скачивание и проверка SHA-256 | NOT_RUN | — |\n| История реального Temporal и завершение workflow | NOT_RUN | — |\n| Неизменность моделей и входных файлов | NOT_RUN | — |\n| Завершение собственных процессов и удаление временного состояния | PASS | — |\n\nNOT_RUN означает, что проверка не выполнена; это не успешная квалификация. Согласование автоматизировано только для синтетических данных и не заменяет оценку человеком.\n\nДоказательства: [result.json](./result.json). SHA-256 JSON: `724fd87499b9658b4dfaa35be807a205347271cdbd0cc05017a36286c952e93a`.",
+          "quoteSha256": "6f43cd9600b8d682b375a514ce2efd2bae1096a0e189277e73cf642434b0282e"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-007",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "7aed19fa8c9aff58eed4b00c1364f73411fba398c7c61555492fb8b8fdaddbcd",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "snapshot": "sources/report-results.txt",
+          "origin": "docs/qualification/internal-report/results.md",
+          "startLine": 40,
+          "endLine": 40,
+          "quote": "[Запуск с настоящими моделями и Temporal](./evidence/2026-09-20-report-rubric-fail/result.md) завершился **FAIL, код 1**: пройдены ingestion, все три этапа Qwen3 и проверка цитат обоих источников, но машинный критерий изменения среднего времени на −25% не подтвердился. Согласование, скачивание и восстановление в этом прогоне не выполнялись. Сырые ответы удалены, поэтому нельзя утверждать, была ли причиной ошибка модели или равнозначная формулировка, не распознанная первой версией рубрики.",
+          "quoteSha256": "347feb35553ceac1f60192ed6c4d66ff91b72200c259ec1d6edec77d7a3e9d16"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-008",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "ebd441e517ce91465957fc74745c8add7ad579ce67aea44db5c63207875040ee",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "snapshot": "sources/github-issue-2.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/2",
+          "jsonPointer": "/body",
+          "quote": "Связано с UX-307 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Это ограниченная подготовительная задача: оформить протокол будущей проверки интерфейса на реальных устройствах и со screen reader.\n\nКритерии приёмки:\n\n- Документ находится в `docs` и связан с существующим release gate 1.8, без дублирования roadmap.\n- Протокол охватывает пять ролей и пять участников, указанных в UX-307, и содержит поля для устройства, браузера, assistive technology и версии Agat.\n- Для каждого сценария есть начальное состояние, действия, ожидаемый результат и место записи препятствий; отдельно предусмотрена повторная проверка исправления.\n- Тестовые данные синтетические; документ не требует публиковать личные данные участников.\n- Незавершённые сессии явно помечены как непроведённые. Подготовка шаблона не закрывает UX-307 и release gate.\n- `npm run docs:check` проходит.\n\nИзменение ограничено документацией; набор участников и проведение исследования не входят в эту задачу.\n",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-009",
+      "taskOrigin": "observed-github-issue",
+      "inputSha256": "53441f76a6ebac28b701eb75f190c0fcffc424c01e49ae614321c05ce5ee4165",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "snapshot": "sources/github-issue-3.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/3",
+          "jsonPointer": "/title",
+          "quote": "SP-001: сохранять происхождение и версию установленного шаблона агента",
+          "quoteSha256": "11f860a10a277689dcd9fd636c490316a00a3564f2b8cd009d121ea24e5bc890"
+        },
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "snapshot": "sources/github-issue-3.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/3",
+          "jsonPointer": "/body",
+          "quote": "Связано с SP-001 и остатком SP-101/SP-005 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Сейчас установка шаблона создаёт копию агента без сохранённой в backend пары `sourceTemplateId`/version; переименование копии нарушает распознавание её происхождения.\n\nКритерии приёмки:\n\n- Установленная копия хранит идентификатор и точную версию исходного шаблона на стороне coordinator, независимо от изменяемого имени агента.\n- Происхождение видно через согласованный API-контракт; переименование и редактирование инструкции его не теряют.\n- Для агентов, созданных вручную или до миграции, отсутствие подтверждённого происхождения отражается явно, без угадывания по имени.\n- Добавлены проверки установки, переименования, сохранения версии и поведения старых записей.\n- Миграция и API-контракт описаны в `docs`; CI проходит.\n\nГраницы: только provenance установленной копии. Полный pack registry, автоматический upgrade, schema contract и runnable solution packs остаются отдельными задачами roadmap. Сроки и исполнители не назначены.\n",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-010",
+      "taskOrigin": "observed-github-issue",
+      "inputSha256": "60c13a935b4f5a1b801e7339a30edae600391b5017783bec6f704abeba1e3413",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "snapshot": "sources/github-issue-2.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/2",
+          "jsonPointer": "/title",
+          "quote": "UX-307: подготовить протокол проверки интерфейса на реальных устройствах",
+          "quoteSha256": "708a68e072227389f29c4f682562627bc9629dc8f3e733460be499f5ab693500"
+        },
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "snapshot": "sources/github-issue-2.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/2",
+          "jsonPointer": "/body",
+          "quote": "Связано с UX-307 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Это ограниченная подготовительная задача: оформить протокол будущей проверки интерфейса на реальных устройствах и со screen reader.\n\nКритерии приёмки:\n\n- Документ находится в `docs` и связан с существующим release gate 1.8, без дублирования roadmap.\n- Протокол охватывает пять ролей и пять участников, указанных в UX-307, и содержит поля для устройства, браузера, assistive technology и версии Agat.\n- Для каждого сценария есть начальное состояние, действия, ожидаемый результат и место записи препятствий; отдельно предусмотрена повторная проверка исправления.\n- Тестовые данные синтетические; документ не требует публиковать личные данные участников.\n- Незавершённые сессии явно помечены как непроведённые. Подготовка шаблона не закрывает UX-307 и release gate.\n- `npm run docs:check` проходит.\n\nИзменение ограничено документацией; набор участников и проведение исследования не входят в эту задачу.\n",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-011",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "0efd95f1e77411a11d205c25254e64b19cb4078ed180a8cfd298949f5a37bd56",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "snapshot": "sources/roadmap.txt",
+          "origin": "docs/roadmap.md",
+          "startLine": 480,
+          "endLine": 480,
+          "quote": "| CLD-003 | P0 | Реализовать первый adapter OpenRouter: API key, catalog моделей, capabilities/context/pricing с датой обновления, нормализованный chat/tool-call контракт и диагностика auth/quota/rate-limit/timeout. Для tool/schema задач выбираются только совместимые endpoints. Provider fallback по умолчанию выключен; разрешённый fallback сохраняет provider allowlist, data policy и бюджет. Фактические model/provider/request ID и usage фиксируются, неизвестные поля остаются unknown. Провайдерские server tools/plugins выключены в базовом профиле; вызов инструмента модели не обходит gateway Агата | CLD-001, CLD-002; оплачиваемые E2E после CLD-004 | Backend/runtime + QA / L |",
+          "quoteSha256": "e638fbde685af24bd76ae1c25d4253d8e5c72dc405a9f77efce3aad229bf7e36"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-012",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "cf09b6344ba812dbde262c77378d174bfad8f4d6a95d1bf13d2a6727fb42d0de",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "snapshot": "sources/roadmap.txt",
+          "origin": "docs/roadmap.md",
+          "startLine": 517,
+          "endLine": 517,
+          "quote": "| USE-003 | P0 | Локально принимать PDF с текстовым слоем, DOCX, CSV/XLSX и text-файлы: preview, provenance страницы/ячейки, статус extraction/indexing, дедупликация и безопасный retry. Явно ограничены MIME/size/time/листов/строк; макросы и внешние ссылки не исполняются. Сканы без DOC-101 объясняются как неподдерживаемые. Backend extraction/indexing поставляется здесь, интерфейс — в UX-206; полный SQL/BI-коннектор CON-103 не нужен для загрузки файлов. Права, удаление исходника и производных данных проверены; передача извлечённого текста облачной модели отдельно контролируется CLD-002 | Текущий knowledge/Artifact Store, SP-002 | Backend + frontend + QA / L |",
+          "quoteSha256": "fdea959ce23e4474694f6ec0b9fbbecdd0416259a4b628d2fec8645d6b0089cb"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-013",
+      "taskOrigin": "assessment-of-documented-incident",
+      "inputSha256": "05a7e7cc43c936c58f2f2775c3ab015c654fcae99ed5ba97788bf58a3704e54f",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "snapshot": "sources/docker-validation.txt",
+          "origin": "docs/local-docker-validation-2026-09-08.md",
+          "startLine": 40,
+          "endLine": 41,
+          "quote": "При первом запуске SearXNG получил `Input/output error` на bind mount конфигурации, которую iCloud выгрузил с диска. После загрузки `deploy/searxng/settings.yml` и `deploy/searxng/limiter.toml` на локальный диск контейнер поиска был пересоздан командой `docker compose --profile worker up -d --no-build --force-recreate search`. Для стабильного повторного запуска держите эти файлы локально доступными.",
+          "quoteSha256": "f14f3b300ba7d71ac8e01531e0cfa588a67aa6832b9b9c74bbc74114e706ea98"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-014",
+      "taskOrigin": "assessment-of-documented-incident",
+      "inputSha256": "fab5d6fcb0be934cfd18fd3c1fbf188f1547a11b2f9e99d1807bf0fef5fa8069",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "snapshot": "sources/report-results.txt",
+          "origin": "docs/qualification/internal-report/results.md",
+          "startLine": 34,
+          "endLine": 34,
+          "quote": "Первый запуск обнаружил Temporal SDK 1.22.0 вместо закреплённого в lock-файле 1.24.0: [доказательство FAIL](./evidence/2026-09-20-infrastructure-absent/result.md), код выхода 2. После `npm ci` повторный запуск подтвердил доступность Ollama 0.34.0 и отсутствие Qwen3 8B, embeddinggemma и Temporal: [доказательство FAIL](./evidence/2026-09-20-missing-models-runtime/result.md), код выхода 2. Невыполненные этапы помечены `NOT_RUN`; успешная квалификация не заявлена.",
+          "quoteSha256": "86addf198ea83eed2c7f7279aebcb6d3da14513e37d49215fcb9565322ef4204"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-015",
+      "taskOrigin": "assessment-of-documented-incident",
+      "inputSha256": "f86d0960d406dbcc9241b4da8c9aa5f76301f2d2f323f6b428d2deb520c7a093",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "snapshot": "sources/report-results.txt",
+          "origin": "docs/qualification/internal-report/results.md",
+          "startLine": 44,
+          "endLine": 44,
+          "quote": "[Второй реальный запуск](./evidence/2026-09-20-refinement-fail/result.md) также завершился `FAIL`: не подтвердился критерий процентных пунктов; экспериментальная ветка отклонения дополнительно получила `400`, поскольку не передавала обязательную причину отказа. В окончательном harness причина передаётся, а контракт `reject` отдельно проверяется HTTP-регрессией пакета. Чтобы сделать задание воспроизводимым для машинной приёмки, к стандартному вопросу добавлены явные требования к форме вычислений; числовые ответы модели не сообщаются.",
+          "quoteSha256": "cacfd1bb229454f160538af5ea5060680fdd43ef44bfa67efdf4810c349725fd"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-016",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "5c712aa24e078fdab64862b54e89c1c11a64beeefbef821c618abbd78782a747",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "excerpts": [
+        {
+          "sourceId": "keycloak-readme",
+          "sourceSha256": "a6f7eee913eb08388f3015e72018fb80d7e97365488ca66606e28e6a2556d75e",
+          "snapshot": "sources/keycloak-readme.txt",
+          "origin": "docs/keycloak-gitops/README.md",
+          "startLine": 7,
+          "endLine": 7,
+          "quote": "В основном проекте локального Агата созданы шесть агентов и неопубликованный процесс из 28 шагов. Сохранение подтверждено чтением API и интерфейсом; повторная установка не создаёт дублей. В проекте нет MCP-серверов, а запущенный runtime не поддерживает обязательные ограничения инструментов этого пакета. Подробные результаты находятся в [verification.json](verification.json).",
+          "quoteSha256": "c454db0ae255b0a23e64d5231c1f7360c7b74d7263063c72ab676dc83df6eb81"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-017",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "5e56ff6b59cb4dba808fc8017fd342bb78b34208f2a94a444fab4cc09630e1d8",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "keycloak-readme",
+          "sourceSha256": "a6f7eee913eb08388f3015e72018fb80d7e97365488ca66606e28e6a2556d75e",
+          "snapshot": "sources/keycloak-readme.txt",
+          "origin": "docs/keycloak-gitops/README.md",
+          "startLine": 5,
+          "endLine": 5,
+          "quote": "Статус на 19 сентября 2026: подготовка агентов и процесса. Этот пакет не означает, что Keycloak уже развёрнут. Облако, кластер и Git-репозиторий пользователь ещё не выбрал. Неизвестные значения остаются обязательными параметрами; они не заменены вымышленными адресами или доступами.",
+          "quoteSha256": "b957c183d9915d77ba80f7ccc444619e6e96b74c66064c726181520d4c03a002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-018",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "f24b993238680ac85a38d7cacdb79290b04820aa47f0f91646174e9d3e1684a1",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "snapshot": "sources/keycloak-verification.json",
+          "origin": "docs/keycloak-gitops/verification.json",
+          "jsonPointer": "/live/idempotentInstaller",
+          "quote": "PASS: createdAgents=0, createdProcess=false on repeated run",
+          "quoteSha256": "936605cd9637d52db9aa0f457e8ace5b546d8e1ac2e6b6f2fcd878203c7f8e09"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-019",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "30f8239468cf0861ba8ab2a0a4cd1a7469097151c47d5d020acf11150f53643b",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "snapshot": "sources/github-issue-2.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/2",
+          "jsonPointer": "/body",
+          "quote": "Связано с UX-307 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Это ограниченная подготовительная задача: оформить протокол будущей проверки интерфейса на реальных устройствах и со screen reader.\n\nКритерии приёмки:\n\n- Документ находится в `docs` и связан с существующим release gate 1.8, без дублирования roadmap.\n- Протокол охватывает пять ролей и пять участников, указанных в UX-307, и содержит поля для устройства, браузера, assistive technology и версии Agat.\n- Для каждого сценария есть начальное состояние, действия, ожидаемый результат и место записи препятствий; отдельно предусмотрена повторная проверка исправления.\n- Тестовые данные синтетические; документ не требует публиковать личные данные участников.\n- Незавершённые сессии явно помечены как непроведённые. Подготовка шаблона не закрывает UX-307 и release gate.\n- `npm run docs:check` проходит.\n\nИзменение ограничено документацией; набор участников и проведение исследования не входят в эту задачу.\n",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-020",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "2ee562a5433f6e13afc9023310bacb2045251dced9d61d28aae56c72239bc820",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "snapshot": "sources/github-issue-3.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/3",
+          "jsonPointer": "/body",
+          "quote": "Связано с SP-001 и остатком SP-101/SP-005 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Сейчас установка шаблона создаёт копию агента без сохранённой в backend пары `sourceTemplateId`/version; переименование копии нарушает распознавание её происхождения.\n\nКритерии приёмки:\n\n- Установленная копия хранит идентификатор и точную версию исходного шаблона на стороне coordinator, независимо от изменяемого имени агента.\n- Происхождение видно через согласованный API-контракт; переименование и редактирование инструкции его не теряют.\n- Для агентов, созданных вручную или до миграции, отсутствие подтверждённого происхождения отражается явно, без угадывания по имени.\n- Добавлены проверки установки, переименования, сохранения версии и поведения старых записей.\n- Миграция и API-контракт описаны в `docs`; CI проходит.\n\nГраницы: только provenance установленной копии. Полный pack registry, автоматический upgrade, schema contract и runnable solution packs остаются отдельными задачами roadmap. Сроки и исполнители не назначены.\n",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-021",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "05875467e1241327031b81dcf5069ba240293e7decb1e7225e67ef8da7b56373",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "snapshot": "sources/roadmap.txt",
+          "origin": "docs/roadmap.md",
+          "startLine": 522,
+          "endLine": 522,
+          "quote": "| USE-008 | P0 | Подтвердить две команды и владельца SP-102, снять ручной baseline и задать quality/effort gate до старта; провести двухнедельный пилот. Отдельно учесть local/cloud режимы, принятие, rework, возврат за 7 дней, latency и расходы inference/review/support. Отчёт содержит решение продолжать/исправить/остановить; отсутствие команд/данных/бюджета не заменяется демо. EVAL-102 — отдельное испытание конкурента, не условие начать сбор собственного baseline | Подготовка сразу; выполнение после SP-102, USE-001, USE-004, EVAL-101, UX-306; cloud costs из CLD-004 | Product + аналитик + владелец процесса / M |",
+          "quoteSha256": "10b40c1a0af817cd69746a18cbf85c5d03872052b12b8798dacce2261ce2b148"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-022",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "487a5491cd73a54ba77fb6a05140baf1262882a9813ffbf6ef99b41e2fb58c6e",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "snapshot": "sources/docker-validation.txt",
+          "origin": "docs/local-docker-validation-2026-09-08.md",
+          "startLine": 5,
+          "endLine": 5,
+          "quote": "Панель и API доступны по адресу <http://127.0.0.1:8788>. Порт 8787 занят другим сервисом Docker Desktop; опубликованный порт задаётся переменной `AGAT_HTTP_PORT` в `.env`. Внутри контейнера coordinator использует порт 8787.",
+          "quoteSha256": "3f9409b1c3cefb91c836710a98d1d155bda0a85797ce669e504a0a9b1ad6bc9f"
+        },
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "snapshot": "sources/docker-validation.txt",
+          "origin": "docs/local-docker-validation-2026-09-08.md",
+          "startLine": 19,
+          "endLine": 19,
+          "quote": "curl --fail http://127.0.0.1:8788/api/v1/health",
+          "quoteSha256": "74810d5c64d5faf84af4e98a7dcf8bd1adcc90ca0dc7be9e5556c6b5a0f34f27"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-023",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "73d63f8aa1d0674978da953c190e7fa484941e4abd31765450d1a4a738e68a6a",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "snapshot": "sources/report-results.txt",
+          "origin": "docs/qualification/internal-report/results.md",
+          "startLine": 40,
+          "endLine": 40,
+          "quote": "[Запуск с настоящими моделями и Temporal](./evidence/2026-09-20-report-rubric-fail/result.md) завершился **FAIL, код 1**: пройдены ingestion, все три этапа Qwen3 и проверка цитат обоих источников, но машинный критерий изменения среднего времени на −25% не подтвердился. Согласование, скачивание и восстановление в этом прогоне не выполнялись. Сырые ответы удалены, поэтому нельзя утверждать, была ли причиной ошибка модели или равнозначная формулировка, не распознанная первой версией рубрики.",
+          "quoteSha256": "347feb35553ceac1f60192ed6c4d66ff91b72200c259ec1d6edec77d7a3e9d16"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-024",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "inputSha256": "bde54e740c994e577a8ff255204144058466c1877b55edb3bac97cd2e8acc2a2",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "excerpts": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "snapshot": "sources/github-issue-3.json",
+          "origin": "https://github.com/Solutions-of-Security/Agat/issues/3",
+          "jsonPointer": "/body",
+          "quote": "Связано с SP-001 и остатком SP-101/SP-005 в [roadmap](https://github.com/Solutions-of-Security/Agat/blob/main/docs/roadmap.md). Сейчас установка шаблона создаёт копию агента без сохранённой в backend пары `sourceTemplateId`/version; переименование копии нарушает распознавание её происхождения.\n\nКритерии приёмки:\n\n- Установленная копия хранит идентификатор и точную версию исходного шаблона на стороне coordinator, независимо от изменяемого имени агента.\n- Происхождение видно через согласованный API-контракт; переименование и редактирование инструкции его не теряют.\n- Для агентов, созданных вручную или до миграции, отсутствие подтверждённого происхождения отражается явно, без угадывания по имени.\n- Добавлены проверки установки, переименования, сохранения версии и поведения старых записей.\n- Миграция и API-контракт описаны в `docs`; CI проходит.\n\nГраницы: только provenance установленной копии. Полный pack registry, автоматический upgrade, schema contract и runnable solution packs остаются отдельными задачами roadmap. Сроки и исполнители не назначены.\n",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    }
+  ]
+}

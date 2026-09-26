@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "agat.decision-shadow-verification.v1",
+  "date": "2026-09-26",
+  "status": "pass",
+  "previousVerification": "verification-ui.json",
+  "runtimeVersion": "0.5.0",
+  "runtimeImplementationSha256": "ad6bc7dc13ce23b58f6a1c84cacef1ca7ed9e7f29815c8b12d0bd83995c0fff0",
+  "integrationImplementationSha256": "644c79e4ba7533bd3f7ae499a5ac21917596bfe1db7e14ce36ac013edda42998",
+  "sourceSha256": {
+    "decision_runtime/contracts.py": "07f52ea645e891a2b0313bdd783f02d7312cf426ab3a4646cf49af420049c140",
+    "decision_runtime/engine.py": "0448ffd679f8d3e32074d19698f6386ee1390534ff60b427d476cb45de6f37c3",
+    "decision_runtime/__init__.py": "d494d01bb2dd6bb0bcd04284a74cc95ae9407727d857fb4c6135e134c372b9ce",
+    "apps/coordinator/src/local-decisions.ts": "46f36db4a659e16130f580a07a0c22ba4eb4bbfb59febe81a25fca469338b5ba",
+    "workers/local_decisions.py": "b3a08cca0f0fc711febb941c00f5827a5f7200709bd3cae4f3b23e11a5b9832a",
+    "apps/web/src/components/DecisionObservations.tsx": "b07df3bc10006a401ef7f165fad7a8d802f3b9680a1d13104c5d7e38939127c8",
+    "apps/web/src/types.ts": "6b2e390ba858c69e9d25674b430bce7b887ec0bfac349343f35fb212a472d28d",
+    "apps/web/test/decision-observations.test.ts": "54661b88318976788221d952010f6ac25bb142d73c64354076407b0b589beb5a",
+    "tests/browser/decision-observations.spec.mjs": "33a850e8ecd5c79dfc572200a023176355e3b3492a1bc35b49a351e8dd8436be",
+    "scripts/lib/decision_performance.py": "493f3f370f86ebeadc02b62221311a7f1bc7813ccaf4c1fe3be67da305c1d174"
+  },
+  "checks": {
+    "coordinatorTests": {
+      "passed": 203,
+      "failed": 0
+    },
+    "webTests": {
+      "passed": 52,
+      "failed": 0
+    },
+    "workerTests": {
+      "ran": 44,
+      "skipped": 1,
+      "failed": 0
+    },
+    "decisionRuntimeTests": {
+      "ran": 69,
+      "skipped": 3,
+      "failed": 0
+    },
+    "temporalTests": "pass, including replay",
+    "processPackTests": {
+      "passed": 3,
+      "failed": 0
+    },
+    "workspaceBuild": "pass",
+    "workspaceTypecheck": "pass",
+    "postgresFleetHa": {
+      "passed": 6,
+      "failed": 0,
+      "image": "postgres:17.6-alpine"
+    },
+    "browser": {
+      "passed": 2,
+      "failed": 0,
+      "engine": "Installed Chrome via Playwright channel chrome",
+      "scope": [
+        "Boolean, abstention, unavailable, weighted numeric Score",
+        "keyboard details",
+        "candidate descriptions and numeric levels",
+        "unchanged primary output",
+        "no horizontal page overflow or app console errors"
+      ]
+    },
+    "docsCheck": "pass",
+    "realMlxScore": "real-mlx-score-v2.json",
+    "realMlxChoiceCompatibility": "real-mlx-choice-runtime-0.5.json"
+  },
+  "limits": [
+    "MLX integration uses a fixture primary generator.",
+    "Browser observations and PostgreSQL decision response are explicit fixtures.",
+    "Optional LangGraph and MLX unittest cases were skipped; actual MLX smoke is separate.",
+    "No production SLO, quality qualification or automatic routing claim."
+  ]
+}

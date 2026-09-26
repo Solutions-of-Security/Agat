@@ -2626,6 +2626,15 @@ export function createCoordinatorServer(
         return;
       }
 
+      const shadowLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/decision-shadow$/);
+      if (request.method === "POST" && shadowLeaseId) {
+        const node = requireWorker(request, store);
+        const body = await readJson<unknown>(request);
+        const observation = store.recordDecisionShadow(String(node.id), shadowLeaseId, body);
+        json(response, 200, observation);
+        return;
+      }
+
       const completeLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/complete$/);
       if (request.method === "POST" && completeLeaseId) {
         const node = requireWorker(request, store);
@@ -2742,6 +2751,7 @@ async function main(): Promise<void> {
   const store = new AgatStore(config.dbPath, {
     seedDemo: config.seedDemo,
     leaseTtlSeconds: config.leaseTtlSeconds,
+    decisionShadowEnabled: config.decisionShadowEnabled,
     artifactsDir: config.artifactsDir,
     credentialsKey: config.credentialsKey,
     temporalProcesses: config.temporalEnabled,

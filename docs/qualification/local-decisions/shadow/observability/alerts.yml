@@ -1,0 +1,36 @@
+# Local examples: tune durations/thresholds before enabling in an operator-owned Prometheus.
+groups:
+  - name: agat-decision-shadow
+    rules:
+      - alert: AgatDecisionEndpointUnavailable
+        expr: up{job="agat-decision"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decision endpoint cannot be scraped"
+          description: "Check the local runtime process, startup permissions and scrape target. Primary routing remains authoritative."
+      - alert: AgatDecisionBackendUnavailable
+        expr: (agat_decision_backend_ready{job="agat-decision"} == 0) and on(job, instance) (up{job="agat-decision"} == 1)
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decision HTTP process is running but inference is unavailable"
+          description: "Inspect cancellation, inference timeout or backend failure, then restore the pinned runtime through the configured process manager."
+      - alert: AgatDecisionSustainedBusy
+        expr: |
+          (
+            sum by(job, instance) (rate(agat_decision_requests_total{job="agat-decision",outcome="busy"}[5m]))
+            /
+            sum by(job, instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
+            > 0.2
+          )
+          and on(job, instance)
+          (sum by(job, instance) (increase(agat_decision_requests_total{job="agat-decision"}[5m])) >= 20)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decision shadow requests are repeatedly rejected as busy"
+          description: "Review worker concurrency and the single-inference capacity. Do not add automatic retries to the same lease."

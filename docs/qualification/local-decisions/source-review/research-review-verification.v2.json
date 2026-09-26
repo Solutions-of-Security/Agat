@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "agat.decision.research-review-verification.v1",
+  "createdAt": "2026-09-26T09:58:31.891376+00:00",
+  "status": "pass",
+  "corpusRevision": "v2",
+  "meaning": "Artifact integrity and correction verification; annotation approved by assistant only.",
+  "poolSha256": "bc2b3a52e3dd34ca829ee746a49088a98ba5c5ad3c1f4a8e52bc9603c9eb18e4",
+  "previousPoolSha256": "87459bd660c294afd10b5f8349a4a83ceb6b6770ffdb263de56cf6068004c4ad",
+  "changedCases": [
+    "agat-source-007"
+  ],
+  "changedDefinitionFields": [
+    "claim",
+    "rationale"
+  ],
+  "previousInputSha256": "7aed19fa8c9aff58eed4b00c1364f73411fba398c7c61555492fb8b8fdaddbcd",
+  "correctedInputSha256": "ba6d706c4da447d59c177dd4295c4627094e36ee7524c75896e81d74b0174e68",
+  "reviewedCases": 24,
+  "confirmedLabels": 24,
+  "changesRequested": 0,
+  "uniqueInputFingerprints": 24,
+  "sourceAndReviewBindings": "pass",
+  "sourceSnapshots": 9,
+  "sourceSnapshotsUnchanged": true,
+  "unchangedRequests": 23,
+  "optionSchemasUnchanged": true,
+  "splitSeedUnchanged": true,
+  "historicalV1ArtifactsUnchanged": true,
+  "runtimeFilesUnchanged": true,
+  "baselineFilesCompared": 47,
+  "changedBaselineFiles": [
+    "docs/qualification/local-decisions/source-review/build.py",
+    "docs/qualification/local-decisions/source-review/README.md"
+  ],
+  "blankReviewsRemainEmpty": true,
+  "blankReviewFinalizationRejected": true,
+  "staleV1ReviewForV2Rejected": true,
+  "assistantArtifactsRejectedAsRuntimeDataset": true,
+  "unknownRevisionRejected": true,
+  "existingArtifactOverwriteRejected": true,
+  "reviewArtifacts": [
+    {
+      "path": "research-review.v2.json",
+      "bytesSha256": "2532395a0147c3ffee29ee9a005ff2a9e03b464db59ee95c5f4271b6f13d11d3"
+    },
+    {
+      "path": "approved-labels.v2.json",
+      "bytesSha256": "5593887c87bade736f201c29815e048e11bfd6b0a265894845b6cfb6346b5c1a"
+    },
+    {
+      "path": "resolution-007.v2.md",
+      "bytesSha256": "d11efef84347c25adb8e118168338761c2bb93eeb863718a37c1f85993a80b4e"
+    }
+  ],
+  "checks": [
+    {
+      "name": "sourcePackV1",
+      "command": "python3 docs/qualification/local-decisions/source-review/build.py --revision v1 --check",
+      "exitCode": 0,
+      "result": "PASS: 8 artifacts, 24 input bindings, 9 source hashes; no expert reviews invented."
+    },
+    {
+      "name": "sourcePackV2",
+      "command": "python3 docs/qualification/local-decisions/source-review/build.py --revision v2 --check",
+      "exitCode": 0,
+      "result": "PASS: 8 artifacts, 24 input bindings, 9 source hashes; no expert reviews invented."
+    },
+    {
+      "name": "documentationV2",
+      "command": "npm run docs:check",
+      "exitCode": 0,
+      "result": "> agat-platform@1.7.0 docs:check\n> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p \"test_*.py\" && npm run docs:links:check && npm run docs:processes:check\n\n✔ checks Markdown reference links, images, escaped spaces and fragments (6.561333ms)\n✔ ignores fenced code, inline code and external links (3.975416ms)\n✔ reports missing files and case differences on all platforms (3.102417ms)\n✔ rejects links outside the checkout while allowing repository-root links (3.471083ms)\n✔ does not accept a generated local file absent from the repository (3.281833ms)\n✔ qualification accepts only explicit loopback addresses, without credentials or redirects (0.826042ms)\n✔ model identity requires installed digest, Qwen3 architecture and local capability (0.376041ms)\n✔ ingestion fails for changed content, missing or incompatible embeddings (0.868292ms)\n✔ citations must resolve to both ingested sources on each real model stage (3.281ms)\n✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.523292ms)\n✔ history evidence excludes payloads, secrets, failures and host identities (0.476292ms)\n✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (5371.412792ms)\nℹ tests 12\nℹ suites 0\nℹ pass 12\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 5433.620292\n..\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nOK\n\n> agat-platform@1.7.0 docs:links:check\n> node scripts/check-doc-links.mjs\n\nChecked 816 local link targets in 113 Markdown files (including filename case).\nExternal URLs, fragment anchors and raw HTML are outside this check.\n\n> agat-platform@1.7.0 docs:processes:check\n> node --import tsx scripts/export-process-catalog.ts --check\n\nПроверено: 7 категорий, 13 шаблонов; catalog.md, catalog.json."
+    },
+    {
+      "name": "resolutionAudit",
+      "command": "python3 /Users/mdavliatshin/.codex/skills/it-architect/scripts/architecture_audit.py docs/qualification/local-decisions/source-review/resolution-007.v2.md --profile generic --pretty",
+      "exitCode": 0,
+      "result": "{\n  \"schema_version\": 1,\n  \"target\": \"/Users/mdavliatshin/Documents/Workspace/Agat/docs/qualification/local-decisions/source-review/resolution-007.v2.md\",\n  \"profile\": \"generic\",\n  \"files_checked\": 1,\n  \"errors\": 0,\n  \"warnings\": 0,\n  \"status\": \"PASS\",\n  \"issues\": []\n}"
+    },
+    {
+      "name": "diffV2",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": ""
+    }
+  ],
+  "modelInferencePerformed": false,
+  "annotationApproved": true,
+  "approvalKind": "assistant-review",
+  "humanReviewedCases": 0,
+  "qualifiedForRouting": false
+}

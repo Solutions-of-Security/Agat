@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "agat.decision-shadow-verification.v1",
+  "date": "2026-09-26",
+  "status": "pass",
+  "previousVerification": "verification.json",
+  "integrationImplementationSha256": "75842eda71696bba15d4416292e6db2814ebb57804cde922b6a0804d7b934c96",
+  "checks": {
+    "postgresFleetHa": {
+      "passed": 6,
+      "failed": 0,
+      "image": "postgres:17.6-alpine",
+      "testSha256": "b4507d8bc186c8cee48dbb4145fcfb4ce6df6bdc23f76674315cbb3a6160fc3c",
+      "scope": [
+        "two application stores sharing one PostgreSQL instance",
+        "observation survives application restart",
+        "idempotent submission across replicas",
+        "primary output preserved",
+        "tenant RLS and project isolation"
+      ]
+    },
+    "coordinatorTests": {
+      "passed": 199,
+      "failed": 0
+    },
+    "realMlxIntegration": "real-mlx-postgres-fix.json"
+  },
+  "limits": [
+    "PostgreSQL test uses a fixture decision response, not an MLX backend.",
+    "The separate MLX smoke uses a fixture primary generator.",
+    "No PostgreSQL primary failover, production HA or quality qualification claim."
+  ]
+}

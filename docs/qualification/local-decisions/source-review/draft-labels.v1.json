@@ -1,0 +1,233 @@
+{
+  "schemaVersion": "agat.decision.draft-labels.v1",
+  "poolSha256": "87459bd660c294afd10b5f8349a4a83ceb6b6770ffdb263de56cf6068004c4ad",
+  "labelSource": "assistant-draft",
+  "humanReviewCompleted": false,
+  "qualifiedForRouting": false,
+  "labels": [
+    {
+      "id": "agat-source-001",
+      "inputSha256": "f6c5cbaf179563a16980b43fba4fce1afd04a6468c5762abb59148af7ac6f3fb",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "contradicted",
+      "rationale": "В live указаны publishedVersion=0 и draft; отправка запуска отключена. Сохранение определения процесса не является публикацией.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-002",
+      "inputSha256": "ea560a479161994c1f0b78a487145d744f52bbc0ab6c53840685c0d5962f6814",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "supported",
+      "rationale": "apiReadBack=PASS, agents=6; idempotentInstaller явно фиксирует createdAgents=0 при повторном запуске.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-003",
+      "inputSha256": "938fcde3c4e6188fb1118e18490011ba821461e00ee17072766961405e72b527",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "insufficient",
+      "rationale": "Раздел содержит модель, способ запуска, фактический ответ и статус completed. Измерений latency или p95 в нём нет; успешность запуска не определяет скорость.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-004",
+      "inputSha256": "e07dc5f178cb499c847e0b57c83ce18c469a0d4b7c6efd59c264482de9b3ce43",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "contradicted",
+      "rationale": "В источнике прямо указан синтетический handbook. Реальные вызовы Ollama не делают учебный вход производственными данными.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-005",
+      "inputSha256": "0a19559c7d280decc203927ab701553ed916bd8bb20bb6cf00047e32424616fb",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "contradicted",
+      "rationale": "Строка протокола прямо говорит: прежний Temporal run завершён, генерация не повторялась.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-006",
+      "inputSha256": "1a79befb620a5cc065a32742bede5349cfa7193d5f9f03ddf87c26f5e6bd6623",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "supported",
+      "rationale": "У проверки версий FAIL/SDK_LOCK_MISMATCH, у проверки Qwen3 статус NOT_RUN. NOT_RUN нельзя трактовать как успешный вызов модели.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-007",
+      "inputSha256": "7aed19fa8c9aff58eed4b00c1364f73411fba398c7c61555492fb8b8fdaddbcd",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "insufficient",
+      "rationale": "Сырые ответы удалены; протокол прямо оставляет две возможности: ошибка модели либо равнозначная формулировка, не распознанная рубрикой.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-008",
+      "inputSha256": "ebd441e517ce91465957fc74745c8add7ad579ce67aea44db5c63207875040ee",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "supported",
+      "rationale": "Последний абзац issue явно ограничивает изменение документацией и исключает набор участников и проведение исследования.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-009",
+      "inputSha256": "53441f76a6ebac28b701eb75f190c0fcffc424c01e49ae614321c05ce5ee4165",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "enhancement",
+      "rationale": "Основной результат — новое хранение sourceTemplateId/version и API provenance с миграцией. Исходная метка сопровождающего enhancement согласуется с этой категорией; это не заявка на предоставление доступа.",
+      "humanReviewCompleted": false,
+      "reviewFocus": "Проверить границу исправления дефекта и расширения контракта: классифицируется основная работа всей заявки.",
+      "sourceLabelReference": {
+        "sourceId": "github-issue-3",
+        "label": "enhancement"
+      }
+    },
+    {
+      "id": "agat-source-010",
+      "inputSha256": "60c13a935b4f5a1b801e7339a30edae600391b5017783bec6f704abeba1e3413",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "other",
+      "rationale": "Заявка ограничена подготовкой документа — протокола исследования. Метка сопровождающего documentation соответствует other в выбранной четырёхклассовой схеме; проведение исследования и изменение поведения приложения исключены.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null,
+      "sourceLabelReference": {
+        "sourceId": "github-issue-2",
+        "label": "documentation"
+      }
+    },
+    {
+      "id": "agat-source-011",
+      "inputSha256": "0efd95f1e77411a11d205c25254e64b19cb4078ed180a8cfd298949f5a37bd56",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "enhancement",
+      "rationale": "Запланирован новый adapter OpenRouter с контрактами и диагностикой. Упоминание API key и auth описывает функцию адаптера, а не просьбу выдать конкретному субъекту доступ.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-012",
+      "inputSha256": "cf09b6344ba812dbde262c77378d174bfad8f4d6a95d1bf13d2a6727fb42d0de",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "enhancement",
+      "rationale": "Нужно добавить извлечение и индексацию новых форматов файлов, ограничения и retry. В записи не сообщается о конкретном аварийном запуске.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-013",
+      "inputSha256": "05a7e7cc43c936c58f2f2775c3ab015c654fcae99ed5ba97788bf58a3704e54f",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "incident",
+      "rationale": "Зафиксирован конкретный Input/output error на bind mount и способ восстановления контейнера после загрузки конфигурации на диск. Описывается произошедший сбой.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-014",
+      "inputSha256": "fab5d6fcb0be934cfd18fd3c1fbf188f1547a11b2f9e99d1807bf0fef5fa8069",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "incident",
+      "rationale": "Реальная проверка остановилась из-за несовпадения установленного SDK с lock-файлом; после установки зависимостей обнаружены отсутствующие модели и Temporal. Это разбор сбоя окружения тестового запуска.",
+      "humanReviewCompleted": false,
+      "reviewFocus": "Инцидент относится к инженерному стенду, не к промышленной эксплуатации."
+    },
+    {
+      "id": "agat-source-015",
+      "inputSha256": "f86d0960d406dbcc9241b4da8c9aa5f76301f2d2f323f6b428d2deb520c7a093",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "incident",
+      "rationale": "В экспериментальном harness ветка reject получила HTTP 400 из-за отсутствия обязательной причины. Зафиксировано нарушение контракта тестовым клиентом; из этого нельзя выводить дефект проверки API.",
+      "humanReviewCompleted": false,
+      "reviewFocus": "Проверить, что исправление клиента не переименовано в неисправность серверного контроля."
+    },
+    {
+      "id": "agat-source-016",
+      "inputSha256": "5c712aa24e078fdab64862b54e89c1c11a64beeefbef821c618abbd78782a747",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "other",
+      "rationale": "Это запись о текущем состоянии: черновик сохранён, интеграции отсутствуют, runtime ограничен. В ней нет самостоятельной заявки на новую функцию, восстановление ранее работавшей системы или выдачу прав. По рубрике выбирается other.",
+      "humanReviewCompleted": false,
+      "reviewFocus": "Пограничный случай: отсутствие сформулированной заявки. Если рецензенты требуют дополнительный контекст действия, оставить замечание и не угадывать access."
+    },
+    {
+      "id": "agat-source-017",
+      "inputSha256": "5e56ff6b59cb4dba808fc8017fd342bb78b34208f2a94a444fab4cc09630e1d8",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Протокол прямо сообщает, что облако, кластер и Git-репозиторий ещё не выбраны. Для привязки плана к целевой среде этих значений не хватает; подставлять вымышленные адреса нельзя.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-018",
+      "inputSha256": "f24b993238680ac85a38d7cacdb79290b04820aa47f0f91646174e9d3e1684a1",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "sufficient",
+      "rationale": "Источник сообщает createdAgents=0 и createdProcess=false on repeated run. Для пересказа именно этого результата оба требуемых сведения уже есть; запускать установку заново не требуется.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-019",
+      "inputSha256": "30f8239468cf0861ba8ab2a0a4cd1a7469097151c47d5d020acf11150f53643b",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "sufficient",
+      "rationale": "Заданы пять ролей и пять участников, поля среды, начальное состояние/действия/ожидаемый результат/препятствия и явное исключение проведения исследования. Для пустого протокола имена участников и реальные устройства заранее не нужны.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-020",
+      "inputSha256": "2ee562a5433f6e13afc9023310bacb2045251dced9d61d28aae56c72239bc820",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "sufficient",
+      "rationale": "Issue перечисляет identifier/version, независимость от имени, явное отсутствие provenance у старых или ручных записей, тесты и документацию. Для извлечения критериев не нужны ещё не назначенные сроки и исполнители.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-021",
+      "inputSha256": "05875467e1241327031b81dcf5069ba240293e7decb1e7225e67ef8da7b56373",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Запись требует подтвердить команды, владельца и baseline, но не содержит их конкретных значений и согласованных порогов. Наличие задачи собрать эти сведения не означает, что они уже собраны.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-022",
+      "inputSha256": "487a5491cd73a54ba77fb6a05140baf1262882a9813ffbf6ef99b41e2fb58c6e",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "sufficient",
+      "rationale": "Указаны http://127.0.0.1:8788 и /api/v1/health. Для извлечения исторического URL данных достаточно; это не обещание текущей доступности сервиса.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-023",
+      "inputSha256": "73d63f8aa1d0674978da953c190e7fa484941e4abd31765450d1a4a738e68a6a",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Исходные ответы удалены, а протокол не разрешает альтернативные причины. Нужны дополнительные доказательства; если получить их нельзя, причина остаётся неизвестной.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    },
+    {
+      "id": "agat-source-024",
+      "inputSha256": "bde54e740c994e577a8ff255204144058466c1877b55edb3bac97cd2e8acc2a2",
+      "labelSource": "assistant-draft",
+      "proposedOptionId": "needs_clarification",
+      "rationale": "В issue прямо сказано, что сроки и исполнители не назначены. Приёмочные критерии не позволяют восстановить эти назначения.",
+      "humanReviewCompleted": false,
+      "reviewFocus": null
+    }
+  ]
+}

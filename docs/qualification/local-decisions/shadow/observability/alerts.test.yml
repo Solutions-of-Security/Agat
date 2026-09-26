@@ -1,0 +1,84 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+tests:
+  - name: endpoint failure waits two minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="agat-decision",instance="local"}'
+        values: '0+0x12'
+    alert_rule_test:
+      - eval_time: 1m45s
+        alertname: AgatDecisionEndpointUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: AgatDecisionEndpointUnavailable
+        exp_alerts:
+          - exp_labels: {job: agat-decision, instance: local, severity: warning}
+            exp_annotations:
+              summary: "Decision endpoint cannot be scraped"
+              description: "Check the local runtime process, startup permissions and scrape target. Primary routing remains authoritative."
+  - name: dead backend differs from a failed scrape
+    interval: 15s
+    input_series:
+      - series: 'up{job="agat-decision",instance="alive-http"}'
+        values: '1+0x4'
+      - series: 'agat_decision_backend_ready{job="agat-decision",instance="alive-http"}'
+        values: '0+0x4'
+      - series: 'up{job="agat-decision",instance="dead-http"}'
+        values: '0+0x4'
+      - series: 'agat_decision_backend_ready{job="agat-decision",instance="dead-http"}'
+        values: '0+0x4'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: AgatDecisionBackendUnavailable
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: AgatDecisionBackendUnavailable
+        exp_alerts:
+          - exp_labels: {job: agat-decision, instance: alive-http, severity: warning}
+            exp_annotations:
+              summary: "Decision HTTP process is running but inference is unavailable"
+              description: "Inspect cancellation, inference timeout or backend failure, then restore the pinned runtime through the configured process manager."
+  - name: short recovery does not alert
+    interval: 15s
+    input_series:
+      - series: 'up{job="agat-decision",instance="local"}'
+        values: '1+0x8'
+      - series: 'agat_decision_backend_ready{job="agat-decision",instance="local"}'
+        values: '0 0 1+0x6'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AgatDecisionBackendUnavailable
+        exp_alerts: []
+  - name: sustained overload requires sufficient requests
+    interval: 15s
+    input_series:
+      - series: 'agat_decision_requests_total{job="agat-decision",instance="loaded",outcome="busy"}'
+        values: '0+1x40'
+      - series: 'agat_decision_requests_total{job="agat-decision",instance="loaded",outcome="ok"}'
+        values: '0+1x40'
+      - series: 'agat_decision_requests_total{job="agat-decision",instance="low-traffic",outcome="busy"}'
+        values: '0+0.01x40'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AgatDecisionSustainedBusy
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: AgatDecisionSustainedBusy
+        exp_alerts:
+          - exp_labels: {job: agat-decision, instance: loaded, severity: warning}
+            exp_annotations:
+              summary: "Decision shadow requests are repeatedly rejected as busy"
+              description: "Review worker concurrency and the single-inference capacity. Do not add automatic retries to the same lease."
+  - name: counter reset and abstain do not trigger overload
+    interval: 15s
+    input_series:
+      - series: 'agat_decision_requests_total{job="agat-decision",instance="restarted",outcome="busy"}'
+        values: '0+0x16 0+0x24'
+      - series: 'agat_decision_requests_total{job="agat-decision",instance="restarted",outcome="abstain"}'
+        values: '0+10x16 0+10x24'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AgatDecisionSustainedBusy
+        exp_alerts: []

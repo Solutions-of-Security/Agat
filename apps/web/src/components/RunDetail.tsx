@@ -22,6 +22,7 @@ import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTab
 import { ApprovalPanel } from "./ApprovalPanel";
 import { Icon } from "./Icon";
 import { PolicyControl } from "./PolicyControl";
+import { DecisionObservations } from "./DecisionObservations";
 
 const stageStatusCopy: Record<StageStatus, string> = {
   pending: "Ожидает",
@@ -837,6 +838,7 @@ export function RunDetail({
               onChange={setActiveTab}
             />
             <TabPanel active={activeTab === "trace"} idPrefix="run-detail" tabId="trace">
+              <DecisionObservations observations={trace?.run.id === run.id ? trace.decisionObservations ?? [] : []} stages={detailedRun.stages} />
               <TraceTimeline
                 run={detailedRun}
                 events={traceEvents}

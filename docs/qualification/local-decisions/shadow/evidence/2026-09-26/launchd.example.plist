@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.agat.decision-shadow</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/mdavliatshin/Documents/Workspace/Agat/.venv/decision/bin/python</string>
+		<string>-m</string>
+		<string>decision_runtime</string>
+		<string>serve</string>
+		<string>--manifest</string>
+		<string>/Users/mdavliatshin/Documents/Workspace/Agat/.local-models/decisions/decider-2b.json</string>
+		<string>--policy</string>
+		<string>/Users/mdavliatshin/Documents/Workspace/Agat/docs/qualification/local-decisions/policy.shadow.v1.json</string>
+		<string>--port</string>
+		<string>8766</string>
+		<string>--max-tokens</string>
+		<string>2048</string>
+		<string>--cache-limit-mib</string>
+		<string>128</string>
+		<string>--inference-timeout-ms</string>
+		<string>2000</string>
+		<string>--exit-on-backend-unavailable</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/mdavliatshin/Documents/Workspace/Agat</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>ExitTimeOut</key>
+	<integer>30</integer>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/Users/mdavliatshin/Documents/Workspace/Agat/.local-models/decisions/logs/org.agat.decision-shadow.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/mdavliatshin/Documents/Workspace/Agat/.local-models/decisions/logs/org.agat.decision-shadow.err.log</string>
+</dict>
+</plist>
