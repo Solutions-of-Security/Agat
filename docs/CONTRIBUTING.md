@@ -61,6 +61,8 @@ npm run fleet:test-region-loss-dr
 Scripts создают собственные контейнеры и удаляют их при завершении. Не подставляйте
 production database URLs. Реальная модель проверяется отдельно командой
 `npm run test:ollama-rag`; требования — в [оглавлении](./index.md).
+S3-стенд [собирает MinIO из закреплённых исходников](./releases/2026-09-26-ci-minio.md);
+первая сборка требует сети и занимает больше времени, повторная использует Docker cache.
 Проверки реального provider failover и восстановления остаются отдельными gates.
 
 ## Pull request
