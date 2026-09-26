@@ -9154,14 +9154,15 @@ export class AgatStore {
           AND c.embedding_model = ? AND ch.embedding_model = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
         ORDER BY ch.embedded_at DESC
         LIMIT ?
-      `).all(project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1) as Row[];
-      // Probe one row beyond the bound in the same query: a separate count can
-      // become stale while another worker finishes indexing. Never silently
-      // discard older evidence and present a search of only recent chunks.
-      if (candidates.length > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
-        throw new Error(`Лимит локального retrieval — ${KNOWLEDGE_MAX_SEARCH_CANDIDATES} готовых фрагментов на query; сузьте набор коллекций или используйте индексируемый поиск`);
-      }
-      const ranked = candidates.flatMap((candidate): Array<Omit<KnowledgeSearchHit, "marker">> => {
+      `).iterate(project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1);
+      const ranked: Array<Omit<KnowledgeSearchHit, "marker">> = [];
+      let candidateCount = 0;
+      // Stream the same bounded SELECT snapshot. Large valid vectors must not
+      // turn one query into a response exceeding the PostgreSQL bridge limit.
+      for (const candidate of candidates) {
+        if (++candidateCount > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
+          throw new Error(`Лимит локального retrieval — ${KNOWLEDGE_MAX_SEARCH_CANDIDATES} готовых фрагментов на query; сузьте набор коллекций или используйте индексируемый поиск`);
+        }
         const stored = parseJson<unknown>(candidate.embedding_json, null);
         let storedVector: number[];
         try {
@@ -9172,7 +9173,10 @@ export class AgatStore {
         if (storedVector.length !== Number(candidate.embedding_dimensions)) throw new Error("Индекс embeddings содержит неверную размерность вектора");
         const score = cosineSimilarity(vector, storedVector);
         if (score === null || !Number.isFinite(score)) throw new Error("Индекс embeddings не позволяет вычислить сходство запроса");
-        return [{
+        // Validate every candidate, including those outside topK, but retain
+        // only the best hits. Equal scores preserve the query's existing order.
+        if (ranked.length === topK && score <= ranked[ranked.length - 1]!.score) continue;
+        const hit: Omit<KnowledgeSearchHit, "marker"> = {
           score,
           content: String(candidate.content),
           provenance: {
@@ -9191,8 +9195,11 @@ export class AgatStore {
             pageNumber: candidate.page_number === null ? null : Number(candidate.page_number),
             originalSha256: typeof candidate.original_sha256 === "string" ? candidate.original_sha256 : null,
           },
-        }];
-      }).sort((left, right) => right.score - left.score).slice(0, topK);
+        };
+        const before = ranked.findIndex((current) => current.score < score);
+        ranked.splice(before < 0 ? ranked.length : before, 0, hit);
+        if (ranked.length > topK) ranked.pop();
+      }
       for (const hit of ranked) {
         const current = bestByChunk.get(hit.provenance.chunkId);
         if (!current || hit.score > current.score) bestByChunk.set(hit.provenance.chunkId, hit);

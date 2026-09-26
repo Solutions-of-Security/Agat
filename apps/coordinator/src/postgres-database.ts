@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ import type { DatabaseValue, SyncDatabase, SyncStatement } from "./sync-database
 
 const RESPONSE_HEADER_BYTES = 16;
 const DEFAULT_RESPONSE_BYTES = 32 * 1_024 * 1_024;
+const CURSOR_BATCH_ROWS = 64;
 
 export interface PostgresAccessScope {
   kind: "system" | "tenant";
@@ -83,6 +85,32 @@ class PostgresStatement implements SyncStatement {
   all(...params: DatabaseValue[]): Record<string, unknown>[] {
     const value = this.database.request("all", this.sql, params);
     return value as Record<string, unknown>[];
+  }
+
+  *iterate(...params: DatabaseValue[]): IterableIterator<Record<string, unknown>> {
+    const cursor = `agat_cursor_${randomUUID().replaceAll("-", "")}`;
+    // One server cursor retains the SELECT snapshot across FETCH calls. LIMIT /
+    // OFFSET queries would each see a new snapshot at READ COMMITTED.
+    this.database.request("exec", `DECLARE ${cursor} NO SCROLL CURSOR WITHOUT HOLD FOR ${this.sql}`, params);
+    let failed = false;
+    try {
+      while (true) {
+        const rows = this.database.request("all", `FETCH FORWARD ${CURSOR_BATCH_ROWS} FROM ${cursor}`, []) as Record<string, unknown>[];
+        yield* rows;
+        if (rows.length < CURSOR_BATCH_ROWS) return;
+      }
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      try {
+        this.database.request("exec", `CLOSE ${cursor}`, []);
+      } catch (error) {
+        // A failed FETCH can abort the transaction; preserve its original error.
+        // The enclosing rollback then releases the transaction-owned cursor.
+        if (!failed) throw error;
+      }
+    }
   }
 
   get(...params: DatabaseValue[]): Record<string, unknown> | undefined {

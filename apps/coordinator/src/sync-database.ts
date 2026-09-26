@@ -2,6 +2,8 @@ export type DatabaseValue = string | number | bigint | null | Uint8Array;
 
 export interface SyncStatement {
   all(...params: DatabaseValue[]): Record<string, unknown>[];
+  // Consume inside an explicit transaction; early loop exit closes the cursor.
+  iterate(...params: DatabaseValue[]): IterableIterator<Record<string, unknown>>;
   get(...params: DatabaseValue[]): Record<string, unknown> | undefined;
   run(...params: DatabaseValue[]): {
     changes: number | bigint;

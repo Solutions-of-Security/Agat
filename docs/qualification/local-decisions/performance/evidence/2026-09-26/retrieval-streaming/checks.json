@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "agat.rag.streaming-checks.v1",
+  "classification": "synthetic-integration-only",
+  "baselineCommit": "cc82e9fc6bd4a97dbd2abd7dfd15b97b3d144fd5",
+  "baselineArchiveVerified": true,
+  "code": [
+    {
+      "path": "apps/coordinator/src/database.ts",
+      "sha256": "8aec4ed3b70e653b85613bbba4d0dfd7b607cea0c28279f79773cc08fbc2ba7a"
+    },
+    {
+      "path": "apps/coordinator/src/postgres-database.ts",
+      "sha256": "887b9d3eef098a991f2fc25fbbd0e25f7d1ba2b1eaaaa369803996ccf00e7951"
+    },
+    {
+      "path": "apps/coordinator/src/sync-database.ts",
+      "sha256": "3f29fcdb429d94c2fb13afb076e06cedd9c01c9ba517d770305990db1f2f195f"
+    },
+    {
+      "path": "apps/coordinator/test/fleet-ha-postgres.integration.test.ts",
+      "sha256": "7d1d3332c9424403acffee3660ddb3c6868199dc440ec53bb83054c0c33a5baa"
+    },
+    {
+      "path": "apps/coordinator/test/knowledge-retrieval-capacity.test.ts",
+      "sha256": "01ecdf741f1373dff3195d75d292039bf8fdfe2daa5deee74030c69b18bdb0c1"
+    }
+  ],
+  "checks": [
+    {
+      "command": "npm run fleet:test-ha-postgres",
+      "passed": 7,
+      "skipped": 0,
+      "log": "postgres.log"
+    },
+    {
+      "command": "npm run test:coordinator",
+      "passed": 224,
+      "skipped": 0,
+      "log": "coordinator.log"
+    },
+    {
+      "command": "npm run typecheck --workspace @agat/coordinator",
+      "exitCode": 0,
+      "log": "typecheck.log"
+    },
+    {
+      "command": "npm run build --workspace @agat/coordinator",
+      "exitCode": 0,
+      "log": "build.log"
+    },
+    {
+      "command": "npm run docs:links:check",
+      "exitCode": 0,
+      "log": "docs-links.log"
+    }
+  ],
+  "files": [
+    {
+      "sha256": "99534c8244138137c1e14368f5a0533545ec2c9fbe6f1ab61b5b05fdffbdf7b0",
+      "path": "after.json"
+    },
+    {
+      "sha256": "98bdbbc2ca7a9474cee62af46bdb11def000ed5481f1a4220cf29c477ebd9bd2",
+      "path": "before-streaming.json"
+    },
+    {
+      "sha256": "504f0f7f3d1972d327a361ce90bbfe72bd0495fcd309a77c6a8dacebec11a38f",
+      "path": "before.json"
+    },
+    {
+      "sha256": "0219b2d9da52090e472e8be321d38e5de6e37a82361a42665d3cda6e3cef7506",
+      "path": "coordinator.log"
+    },
+    {
+      "sha256": "1a2876fa3f270ad83113aa947bf42625e7c6349e04509f1a2ec0497261f57431",
+      "path": "diagnostic-before.mts"
+    },
+    {
+      "sha256": "35cb95cca942d997bda8696f493dcfa5f5b3ef942a5d541f0bcba48482e0f223",
+      "path": "plan.json"
+    },
+    {
+      "sha256": "0c6ea14b27779ef36f241d5d061a303f449de52f378b3b809a7d884bc9ea7df3",
+      "path": "postgres.log"
+    },
+    {
+      "sha256": "0775e67994a80b36845bf651a8f405aafde42894dccb0475bd1414729bd73872",
+      "path": "typecheck.log",
+      "originalSha256": "88c1a6ca9126795736e1a2ec4bec716115a6e66d07a74cdd7fa53ff8331eaade",
+      "normalization": "trailing blank lines removed"
+    },
+    {
+      "path": "build.log",
+      "sha256": "1987ba513a2d00436f37bba9aa9e2e6e72f7a1259a567973723dee5a8696a19b",
+      "originalSha256": "a698a3e8548374809e6c07e06f2b647451f9ef85819c50128127bc813dbe69ce",
+      "normalization": "trailing blank lines removed"
+    },
+    {
+      "path": "docs-links.log",
+      "sha256": "4c44185dd83b4a3faae252e7df089a6dcde44edae288e9a597d9a2373abf7308"
+    }
+  ],
+  "qualifiedForRouting": false,
+  "annImplemented": false,
+  "candidateCapacityIncreased": false,
+  "rssBenchmark": false
+}

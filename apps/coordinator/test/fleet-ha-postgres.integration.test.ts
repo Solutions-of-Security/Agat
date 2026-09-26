@@ -123,6 +123,109 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-stream-"));
+      const first = store(`rag-stream-a-${suffix}`, artifacts);
+      const second = store(`rag-stream-b-${suffix}`, artifacts);
+      try {
+        const projectId = `rag-stream-${suffix}`;
+        const foreignProjectId = `rag-stream-other-${suffix}`;
+        for (const id of [projectId, foreignProjectId]) first.createProject({ id, name: id,
+          homeRegion: cellRegion, allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const model = `rag-stream-fixture-${suffix}`;
+        const agent = first.createAgent({ name: "RAG fixture", role: "Test", systemPrompt: "Fixture", model }, projectId);
+        const node = first.registerNode({ enrollmentToken: "test", name: model, platform: "test",
+          models: [model], embeddingModels: [model], maxConcurrency: 1, region: cellRegion,
+          residencyDomain: cellResidencyDomain }).id;
+        const collection = (name: string) => String(first.createKnowledgeCollection({ name, embeddingModel: model,
+          chunkSize: 400, chunkOverlap: 0, topK: 1 }, projectId).id);
+        const large = collection("Wide vectors");
+        const small = collection("Small query");
+        const document = first.ingestKnowledgeDocument(large, { name: "Synthetic repeated chunks",
+          content: "A".repeat(500 * 400) }, projectId);
+        assert.equal(document.chunkCount, 500);
+        first.ingestKnowledgeDocument(small, { name: "One chunk", content: "Synthetic separate source." }, projectId);
+        const vector = Array<number>(4096).fill(1 / 3);
+        const embeddingJson = JSON.stringify(vector);
+        assert.ok(Buffer.byteLength(embeddingJson) * 500 > 32 * 1024 * 1024,
+          "the valid candidate set must exceed the bridge's single-response limit");
+        for (let lease; (lease = first.leaseKnowledgeEmbedding(node));) {
+          second.completeKnowledgeEmbedding(node, lease.leaseId,
+            lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: vector })));
+        }
+
+        // Change a row beyond the first FETCH batch through another connection.
+        // The cursor must continue to return the original SELECT snapshot.
+        first.db.exec("BEGIN");
+        const snapshot = first.db.prepare("SELECT ordinal, content FROM knowledge_chunks WHERE document_id = ? ORDER BY ordinal")
+          .iterate(String(document.id));
+        assert.equal(snapshot.next().value!.ordinal, 0);
+        second.db.prepare("UPDATE knowledge_chunks SET content = 'concurrent fixture update' WHERE document_id = ? AND ordinal = 499")
+          .run(String(document.id));
+        const remaining = [...snapshot];
+        assert.equal(remaining.length, 499);
+        assert.equal(remaining[498]!.content, "A".repeat(400));
+        first.db.exec("COMMIT");
+        second.db.prepare("UPDATE knowledge_chunks SET content = ? WHERE document_id = ? AND ordinal = 499")
+          .run("A".repeat(400), String(document.id));
+
+        const openCursors = () => Number(first.db.prepare("SELECT COUNT(*) AS count FROM pg_cursors WHERE name LIKE 'agat_cursor_%'").get()!.count);
+        first.db.exec("BEGIN");
+        for (const row of first.db.prepare("SELECT n FROM generate_series(1, 130) AS n").iterate()) {
+          assert.equal(row.n, 1);
+          break;
+        }
+        assert.equal(openCursors(), 0, "early loop exit closes the cursor before commit");
+        first.db.exec("COMMIT");
+        first.db.exec("BEGIN");
+        assert.throws(() => [...first.db.prepare("SELECT n, 1 / (129 - n) AS value FROM generate_series(1, 130) AS n").iterate()],
+          /division by zero/, "a later FETCH error must not be hidden by CLOSE on an aborted transaction");
+        first.db.exec("ROLLBACK");
+        assert.equal(openCursors(), 0);
+
+        const run = first.createRun({ name: "Streamed RAG", input: "Synthetic query", agentIds: [String(agent.id)],
+          approvalRequired: false, knowledgeCollectionIds: [large, small] }, projectId);
+        const lease = second.leaseNext(node)!;
+        assert.equal(lease.run.id, run.id);
+        const query = (id: string) => ({ embeddingModel: model, collectionIds: [id], vector, topK: 1 });
+        const result = first.searchKnowledge(node, lease.leaseId, { queries: [query(large)] });
+        assert.equal(result.hits.length, 1);
+        assert.equal(result.hits[0]!.marker, "K1");
+        assert.equal(result.hits[0]!.score, 1);
+        assert.equal(result.hits[0]!.provenance.documentId, document.id);
+        // Corrupt a late candidate that need not belong to topK. It must still
+        // be validated, and the successful first query must not be persisted.
+        second.db.prepare("UPDATE knowledge_chunks SET embedding_json = 'broken', embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ? AND ordinal = 0")
+          .run(String(document.id));
+        assert.throws(() => first.searchKnowledge(node, lease.leaseId, { queries: [query(small), query(large)] }),
+          /Индекс embeddings содержит повреждённый вектор/);
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 1);
+        assert.equal((first.getRunTrace(run.id, projectId)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 1);
+        assert.equal(openCursors(), 0);
+        second.db.prepare("UPDATE knowledge_chunks SET embedding_json = ? WHERE document_id = ? AND ordinal = 0")
+          .run(embeddingJson, String(document.id));
+        const recovered = second.searchKnowledge(node, lease.leaseId, { queries: [query(small), query(large)] });
+        assert.deepEqual(recovered.hits.map(hit => hit.marker), ["K2", "K3"]);
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 3);
+        second.completeLease(node, lease.leaseId, "Synthetic primary output");
+
+        enterPostgresTenantScope(foreignProjectId);
+        first.db.exec("BEGIN");
+        assert.deepEqual([...first.db.prepare("SELECT id FROM knowledge_chunks WHERE collection_id = ?").iterate(large)], []);
+        first.db.exec("COMMIT");
+        enterPostgresTenantScope(projectId);
+        first.db.exec("BEGIN");
+        assert.equal([...first.db.prepare("SELECT id FROM knowledge_chunks WHERE collection_id = ?").iterate(large)].length, 500);
+        first.db.exec("COMMIT");
+      } finally {
+        runWithPostgresSystemScope(() => { first.close(); second.close(); });
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("rejects a tenant connection that resolves to the system BYPASSRLS role", () => {
     assert.throws(() => new PostgresDatabaseSync({
       systemUrl,
