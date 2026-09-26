@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 suffix="${$}-$(date +%s)"
 postgres_container="agat-artifact-postgres-${suffix}"
 minio_container="agat-artifact-minio-${suffix}"
+minio_volume="agat-artifact-minio-${suffix}"
 network="agat-artifact-${suffix}"
 postgres_password="admin-artifact-test"
 migration_password="migration-artifact-test"
@@ -14,19 +15,27 @@ tenant_password="tenant-artifact-test"
 minio_user="agatminio"
 minio_password="agat-minio-test-secret"
 bucket="agat-artifact-test"
-minio_image="agat-minio-integration:9e49d5e-go1.27.1"
+minio_image="agat-minio-integration:9e49d5e-go1.27.1-uid1000"
 
 cleanup() {
+  local status=$?
+  if [[ "${status}" != 0 ]]; then
+    docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{json .NetworkSettings.Ports}}' "${minio_container}" >&2 || true
+    docker logs --tail 80 "${minio_container}" >&2 || true
+    docker logs --tail 40 "${postgres_container}" >&2 || true
+  fi
   docker rm --force "${postgres_container}" "${minio_container}" >/dev/null 2>&1 || true
+  docker volume rm "${minio_volume}" >/dev/null 2>&1 || true
   docker network rm "${network}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # BuildKit reuses the pinned source/toolchain layers on subsequent local runs.
 # Do not depend on discontinued upstream MinIO binary registries.
-docker build --tag "${minio_image}" "${repo_root}/deploy/test/minio"
+docker build --tag "${minio_image}" "${repo_root}/deploy/minio"
 
 docker network create "${network}" >/dev/null
+docker volume create "${minio_volume}" >/dev/null
 docker run --detach \
   --name "${postgres_container}" \
   --network "${network}" \
@@ -43,6 +52,10 @@ docker run --detach \
 docker run --detach \
   --name "${minio_container}" \
   --network "${network}" \
+  --user 1000:1000 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --mount "type=volume,source=${minio_volume},target=/data" \
   --publish 127.0.0.1::9000 \
   --env MINIO_ROOT_USER="${minio_user}" \
   --env MINIO_ROOT_PASSWORD="${minio_password}" \
@@ -78,4 +91,5 @@ AGAT_TEST_S3_ENDPOINT="http://127.0.0.1:${minio_port}" \
 AGAT_TEST_S3_ACCESS_KEY_ID="${minio_user}" \
 AGAT_TEST_S3_SECRET_ACCESS_KEY="${minio_password}" \
 AGAT_TEST_S3_BUCKET="${bucket}" \
+AGAT_TEST_S3_RESTART_CONTAINER="${minio_container}" \
 node --import tsx --test apps/coordinator/test/artifact-store-postgres.integration.test.ts

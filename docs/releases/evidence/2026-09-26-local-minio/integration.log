@@ -1,0 +1,79 @@
+
+> agat-platform@1.7.0 fleet:test-artifact-store
+> bash scripts/test-s3-artifact-store.sh
+
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.41kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [build 3/6] ADD --checksum=sha256:45521908307306e925c98d629e1c17d78c8b72b6ee242b1bfb1409f7d8ee5841 https://codeload.github.com/minio/minio/tar.gz/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a /tmp/minio.tar.gz
+#4 DONE 0.0s
+
+#5 [build 1/6] FROM docker.io/library/golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
+#5 resolve docker.io/library/golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195 done
+#5 DONE 0.0s
+
+#6 [build 6/6] RUN go build -mod=readonly -trimpath -buildvcs=false -o /out/minio .     && mkdir -p /out/data /out/tmp
+#6 CACHED
+
+#7 [stage-1 5/6] COPY --from=build --chown=1000:1000 /out/tmp /tmp
+#7 CACHED
+
+#8 [stage-1 1/6] COPY --from=build /out/minio /minio
+#8 CACHED
+
+#9 [build 5/6] RUN go mod download && go mod verify
+#9 CACHED
+
+#10 [stage-1 2/6] COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+#10 CACHED
+
+#11 [build 4/6] RUN tar -xzf /tmp/minio.tar.gz --strip-components=1 -C /src
+#11 CACHED
+
+#12 [build 2/6] WORKDIR /src
+#12 CACHED
+
+#13 [build 3/6] ADD --checksum=sha256:45521908307306e925c98d629e1c17d78c8b72b6ee242b1bfb1409f7d8ee5841 https://codeload.github.com/minio/minio/tar.gz/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a /tmp/minio.tar.gz
+#13 CACHED
+
+#14 [stage-1 3/6] COPY --from=build /src/LICENSE /licenses/MinIO-LICENSE
+#14 CACHED
+
+#15 [stage-1 4/6] COPY --from=build --chown=1000:1000 /out/data /data
+#15 CACHED
+
+#16 [stage-1 6/6] WORKDIR /data
+#16 CACHED
+
+#17 exporting to image
+#17 exporting layers done
+#17 exporting manifest sha256:6239e0883873a5674984bca73d2db5ad18f47affec41e9da6f1dc033a4bdee20 done
+#17 exporting config sha256:e90eef96aacc9e458689953d4a8661924841d883219a8563a8f7dfc51ccef3dc done
+#17 exporting attestation manifest sha256:7d7f9f680d105c35a06d1575a35be873c07e107b4dccf005c936530d4f69667f done
+#17 exporting manifest list sha256:38713e39a15403cae060c50463baf1891f0b7e753344e042a4a5a5257037edcc done
+#17 naming to docker.io/library/agat-minio-integration:9e49d5e-go1.27.1-uid1000 done
+#17 unpacking to docker.io/library/agat-minio-integration:9e49d5e-go1.27.1-uid1000 done
+#17 DONE 0.0s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/05ypp3kvgph6cuoi6poylpsin
+▶ S3-compatible Artifact Store integration
+  ✔ migrates BYTEA, verifies cross-replica cache, isolates outbox, deletes by version and survives restart (4459.077167ms)
+✔ S3-compatible Artifact Store integration (4459.592041ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5106.396875

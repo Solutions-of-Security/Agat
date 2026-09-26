@@ -12,6 +12,7 @@ readonly coordinator_image="agat-local/coordinator:${image_tag}"
 readonly worker_image="agat-local/worker:${image_tag}"
 readonly temporal_worker_image="agat-local/temporal-worker:${image_tag}"
 readonly sandbox_wasi_image="agat-local/sandbox-wasi:${image_tag}"
+readonly artifact_store_image="agat-local/minio:${image_tag}"
 readonly coordinator_replicas="${AGAT_K8S_COORDINATOR_REPLICAS:-2}"
 [[ "${image_tag}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || {
   printf 'Ошибка: AGAT_K8S_IMAGE_TAG имеет небезопасный формат\n' >&2
@@ -52,6 +53,11 @@ require_command docker
 require_command curl
 require_command openssl
 require_command node
+
+if is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
+  docker image inspect "${artifact_store_image}" >/dev/null 2>&1 || die \
+    "локальный MinIO image '${artifact_store_image}' ещё не собран; запустите без AGAT_K8S_SKIP_BUILD"
+fi
 
 current_context="$(kubectl config current-context 2>/dev/null || true)"
 [[ "${current_context}" == "${expected_context}" ]] || die \
@@ -121,12 +127,14 @@ search_existed=false
 gateway_existed=false
 keycloak_existed=false
 temporal_worker_existed=false
+artifact_store_existed=false
 kubectl get deployment/agat-coordinator --namespace "${namespace}" >/dev/null 2>&1 && coordinator_existed=true
 kubectl get deployment/agat-worker --namespace "${namespace}" >/dev/null 2>&1 && worker_existed=true
 kubectl get deployment/agat-search --namespace "${namespace}" >/dev/null 2>&1 && search_existed=true
 kubectl get deployment/agat-gateway --namespace "${namespace}" >/dev/null 2>&1 && gateway_existed=true
 kubectl get deployment/agat-keycloak --namespace "${namespace}" >/dev/null 2>&1 && keycloak_existed=true
 kubectl get deployment/agat-temporal-worker --namespace "${namespace}" >/dev/null 2>&1 && temporal_worker_existed=true
+kubectl get deployment/agat-artifact-store --namespace "${namespace}" >/dev/null 2>&1 && artifact_store_existed=true
 
 if ${coordinator_existed}; then
   existing_state_store_driver="$(kubectl get configmap/agat-coordinator-config \
@@ -408,6 +416,13 @@ if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}"; then
     --tag "${sandbox_wasi_image}" \
     --file "${repo_root}/sandbox/Dockerfile" \
     "${repo_root}"
+
+  printf 'Собираю %s для %s...\n' "${artifact_store_image}" "${platform}"
+  docker buildx build \
+    --load \
+    --platform "${platform}" \
+    --tag "${artifact_store_image}" \
+    "${repo_root}/deploy/minio"
 fi
 
 if ${coordinator_existed}; then
@@ -459,17 +474,23 @@ node --input-type=module -e '
 node --input-type=module -e '
   import fs from "node:fs";
   import path from "node:path";
-  const [directory, image] = process.argv.slice(1);
+  const [directory, image, artifactImage] = process.argv.slice(1);
   const manifest = path.join(directory, "artifact-store.yaml");
   const source = fs.readFileSync(manifest, "utf8");
   const expected = "image: agat-local/coordinator:1.7.0";
   if (source.split(expected).length - 1 !== 1) throw new Error("ожидался один artifact bootstrap image");
-  fs.writeFileSync(manifest, source.replace(expected, `image: ${image}`));
-' "${rendered_manifests_dir}" "${coordinator_image}"
+  const expectedArtifact = "image: agat-local/minio:1.7.0";
+  if (source.split(expectedArtifact).length - 1 !== 1) throw new Error("ожидался один local MinIO image");
+  fs.writeFileSync(manifest, source.replace(expected, `image: ${image}`).replace(expectedArtifact, `image: ${artifactImage}`));
+' "${rendered_manifests_dir}" "${coordinator_image}" "${artifact_store_image}"
 kubectl apply --kustomize "${rendered_manifests_dir}"
 cleanup_rendered_manifests
 rendered_manifests_dir=""
 trap - EXIT
+if ! is_true "${AGAT_K8S_SKIP_BUILD:-false}" && ${artifact_store_existed}; then
+  kubectl rollout restart deployment/agat-artifact-store --namespace "${namespace}" >/dev/null
+fi
+kubectl rollout status deployment/agat-artifact-store --namespace "${namespace}" --timeout=180s
 kubectl wait --for=condition=Complete job/agat-artifact-store-bootstrap-v25 \
   --namespace "${namespace}" --timeout=360s >/dev/null || die \
   "Artifact Store bootstrap Job не завершилась"
