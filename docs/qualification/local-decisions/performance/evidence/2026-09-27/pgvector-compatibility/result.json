@@ -1,0 +1,1574 @@
+{
+  "status": "pass",
+  "planSha256": "2afec5d1850044084d3f2303ab7f9e106a5c3568da9f31687743981088222280",
+  "checks": [
+    {
+      "name": "runtime role has no owner/superuser/RLS bypass",
+      "status": "pass",
+      "role": {
+        "current_user": "probe_runtime",
+        "rolsuper": false,
+        "rolbypassrls": false,
+        "rolcreatedb": false,
+        "rolcreaterole": false
+      }
+    },
+    {
+      "name": "distinct float64 neighbors collapse in float32, including outside top8 rerank pool",
+      "status": "pass"
+    },
+    {
+      "name": "mixed-dimension storage and 4096D exact comparison work",
+      "status": "pass",
+      "dimensions": 4096,
+      "distance": 0
+    },
+    {
+      "name": "untyped mixed-dimension HNSW rejected",
+      "status": "pass",
+      "sqlState": "22023",
+      "error": "ERROR:  22023: column does not have dimensions\nLOCATION:  InitBuildState, hnswbuild.c:704"
+    },
+    {
+      "name": "4096D vector HNSW rejected",
+      "status": "pass",
+      "sqlState": "54000",
+      "error": "ERROR:  54000: column cannot have more than 2000 dimensions for hnsw index\nLOCATION:  InitBuildState, hnswbuild.c:709"
+    },
+    {
+      "name": "4096D halfvec HNSW rejected",
+      "status": "pass",
+      "sqlState": "54000",
+      "error": "ERROR:  54000: column cannot have more than 4000 dimensions for hnsw index\nLOCATION:  InitBuildState, hnswbuild.c:709"
+    },
+    {
+      "name": "partial expression index supports a fixed dimension",
+      "status": "pass"
+    },
+    {
+      "name": "RLS rejects absent/reset/foreign scope and retains 6001 selected candidates",
+      "status": "pass"
+    },
+    {
+      "name": "valid cross-project INSERT rejected by RLS",
+      "status": "pass",
+      "sqlState": "42501",
+      "error": "ERROR:  42501: new row violates row-level security policy for table \"probe_vectors\"\nLOCATION:  ExecWithCheckOptions, execMain.c:2199"
+    },
+    {
+      "name": "foreign DELETE changes no rows",
+      "status": "pass"
+    },
+    {
+      "name": "three scoped exact topK sets match float64 oracle above 5000 candidates",
+      "status": "pass"
+    },
+    {
+      "name": "six forced HNSW queries preserve RLS/collection filtering; recall measured separately",
+      "status": "pass"
+    },
+    {
+      "name": "probe and baseline source hashes unchanged",
+      "status": "pass"
+    }
+  ],
+  "observations": {
+    "image": {
+      "Id": "sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f",
+      "RepoDigests": [
+        "pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f"
+      ],
+      "Architecture": "arm64",
+      "Os": "linux"
+    },
+    "versions": {
+      "postgres": "PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+      "extension": "0.8.6"
+    },
+    "precision": {
+      "query": [
+        1,
+        0
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "vector": [
+            1,
+            1.000000001
+          ]
+        },
+        {
+          "id": 2,
+          "vector": [
+            1,
+            1.000000002
+          ]
+        },
+        {
+          "id": 3,
+          "vector": [
+            1,
+            1.000000003
+          ]
+        },
+        {
+          "id": 4,
+          "vector": [
+            1,
+            1.000000004
+          ]
+        },
+        {
+          "id": 5,
+          "vector": [
+            1,
+            1.000000005
+          ]
+        },
+        {
+          "id": 6,
+          "vector": [
+            1,
+            1.000000006
+          ]
+        },
+        {
+          "id": 7,
+          "vector": [
+            1,
+            1.000000007
+          ]
+        },
+        {
+          "id": 8,
+          "vector": [
+            1,
+            1.000000008
+          ]
+        },
+        {
+          "id": 9,
+          "vector": [
+            1,
+            1.000000009
+          ]
+        },
+        {
+          "id": 10,
+          "vector": [
+            1,
+            1.00000001
+          ]
+        },
+        {
+          "id": 11,
+          "vector": [
+            1,
+            1.000000011
+          ]
+        },
+        {
+          "id": 12,
+          "vector": [
+            1,
+            1
+          ]
+        }
+      ],
+      "float64Ranking": [
+        {
+          "id": 12,
+          "score": 0.7071067811865475
+        },
+        {
+          "id": 1,
+          "score": 0.707106780832994
+        },
+        {
+          "id": 2,
+          "score": 0.7071067804794408
+        },
+        {
+          "id": 3,
+          "score": 0.7071067801258873
+        },
+        {
+          "id": 4,
+          "score": 0.7071067797723339
+        },
+        {
+          "id": 5,
+          "score": 0.7071067794187805
+        },
+        {
+          "id": 6,
+          "score": 0.7071067790652271
+        },
+        {
+          "id": 7,
+          "score": 0.7071067787116738
+        },
+        {
+          "id": 8,
+          "score": 0.7071067783581204
+        },
+        {
+          "id": 9,
+          "score": 0.707106778004567
+        },
+        {
+          "id": 10,
+          "score": 0.7071067776510136
+        },
+        {
+          "id": 11,
+          "score": 0.7071067772974602
+        }
+      ],
+      "pgvectorRanking": [
+        {
+          "id": 1,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 2,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 3,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 4,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 5,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 6,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 7,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 8,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 9,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 10,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 11,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        },
+        {
+          "id": 12,
+          "stored": "[1,1]",
+          "distance": 0.29289321881345254
+        }
+      ]
+    },
+    "fixtureSha256": "968ec7dc1a6c5f437e24f10e20333aba727df3e7f27feac17f6d94cc596b6718",
+    "exact": [
+      {
+        "query": 0,
+        "hits": [
+          {
+            "id": 3033,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9111030778176203
+          },
+          {
+            "id": 556,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9112238648402958
+          },
+          {
+            "id": 1220,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9114581631053578
+          },
+          {
+            "id": 1036,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9115587619099212
+          },
+          {
+            "id": 3833,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9116576977323976
+          },
+          {
+            "id": 3660,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9121281516761655
+          },
+          {
+            "id": 1368,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9124786402614365
+          },
+          {
+            "id": 3897,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9127221277269272
+          },
+          {
+            "id": 4670,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9127246416734907
+          },
+          {
+            "id": 5387,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9132326253187176
+          },
+          {
+            "id": 4065,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9133404021513133
+          },
+          {
+            "id": 1594,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9135483683427557
+          },
+          {
+            "id": 2457,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9136074174634716
+          },
+          {
+            "id": 2968,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.913632990053646
+          },
+          {
+            "id": 1927,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9138265980059748
+          },
+          {
+            "id": 497,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9138838569192588
+          },
+          {
+            "id": 3991,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.913971285580463
+          },
+          {
+            "id": 4694,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9140663546153663
+          },
+          {
+            "id": 5013,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9141076723237954
+          },
+          {
+            "id": 1052,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9142574945750926
+          }
+        ],
+        "float64Oracle": [
+          {
+            "id": 3033,
+            "score": 0.08889691623610332
+          },
+          {
+            "id": 556,
+            "score": 0.08877613043435921
+          },
+          {
+            "id": 1220,
+            "score": 0.08854183179011035
+          },
+          {
+            "id": 1036,
+            "score": 0.08844123384224081
+          },
+          {
+            "id": 3833,
+            "score": 0.08834229926093422
+          },
+          {
+            "id": 3660,
+            "score": 0.08787184987037729
+          },
+          {
+            "id": 1368,
+            "score": 0.08752135810469029
+          },
+          {
+            "id": 3897,
+            "score": 0.0872778693753139
+          },
+          {
+            "id": 4670,
+            "score": 0.08727536346049707
+          },
+          {
+            "id": 5387,
+            "score": 0.08676737902439288
+          },
+          {
+            "id": 4065,
+            "score": 0.08665959923352484
+          },
+          {
+            "id": 1594,
+            "score": 0.08645163594834626
+          },
+          {
+            "id": 2457,
+            "score": 0.0863925815797331
+          },
+          {
+            "id": 2968,
+            "score": 0.08636700469724913
+          },
+          {
+            "id": 1927,
+            "score": 0.08617339917538643
+          },
+          {
+            "id": 497,
+            "score": 0.0861161443713196
+          },
+          {
+            "id": 3991,
+            "score": 0.0860287104766401
+          },
+          {
+            "id": 4694,
+            "score": 0.0859336444704935
+          },
+          {
+            "id": 5013,
+            "score": 0.0858923262277105
+          },
+          {
+            "id": 1052,
+            "score": 0.0857425024522002
+          }
+        ],
+        "maxScoreError": 5.946276332435829e-09
+      },
+      {
+        "query": 1,
+        "hits": [
+          {
+            "id": 3987,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6524319024179328
+          },
+          {
+            "id": 4670,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6534896655683065
+          },
+          {
+            "id": 4658,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6555864994122013
+          },
+          {
+            "id": 1785,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.655665901959511
+          },
+          {
+            "id": 2598,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6559530719007809
+          },
+          {
+            "id": 4219,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6571984521163458
+          },
+          {
+            "id": 4418,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.657419896404652
+          },
+          {
+            "id": 3148,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6586762505720049
+          },
+          {
+            "id": 5136,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6606027978252602
+          },
+          {
+            "id": 5900,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6610004347108929
+          },
+          {
+            "id": 800,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6610777884680672
+          },
+          {
+            "id": 3027,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6624780734010391
+          },
+          {
+            "id": 4324,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6638367443799627
+          },
+          {
+            "id": 3829,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6641355647535072
+          },
+          {
+            "id": 5231,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6643072014628266
+          },
+          {
+            "id": 3393,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6648218166896512
+          },
+          {
+            "id": 3532,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6654691470478957
+          },
+          {
+            "id": 2811,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6656227139896232
+          },
+          {
+            "id": 4747,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6669233721588135
+          },
+          {
+            "id": 467,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6670446887556187
+          }
+        ],
+        "float64Oracle": [
+          {
+            "id": 3987,
+            "score": 0.34756808287179713
+          },
+          {
+            "id": 4670,
+            "score": 0.3465103255649467
+          },
+          {
+            "id": 4658,
+            "score": 0.3444134939452727
+          },
+          {
+            "id": 1785,
+            "score": 0.3443340836035073
+          },
+          {
+            "id": 2598,
+            "score": 0.34404690021568846
+          },
+          {
+            "id": 4219,
+            "score": 0.3428015368829268
+          },
+          {
+            "id": 4418,
+            "score": 0.34258008804967827
+          },
+          {
+            "id": 3148,
+            "score": 0.3413237388245982
+          },
+          {
+            "id": 5136,
+            "score": 0.3393971972340894
+          },
+          {
+            "id": 5900,
+            "score": 0.33899956408202886
+          },
+          {
+            "id": 800,
+            "score": 0.3389221978394164
+          },
+          {
+            "id": 3027,
+            "score": 0.3375219152279145
+          },
+          {
+            "id": 4324,
+            "score": 0.3361632361905199
+          },
+          {
+            "id": 3829,
+            "score": 0.33586442585152365
+          },
+          {
+            "id": 5231,
+            "score": 0.3356927875095882
+          },
+          {
+            "id": 3393,
+            "score": 0.33517817429759494
+          },
+          {
+            "id": 3532,
+            "score": 0.3345308322662556
+          },
+          {
+            "id": 2811,
+            "score": 0.3343772731267588
+          },
+          {
+            "id": 4747,
+            "score": 0.33307660987842463
+          },
+          {
+            "id": 467,
+            "score": 0.3329553055261664
+          }
+        ],
+        "maxScoreError": 2.7883530651084953e-08
+      },
+      {
+        "query": 2,
+        "hits": [
+          {
+            "id": 2442,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.018046820760365345
+          },
+          {
+            "id": 759,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01895413005231472
+          },
+          {
+            "id": 5939,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019015473160311713
+          },
+          {
+            "id": 984,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019252587312960423
+          },
+          {
+            "id": 2487,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01934211560178911
+          },
+          {
+            "id": 229,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019387772968000094
+          },
+          {
+            "id": 3871,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01939436314231291
+          },
+          {
+            "id": 2302,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019454154442056892
+          },
+          {
+            "id": 5174,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019460598131339824
+          },
+          {
+            "id": 1978,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019528796183818975
+          },
+          {
+            "id": 3990,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019550496168300957
+          },
+          {
+            "id": 5711,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019636354704085646
+          },
+          {
+            "id": 3731,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019736810075665745
+          },
+          {
+            "id": 3456,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019753347969487578
+          },
+          {
+            "id": 2080,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019774492937736476
+          },
+          {
+            "id": 3991,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019913418023683627
+          },
+          {
+            "id": 5706,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000946060005926
+          },
+          {
+            "id": 1969,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000979708522488
+          },
+          {
+            "id": 3135,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02002090672587431
+          },
+          {
+            "id": 5361,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.020029051291588718
+          }
+        ],
+        "float64Oracle": [
+          {
+            "id": 2442,
+            "score": 0.9819532168850814
+          },
+          {
+            "id": 759,
+            "score": 0.9810458706522877
+          },
+          {
+            "id": 5939,
+            "score": 0.9809844871137624
+          },
+          {
+            "id": 984,
+            "score": 0.9807474142084575
+          },
+          {
+            "id": 2487,
+            "score": 0.9806579013259508
+          },
+          {
+            "id": 229,
+            "score": 0.9806122177217262
+          },
+          {
+            "id": 3871,
+            "score": 0.9806056451051436
+          },
+          {
+            "id": 2302,
+            "score": 0.9805458905065908
+          },
+          {
+            "id": 5174,
+            "score": 0.980539411545487
+          },
+          {
+            "id": 1978,
+            "score": 0.9804712112312134
+          },
+          {
+            "id": 3990,
+            "score": 0.9804494570795892
+          },
+          {
+            "id": 5711,
+            "score": 0.980363652144523
+          },
+          {
+            "id": 3731,
+            "score": 0.9802631931982956
+          },
+          {
+            "id": 3456,
+            "score": 0.980246670824415
+          },
+          {
+            "id": 2080,
+            "score": 0.9802254866489034
+          },
+          {
+            "id": 3991,
+            "score": 0.9800865370566595
+          },
+          {
+            "id": 5706,
+            "score": 0.979990557559014
+          },
+          {
+            "id": 1969,
+            "score": 0.9799902040575389
+          },
+          {
+            "id": 3135,
+            "score": 0.9799790523605136
+          },
+          {
+            "id": 5361,
+            "score": 0.9799708917646085
+          }
+        ],
+        "maxScoreError": 5.694380278420397e-08
+      }
+    ],
+    "ann": [
+      {
+        "mode": "off",
+        "query": 0,
+        "hits": [],
+        "count": 0,
+        "recallAt20AgainstPgvectorExact": 0.0
+      },
+      {
+        "mode": "off",
+        "query": 1,
+        "hits": [
+          {
+            "id": 3987,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6524319024179328
+          },
+          {
+            "id": 4670,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6534896655683065
+          },
+          {
+            "id": 4658,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6555864994122013
+          },
+          {
+            "id": 1785,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.655665901959511
+          },
+          {
+            "id": 2598,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6559530719007809
+          },
+          {
+            "id": 4219,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6571984521163458
+          },
+          {
+            "id": 4418,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.657419896404652
+          },
+          {
+            "id": 3027,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6624780734010391
+          },
+          {
+            "id": 3829,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6641355647535072
+          },
+          {
+            "id": 5231,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6643072014628266
+          },
+          {
+            "id": 2811,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6656227139896232
+          },
+          {
+            "id": 4747,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6669233721588135
+          },
+          {
+            "id": 467,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6670446887556187
+          },
+          {
+            "id": 3817,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676594754239575
+          },
+          {
+            "id": 4030,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676644064835151
+          },
+          {
+            "id": 1499,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676852805730485
+          },
+          {
+            "id": 2980,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.667736318016146
+          },
+          {
+            "id": 1656,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6678305690629944
+          },
+          {
+            "id": 1829,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6680806028229025
+          },
+          {
+            "id": 200,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6686159019083864
+          }
+        ],
+        "count": 20,
+        "recallAt20AgainstPgvectorExact": 0.65
+      },
+      {
+        "mode": "off",
+        "query": 2,
+        "hits": [
+          {
+            "id": 2442,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.018046820760365345
+          },
+          {
+            "id": 759,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01895413005231472
+          },
+          {
+            "id": 5939,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019015473160311713
+          },
+          {
+            "id": 984,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019252587312960423
+          },
+          {
+            "id": 3871,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01939436314231291
+          },
+          {
+            "id": 2302,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019454154442056892
+          },
+          {
+            "id": 5174,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019460598131339824
+          },
+          {
+            "id": 1978,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019528796183818975
+          },
+          {
+            "id": 3990,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019550496168300957
+          },
+          {
+            "id": 5711,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019636354704085646
+          },
+          {
+            "id": 3731,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019736810075665745
+          },
+          {
+            "id": 3456,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019753347969487578
+          },
+          {
+            "id": 2080,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019774492937736476
+          },
+          {
+            "id": 3991,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019913418023683627
+          },
+          {
+            "id": 5706,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000946060005926
+          },
+          {
+            "id": 1969,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000979708522488
+          },
+          {
+            "id": 3135,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02002090672587431
+          },
+          {
+            "id": 5361,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.020029051291588718
+          },
+          {
+            "id": 724,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02012581487061782
+          },
+          {
+            "id": 2424,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02013175770986242
+          }
+        ],
+        "count": 20,
+        "recallAt20AgainstPgvectorExact": 0.9
+      },
+      {
+        "mode": "strict_order",
+        "query": 0,
+        "hits": [
+          {
+            "id": 1220,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9114581631053578
+          },
+          {
+            "id": 2457,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9136074174634716
+          },
+          {
+            "id": 4694,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9140663546153663
+          },
+          {
+            "id": 2216,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9143366813810843
+          },
+          {
+            "id": 504,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9148427795221683
+          },
+          {
+            "id": 1969,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9152869518112836
+          },
+          {
+            "id": 1185,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.915557587383318
+          },
+          {
+            "id": 574,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9155961311208833
+          },
+          {
+            "id": 2188,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9158058315166536
+          },
+          {
+            "id": 784,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9160248977621762
+          },
+          {
+            "id": 1025,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9160418063068783
+          },
+          {
+            "id": 3919,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9162496618805276
+          },
+          {
+            "id": 4302,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9166980459608255
+          },
+          {
+            "id": 2442,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9168421809608079
+          },
+          {
+            "id": 4015,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9168982066379131
+          },
+          {
+            "id": 2980,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9169159150743187
+          },
+          {
+            "id": 3198,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9170221303819336
+          },
+          {
+            "id": 762,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9172893202671029
+          },
+          {
+            "id": 3924,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9173498987096016
+          },
+          {
+            "id": 984,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.9173698740318362
+          }
+        ],
+        "count": 20,
+        "recallAt20AgainstPgvectorExact": 0.15
+      },
+      {
+        "mode": "strict_order",
+        "query": 1,
+        "hits": [
+          {
+            "id": 3987,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6524319024179328
+          },
+          {
+            "id": 4670,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6534896655683065
+          },
+          {
+            "id": 4658,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6555864994122013
+          },
+          {
+            "id": 1785,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.655665901959511
+          },
+          {
+            "id": 2598,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6559530719007809
+          },
+          {
+            "id": 4219,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6571984521163458
+          },
+          {
+            "id": 4418,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.657419896404652
+          },
+          {
+            "id": 3027,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6624780734010391
+          },
+          {
+            "id": 3829,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6641355647535072
+          },
+          {
+            "id": 5231,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6643072014628266
+          },
+          {
+            "id": 2811,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6656227139896232
+          },
+          {
+            "id": 4747,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6669233721588135
+          },
+          {
+            "id": 467,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6670446887556187
+          },
+          {
+            "id": 3817,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676594754239575
+          },
+          {
+            "id": 4030,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676644064835151
+          },
+          {
+            "id": 1499,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6676852805730485
+          },
+          {
+            "id": 2980,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.667736318016146
+          },
+          {
+            "id": 1656,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6678305690629944
+          },
+          {
+            "id": 1829,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6680806028229025
+          },
+          {
+            "id": 200,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.6686159019083864
+          }
+        ],
+        "count": 20,
+        "recallAt20AgainstPgvectorExact": 0.65
+      },
+      {
+        "mode": "strict_order",
+        "query": 2,
+        "hits": [
+          {
+            "id": 2442,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.018046820760365345
+          },
+          {
+            "id": 759,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01895413005231472
+          },
+          {
+            "id": 5939,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019015473160311713
+          },
+          {
+            "id": 984,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019252587312960423
+          },
+          {
+            "id": 3871,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.01939436314231291
+          },
+          {
+            "id": 2302,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019454154442056892
+          },
+          {
+            "id": 5174,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019460598131339824
+          },
+          {
+            "id": 1978,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019528796183818975
+          },
+          {
+            "id": 3990,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019550496168300957
+          },
+          {
+            "id": 5711,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019636354704085646
+          },
+          {
+            "id": 3731,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019736810075665745
+          },
+          {
+            "id": 3456,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019753347969487578
+          },
+          {
+            "id": 2080,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019774492937736476
+          },
+          {
+            "id": 3991,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.019913418023683627
+          },
+          {
+            "id": 5706,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000946060005926
+          },
+          {
+            "id": 1969,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02000979708522488
+          },
+          {
+            "id": 3135,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02002090672587431
+          },
+          {
+            "id": 5361,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.020029051291588718
+          },
+          {
+            "id": 724,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02012581487061782
+          },
+          {
+            "id": 2424,
+            "project": "project-a",
+            "collection": "chosen",
+            "distance": 0.02013175770986242
+          }
+        ],
+        "count": 20,
+        "recallAt20AgainstPgvectorExact": 0.9
+      }
+    ]
+  },
+  "errors": [],
+  "cleanup": {
+    "containerRemoved": true
+  },
+  "elapsedSeconds": 12.282
+}

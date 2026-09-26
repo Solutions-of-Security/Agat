@@ -44,6 +44,8 @@ Collection IDs фиксируются в run при создании. Повто
 
 Набор больше 5000 готовых кандидатов на query отклоняется: старые фрагменты не исключаются молча ради ограничения выборки. Сортировка и `topK` используют неокруглённый cosine score; округление до шести знаков выполняется для итоговых hits. [Проверки границы и близких векторов](./qualification/local-decisions/performance/retrieval-capacity.md).
 
+[Стенд pgvector](./qualification/local-decisions/performance/pgvector-compatibility.md) выявил несовместимость прямой замены: float32 может изменить topK, HNSW ограничивает размерность и полноту после фильтрации. Производственный backend по результатам опыта не менялся; исходные JSON-векторы и точный scorer сохранены.
+
 Кандидаты читаются последовательно; PostgreSQL использует один транзакционный курсор с порциями по 64 строки, SQLite — iterator. В ранжировании сохраняются только `topK`, но проверяются все кандидаты. Это устраняет отказ одного большого ответа PostgreSQL-моста на допустимых 500 × 4096 vectors. [Воспроизведение, повтор и проверки RLS/rollback](./qualification/local-decisions/performance/retrieval-streaming.md).
 
 ## Подготовка embedding-модели
@@ -212,7 +214,7 @@ SQLite backup уже включает knowledge store. Делайте согла
 - cosine brute-force по максимум 5000 готовых фрагментов выбранных collections на query; превышение даёт явную ошибку, поиск только по свежей части индекса не выполняется;
 - до 32 collections на run, 8 embedding queries и 20 итоговых hits;
 - нет hybrid BM25, reranker, semantic cache и автоматического выбора embedding model;
-- SQLite рассчитан на один coordinator; PostgreSQL/pgvector нужен вместе с HA-этапом;
+- SQLite рассчитан на один coordinator; PostgreSQL поддерживает HA state store с тем же точным поиском по JSON-векторам. Pgvector для этого не требуется;
 - automatic memory extraction намеренно отсутствует.
 
 Golden datasets, human rubric, model judge и prompt registry реализованы в 0.8: knowledge fingerprint блокирует запуск или promotion при drift. В 0.9 A2A endpoint закрепил разрешённые collections как boundary, в 1.0 production durable runtime получил replay/versioning gate, а релизы 1.1–1.4 добавили MCP policy, process/team runtime и расширенную A2A interoperability без ослабления project-scoped RAG.

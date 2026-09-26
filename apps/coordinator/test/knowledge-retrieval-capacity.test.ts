@@ -96,3 +96,34 @@ test("bounded topK retains both ends of a monotonic vector sequence across queri
     assert.deepEqual(result.hits.map(hit => hit.provenance.chunkOrdinal), [129, 128, 127, 0, 1, 2]);
   } finally { store.close(); }
 });
+
+test("topK preserves a float64 winner when float32 conversion would collapse the candidate pool", () => {
+  const store = new AgatStore(":memory:", { seedDemo: false });
+  try {
+    const node = store.registerNode({ enrollmentToken: "unused", name: "float64-precision", platform: "test",
+      models: ["test-model"], embeddingModels: ["precision-fixture"], maxConcurrency: 1 }).id;
+    const collection = store.createKnowledgeCollection({ name: "Double precision neighbors",
+      embeddingModel: "precision-fixture" }) as { id: string };
+    const vectors = new Map<string, number[]>();
+    for (let index = 1; index <= 12; index += 1) {
+      const document = store.ingestKnowledgeDocument(collection.id, { name: `Candidate ${index}`,
+        content: `Synthetic precision candidate ${index}.` }) as { id: string };
+      vectors.set(document.id, [1, index === 12 ? 1 : 1 + index * 1e-9]);
+    }
+    const winner = [...vectors.keys()].at(-1)!;
+    assert.equal(new Set([...vectors.values()].map(vector => String(new Float32Array(vector)))).size, 1);
+    for (let lease; (lease = store.leaseKnowledgeEmbedding(node));) {
+      store.completeKnowledgeEmbedding(node, lease.leaseId,
+        lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: vectors.get(lease.document.id)! })));
+    }
+    store.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(winner);
+    store.createRun({ name: "Float64 winner", input: "Synthetic precision query", agentIds: ["collector"],
+      approvalRequired: false, knowledgeCollectionIds: [collection.id] });
+    const lease = store.leaseNext(node)!;
+    const result = store.searchKnowledge(node, lease.leaseId, { queries: [{ embeddingModel: "precision-fixture",
+      collectionIds: [collection.id], vector: [1, 0], topK: 8 }] });
+    assert.equal(result.hits.length, 8);
+    assert.equal(result.hits[0]!.provenance.documentId, winner);
+    assert.deepEqual(result.hits.map(hit => hit.score), Array(8).fill(0.707107));
+  } finally { store.close(); }
+});

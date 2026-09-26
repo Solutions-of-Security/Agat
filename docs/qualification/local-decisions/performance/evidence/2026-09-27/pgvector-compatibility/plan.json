@@ -1,0 +1,53 @@
+{
+  "image": "pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f",
+  "inputHashes": {
+    "scripts/probe-pgvector.py": "694fd7d5245a23640d4a1d74bb93b13ad1e5192a015a1e7186f4d0e3020370b2",
+    "scripts/lib/pgvector_probe.py": "0ace4fe73ba8e9abe02e1f450a601368ce51de984e8b75b543f22dc4222c8ecd",
+    "scripts/lib/rag_corpus.py": "3a8a41a301f03af545b6107026b480d3386323a8474f759b8c421adb8847429d",
+    "apps/coordinator/src/knowledge.ts": "17dc301b05d7b5d2e635990b63636a76d6b8eac4cd9690229263765b60156379",
+    "apps/coordinator/src/database.ts": "8aec4ed3b70e653b85613bbba4d0dfd7b607cea0c28279f79773cc08fbc2ba7a"
+  },
+  "dimensions": 768,
+  "topK": 20,
+  "fixture": {
+    "chosenProjectRows": 6001,
+    "excludedCollectionRows": 100,
+    "otherProjectRows": 400,
+    "generator": "LCG32 seed 20260927; 16 nonzero coordinates padded to 768"
+  },
+  "queries": [
+    "first-axis",
+    "second-axis",
+    "first-sixteen-axes"
+  ],
+  "expected": [
+    "exact SQL returns all scoped topK members on the synthetic corpus",
+    "float32 collapses distinct valid double vectors, including outside a rerank pool",
+    "4096D exact storage works; vector and halfvec HNSW reject 4096D",
+    "runtime RLS isolates projects; absent/reset scope returns no rows",
+    "ANN recall/count recorded, not assumed to equal exact search; no leaked hits"
+  ],
+  "ann": {
+    "efSearch": 40,
+    "iterativeScan": [
+      "off",
+      "strict_order"
+    ],
+    "maxScanTuples": 20000,
+    "forcedIndex": true,
+    "indexBuilds": 1
+  },
+  "limits": {
+    "sqlTimeoutMs": 30000,
+    "indexBuildTimeoutMs": 120000,
+    "commandTimeoutSeconds": 180,
+    "containerMemoryBytes": 2147483648,
+    "containerCpuLimit": 2
+  },
+  "scope": "synthetic compatibility probe, not the application search path, throughput or semantic quality",
+  "host": {
+    "system": "Darwin",
+    "release": "25.6.0",
+    "architecture": "arm64"
+  }
+}
