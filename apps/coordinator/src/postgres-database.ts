@@ -5,8 +5,8 @@ import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 
 import type { DatabaseValue, SyncDatabase, SyncStatement } from "./sync-database.js";
+import { PostgresResponseBuffer, PostgresResponseTimeout } from "./postgres-response-buffer.js";
 
-const RESPONSE_HEADER_BYTES = 16;
 const DEFAULT_RESPONSE_BYTES = 32 * 1_024 * 1_024;
 const CURSOR_BATCH_ROWS = 64;
 
@@ -129,12 +129,12 @@ class PostgresStatement implements SyncStatement {
 export class PostgresDatabaseSync implements SyncDatabase {
   readonly dialect = "postgresql" as const;
   private readonly worker: Worker;
-  private readonly responseBytes: number;
+  private readonly responseBuffer: PostgresResponseBuffer;
   private readonly waitTimeoutMs: number;
   private closed = false;
 
   constructor(options: PostgresDatabaseOptions) {
-    this.responseBytes = Math.max(1_048_576, options.responseBytes ?? DEFAULT_RESPONSE_BYTES);
+    this.responseBuffer = new PostgresResponseBuffer(Math.max(1_048_576, options.responseBytes ?? DEFAULT_RESPONSE_BYTES));
     this.waitTimeoutMs = Math.max(
       5_000,
       options.connectTimeoutMs + options.statementTimeoutMs + 5_000,
@@ -194,21 +194,20 @@ export class PostgresDatabaseSync implements SyncDatabase {
   }
 
   private call(payload: Record<string, unknown>): unknown {
-    const shared = new SharedArrayBuffer(RESPONSE_HEADER_BYTES + this.responseBytes);
-    const header = new Int32Array(shared, 0, RESPONSE_HEADER_BYTES / Int32Array.BYTES_PER_ELEMENT);
-    this.worker.postMessage({ ...payload, shared });
-    const waited = Atomics.wait(header, 0, 0, this.waitTimeoutMs);
-    if (waited === "timed-out") {
-      void this.worker.terminate();
-      this.closed = true;
-      throw new Error(`PostgreSQL state store не ответил за ${this.waitTimeoutMs} ms`);
+    let response: WorkerResponse;
+    try {
+      response = JSON.parse(this.responseBuffer.exchange(
+        shared => this.worker.postMessage({ ...payload, shared }), this.waitTimeoutMs,
+      )) as WorkerResponse;
+    } catch (error) {
+      if (error instanceof PostgresResponseTimeout) {
+        // A timed-out writer can still publish a late response. Never reuse its
+        // buffer for another request; close this database and its worker.
+        this.closed = true;
+        void this.worker.terminate();
+      }
+      throw error;
     }
-    const length = Atomics.load(header, 1);
-    if (length < 0 || length > this.responseBytes) {
-      throw new Error("PostgreSQL state store вернул повреждённый ответ");
-    }
-    const bytes = new Uint8Array(shared, RESPONSE_HEADER_BYTES, length);
-    const response = JSON.parse(Buffer.from(bytes).toString("utf8")) as WorkerResponse;
     if (!response.ok) {
       const error = new Error(response.error?.message ?? "PostgreSQL query завершился ошибкой");
       error.name = response.error?.name ?? "PostgresError";
