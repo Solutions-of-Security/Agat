@@ -72,3 +72,27 @@ test("topK ranks close cosine scores before display rounding", () => {
     assert.equal(search([1, 0.0005], 1).hits[0]!.provenance.documentId, nearby.id);
   } finally { store.close(); }
 });
+
+test("bounded topK retains both ends of a monotonic vector sequence across queries", () => {
+  const store = new AgatStore(":memory:", { seedDemo: false });
+  try {
+    const node = store.registerNode({ enrollmentToken: "unused", name: "streamed-topk", platform: "test",
+      models: ["test-model"], embeddingModels: ["monotonic-fixture"], maxConcurrency: 1 }).id;
+    const collection = store.createKnowledgeCollection({ name: "Monotonic vectors", embeddingModel: "monotonic-fixture",
+      chunkSize: 400, chunkOverlap: 0 }) as { id: string };
+    const document = store.ingestKnowledgeDocument(collection.id, { name: "Synthetic sequence", content: "A".repeat(130 * 400) }) as { chunkCount: number };
+    assert.equal(document.chunkCount, 130);
+    for (let lease; (lease = store.leaseKnowledgeEmbedding(node));) {
+      store.completeKnowledgeEmbedding(node, lease.leaseId,
+        lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [chunk.ordinal + 1, 1] })));
+    }
+    store.createRun({ name: "Bounded topK", input: "Synthetic opposite queries", agentIds: ["collector"],
+      approvalRequired: false, knowledgeCollectionIds: [collection.id] });
+    const lease = store.leaseNext(node)!;
+    const query = (vector: number[]) => ({ embeddingModel: "monotonic-fixture", collectionIds: [collection.id], vector, topK: 3 });
+    const result = store.searchKnowledge(node, lease.leaseId, { queries: [query([1, 0]), query([0, 1]), query([1, 0])] });
+    // For vectors [n, 1], similarity to [1, 0] grows with n while similarity
+    // to [0, 1] falls. The repeated first query must not duplicate its hits.
+    assert.deepEqual(result.hits.map(hit => hit.provenance.chunkOrdinal), [129, 128, 127, 0, 1, 2]);
+  } finally { store.close(); }
+});
