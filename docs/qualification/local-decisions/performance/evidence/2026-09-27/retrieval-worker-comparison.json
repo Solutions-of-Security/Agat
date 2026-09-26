@@ -1,0 +1,123 @@
+{
+  "status": "verified",
+  "checks": {
+    "before": {
+      "implementationCommit": "29c98262602065ea62effef5206b8a96514d3799",
+      "launcherSha256": "b9c0baad5718eda7ec7f479825cf5beeaba2bd96048ed7b3ee37acb087dcce02",
+      "filesVerified": 17,
+      "sourceFilesVerified": 11,
+      "verification": {
+        "status": "verified",
+        "planSha256": "bb3c60cdd20c68e90530c7af9dfddabddb02e575da0a5ae9206373653f6892e8",
+        "summary": {
+          "sqlite": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              128.682,
+              118.775,
+              122.017,
+              117.971,
+              120.176,
+              122.147,
+              117.01,
+              109.945
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 104.268,
+            "warmP95Ms": 108.487,
+            "warmMaxMs": 115.33,
+            "baselineRssBytes": 152518656,
+            "processLifetimePeakRssBytes": 210501632
+          },
+          "postgresql": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              483.198,
+              434.298,
+              427.351,
+              464.001,
+              499.336,
+              493.447,
+              497.389,
+              415.248
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 423.336,
+            "warmP95Ms": 469.494,
+            "warmMaxMs": 490.598,
+            "baselineRssBytes": 173883392,
+            "processLifetimePeakRssBytes": 566165504
+          }
+        }
+      }
+    },
+    "after": {
+      "implementationCommit": "c1b0d9b97a4a0342b61b5ce617c14a5467aae315",
+      "launcherSha256": "a3d7cc1c42f2baeb04b29d3af1e70c88574362658cda7db2aae85ed7de81b891",
+      "filesVerified": 17,
+      "sourceFilesVerified": 12,
+      "verification": {
+        "status": "verified",
+        "planSha256": "a2c931bcb1078a22cf8fe16a2e529f3233e93dbef07afb2ad4441c5579f27d88",
+        "summary": {
+          "sqlite": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              128.644,
+              115.4,
+              103.566,
+              101.828,
+              103.453,
+              103.773,
+              104.706,
+              106.005
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 104.528,
+            "warmP95Ms": 107.783,
+            "warmMaxMs": 113.765,
+            "baselineRssBytes": 152354816,
+            "processLifetimePeakRssBytes": 207290368
+          },
+          "postgresql": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              336.785,
+              326.486,
+              311.594,
+              306.707,
+              323.971,
+              299.577,
+              314.515,
+              343.772
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 341.755,
+            "warmP95Ms": 427.606,
+            "warmMaxMs": 443.126,
+            "baselineRssBytes": 174538752,
+            "processLifetimePeakRssBytes": 354074624
+          }
+        }
+      }
+    }
+  },
+  "identicalSourceVectors": 2429,
+  "identicalQueryVectors": 8,
+  "identicalHitLists": 80,
+  "modelDescriptionHashes": {
+    "before": "86f29909acd25816ae049c30ae66dc5a1267fc1b9fab195adaa49429eb3380be",
+    "after": "60228104656b1f8fe1d6d886924d53e256b5b62e9912383d5903cdeff264d2f0",
+    "match": false,
+    "note": "The whole /api/show hash is reported separately. Raw descriptions were not retained, so differing hashes remain unexplained; recorded identity/settings and all vectors are checked."
+  },
+  "limits": [
+    "One sequential comparison; no randomized crossover or production SLO inference.",
+    "Process RSS excludes PostgreSQL server, Docker VM and unloaded Ollama.",
+    "Historical process IDs are not probed here because IDs may be reused."
+  ]
+}

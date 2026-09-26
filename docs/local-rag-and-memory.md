@@ -48,6 +48,8 @@ Collection IDs фиксируются в run при создании. Повто
 
 Кандидаты читаются последовательно; PostgreSQL использует один транзакционный курсор с порциями по 64 строки, SQLite — iterator. В ранжировании сохраняются только `topK`, но проверяются все кандидаты. Это устраняет отказ одного большого ответа PostgreSQL-моста на допустимых 500 × 4096 vectors. [Воспроизведение, повтор и проверки RLS/rollback](./qualification/local-decisions/performance/retrieval-streaming.md).
 
+В PostgreSQL точный scorer выполняется внутри SQL-worker: между потоками передаются только выбранные metadata и score. SQLite использует тот же scorer с native iterator. [Повторный корпусный опыт](./qualification/local-decisions/performance/retrieval-worker-ranking.md) сохранил все hits и снизил наблюдаемый PostgreSQL RSS с 540 до 338 МиБ; модель доступа и лимит кандидатов сохраняются.
+
 ## Подготовка embedding-модели
 
 Для Ollama:

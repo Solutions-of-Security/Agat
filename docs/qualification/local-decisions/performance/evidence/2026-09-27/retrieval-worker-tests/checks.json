@@ -1,0 +1,50 @@
+{
+  "status": "pass",
+  "implementationCommit": "c1b0d9b97a4a0342b61b5ce617c14a5467aae315",
+  "tests": {
+    "coordinator": 231,
+    "postgresIntegration": 9,
+    "documentationNode": 12,
+    "documentationPython": 143,
+    "localLinks": 1388,
+    "markdownFiles": 160
+  },
+  "commands": {
+    "coordinator": {
+      "command": "npm run test:coordinator",
+      "exitCode": 0,
+      "log": "coordinator.log",
+      "sha256": "2afa0a5ec60402405d4d66c8fb0959fd6a040018654b1a7f490ffaaecb78bebe"
+    },
+    "postgres": {
+      "command": "npm run fleet:test-ha-postgres",
+      "exitCode": 0,
+      "log": "postgres.log",
+      "sha256": "f105f9c055d1a60c6dc01fce0e30dfa4bfb02494baab6dc4e38b58873c6b8fc3"
+    },
+    "types": {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "log": "types.log",
+      "sha256": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c"
+    },
+    "build": {
+      "command": "npm run build --workspace @agat/coordinator",
+      "exitCode": 0,
+      "log": "build.log",
+      "sha256": "a698a3e8548374809e6c07e06f2b647451f9ef85819c50128127bc813dbe69ce"
+    },
+    "docs": {
+      "command": "npm run docs:check",
+      "exitCode": 0,
+      "log": "docs.log",
+      "sha256": "75363b8cf6822ea40335def5071c3e427bf6f85552f1591b5bbf7a058708ab22"
+    }
+  },
+  "comparisonVerifierChecks": [
+    "reproduces committed comparison",
+    "rejects disabled assertions",
+    "rejects wrong implementation commit"
+  ],
+  "comparisonVerifierSha256": "fe812ed905e0f71caa2640ddcab4830d577f26b46f58fc771706b3cb7a6bb5ee"
+}
