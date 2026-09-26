@@ -34,6 +34,7 @@ import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
+import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
 import type { ProcessApprovalForm } from "./types.js";
@@ -41,7 +42,6 @@ import { createToken, hashToken, tokensEqual } from "./security.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import {
   chunkKnowledgeText,
-  cosineSimilarity,
   KNOWLEDGE_EMBEDDING_BATCH_SIZE,
   KNOWLEDGE_MAX_SEARCH_CANDIDATES,
   normalizeEmbeddingVector,
@@ -9144,7 +9144,7 @@ export class AgatStore {
           || dimensions < 1) throw new Error("Индекс embeddings содержит некорректные метаданные");
         if (dimensions !== vector.length) throw new Error("Размерность retrieval не совпадает с индексом коллекции");
       }
-      const candidates = this.db.prepare(`
+      const statement = this.db.prepare(`
         SELECT ch.*, d.name AS document_name, d.source_uri, d.content_sha256 AS document_sha256, d.original_sha256,
           c.name AS collection_name, c.embedding_model
         FROM knowledge_chunks ch
@@ -9154,28 +9154,15 @@ export class AgatStore {
           AND c.embedding_model = ? AND ch.embedding_model = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
         ORDER BY ch.embedded_at DESC
         LIMIT ?
-      `).iterate(project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1);
-      const ranked: Array<Omit<KnowledgeSearchHit, "marker">> = [];
-      let candidateCount = 0;
-      // Stream the same bounded SELECT snapshot. Large valid vectors must not
-      // turn one query into a response exceeding the PostgreSQL bridge limit.
-      for (const candidate of candidates) {
-        if (++candidateCount > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
-          throw new Error(`Лимит локального retrieval — ${KNOWLEDGE_MAX_SEARCH_CANDIDATES} готовых фрагментов на query; сузьте набор коллекций или используйте индексируемый поиск`);
-        }
-        const stored = parseJson<unknown>(candidate.embedding_json, null);
-        let storedVector: number[];
-        try {
-          storedVector = normalizeEmbeddingVector(stored);
-        } catch {
-          throw new Error("Индекс embeddings содержит повреждённый вектор");
-        }
-        if (storedVector.length !== Number(candidate.embedding_dimensions)) throw new Error("Индекс embeddings содержит неверную размерность вектора");
-        const score = cosineSimilarity(vector, storedVector);
-        if (score === null || !Number.isFinite(score)) throw new Error("Индекс embeddings не позволяет вычислить сходство запроса");
-        // Validate every candidate, including those outside topK, but retain
-        // only the best hits. Equal scores preserve the query's existing order.
-        if (ranked.length === topK && score <= ranked[ranked.length - 1]!.score) continue;
+      `);
+      const params = [project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1];
+      // Both paths validate every candidate and retain the same float64 topK.
+      // PostgreSQL keeps vectors beside its cursor, crossing the bridge once
+      // with selected metadata only. SQLite consumes its native iterator here.
+      const ranked = statement.rankKnowledgeCandidates
+        ? statement.rankKnowledgeCandidates({ vector, topK }, ...params)
+        : rankKnowledgeCandidates(statement.iterate(...params), { vector, topK });
+      for (const { candidate, score } of ranked) {
         const hit: Omit<KnowledgeSearchHit, "marker"> = {
           score,
           content: String(candidate.content),
@@ -9196,11 +9183,6 @@ export class AgatStore {
             originalSha256: typeof candidate.original_sha256 === "string" ? candidate.original_sha256 : null,
           },
         };
-        const before = ranked.findIndex((current) => current.score < score);
-        ranked.splice(before < 0 ? ranked.length : before, 0, hit);
-        if (ranked.length > topK) ranked.pop();
-      }
-      for (const hit of ranked) {
         const current = bestByChunk.get(hit.provenance.chunkId);
         if (!current || hit.score > current.score) bestByChunk.set(hit.provenance.chunkId, hit);
       }
