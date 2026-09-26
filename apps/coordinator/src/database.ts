@@ -9154,7 +9154,13 @@ export class AgatStore {
           AND c.embedding_model = ? AND ch.embedding_model = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
         ORDER BY ch.embedded_at DESC
         LIMIT ?
-      `).all(project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES) as Row[];
+      `).all(project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1) as Row[];
+      // Probe one row beyond the bound in the same query: a separate count can
+      // become stale while another worker finishes indexing. Never silently
+      // discard older evidence and present a search of only recent chunks.
+      if (candidates.length > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
+        throw new Error(`Лимит локального retrieval — ${KNOWLEDGE_MAX_SEARCH_CANDIDATES} готовых фрагментов на query; сузьте набор коллекций или используйте индексируемый поиск`);
+      }
       const ranked = candidates.flatMap((candidate): Array<Omit<KnowledgeSearchHit, "marker">> => {
         const stored = parseJson<unknown>(candidate.embedding_json, null);
         let storedVector: number[];
@@ -9167,7 +9173,7 @@ export class AgatStore {
         const score = cosineSimilarity(vector, storedVector);
         if (score === null || !Number.isFinite(score)) throw new Error("Индекс embeddings не позволяет вычислить сходство запроса");
         return [{
-          score: Math.round(score * 1_000_000) / 1_000_000,
+          score,
           content: String(candidate.content),
           provenance: {
             projectId: project,
@@ -9204,7 +9210,10 @@ export class AgatStore {
     const hits = [...bestByChunk.values()]
       .sort((left, right) => right.score - left.score)
       .slice(0, 20)
-      .map((hit, index): KnowledgeSearchHit => ({ marker: `K${lastMarker + index + 1}`, ...hit }));
+      // Round only the response: rounding before topK can make nearby vectors
+      // tie with an exact match and let ingestion order decide the winner.
+      .map((hit, index): KnowledgeSearchHit => ({ marker: `K${lastMarker + index + 1}`, ...hit,
+        score: Math.round(hit.score * 1_000_000) / 1_000_000 }));
     const retrievalId = randomUUID();
     const storedHits = hits.map((hit) => ({
       marker: hit.marker,
