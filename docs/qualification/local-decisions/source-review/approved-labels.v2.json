@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "agat.decision.annotation-approval.v1",
+  "id": "agat-source-review-v2.approved-labels",
+  "status": "approved",
+  "createdAt": "2026-09-26T09:57:10.453839+00:00",
+  "scope": "assistant_review_of_source_bound_labels",
+  "labelSource": "assistant-reviewed",
+  "approvedBy": {
+    "id": "codex-assistant",
+    "kind": "assistant",
+    "blinded": false,
+    "independentHumanReview": false
+  },
+  "humanReviewCompleted": false,
+  "expertReviewed": false,
+  "poolSha256": "bc2b3a52e3dd34ca829ee746a49088a98ba5c5ad3c1f4a8e52bc9603c9eb18e4",
+  "sourceReview": {
+    "path": "research-review.v2.json",
+    "bytesSha256": "2532395a0147c3ffee29ee9a005ff2a9e03b464db59ee95c5f4271b6f13d11d3"
+  },
+  "labels": [
+    {
+      "id": "agat-source-001",
+      "inputSha256": "f6c5cbaf179563a16980b43fba4fce1afd04a6468c5762abb59148af7ac6f3fb",
+      "expectedOptionId": "contradicted",
+      "rationale": "publishedVersion равен 0, а отправка запуска явно отключена: обе части утверждения о готовом опубликованном процессе опровергнуты."
+    },
+    {
+      "id": "agat-source-002",
+      "inputSha256": "ea560a479161994c1f0b78a487145d744f52bbc0ab6c53840685c0d5962f6814",
+      "expectedOptionId": "supported",
+      "rationale": "Фрагмент одновременно содержит apiReadBack=PASS, agents=6 и createdAgents=0 для повторной установки."
+    },
+    {
+      "id": "agat-source-003",
+      "inputSha256": "938fcde3c4e6188fb1118e18490011ba821461e00ee17072766961405e72b527",
+      "expectedOptionId": "insufficient",
+      "rationale": "Статус completed и сохранённый ответ не содержат измерения p95; утверждение о скорости нельзя ни подтвердить, ни опровергнуть."
+    },
+    {
+      "id": "agat-source-004",
+      "inputSha256": "e07dc5f178cb499c847e0b57c83ce18c469a0d4b7c6efd59c264482de9b3ce43",
+      "expectedOptionId": "contradicted",
+      "rationale": "Протокол явно называет вход синтетическим handbook, что несовместимо с утверждением о документах заказчика."
+    },
+    {
+      "id": "agat-source-005",
+      "inputSha256": "0a19559c7d280decc203927ab701553ed916bd8bb20bb6cf00047e32424616fb",
+      "expectedOptionId": "contradicted",
+      "rationale": "Источник прямо указывает, что генерация при продолжении прежнего workflow не повторялась."
+    },
+    {
+      "id": "agat-source-006",
+      "inputSha256": "1a79befb620a5cc065a32742bede5349cfa7193d5f9f03ddf87c26f5e6bd6623",
+      "expectedOptionId": "supported",
+      "rationale": "В таблице проверка установленной Qwen3 имеет NOT_RUN после отказа проверки версий."
+    },
+    {
+      "id": "agat-source-007",
+      "inputSha256": "ba6d706c4da447d59c177dd4295c4627094e36ee7524c75896e81d74b0174e68",
+      "expectedOptionId": "insufficient",
+      "rationale": "Причина сбоя не установлена: исходные ответы удалены, а протокол оставляет две возможности — ошибку модели или равнозначную формулировку, не распознанную рубрикой. Это не доказывает ни арифметическую ошибку, ни её отсутствие, поэтому выбирается insufficient."
+    },
+    {
+      "id": "agat-source-008",
+      "inputSha256": "ebd441e517ce91465957fc74745c8add7ad579ce67aea44db5c63207875040ee",
+      "expectedOptionId": "supported",
+      "rationale": "В границах issue явно исключены проведение исследования и набор участников."
+    },
+    {
+      "id": "agat-source-009",
+      "inputSha256": "53441f76a6ebac28b701eb75f190c0fcffc424c01e49ae614321c05ce5ee4165",
+      "expectedOptionId": "enhancement",
+      "rationale": "Основная поставка — новый сохранённый контракт provenance и API; дефект распознавания по имени объясняет потребность в расширении. Категория выбрана по содержанию, не по repository label."
+    },
+    {
+      "id": "agat-source-010",
+      "inputSha256": "60c13a935b4f5a1b801e7339a30edae600391b5017783bec6f704abeba1e3413",
+      "expectedOptionId": "other",
+      "rationale": "Основной результат — документ с протоколом; изменение поведения приложения и проведение исследования вне scope. По локальной рубрике это other."
+    },
+    {
+      "id": "agat-source-011",
+      "inputSha256": "0efd95f1e77411a11d205c25254e64b19cb4078ed180a8cfd298949f5a37bd56",
+      "expectedOptionId": "enhancement",
+      "rationale": "Нужен первый адаптер OpenRouter с новым поведением. API key/auth являются частью требований к функции, а не просьбой выдать права субъекту."
+    },
+    {
+      "id": "agat-source-012",
+      "inputSha256": "cf09b6344ba812dbde262c77378d174bfad8f4d6a95d1bf13d2a6727fb42d0de",
+      "expectedOptionId": "enhancement",
+      "rationale": "Roadmap требует добавить приём и обработку форматов; самостоятельного сообщения о конкретном сбое нет."
+    },
+    {
+      "id": "agat-source-013",
+      "inputSha256": "05a7e7cc43c936c58f2f2775c3ab015c654fcae99ed5ba97788bf58a3704e54f",
+      "expectedOptionId": "incident",
+      "rationale": "Описаны конкретный I/O-сбой bind mount и восстановление локального контейнера. По локальному определению incident включает такую историческую запись; текущий сбой не утверждается."
+    },
+    {
+      "id": "agat-source-014",
+      "inputSha256": "fab5d6fcb0be934cfd18fd3c1fbf188f1547a11b2f9e99d1807bf0fef5fa8069",
+      "expectedOptionId": "incident",
+      "rationale": "Зафиксирован отказ квалификационного стенда из-за SDK и недостающих зависимостей. incident относится к инженерному окружению, не к промышленной эксплуатации."
+    },
+    {
+      "id": "agat-source-015",
+      "inputSha256": "f86d0960d406dbcc9241b4da8c9aa5f76301f2d2f323f6b428d2deb520c7a093",
+      "expectedOptionId": "incident",
+      "rationale": "В тестовом клиенте отсутствовала обязательная причина reject. HTTP 400 соответствует защите API; incident обозначает зафиксированный дефект harness, а не ошибку сервера."
+    },
+    {
+      "id": "agat-source-016",
+      "inputSha256": "5c712aa24e078fdab64862b54e89c1c11a64beeefbef821c618abbd78782a747",
+      "expectedOptionId": "other",
+      "rationale": "Фрагмент сообщает о подготовленном черновике и ограничениях стенда без самостоятельной заявки на восстановление, новую функцию или выдачу прав."
+    },
+    {
+      "id": "agat-source-017",
+      "inputSha256": "5e56ff6b59cb4dba808fc8017fd342bb78b34208f2a94a444fab4cc09630e1d8",
+      "expectedOptionId": "needs_clarification",
+      "rationale": "Все три требуемые привязки к инфраструктуре явно остаются невыбранными."
+    },
+    {
+      "id": "agat-source-018",
+      "inputSha256": "f24b993238680ac85a38d7cacdb79290b04820aa47f0f91646174e9d3e1684a1",
+      "expectedOptionId": "sufficient",
+      "rationale": "Для пересказа даны оба результата повторной установки: createdAgents=0 и createdProcess=false."
+    },
+    {
+      "id": "agat-source-019",
+      "inputSha256": "30f8239468cf0861ba8ab2a0a4cd1a7469097151c47d5d020acf11150f53643b",
+      "expectedOptionId": "sufficient",
+      "rationale": "Для незаполненного шаблона перечислены число ролей и участников, поля среды, структура записи и граница задачи; персональные данные и фактические устройства не входят в заданные requiredInputs."
+    },
+    {
+      "id": "agat-source-020",
+      "inputSha256": "2ee562a5433f6e13afc9023310bacb2045251dced9d61d28aae56c72239bc820",
+      "expectedOptionId": "sufficient",
+      "rationale": "В issue присутствуют все четыре группы требуемых критериев; для их извлечения срок и исполнитель не требуются."
+    },
+    {
+      "id": "agat-source-021",
+      "inputSha256": "05875467e1241327031b81dcf5069ba240293e7decb1e7225e67ef8da7b56373",
+      "expectedOptionId": "needs_clarification",
+      "rationale": "Roadmap предписывает определить команды, владельца, baseline и критерии, но самих значений не сообщает."
+    },
+    {
+      "id": "agat-source-022",
+      "inputSha256": "487a5491cd73a54ba77fb6a05140baf1262882a9813ffbf6ef99b41e2fb58c6e",
+      "expectedOptionId": "sufficient",
+      "rationale": "Исторический адрес coordinator и путь /api/v1/health указаны явно. Достаточность для извлечения адреса не означает доступность сервиса сейчас."
+    },
+    {
+      "id": "agat-source-023",
+      "inputSha256": "73d63f8aa1d0674978da953c190e7fa484941e4abd31765450d1a4a738e68a6a",
+      "expectedOptionId": "needs_clarification",
+      "rationale": "Для точной причины необходим исходный ответ модели, который удалён. Если восстановить его нельзя, причина остаётся неизвестной; повторные вопросы сами по себе этот пробел не устранят."
+    },
+    {
+      "id": "agat-source-024",
+      "inputSha256": "bde54e740c994e577a8ff255204144058466c1877b55edb3bac97cd2e8acc2a2",
+      "expectedOptionId": "needs_clarification",
+      "rationale": "Публикация согласованных срока и исполнителя требует обоих значений, а источник прямо сообщает об отсутствии назначений."
+    }
+  ],
+  "routingEnabled": false,
+  "qualifiedForRouting": false
+}

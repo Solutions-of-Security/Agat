@@ -1,0 +1,12 @@
+services:
+  temporal:
+    image: temporalio/temporal:1.8.1@sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--port", "7233", "--headless", "--db-filename", "/tmp/qualification.db"]
+    ports:
+      - "127.0.0.1:7233:7233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    stop_grace_period: 10s

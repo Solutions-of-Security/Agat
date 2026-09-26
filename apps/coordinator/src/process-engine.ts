@@ -8,6 +8,7 @@ import type {
   ProcessNodeType,
 } from "./types.js";
 import { normalizeProcessApprovalForm } from "./process-forms.js";
+import { normalizeDecisionShadowConfig } from "./local-decisions.js";
 
 const NODE_TYPES = new Set<ProcessNodeType>([
   "start",
@@ -154,6 +155,12 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
     if (agentId && !knownAgentIds.has(agentId)) throw new Error(`Шаг ${normalized.name || id}: агент не найден`);
     if (agentId) normalized.config.agentId = agentId;
     normalized.config.approvalRequired = config.approvalRequired === true;
+    if (config.decisionShadow !== undefined) {
+      normalized.config.decisionShadow = normalizeDecisionShadowConfig(config.decisionShadow);
+    }
+  }
+  if (normalized.type !== "agent" && config.decisionShadow !== undefined) {
+    throw new Error("Decision shadow доступен только на агентном шаге");
   }
   if (normalized.type === "condition" || normalized.type === "loop") {
     normalized.config.condition = normalizeCondition(config.condition, `Шаг ${normalized.name || id}: условие`, strict);

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "agat.decision-shadow-smoke.v1",
+  "createdAt": "2026-09-26T11:13:57.201Z",
+  "status": "integration_pass",
+  "qualification": "not_assessed",
+  "primary": "fixture-chat-completions",
+  "integrationImplementation": {
+    "files": {
+      "apps/coordinator/src/config.ts": "a16b6bb07bdc3ebf72f172bca57fdd842b12ee4abb6c10ed5b5edfb9577223cf",
+      "apps/coordinator/src/database.ts": "baba9f9f532e09bddf0aba3ff58c4c2f268ce8f0ec3fcf75ad6b71872b9044fd",
+      "apps/coordinator/src/local-decisions.ts": "1707271c2eed53fb9f7a5cb75c94464eb2c39e97e81fe666c317a4183f6172d0",
+      "apps/coordinator/src/process-engine.ts": "228476168837f6dfbd974de9a9a0764c3e0d354484122ba1c8c8b534668e0590",
+      "apps/coordinator/src/server.ts": "be1f5742e7e050328adde64c42016eab7d4720e50cad4b2179ad6c587cf85f59",
+      "apps/coordinator/src/types.ts": "558020e7e381592964b6af0b805ef5e7d14c755317bd92bdc35072e2a9efb083",
+      "scripts/lib/decision-shadow-smoke.ts": "2492d707348b645763461ccdbae5f71b014c17d8413c936a3a502087888097cb",
+      "scripts/qualify-decision-shadow.ts": "1ca9c6339bac707bf79362766c1a5006ba7c32092bf349523b87880f60be39c3",
+      "workers/agat_worker.py": "4b1cf86c9841f525b28b7a514b00b717e3191cbc98d4c835f5018f0cc4f65d95",
+      "workers/local_decisions.py": "2ba6a223b556e7a78ae7276ce5e3bda58ef1b2c40bf29faea6abce97671b1da4"
+    },
+    "sha256": "75842eda71696bba15d4416292e6db2814ebb57804cde922b6a0804d7b934c96"
+  },
+  "profileSha256": "99a689378705f4dbac5816011b2874091bfdc8de28c3674d0180dcce315b9aa0",
+  "primaryCalls": 1,
+  "primaryRoute": "PRIMARY_BRANCH",
+  "observation": {
+    "mode": "shadow",
+    "fallback": "primary",
+    "status": "ok",
+    "reason": "accepted",
+    "result": {
+      "calibration": {
+        "semantics": "softmax_over_allowed_options",
+        "status": "uncalibrated",
+        "temperature": 1
+      },
+      "distribution": [
+        {
+          "id": "supported",
+          "logit": 15.5,
+          "probability": 0.9851720052851435
+        },
+        {
+          "id": "contradicted",
+          "logit": 10.875,
+          "probability": 0.009658286490764384
+        },
+        {
+          "id": "insufficient",
+          "logit": 10.25,
+          "probability": 0.00516970822409221
+        }
+      ],
+      "durationMs": 838.499,
+      "generatedTokens": 0,
+      "id": "ef1f99fd-222e-4fa1-8933-11d61b0b7ea0",
+      "inputSha256": "9401e66998aba249ab20a45ff3011dd2a61e88c998a632256529b7a0d066223c",
+      "inputTokens": 117,
+      "margin": 0.9755137187943791,
+      "mode": "shadow",
+      "model": {
+        "artifactSha256": "4ed0133fe678d5c60b78a59ad6c5e39ee24ee2c82e8fe1bc0699e5a0b2e7ee86",
+        "backend": "mlx-qwen3.5-letter-logits",
+        "implementationSha256": "09042b0aab3ec6c75fda948854f997b9973ed461d6bf7bc9632fd7aea09aa819",
+        "maxInputTokens": 2048,
+        "mlxLmVersion": "0.31.3",
+        "mlxVersion": "0.32.2",
+        "promptVersion": "agat.state-first.letters.v1",
+        "quantization": "none",
+        "repository": "Mapika/decider-2b",
+        "revision": "b37f7e1ba3fbc9238004cf531fabbee2619973fd",
+        "tokenizerSha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+      },
+      "policy": {
+        "id": "agat.shadow.v1",
+        "minMargin": 0.1,
+        "minProbability": 0.8,
+        "sha256": "68a095ee7ab1e79b4d9a0cad633e93b4366d2d5bc3fb50f07fe4f8023d168dae"
+      },
+      "reason": "accepted",
+      "runtimeVersion": "0.4.0",
+      "schemaVersion": "agat.decision.v1",
+      "selectedOptionId": "supported",
+      "selectedProbability": 0.9851720052851435,
+      "status": "ok",
+      "value": "supported"
+    }
+  },
+  "checks": {
+    "workerHttpRoundtrip": true,
+    "coordinatorValidated": true,
+    "primaryRoutePreserved": true,
+    "singleObservation": true,
+    "shadowTraceContainsNoState": true
+  }
+}

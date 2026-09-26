@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "agat.decision.workflow-plan.v1",
+  "createdAt": "2026-09-26T14:38:00.035Z",
+  "qualification": "not_assessed",
+  "routingEnabled": false,
+  "fixture": {
+    "schemaVersion": "agat.decision.workflow-fixture.v1",
+    "provenance": "authored-synthetic; repeated throughput input, not independent quality cases",
+    "input": "Подготовьте краткий учебный операционный отчёт по двум месяцам. [A] Июль: 100 заявок, 400 часов обработки, 8 отклонений. [B] Август: 120 заявок, 360 часов обработки, 6 отклонений. Сравните число заявок, среднее время обработки одной заявки и долю отклонений. Сохраните исходные числа и ссылки [A], [B]. Причины изменений неизвестны. Не выполняйте внешних действий.",
+    "roles": [
+      {
+        "id": "extract",
+        "name": "Извлечение исходных данных",
+        "instruction": "Извлеки исходные числа по июлю и августу из запроса. Верни только краткую таблицу с месяцем, заявками, часами обработки и отклонениями, сохрани [A] и [B]. Укажи, что данные учебные, а причины изменений неизвестны. Не выдумывай числа. До 70 слов."
+      },
+      {
+        "id": "analyze",
+        "name": "Расчёт показателей",
+        "instruction": "На основе исходных данных и предыдущего результата рассчитай изменение числа заявок, среднее время на заявку и долю отклонений для обоих месяцев. Приведи числа, проценты и изменение доли в процентных пунктах. Сохрани [A], [B], пометку об учебных данных и неизвестных причинах. До 90 слов."
+      },
+      {
+        "id": "review",
+        "name": "Проверка и итоговый отчёт",
+        "instruction": "Проверь вычисления предыдущего результата по исходным данным. Верни итоговый краткий отчёт до 90 слов: число заявок и его изменение, среднее время на заявку по месяцам и его изменение, доли отклонений и изменение в процентных пунктах. Сохрани ссылки [A], [B]. Явно укажи, что это учебные данные и причины изменений установить нельзя. Не добавляй неподтверждённых объяснений."
+      }
+    ],
+    "shadow": {
+      "kind": "choice",
+      "question": "Содержит ли текст исходные числовые данные или вычисленные показатели по двум месяцам, июлю и августу?",
+      "options": [
+        {
+          "id": "both_months",
+          "description": "Да, присутствуют данные или показатели для обоих месяцев"
+        },
+        {
+          "id": "missing",
+          "description": "Данных для одного или обоих месяцев недостаточно",
+          "abstain": true
+        }
+      ]
+    }
+  },
+  "phases": [
+    {
+      "id": "control_c1",
+      "concurrency": 1,
+      "runs": 2,
+      "shadow": false
+    },
+    {
+      "id": "shadow_c1",
+      "concurrency": 1,
+      "runs": 2,
+      "shadow": true
+    },
+    {
+      "id": "shadow_c2",
+      "concurrency": 2,
+      "runs": 4,
+      "shadow": true
+    },
+    {
+      "id": "control_c2",
+      "concurrency": 2,
+      "runs": 4,
+      "shadow": false
+    }
+  ],
+  "primary": {
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "version": "0.34.2",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen3",
+      "families": [
+        "qwen3"
+      ],
+      "parameter_size": "8.2B",
+      "quantization_level": "Q4_K_M"
+    },
+    "descriptionSha256": "c83aaad669aa44ed067f0cad0fe70252683ca44e7984df948e88a9873ffe368c",
+    "generation": {
+      "think": false,
+      "options": {
+        "temperature": 0.2,
+        "seed": 0,
+        "num_ctx": 8192,
+        "num_predict": 384
+      }
+    }
+  },
+  "decision": {
+    "profileJson": "{\"calibration\":{\"semantics\":\"softmax_over_allowed_options\",\"status\":\"uncalibrated\",\"temperature\":1.0},\"inputFingerprintVersions\":[\"python-json-v1\",\"binary64-v1\"],\"model\":{\"allocatorCacheLimitBytes\":134217728,\"artifactSha256\":\"4ed0133fe678d5c60b78a59ad6c5e39ee24ee2c82e8fe1bc0699e5a0b2e7ee86\",\"backend\":\"mlx-qwen3.5-letter-logits\",\"implementationSha256\":\"1083f0624c234d2c278fc287085c0df01a1d7ad080242de201e69531a8ea19aa\",\"inferenceExecution\":{\"deadlineMs\":2000,\"kind\":\"isolated-process\",\"startMethod\":\"spawn\",\"timeoutAction\":\"stop_process_require_restart\"},\"maxInputTokens\":2048,\"mlxLmVersion\":\"0.31.3\",\"mlxVersion\":\"0.32.2\",\"promptVersion\":\"agat.state-first.letters.v1\",\"quantization\":\"none\",\"repository\":\"Mapika/decider-2b\",\"revision\":\"b37f7e1ba3fbc9238004cf531fabbee2619973fd\",\"tokenizerSha256\":\"06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523\"},\"policy\":{\"id\":\"agat.shadow.v1\",\"minMargin\":0.1,\"minProbability\":0.8,\"sha256\":\"68a095ee7ab1e79b4d9a0cad633e93b4366d2d5bc3fb50f07fe4f8023d168dae\"},\"runtimeVersion\":\"0.10.0\",\"schemaVersion\":\"agat.decision.v1\"}",
+    "profileSha256": "904ea780c182c78f63a9425a54f0ce18f36a72056820f9b6e65c9bdead85165a"
+  },
+  "endpoints": {
+    "primaryUrl": "http://127.0.0.1:11535",
+    "decisionUrl": "http://127.0.0.1:8766"
+  },
+  "timeBudgetMs": 600000,
+  "warmupCalls": 1,
+  "primaryAdapter": "OpenAI-compatible worker request to native Ollama chat; no fixture outputs",
+  "executionOrder": "worker runs primary first, then shadow; overlap is possible across concurrent leases",
+  "files": {
+    "scripts/benchmark-decision-workflow.ts": "91ade809c24c41c7b85d9f465b6b62d248012b5eb300dcbac044927b2fdfff22",
+    "scripts/lib/decision-primary-workflow.ts": "d33fadf22fdb1b23d3f4e035211c750e9281bff8050d1be05d3bc13f0ef73681",
+    "workers/agat_worker.py": "4b1cf86c9841f525b28b7a514b00b717e3191cbc98d4c835f5018f0cc4f65d95",
+    "workers/local_decisions.py": "8e66d4fcebcee94d084f2d8a20ceb4a433b7f4cd78e1318b309601fd990ad285",
+    "apps/coordinator/src/local-decisions.ts": "072f685dc7de0f479ba78a9154c98772c15b2dc5812a0d1a6ab1694751f47fce",
+    "apps/coordinator/src/database.ts": "db8586864ad809df2eec603e4d5a3b468755571e5eb7a3101fa637a8f15387e1",
+    "apps/coordinator/src/server.ts": "be1f5742e7e050328adde64c42016eab7d4720e50cad4b2179ad6c587cf85f59",
+    "apps/coordinator/src/process-engine.ts": "228476168837f6dfbd974de9a9a0764c3e0d354484122ba1c8c8b534668e0590",
+    "apps/coordinator/src/types.ts": "558020e7e381592964b6af0b805ef5e7d14c755317bd92bdc35072e2a9efb083"
+  }
+}

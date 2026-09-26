@@ -1,0 +1,89 @@
+{
+  "checkedAt": "2026-09-19T20:56:08.908Z",
+  "scope": "Agat agent/process definitions and native workflow controls; not a Keycloak deployment",
+  "processId": "5f068a1c-d719-41e2-8457-20e9862bb1fd",
+  "projectId": "default",
+  "live": {
+    "apiReadBack": "PASS",
+    "ui": "PASS: draft input preview opens with saved editable template; run submission disabled; 0 executions",
+    "agents": 6,
+    "nodes": 28,
+    "publishedVersion": 0,
+    "idempotentInstaller": "PASS: createdAgents=0, createdProcess=false on repeated run",
+    "mcpServers": 0,
+    "executionGuardsSupported": false
+  },
+  "automated": {
+    "command": "node --import tsx --test apps/coordinator/test/process-input-template.test.ts docs/tests/keycloak-gitops.test.ts",
+    "passed": 10,
+    "failed": 0,
+    "coverage": [
+      "missing requirements and raw secrets rejected",
+      "canonical exports and graph validation",
+      "eight missing MCP dependencies block start on current source runtime",
+      "four signal gates and three approvals cannot be skipped by agent output",
+      "final rejection leaves no handover",
+      "partial start and late/foreign/duplicate signals rejected",
+      "missing signal times out as failed",
+      "prefill includes every required request field; unknown parameters remain invalid",
+      "input templates survive saving, immutable versions, cloning and BPMN; actual run input stays user-supplied"
+    ]
+  },
+  "otherChecks": {
+    "javascriptSyntax": "PASS",
+    "gitDiffWhitespace": "PASS",
+    "localLinks": "PASS after report creation",
+    "credentialLeakCheck": "PASS: no existing .env secret values in created artifacts",
+    "visualReview": "PASS: compact layout, 6 agent bindings, 4 external waits, draft state verified"
+  },
+  "notVerified": [
+    "Real model quality for infrastructure tasks",
+    "Target Kubernetes/Keycloak/PostgreSQL/Argo deployment",
+    "MCP adapter implementation and permissions",
+    "Real OIDC/RBAC/load/drift/backup-restore tests"
+  ],
+  "blockers": [
+    "Запущенный runtime не поддерживает requiredTools/mcpToolAllowlist/allowPartialStart. Перед публикацией нужна совместимая проверенная версия и повторное сохранение полного графа.",
+    "MCP tools kcops не подключены; integration-contract.json описывает требуемый адаптер.",
+    "Целевой кластер, PostgreSQL, domain/TLS, Git, Argo CD и secret refs ещё не заданы.",
+    "Модель qwen3.5:4b доступна, но качество этого сценария и сквозное развёртывание ещё не квалифицированы."
+  ],
+  "sha256": {
+    "scripts/keycloak-gitops-pack.mjs": "e82404263bb38fdbc316a0ac84d911ef3915e1e2664c9aa328d5cc261d3bef0a",
+    "scripts/install-keycloak-gitops.mjs": "24c9105e1785da232dcfaf12842aa6c5a3639a604ecadba26f78e6b3a8347693",
+    "scripts/validate-keycloak-request.mjs": "db495a83a99afc72edcfc49ef1a2ba88029a39312cfb1f63e502c5b562c969b9",
+    "docs/tests/keycloak-gitops.test.ts": "13184250c05e38b56106d62a57130e9a18b6a833b2427dcfb118aa0f74f5784d",
+    "docs/keycloak-gitops/agents.json": "d7c1de5dc6c8727f7ce3c419eb22f0eadb3fdff05c4c4970ffd22967acd334c2",
+    "docs/keycloak-gitops/process.template.json": "afcbdceee5fc66fd33d1320cff8246088b1f0b370f8ad24230c1b8debb17733b",
+    "docs/keycloak-gitops/process.installed.json": "5a517c4cce9cf8b288b57659e951035ddefe0fb8265c23dc7d5b3f8ca6483b39",
+    "docs/keycloak-gitops/requirements.schema.json": "89dd3598f91366c4792cba7620f6de80123b26c7361ae3ebfce484570b710c2b",
+    "docs/keycloak-gitops/integration-contract.json": "c85f435a0d0f442321e2ce543833266ff62096e9ade32745fcf1eb18227123b2",
+    "docs/keycloak-gitops/input.prompt.md": "51414704fd727ccd3b0997edb6a5034aaa89f69a1f54688222024b03f11581d0",
+    "apps/web/src/components/ProcessInputField.tsx": "be88fee48925db0c86c7f2655dbbd53b5949144863452737851284cdebffe1b1",
+    "apps/coordinator/test/process-input-template.test.ts": "6dbebbeeaf9cf66f5964899625ff8341b65bf198a4863e2d18fb3aad943e0706"
+  },
+  "inputTemplateFeature": {
+    "status": "PASS",
+    "field": "start.config.inputTemplate",
+    "characters": 4561,
+    "uiChecks": [
+      "correct page/title and non-blank dialog",
+      "saved template loaded from API",
+      "input editable; priority change preserves edited input",
+      "reopening resets to saved template",
+      "draft cannot submit a run",
+      "screenshot reviewed: parameters visible and readable"
+    ],
+    "console": "No errors from the updated bundle; one prior SSE warning during coordinator restart, resolved after reload",
+    "viewport": "Default desktop in-app browser; mobile not tested",
+    "release": {
+      "baseRevision": "5ddc44f6bab1a3d1cc7241e238412b31c0a5f0db",
+      "scope": "Only input-template UI and process-engine normalizer; no DB schema migration",
+      "image": "agat-coordinator:input-template-20260919",
+      "imageDigest": "sha256:df044553836351a3bac3528e4df1789e1839446bb28550ba61c40eeed1e6dc75",
+      "rollbackImage": "agat-coordinator:before-input-template-20260919",
+      "isolatedTestsPassed": 16,
+      "health": "healthy"
+    }
+  }
+}

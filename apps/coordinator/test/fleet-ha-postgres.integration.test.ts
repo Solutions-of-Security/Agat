@@ -9,6 +9,8 @@ import pg from "pg";
 
 import { AgatStore } from "../src/database.js";
 import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
+import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
+import type { ProcessGraph } from "../src/types.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -40,6 +42,7 @@ function store(instanceId: string, artifactsDir: string): AgatStore {
     region: cellRegion,
     residencyDomain: cellResidencyDomain,
     requireSignedWorkerReleases: false,
+    decisionShadowEnabled: true,
     artifactsDir,
   });
 }
@@ -47,6 +50,77 @@ function store(instanceId: string, artifactsDir: string): AgatStore {
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
+  });
+
+  it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-shadow-"));
+      let first = store(`shadow-a-${suffix}`, artifacts);
+      const second = store(`shadow-b-${suffix}`, artifacts);
+      try {
+        const projectId = `shadow-${suffix}`;
+        const foreignProjectId = `shadow-other-${suffix}`;
+        for (const id of [projectId, foreignProjectId]) first.createProject({ id, name: id,
+          homeRegion: cellRegion, allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        first.updateScheduler("parallel", 10);
+        const modelName = `shadow-primary-${suffix}`;
+        const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture",
+          model: modelName }, projectId);
+        const worker = first.registerNode({ enrollmentToken: "test", name: `shadow-worker-${suffix}`, platform: "test",
+          models: [modelName], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
+          labels: { decisionShadow: "local_decision_shadow_v1" } });
+        const profile = { schemaVersion: "agat.decision.v1", runtimeVersion: "test-only",
+          model: { repository: "postgres-fixture", revision: "fixture", artifactSha256: "1".repeat(64),
+            tokenizerSha256: "2".repeat(64), implementationSha256: "3".repeat(64), promptVersion: "fixture",
+            backend: "fixture", quantization: "none" },
+          policy: { id: "test", minProbability: 0.8, minMargin: 0.1, sha256: "4".repeat(64) },
+          calibration: { status: "uncalibrated", temperature: 1, semantics: "softmax_over_allowed_options" } };
+        const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson: JSON.stringify(profile), timeoutMs: 1000,
+          kind: "boolean", question: "Confirmed?", options: [
+            { id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] });
+        const graph: ProcessGraph = { nodes: [
+          { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+          { id: "agent", name: "Agent", type: "agent", position: { x: 200, y: 0 }, config: {
+            agentId: String(agent.id), decisionShadow: shadow } },
+          { id: "end", name: "End", type: "end", position: { x: 400, y: 0 }, config: {} },
+        ], edges: [{ id: "a", source: "start", target: "agent", branch: "default" },
+          { id: "b", source: "agent", target: "end", branch: "default" }] };
+        const process = first.createProcess({ name: "Shadow PostgreSQL", graph }, projectId);
+        first.publishProcess(String(process.id), projectId);
+        const instance = first.startProcess(String(process.id), { input: "Private fixture state", priority: 100 }, projectId)!;
+        const lease = second.leaseNext(worker.id)!;
+        assert.ok(lease?.decisionShadow);
+        assert.equal(lease.run.id, String(instance.runId));
+        const probability = 1 / (1 + Math.exp(-3));
+        const response = { ...profile, mode: "shadow", id: lease.stage.id, inputSha256: lease.decisionShadow.inputSha256,
+          status: "ok", reason: "accepted", selectedOptionId: "no", value: false, selectedProbability: probability,
+          margin: 2 * probability - 1, inputTokens: 20, generatedTokens: 0, durationMs: 1,
+          distribution: [{ id: "no", probability, logit: 3 }, { id: "yes", probability: 1 - probability, logit: 0 }] };
+        const saved = first.recordDecisionShadow(worker.id, lease.leaseId, { result: response });
+        assert.equal(saved.status, "ok"); assert.equal(saved.result?.value, false);
+        assert.deepEqual(second.recordDecisionShadow(worker.id, lease.leaseId, { result: {} }), saved);
+        first.close();
+        first = store(`shadow-restarted-${suffix}`, artifacts);
+        assert.deepEqual(first.recordDecisionShadow(worker.id, lease.leaseId, {}), saved);
+        second.completeLease(worker.id, lease.leaseId, "PRIMARY OUTPUT");
+        const runId = String(instance.runId);
+        const trace = first.getRunTrace(runId, projectId)!;
+        assert.equal(first.getRun(runId, projectId)!.status, "completed");
+        assert.equal((first.getRun(runId, projectId)!.stages as Array<Record<string, unknown>>)[0]!.output, "PRIMARY OUTPUT");
+        assert.equal((trace.decisionObservations as unknown[]).length, 1);
+        assert.equal((trace.events as Array<Record<string, unknown>>).filter((e) => e.type === "decision.shadow").length, 1);
+        assert.equal(second.getRunTrace(runId, foreignProjectId), null);
+        enterPostgresTenantScope(foreignProjectId);
+        assert.equal(second.db.prepare("SELECT activity_json FROM stages WHERE id = ?").get(lease.stage.id), undefined);
+        enterPostgresTenantScope(projectId);
+        const row = second.db.prepare("SELECT activity_json FROM stages WHERE id = ?").get(lease.stage.id)!;
+        assert.equal(JSON.parse(String(row.activity_json)).decisionShadowObservation.status, "ok");
+      } finally {
+        runWithPostgresSystemScope(() => { first.close(); second.close(); });
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
   });
 
   it("rejects a tenant connection that resolves to the system BYPASSRLS role", () => {

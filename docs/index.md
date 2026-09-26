@@ -23,6 +23,7 @@
 - [Системный промпт агента «Юрист РФ»](./prompts/lawyer-rf.md)
 - [Визуальные процессы и циклы](./processes.md)
 - [Установка пакета «Внутренний отчёт» и сквозные тесты](./internal-report-pack.md)
+- [Квалификация внутреннего отчёта: реальные Qwen3, embeddings и Temporal](./qualification/internal-report/README.md)
 - [Process Builder 1.2](./process-builder-1.2.md)
 - [Durable runtime процессов](./durable-runtime.md)
 - [Golden eval и prompt registry](./golden-eval-prompt-registry.md)
@@ -30,6 +31,12 @@
 
 ## Модели, знания и интеграции
 
+- [Локальные типизированные решения: MLX runtime и проверка моделей](./local-decision-runtime.md)
+- [Development-сравнение локальных моделей на утверждённой разметке](./qualification/local-decisions/development/README.md)
+- [Shadow-профиль локальных решений: worker, leases, проверка и replay](./qualification/local-decisions/shadow/README.md)
+- [Локальные решения: HTTP-задержка и отказ при перегрузке](./qualification/local-decisions/performance/README.md)
+- [Загрузка, первый запрос и память MLX в отдельном процессе](./qualification/local-decisions/performance/resources.md)
+- [Генеративный baseline Qwen3 8B и сравнение с локальными logits-моделями](./qualification/local-decisions/baselines/README.md)
 - [Model Router и hardware benchmarks](./model-router.md)
 - [Local RAG, provenance и управляемая память](./local-rag-and-memory.md)
 - [Web-доступ локальных агентов](./web-access.md)

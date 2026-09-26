@@ -1,3 +1,5 @@
+import type { DecisionShadowConfig, DecisionShadowLease } from "./local-decisions.js";
+
 export type SchedulerMode = "sequential" | "parallel" | "auto";
 export type ResultDestination = "history" | "artifacts";
 export type AgentRuntime = "single" | "langgraph";
@@ -105,6 +107,7 @@ export interface ProcessGraphNode {
   config: {
     agentId?: string;
     approvalRequired?: boolean;
+    decisionShadow?: DecisionShadowConfig;
     condition?: ProcessCondition;
     maxIterations?: number;
     inputTemplate?: string;
@@ -1300,6 +1303,7 @@ export interface CreateAgentInput {
 }
 
 export interface LeasePayload {
+  decisionShadow?: DecisionShadowLease;
   leaseId: string;
   expiresAt: string;
   traceContext: {

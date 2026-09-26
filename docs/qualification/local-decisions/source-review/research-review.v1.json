@@ -1,0 +1,627 @@
+{
+  "schemaVersion": "agat.decision.research-review.v1",
+  "id": "agat-source-review.research-2026-09-26",
+  "createdAt": "2026-09-26T09:34:42.186622+00:00",
+  "status": "changes_requested",
+  "scope": "Scenario applicability and source-bound annotation review; not model qualification",
+  "reviewer": {
+    "id": "codex-assistant",
+    "kind": "assistant",
+    "blinded": false,
+    "independentHumanReview": false
+  },
+  "authority": "User requested research and annotation approval only if no issues remain.",
+  "annotationApproval": {
+    "approved": false,
+    "blockingFindingIds": [
+      "ANN-001"
+    ]
+  },
+  "sourceVersion": {
+    "baseCommit": "63bd93d8fa847cf268a86c6ad590a8165dfd0eed",
+    "includesUncommittedFiles": true,
+    "poolSha256": "87459bd660c294afd10b5f8349a4a83ceb6b6770ffdb263de56cf6068004c4ad",
+    "files": [
+      {
+        "path": "pool.v1.json",
+        "bytesSha256": "7d95b97b34ce4c6586747a67b1f7808a0bc48d7185864741adfd2a23b030542f"
+      },
+      {
+        "path": "case-specs.v1.json",
+        "bytesSha256": "cabdf77587bc8ca8e9237b00185ea666347118cbb04536a7431babc2eef505f0"
+      },
+      {
+        "path": "draft-labels.v1.json",
+        "bytesSha256": "23aa3e5af9e0a75b4926c6c5c16fbe1f231b497a3eb6549b432c30e8a508ccad"
+      },
+      {
+        "path": "source-bindings.v1.json",
+        "bytesSha256": "3d28c9a941ca2dd6daf30022f72bb7edbcf1415499788f34567bfe8600c9fa04"
+      },
+      {
+        "path": "sources.v1.json",
+        "bytesSha256": "d2fa1f1900187feb7f7496fbf010ea93fa1b2dfb5236b1356d9add1532463afc"
+      },
+      {
+        "path": "review-guide.md",
+        "bytesSha256": "a1140cf208320b44045414106c83cfd07f933d1595685b0c80f182832ca6f177"
+      },
+      {
+        "path": "review.first.blank.json",
+        "bytesSha256": "6093ef39b3ba683a59fb4644bd517705a935719707b8f078ba01400ee44dd39c"
+      },
+      {
+        "path": "review.second.blank.json",
+        "bytesSha256": "6093ef39b3ba683a59fb4644bd517705a935719707b8f078ba01400ee44dd39c"
+      },
+      {
+        "path": "readiness.v1.json",
+        "bytesSha256": "bfe137c4f81778cd5638afcd43339e27fdbeb2c47260945945d645ab81ecd86c"
+      }
+    ]
+  },
+  "scenarioVerdicts": [
+    {
+      "family": "evidence",
+      "verdict": "supported_for_bounded_use",
+      "sourceIds": [
+        "SRC-01",
+        "SRC-02"
+      ]
+    },
+    {
+      "family": "classification",
+      "verdict": "supported_for_bounded_use",
+      "sourceIds": [
+        "SRC-03",
+        "SRC-04"
+      ]
+    },
+    {
+      "family": "clarification",
+      "verdict": "supported_for_bounded_use",
+      "sourceIds": [
+        "SRC-04",
+        "SRC-05",
+        "SRC-06"
+      ]
+    }
+  ],
+  "counts": {
+    "reviewedCases": 24,
+    "confirmedLabels": 23,
+    "changesRequested": 1,
+    "humanReviewedCases": 0
+  },
+  "findings": [
+    {
+      "id": "ANN-001",
+      "severity": "P2",
+      "caseIds": [
+        "agat-source-007"
+      ],
+      "status": "open",
+      "blocks": "annotation_approval",
+      "basis": "Reviewer interpretation of claim and source; no observed inter-rater disagreement is asserted.",
+      "recommendation": "Remove the epistemic prefix in a new corpus version and re-review the changed input.",
+      "sourceIds": [
+        "SRC-01",
+        "SRC-07"
+      ],
+      "ownerRole": "dataset_maintainer",
+      "assignedOwner": null
+    }
+  ],
+  "qualificationLimitations": [
+    "Only two original issue requests; remaining tasks authored from real records.",
+    "Five dependent groups; no observed access requests.",
+    "Fixed split seed yields no calibration groups.",
+    "No independent human reviews; this review was not blinded.",
+    "No local model inference or production effectiveness measurement in this review."
+  ],
+  "externalSources": [
+    {
+      "id": "SRC-01",
+      "title": "FEVER: a Large-scale Dataset for Fact Extraction and VERification",
+      "url": "https://aclanthology.org/N18-1074/",
+      "kind": "research-paper",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Трёхклассовая проверка с текстовыми доказательствами; не производственная квалификация Агата."
+    },
+    {
+      "id": "SRC-02",
+      "title": "Full Fact: How AI can help fact checkers",
+      "url": "https://fullfact.org/blog/2025/feb/how-ai-can-help-fact-checkers/",
+      "kind": "operator-first-party-report",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Реальное использование AI для помощи фактчекерам; окончательная проверка остаётся человеческой."
+    },
+    {
+      "id": "SRC-03",
+      "title": "Zendesk: Liberty London",
+      "url": "https://www.zendesk.com/customer/liberty-london/",
+      "kind": "vendor-customer-case-study",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Названный заказчик классифицирует и маршрутизирует обращения; открытие перенаправилось на https://www.zendesk.de/customer/liberty-london/."
+    },
+    {
+      "id": "SRC-04",
+      "title": "Zendesk: Intelligent triage use cases and workflows",
+      "url": "https://support.zendesk.com/hc/en-us/articles/5222280338202-Intelligent-triage-use-cases-and-workflows",
+      "kind": "product-documentation",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Реализованные маршрутизация и запрос деталей; это не измерение на очереди Агата."
+    },
+    {
+      "id": "SRC-05",
+      "title": "Google Cloud: Dialogflow CX Parameters",
+      "url": "https://docs.cloud.google.com/dialogflow/cx/docs/concept/parameter",
+      "kind": "product-documentation",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Обязательные параметры, известные значения сессии, запросы и повторные запросы отсутствующих полей."
+    },
+    {
+      "id": "SRC-06",
+      "title": "Intercom: Conversational Fin experience",
+      "url": "https://www.intercom.com/help/en/articles/11433030-conversational-fin-experience",
+      "kind": "product-documentation",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Реализованы уточнение и передача человеку; отдельный эффект уточнений у названного клиента не измерен этой публикацией."
+    },
+    {
+      "id": "SRC-07",
+      "title": "Anthropic: Demystifying evals for AI agents",
+      "url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+      "kind": "engineering-guidance",
+      "checkedOn": "2026-09-26",
+      "supportedScopeAndLimitations": "Однозначные задания, реальные обращения и проверка оценщиков; не универсальный норматив двух рецензентов."
+    }
+  ],
+  "cases": [
+    {
+      "id": "agat-source-001",
+      "family": "evidence",
+      "inputSha256": "f6c5cbaf179563a16980b43fba4fce1afd04a6468c5762abb59148af7ac6f3fb",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "contradicted",
+      "verdict": "confirmed",
+      "confirmedOptionId": "contradicted",
+      "rationale": "publishedVersion равен 0, а отправка запуска явно отключена: обе части утверждения о готовом опубликованном процессе опровергнуты.",
+      "evidence": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "quoteSha256": "777f793ca9cad5534ccaa649fde94ede48ee72dfe2f8eb62125d427b3e2db363"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-002",
+      "family": "evidence",
+      "inputSha256": "ea560a479161994c1f0b78a487145d744f52bbc0ab6c53840685c0d5962f6814",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "supported",
+      "verdict": "confirmed",
+      "confirmedOptionId": "supported",
+      "rationale": "Фрагмент одновременно содержит apiReadBack=PASS, agents=6 и createdAgents=0 для повторной установки.",
+      "evidence": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "quoteSha256": "777f793ca9cad5534ccaa649fde94ede48ee72dfe2f8eb62125d427b3e2db363"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-003",
+      "family": "evidence",
+      "inputSha256": "938fcde3c4e6188fb1118e18490011ba821461e00ee17072766961405e72b527",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "insufficient",
+      "verdict": "confirmed",
+      "confirmedOptionId": "insufficient",
+      "rationale": "Статус completed и сохранённый ответ не содержат измерения p95; утверждение о скорости нельзя ни подтвердить, ни опровергнуть.",
+      "evidence": [
+        {
+          "sourceId": "preview-validation",
+          "sourceSha256": "f9fdf0da71e0db42c7dfa44ef07cb7f7a210ee8b46b8dd2039101db0dbc2a14d",
+          "quoteSha256": "547b7aa0ffbe894ee8f7be598d78d871aa9e4e70f20e6b6d7a97e4ebe4643120"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-004",
+      "family": "evidence",
+      "inputSha256": "e07dc5f178cb499c847e0b57c83ce18c469a0d4b7c6efd59c264482de9b3ce43",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "contradicted",
+      "verdict": "confirmed",
+      "confirmedOptionId": "contradicted",
+      "rationale": "Протокол явно называет вход синтетическим handbook, что несовместимо с утверждением о документах заказчика.",
+      "evidence": [
+        {
+          "sourceId": "preview-validation",
+          "sourceSha256": "f9fdf0da71e0db42c7dfa44ef07cb7f7a210ee8b46b8dd2039101db0dbc2a14d",
+          "quoteSha256": "25f9dc793083b35de3e44ae5b69d2b1a0849d197f8c40974f7f52dd5304d276e"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-005",
+      "family": "evidence",
+      "inputSha256": "0a19559c7d280decc203927ab701553ed916bd8bb20bb6cf00047e32424616fb",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "contradicted",
+      "verdict": "confirmed",
+      "confirmedOptionId": "contradicted",
+      "rationale": "Источник прямо указывает, что генерация при продолжении прежнего workflow не повторялась.",
+      "evidence": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "quoteSha256": "92839bdca8aed3d7be21f5560792a8ad1f4730168bc494f6da7857a3f669b90b"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-006",
+      "family": "evidence",
+      "inputSha256": "1a79befb620a5cc065a32742bede5349cfa7193d5f9f03ddf87c26f5e6bd6623",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "supported",
+      "verdict": "confirmed",
+      "confirmedOptionId": "supported",
+      "rationale": "В таблице проверка установленной Qwen3 имеет NOT_RUN после отказа проверки версий.",
+      "evidence": [
+        {
+          "sourceId": "report-sdk-fail",
+          "sourceSha256": "d267d3bedf956227ceaa9329de583d7351ecdc5f55c0609620fea284ed14c5e5",
+          "quoteSha256": "6f43cd9600b8d682b375a514ce2efd2bae1096a0e189277e73cf642434b0282e"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-007",
+      "family": "evidence",
+      "inputSha256": "7aed19fa8c9aff58eed4b00c1364f73411fba398c7c61555492fb8b8fdaddbcd",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "insufficient",
+      "verdict": "changes_requested",
+      "confirmedOptionId": null,
+      "rationale": "Причина неизвестна, что поддерживает insufficient для причинного утверждения. Но слова «Доказано, что» добавляют утверждение о наличии доказательства, которому противоречит оговорка источника. Без устранения этой неоднозначности единственную метку не фиксировать.",
+      "evidence": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "quoteSha256": "347feb35553ceac1f60192ed6c4d66ff91b72200c259ec1d6edec77d7a3e9d16"
+        }
+      ],
+      "findingId": "ANN-001",
+      "alternativeInterpretations": [
+        {
+          "object": "Причина сбоя сама по себе",
+          "optionId": "insufficient"
+        },
+        {
+          "object": "Буквальное утверждение о доказанности причины",
+          "optionId": "contradicted"
+        }
+      ],
+      "proposedRevision": {
+        "claim": "Причиной первого REPORT_RUBRIC_FAILED была арифметическая ошибка модели.",
+        "expectedOptionId": "insufficient",
+        "status": "proposed_not_applied",
+        "requiresNewInputFingerprint": true
+      }
+    },
+    {
+      "id": "agat-source-008",
+      "family": "evidence",
+      "inputSha256": "ebd441e517ce91465957fc74745c8add7ad579ce67aea44db5c63207875040ee",
+      "schemaSha256": "ab67da519702472ec8f091baebfcccf9e32d879cb805033fbefc856647a06a04",
+      "draftOptionId": "supported",
+      "verdict": "confirmed",
+      "confirmedOptionId": "supported",
+      "rationale": "В границах issue явно исключены проведение исследования и набор участников.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-009",
+      "family": "classification",
+      "inputSha256": "53441f76a6ebac28b701eb75f190c0fcffc424c01e49ae614321c05ce5ee4165",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "enhancement",
+      "verdict": "confirmed",
+      "confirmedOptionId": "enhancement",
+      "rationale": "Основная поставка — новый сохранённый контракт provenance и API; дефект распознавания по имени объясняет потребность в расширении. Категория выбрана по содержанию, не по repository label.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "quoteSha256": "11f860a10a277689dcd9fd636c490316a00a3564f2b8cd009d121ea24e5bc890"
+        },
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-010",
+      "family": "classification",
+      "inputSha256": "60c13a935b4f5a1b801e7339a30edae600391b5017783bec6f704abeba1e3413",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "other",
+      "verdict": "confirmed",
+      "confirmedOptionId": "other",
+      "rationale": "Основной результат — документ с протоколом; изменение поведения приложения и проведение исследования вне scope. По локальной рубрике это other.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "quoteSha256": "708a68e072227389f29c4f682562627bc9629dc8f3e733460be499f5ab693500"
+        },
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-011",
+      "family": "classification",
+      "inputSha256": "0efd95f1e77411a11d205c25254e64b19cb4078ed180a8cfd298949f5a37bd56",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "enhancement",
+      "verdict": "confirmed",
+      "confirmedOptionId": "enhancement",
+      "rationale": "Нужен первый адаптер OpenRouter с новым поведением. API key/auth являются частью требований к функции, а не просьбой выдать права субъекту.",
+      "evidence": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "quoteSha256": "e638fbde685af24bd76ae1c25d4253d8e5c72dc405a9f77efce3aad229bf7e36"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-012",
+      "family": "classification",
+      "inputSha256": "cf09b6344ba812dbde262c77378d174bfad8f4d6a95d1bf13d2a6727fb42d0de",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "enhancement",
+      "verdict": "confirmed",
+      "confirmedOptionId": "enhancement",
+      "rationale": "Roadmap требует добавить приём и обработку форматов; самостоятельного сообщения о конкретном сбое нет.",
+      "evidence": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "quoteSha256": "fdea959ce23e4474694f6ec0b9fbbecdd0416259a4b628d2fec8645d6b0089cb"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-013",
+      "family": "classification",
+      "inputSha256": "05a7e7cc43c936c58f2f2775c3ab015c654fcae99ed5ba97788bf58a3704e54f",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "incident",
+      "verdict": "confirmed",
+      "confirmedOptionId": "incident",
+      "rationale": "Описаны конкретный I/O-сбой bind mount и восстановление локального контейнера. По локальному определению incident включает такую историческую запись; текущий сбой не утверждается.",
+      "evidence": [
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "quoteSha256": "f14f3b300ba7d71ac8e01531e0cfa588a67aa6832b9b9c74bbc74114e706ea98"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-014",
+      "family": "classification",
+      "inputSha256": "fab5d6fcb0be934cfd18fd3c1fbf188f1547a11b2f9e99d1807bf0fef5fa8069",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "incident",
+      "verdict": "confirmed",
+      "confirmedOptionId": "incident",
+      "rationale": "Зафиксирован отказ квалификационного стенда из-за SDK и недостающих зависимостей. incident относится к инженерному окружению, не к промышленной эксплуатации.",
+      "evidence": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "quoteSha256": "86addf198ea83eed2c7f7279aebcb6d3da14513e37d49215fcb9565322ef4204"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-015",
+      "family": "classification",
+      "inputSha256": "f86d0960d406dbcc9241b4da8c9aa5f76301f2d2f323f6b428d2deb520c7a093",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "incident",
+      "verdict": "confirmed",
+      "confirmedOptionId": "incident",
+      "rationale": "В тестовом клиенте отсутствовала обязательная причина reject. HTTP 400 соответствует защите API; incident обозначает зафиксированный дефект harness, а не ошибку сервера.",
+      "evidence": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "quoteSha256": "cacfd1bb229454f160538af5ea5060680fdd43ef44bfa67efdf4810c349725fd"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-016",
+      "family": "classification",
+      "inputSha256": "5c712aa24e078fdab64862b54e89c1c11a64beeefbef821c618abbd78782a747",
+      "schemaSha256": "4a1cf1e9d5bde9aae3807f102f85712e1af8103603887553cdec970ba117d29a",
+      "draftOptionId": "other",
+      "verdict": "confirmed",
+      "confirmedOptionId": "other",
+      "rationale": "Фрагмент сообщает о подготовленном черновике и ограничениях стенда без самостоятельной заявки на восстановление, новую функцию или выдачу прав.",
+      "evidence": [
+        {
+          "sourceId": "keycloak-readme",
+          "sourceSha256": "a6f7eee913eb08388f3015e72018fb80d7e97365488ca66606e28e6a2556d75e",
+          "quoteSha256": "c454db0ae255b0a23e64d5231c1f7360c7b74d7263063c72ab676dc83df6eb81"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-017",
+      "family": "clarification",
+      "inputSha256": "5e56ff6b59cb4dba808fc8017fd342bb78b34208f2a94a444fab4cc09630e1d8",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "needs_clarification",
+      "verdict": "confirmed",
+      "confirmedOptionId": "needs_clarification",
+      "rationale": "Все три требуемые привязки к инфраструктуре явно остаются невыбранными.",
+      "evidence": [
+        {
+          "sourceId": "keycloak-readme",
+          "sourceSha256": "a6f7eee913eb08388f3015e72018fb80d7e97365488ca66606e28e6a2556d75e",
+          "quoteSha256": "b957c183d9915d77ba80f7ccc444619e6e96b74c66064c726181520d4c03a002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-018",
+      "family": "clarification",
+      "inputSha256": "f24b993238680ac85a38d7cacdb79290b04820aa47f0f91646174e9d3e1684a1",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "sufficient",
+      "verdict": "confirmed",
+      "confirmedOptionId": "sufficient",
+      "rationale": "Для пересказа даны оба результата повторной установки: createdAgents=0 и createdProcess=false.",
+      "evidence": [
+        {
+          "sourceId": "keycloak-verification",
+          "sourceSha256": "ca2a9c472c0718ab54df734cdf46fdf366ee1722392dc8e432a3e396dfc49a24",
+          "quoteSha256": "936605cd9637d52db9aa0f457e8ace5b546d8e1ac2e6b6f2fcd878203c7f8e09"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-019",
+      "family": "clarification",
+      "inputSha256": "30f8239468cf0861ba8ab2a0a4cd1a7469097151c47d5d020acf11150f53643b",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "sufficient",
+      "verdict": "confirmed",
+      "confirmedOptionId": "sufficient",
+      "rationale": "Для незаполненного шаблона перечислены число ролей и участников, поля среды, структура записи и граница задачи; персональные данные и фактические устройства не входят в заданные requiredInputs.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-2",
+          "sourceSha256": "5c29c10a88caae733e58c523c6bb9c83c570e72c1a7c271c4db34de548df3a7f",
+          "quoteSha256": "e2019c666bb16b7e6b27454e05e24afd7d5d3fad2f839b49824e5fc68d6171c0"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-020",
+      "family": "clarification",
+      "inputSha256": "2ee562a5433f6e13afc9023310bacb2045251dced9d61d28aae56c72239bc820",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "sufficient",
+      "verdict": "confirmed",
+      "confirmedOptionId": "sufficient",
+      "rationale": "В issue присутствуют все четыре группы требуемых критериев; для их извлечения срок и исполнитель не требуются.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-021",
+      "family": "clarification",
+      "inputSha256": "05875467e1241327031b81dcf5069ba240293e7decb1e7225e67ef8da7b56373",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "needs_clarification",
+      "verdict": "confirmed",
+      "confirmedOptionId": "needs_clarification",
+      "rationale": "Roadmap предписывает определить команды, владельца, baseline и критерии, но самих значений не сообщает.",
+      "evidence": [
+        {
+          "sourceId": "roadmap",
+          "sourceSha256": "a6ae05eda022a0a8aad23dd25dc060c7608b169419e2bb2df8bb8e183e63dbb9",
+          "quoteSha256": "10b40c1a0af817cd69746a18cbf85c5d03872052b12b8798dacce2261ce2b148"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-022",
+      "family": "clarification",
+      "inputSha256": "487a5491cd73a54ba77fb6a05140baf1262882a9813ffbf6ef99b41e2fb58c6e",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "sufficient",
+      "verdict": "confirmed",
+      "confirmedOptionId": "sufficient",
+      "rationale": "Исторический адрес coordinator и путь /api/v1/health указаны явно. Достаточность для извлечения адреса не означает доступность сервиса сейчас.",
+      "evidence": [
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "quoteSha256": "3f9409b1c3cefb91c836710a98d1d155bda0a85797ce669e504a0a9b1ad6bc9f"
+        },
+        {
+          "sourceId": "docker-validation",
+          "sourceSha256": "47a1898dc5ec8c46c3861723ea542950d98ff2ea50a1d630c4bc01af0db45d03",
+          "quoteSha256": "74810d5c64d5faf84af4e98a7dcf8bd1adcc90ca0dc7be9e5556c6b5a0f34f27"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-023",
+      "family": "clarification",
+      "inputSha256": "73d63f8aa1d0674978da953c190e7fa484941e4abd31765450d1a4a738e68a6a",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "needs_clarification",
+      "verdict": "confirmed",
+      "confirmedOptionId": "needs_clarification",
+      "rationale": "Для точной причины необходим исходный ответ модели, который удалён. Если восстановить его нельзя, причина остаётся неизвестной; повторные вопросы сами по себе этот пробел не устранят.",
+      "evidence": [
+        {
+          "sourceId": "report-results",
+          "sourceSha256": "8e8deb5441e589d81dfc2bf36b5a8fb896f258a061448a7f5ebcb8664b4a3529",
+          "quoteSha256": "347feb35553ceac1f60192ed6c4d66ff91b72200c259ec1d6edec77d7a3e9d16"
+        }
+      ]
+    },
+    {
+      "id": "agat-source-024",
+      "family": "clarification",
+      "inputSha256": "bde54e740c994e577a8ff255204144058466c1877b55edb3bac97cd2e8acc2a2",
+      "schemaSha256": "65ea915f43085a8c785be4fa6c8bb154efd90b6f61a694781b296abb71d0511f",
+      "draftOptionId": "needs_clarification",
+      "verdict": "confirmed",
+      "confirmedOptionId": "needs_clarification",
+      "rationale": "Публикация согласованных срока и исполнителя требует обоих значений, а источник прямо сообщает об отсутствии назначений.",
+      "evidence": [
+        {
+          "sourceId": "github-issue-3",
+          "sourceSha256": "c3fc9adb1baae999bb390f26e8f8e445bbc24634fcd14f2d51a1f7bdc8a66341",
+          "quoteSha256": "ca389da17add03b31543b15bf5238b427f4a51e30cb4584aed7d069e543f0002"
+        }
+      ]
+    }
+  ],
+  "routingEnabled": false,
+  "qualifiedForRouting": false,
+  "expertReviewed": false,
+  "report": "research-review-2026-09-26.md",
+  "verification": "research-review-verification.v1.json"
+}

@@ -1,0 +1,321 @@
+{
+  "schemaVersion": "agat.decision.workflow-verification.v1",
+  "createdAt": "2026-09-26T14:47:39.731Z",
+  "status": "verified_diagnostic_only",
+  "qualification": "not_assessed",
+  "routingEnabled": false,
+  "experiments": [
+    {
+      "prefix": "workflow",
+      "status": "incomplete",
+      "planSha256": "adb299c2af9577a25504524c64db07eb7f30b5885785a36a9594ad0af08c23c7",
+      "resultSha256": "479f4635c11667e2709e3784f39d2b31386dec141606844f6e04d6b0e6127a0b",
+      "phases": [
+        {
+          "id": "control_c1",
+          "workflows": 2,
+          "primaryCalls": 6,
+          "decisions": 0,
+          "observedPrimaryInFlight": 1,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0
+          },
+          "elapsedMs": 17768.673
+        },
+        {
+          "id": "shadow_c1",
+          "workflows": 2,
+          "primaryCalls": 6,
+          "decisions": 6,
+          "observedPrimaryInFlight": 1,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0,
+            "ok/accepted": 6
+          },
+          "elapsedMs": 19663.987
+        },
+        {
+          "id": "shadow_c2",
+          "workflows": 4,
+          "primaryCalls": 12,
+          "decisions": 12,
+          "observedPrimaryInFlight": 1,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0,
+            "ok/accepted": 3,
+            "error/inference_timeout": 1,
+            "error/backend_unavailable": 8
+          },
+          "elapsedMs": 34208.933
+        }
+      ]
+    },
+    {
+      "prefix": "workflow-concurrency",
+      "status": "observed",
+      "planSha256": "5ad0766162f8196fa41baeca2ca909eb3b49ebd683c11b2edf5dad2c09193a34",
+      "resultSha256": "971a1f1fa918917479ce06328d802ddedbec38352f8c54d232266ded81b0b61a",
+      "phases": [
+        {
+          "id": "control_c1",
+          "workflows": 2,
+          "primaryCalls": 6,
+          "decisions": 0,
+          "observedPrimaryInFlight": 1,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0
+          },
+          "elapsedMs": 15601.653
+        },
+        {
+          "id": "shadow_c1",
+          "workflows": 2,
+          "primaryCalls": 6,
+          "decisions": 6,
+          "observedPrimaryInFlight": 1,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0,
+            "ok/accepted": 6
+          },
+          "elapsedMs": 18221.52
+        },
+        {
+          "id": "control_c2",
+          "workflows": 4,
+          "primaryCalls": 12,
+          "decisions": 0,
+          "observedPrimaryInFlight": 2,
+          "shadowOverlappingPrimaryHttp": 0,
+          "observationCounts": {
+            "active": 0
+          },
+          "elapsedMs": 30620.073
+        },
+        {
+          "id": "shadow_c2",
+          "workflows": 4,
+          "primaryCalls": 12,
+          "decisions": 12,
+          "observedPrimaryInFlight": 2,
+          "shadowOverlappingPrimaryHttp": 11,
+          "observationCounts": {
+            "active": 0,
+            "ok/accepted": 12
+          },
+          "elapsedMs": 30636.449
+        }
+      ]
+    }
+  ],
+  "arithmetic": {
+    "source": "workflow.fixture.json",
+    "type": "assistant arithmetic crosscheck; not independent human acceptance",
+    "original": {
+      "july": {
+        "requests": 100,
+        "hours": 400,
+        "deviations": 8
+      },
+      "august": {
+        "requests": 120,
+        "hours": 360,
+        "deviations": 6
+      }
+    },
+    "correct": {
+      "requestChangePercent": 19.999999999999996,
+      "meanHours": [
+        4,
+        3
+      ],
+      "meanChangePercent": -25,
+      "deviationRatePercent": [
+        8,
+        5
+      ],
+      "deviationRateChangePercentagePoints": -3
+    },
+    "finalAudits": [
+      {
+        "experiment": "workflow",
+        "phase": "control_c1",
+        "runId": "7d971337-2abc-440d-a958-73fe4901b34b",
+        "outputSha256": "a5806e7d1f629cb8f0e3cf1a84273ac0de9da05bd82d9d11768f4d5c36cd6d05",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "control_c1",
+        "runId": "6ead0653-b9c0-4396-a271-16aa31ea64b8",
+        "outputSha256": "a5806e7d1f629cb8f0e3cf1a84273ac0de9da05bd82d9d11768f4d5c36cd6d05",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c1",
+        "runId": "d8db228e-4922-4036-94f9-2a2cb36b4bd7",
+        "outputSha256": "2a4aa22b1412f9bbc57a15326314642d2f24f4690887e415fe1fa1dbc66254eb",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c1",
+        "runId": "8ea42e42-763f-42fc-ad8e-093ec36ffc68",
+        "outputSha256": "2a4aa22b1412f9bbc57a15326314642d2f24f4690887e415fe1fa1dbc66254eb",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c2",
+        "runId": "bdc8b570-1ea1-47a1-9af5-8d8c24286743",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c2",
+        "runId": "3c08f2a7-56e5-4ecd-bfc7-0ab0364ce850",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c2",
+        "runId": "fc78f9dc-d16e-469c-bd0b-15e89cfc2ba3",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow",
+        "phase": "shadow_c2",
+        "runId": "db0b5044-4411-4812-8241-e4342555b1e4",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c1",
+        "runId": "84705b3b-ce10-4bb5-8c41-a4f87d274183",
+        "outputSha256": "a5806e7d1f629cb8f0e3cf1a84273ac0de9da05bd82d9d11768f4d5c36cd6d05",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c1",
+        "runId": "1c46e118-bc06-4dbb-813b-e2dd1d64bbd6",
+        "outputSha256": "a5806e7d1f629cb8f0e3cf1a84273ac0de9da05bd82d9d11768f4d5c36cd6d05",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c1",
+        "runId": "7a7fa475-1abe-4660-aff4-740182d90194",
+        "outputSha256": "2a4aa22b1412f9bbc57a15326314642d2f24f4690887e415fe1fa1dbc66254eb",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c1",
+        "runId": "b6d826fa-33d4-4a45-adc7-76b4fa76c72a",
+        "outputSha256": "2a4aa22b1412f9bbc57a15326314642d2f24f4690887e415fe1fa1dbc66254eb",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c2",
+        "runId": "df1e13ba-c0c5-4c9f-a554-00798c97924e",
+        "outputSha256": "659b72050a31d15909707073c293177045e999f3400b5858defce0d362461c11",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c2",
+        "runId": "e72ce8f8-c6bf-4be4-9c2d-4587ed2396b6",
+        "outputSha256": "659b72050a31d15909707073c293177045e999f3400b5858defce0d362461c11",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c2",
+        "runId": "1a250dee-ea4e-4267-9f80-026e1adff5fa",
+        "outputSha256": "659b72050a31d15909707073c293177045e999f3400b5858defce0d362461c11",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "control_c2",
+        "runId": "90067ba3-8c09-498e-84b1-529a4d6786b3",
+        "outputSha256": "659b72050a31d15909707073c293177045e999f3400b5858defce0d362461c11",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c2",
+        "runId": "910a3af1-29df-4414-93e4-a2a7822673b9",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c2",
+        "runId": "877bc4ff-7714-4279-9109-99adaa4587d3",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c2",
+        "runId": "fdc59aca-3f27-4f4a-883d-441b505647fd",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      },
+      {
+        "experiment": "workflow-concurrency",
+        "phase": "shadow_c2",
+        "runId": "3b37ccff-3340-4d95-b5ea-5f587d4c9824",
+        "outputSha256": "94f2b187f48036a18e8d4e9b93a07176ae292f5b126114d95a2b3f296739e5be",
+        "reportsIncorrectMeanChange": true,
+        "reportsIncorrectRateChange": true
+      }
+    ]
+  },
+  "checks": {
+    "allArtifactDigestsVerified": true,
+    "allFrozenSourcesVerifiedWithInitialSnapshot": true,
+    "allStageInputsReconstructed": true,
+    "allPrimaryOutputsPreserved": true,
+    "allShadowResultsRevalidated": true,
+    "actualHttpConcurrencyRecomputed": true,
+    "arithmeticErrorsPresentInEveryFinalReport": true
+  },
+  "limitations": [
+    "Twenty repeated outputs of one synthetic input, not twenty independent quality cases.",
+    "Initial c2 phase actually had one global lease; new c2 phases exercised two.",
+    "Deadline, coordinator limit and phase order changed together; before/after latency is not causal evidence."
+  ],
+  "sha256": "dc01d1d5c675115d550ea2cc7eba991a165b55942f6660b185aed7d516f2e154"
+}

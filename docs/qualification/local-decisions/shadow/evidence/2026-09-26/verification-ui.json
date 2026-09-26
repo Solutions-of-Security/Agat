@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "agat.decision-shadow-verification.v1",
+  "date": "2026-09-26",
+  "status": "pass",
+  "previousVerification": "verification-postgres.json",
+  "integrationImplementationSha256": "f1ec292c1682a9e3470cdc771d13e56c17889d80c870ecd24a38818900d3bbdb",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "24558c8e55851882d8a479c8eba16fedd40347790023ef1753d809e74678891a",
+    "apps/web/src/components/DecisionObservations.tsx": "c348d5f383710369747d97a788e60db854b01cbfa6610d9ec82e3c8bc44a91ce",
+    "apps/web/src/components/RunDetail.tsx": "7c9e8d2fc8120903f8334e3a986ef6c444e25889f04484d6d894010d05641b63",
+    "apps/web/src/types.ts": "daca1c44b597ee94d830ba42d0774574f678b3f2caafdd8a0a3e0a82e58ec3e1",
+    "apps/web/src/styles.css": "3aa14ed63fe8bff963ece3c1803540672bdaccaf5272691afa4a96cff9bad00a",
+    "apps/web/test/decision-observations.test.ts": "85696237b3f1fd688bd2a8b579dc42a41a1ea12db0c68eb62b41650e4156a30f",
+    "tests/browser/decision-observations.spec.mjs": "43faf8ba703f64fa79be421b47ee8e57687f65e7d7cefbacc74e4e73c022dcce"
+  },
+  "checks": {
+    "coordinatorTests": {
+      "passed": 199,
+      "failed": 0
+    },
+    "webTests": {
+      "passed": 51,
+      "failed": 0
+    },
+    "workspaceBuild": "pass",
+    "browser": {
+      "passed": 2,
+      "failed": 0,
+      "engine": "Installed Google Chrome via Playwright channel chrome, fresh temporary profiles",
+      "projects": [
+        "Desktop 1440x1000",
+        "Pixel 7 emulation"
+      ],
+      "scope": [
+        "existing runs without observations",
+        "Boolean false distinct from abstention and missing data",
+        "question and candidate descriptions",
+        "keyboard details expansion",
+        "distribution, thresholds and pinned profile",
+        "unchanged primary output",
+        "no horizontal page overflow or application console errors"
+      ]
+    },
+    "realMlxIntegration": "real-mlx-trace-context.json"
+  },
+  "limits": [
+    "Browser observations are explicitly test-only UI fixtures; real persistence and MLX are verified separately.",
+    "The MLX smoke uses a fixture primary generator.",
+    "No quality qualification, accessibility certification, or automatic routing claim."
+  ]
+}

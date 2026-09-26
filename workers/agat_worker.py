@@ -26,6 +26,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
+from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
+
 from telemetry import (
     ExecutionMetrics,
     WorkerTelemetry,
@@ -142,6 +144,7 @@ class WorkerConfig:
     runtime_attestation_timeout: float
     dry_run: bool
     once: bool
+    decision_url: str = ""
 
 
 class CoordinatorClient:
@@ -382,8 +385,8 @@ class CoordinatorClient:
     def lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/lease", {"workerVersion": VERSION})
 
-    def renew(self, lease_id: str) -> None:
-        self.request("POST", f"/api/v1/leases/{lease_id}/renew", {})
+    def renew(self, lease_id: str, *, timeout: float = 30) -> None:
+        self.request("POST", f"/api/v1/leases/{lease_id}/renew", {}, timeout=timeout)
 
     def knowledge_lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/knowledge/lease", {})
@@ -457,6 +460,9 @@ class CoordinatorClient:
     def fail(self, lease_id: str, error: str) -> None:
         self.request("POST", f"/api/v1/leases/{lease_id}/fail", {"error": error})
 
+    def record_decision_shadow(self, lease_id: str, observation: dict[str, Any]) -> None:
+        self.request("POST", f"/api/v1/leases/{lease_id}/decision-shadow", observation, timeout=5)
+
     def mcp_call(
         self,
         lease_id: str,
@@ -501,6 +507,7 @@ class LocalModelClient:
         telemetry: WorkerTelemetry | None = None,
         coordinator_client: CoordinatorClient | None = None,
         mcp_approval_timeout: float = 300,
+        decision_client: LocalDecisionClient | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -510,6 +517,7 @@ class LocalModelClient:
         self.coordinator_client = coordinator_client
         self.mcp_approval_timeout = max(30.0, min(86_400.0, mcp_approval_timeout))
         self._tool_context = threading.local()
+        self.decision_client = decision_client
 
     def embed(self, model: str, inputs: list[str]) -> list[list[float]]:
         if not model.strip():
@@ -2117,6 +2125,9 @@ def worker_labels(config: WorkerConfig) -> dict[str, str]:
     else:
         labels["tools"] = "mcp_gateway"
     labels["toolSchemaVersion"] = TOOL_SCHEMA_VERSION
+    labels.pop("decisionShadow", None)
+    if config.decision_url:
+        labels["decisionShadow"] = DECISION_SHADOW_PROFILE
     return labels
 
 
@@ -2507,12 +2518,16 @@ def heartbeat_loop(
             print(f"Runtime attestation refresh failed: {error}", file=sys.stderr, flush=True)
 
 
-def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Event) -> None:
+def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Event,
+                  cancelled: threading.Event | None = None) -> None:
     while not stop.wait(45):
         try:
             client.renew(lease_id)
         except ApiError as error:
             print(f"Lease renewal failed for {lease_id}: {error}", file=sys.stderr, flush=True)
+            if error.status in (401, 403, 404, 409) and cancelled is not None:
+                cancelled.set()
+                return
 
 
 def knowledge_lease_renewer(
@@ -2669,8 +2684,9 @@ def _execute_lease_body(
     model_name = lease["agent"].get("model") or fallback_model
     model_started = False
     renew_stop = threading.Event()
+    cancelled = threading.Event()
     renew_thread = threading.Thread(
-        target=lease_renewer, args=(client, lease_id, renew_stop), daemon=True
+        target=lease_renewer, args=(client, lease_id, renew_stop, cancelled), daemon=True
     )
     renew_thread.start()
     try:
@@ -2818,6 +2834,21 @@ def _execute_lease_body(
                     **current_metrics,
                 },
             )
+        shadow = lease.get("decisionShadow")
+        if isinstance(shadow, dict):
+            try:
+                if dry_run:
+                    observation = decision_unavailable("dry_run")
+                elif model_client.decision_client is None:
+                    observation = decision_unavailable("disabled")
+                else:
+                    # Refresh ownership before extra work after a potentially long primary call.
+                    client.renew(lease_id, timeout=5)
+                    observation = model_client.decision_client.decide(shadow, cancelled)
+                client.record_decision_shadow(lease_id, observation)
+            except Exception:
+                # No shadow exception, source text or raw model response enters the primary error path.
+                print(f"[{lease_id[:8]}] shadow observation unavailable", file=sys.stderr, flush=True)
         client.complete(lease_id, output, metrics=metrics.payload())
         print(f"[{lease_id[:8]}] completed", flush=True)
     except Exception as error:  # noqa: BLE001 - task failures must be reported upstream.
@@ -2886,6 +2917,7 @@ def _worker_loop_with_telemetry(
         telemetry,
         coordinator_client=client,
         mcp_approval_timeout=config.mcp_approval_timeout,
+        decision_client=LocalDecisionClient(config.decision_url) if config.decision_url else None,
     )
     stop = threading.Event()
 
@@ -3121,8 +3153,15 @@ def parse_args() -> WorkerConfig:
         default=float(os.getenv("AGAT_WORKER_RUNTIME_ATTESTATION_TIMEOUT_SECONDS", "10")),
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--decision-url", default=os.getenv("AGAT_DECISION_URL", ""),
+                        help="Opt-in loopback decision service: http://127.0.0.1:<port>")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
+    if args.decision_url:
+        try:
+            args.decision_url = validate_decision_url(args.decision_url)
+        except ValueError as error:
+            parser.error(str(error))
 
     models = tuple(model.strip() for model in args.models.split(",") if model.strip())
     embedding_models = tuple(
@@ -3250,6 +3289,7 @@ def parse_args() -> WorkerConfig:
         runtime_attestation_timeout=args.runtime_attestation_timeout,
         dry_run=args.dry_run,
         once=args.once,
+        decision_url=args.decision_url,
     )
 
 

@@ -1,0 +1,428 @@
+{
+  "schemaVersion": "agat.decision.source-case-specs.v1",
+  "id": "agat-source-review-v1",
+  "splitSeed": "agat-source-review-2026-09-26-v1",
+  "labelOrigin": "assistant-draft",
+  "humanReviewCompleted": false,
+  "productionQualification": false,
+  "cases": [
+    {
+      "id": "agat-source-001",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "keycloak-verification",
+          "type": "json-pointer",
+          "pointer": "/live"
+        }
+      ],
+      "claim": "На момент проверки процесс Keycloak опубликован и доступен для запуска.",
+      "proposedOptionId": "contradicted",
+      "rationale": "В live указаны publishedVersion=0 и draft; отправка запуска отключена. Сохранение определения процесса не является публикацией."
+    },
+    {
+      "id": "agat-source-002",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "keycloak-verification",
+          "type": "json-pointer",
+          "pointer": "/live"
+        }
+      ],
+      "claim": "Чтение из API прошло успешно; в проверке учтены шесть агентов, а повторная установка не создала новых агентов.",
+      "proposedOptionId": "supported",
+      "rationale": "apiReadBack=PASS, agents=6; idempotentInstaller явно фиксирует createdAgents=0 при повторном запуске."
+    },
+    {
+      "id": "agat-source-003",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "preview-validation",
+          "type": "section",
+          "heading": "## Первый результат на реальной модели"
+        }
+      ],
+      "claim": "В этой проверке p95 времени ответа локальной модели оказался меньше одной секунды.",
+      "proposedOptionId": "insufficient",
+      "rationale": "Раздел содержит модель, способ запуска, фактический ответ и статус completed. Измерений latency или p95 в нём нет; успешность запуска не определяет скорость."
+    },
+    {
+      "id": "agat-source-004",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "preview-validation",
+          "type": "section",
+          "heading": "## Local RAG"
+        }
+      ],
+      "claim": "Local RAG проверили на производственных документах заказчика.",
+      "proposedOptionId": "contradicted",
+      "rationale": "В источнике прямо указан синтетический handbook. Реальные вызовы Ollama не делают учебный вход производственными данными."
+    },
+    {
+      "id": "agat-source-005",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "report-results",
+          "type": "line",
+          "contains": "| Восстановление |"
+        }
+      ],
+      "claim": "После перезапуска coordinator и Temporal worker генерация отчёта выполнилась повторно.",
+      "proposedOptionId": "contradicted",
+      "rationale": "Строка протокола прямо говорит: прежний Temporal run завершён, генерация не повторялась."
+    },
+    {
+      "id": "agat-source-006",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "report-sdk-fail",
+          "type": "section",
+          "heading": "# Квалификация внутреннего отчёта"
+        }
+      ],
+      "claim": "При остановке на SDK_LOCK_MISMATCH проверка установленной Qwen3 не выполнялась.",
+      "proposedOptionId": "supported",
+      "rationale": "У проверки версий FAIL/SDK_LOCK_MISMATCH, у проверки Qwen3 статус NOT_RUN. NOT_RUN нельзя трактовать как успешный вызов модели."
+    },
+    {
+      "id": "agat-source-007",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "report-results",
+          "type": "paragraph",
+          "contains": "Сырые ответы удалены"
+        }
+      ],
+      "claim": "Доказано, что причиной первого REPORT_RUBRIC_FAILED была арифметическая ошибка модели.",
+      "proposedOptionId": "insufficient",
+      "rationale": "Сырые ответы удалены; протокол прямо оставляет две возможности: ошибка модели либо равнозначная формулировка, не распознанная рубрикой."
+    },
+    {
+      "id": "agat-source-008",
+      "family": "evidence",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "github-issue-2",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "claim": "Проведение исследования и набор участников не входят в объём этой заявки.",
+      "proposedOptionId": "supported",
+      "rationale": "Последний абзац issue явно ограничивает изменение документацией и исключает набор участников и проведение исследования."
+    },
+    {
+      "id": "agat-source-009",
+      "family": "classification",
+      "taskOrigin": "observed-github-issue",
+      "extracts": [
+        {
+          "sourceId": "github-issue-3",
+          "type": "json-pointer",
+          "pointer": "/title"
+        },
+        {
+          "sourceId": "github-issue-3",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "proposedOptionId": "enhancement",
+      "rationale": "Основной результат — новое хранение sourceTemplateId/version и API provenance с миграцией. Исходная метка сопровождающего enhancement согласуется с этой категорией; это не заявка на предоставление доступа.",
+      "sourceLabelReference": {
+        "sourceId": "github-issue-3",
+        "label": "enhancement"
+      },
+      "reviewFocus": "Проверить границу исправления дефекта и расширения контракта: классифицируется основная работа всей заявки."
+    },
+    {
+      "id": "agat-source-010",
+      "family": "classification",
+      "taskOrigin": "observed-github-issue",
+      "extracts": [
+        {
+          "sourceId": "github-issue-2",
+          "type": "json-pointer",
+          "pointer": "/title"
+        },
+        {
+          "sourceId": "github-issue-2",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "proposedOptionId": "other",
+      "rationale": "Заявка ограничена подготовкой документа — протокола исследования. Метка сопровождающего documentation соответствует other в выбранной четырёхклассовой схеме; проведение исследования и изменение поведения приложения исключены.",
+      "sourceLabelReference": {
+        "sourceId": "github-issue-2",
+        "label": "documentation"
+      }
+    },
+    {
+      "id": "agat-source-011",
+      "family": "classification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "roadmap",
+          "type": "line",
+          "contains": "| CLD-003 |"
+        }
+      ],
+      "proposedOptionId": "enhancement",
+      "rationale": "Запланирован новый adapter OpenRouter с контрактами и диагностикой. Упоминание API key и auth описывает функцию адаптера, а не просьбу выдать конкретному субъекту доступ."
+    },
+    {
+      "id": "agat-source-012",
+      "family": "classification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "roadmap",
+          "type": "line",
+          "contains": "| USE-003 |"
+        }
+      ],
+      "proposedOptionId": "enhancement",
+      "rationale": "Нужно добавить извлечение и индексацию новых форматов файлов, ограничения и retry. В записи не сообщается о конкретном аварийном запуске."
+    },
+    {
+      "id": "agat-source-013",
+      "family": "classification",
+      "taskOrigin": "assessment-of-documented-incident",
+      "extracts": [
+        {
+          "sourceId": "docker-validation",
+          "type": "paragraph",
+          "contains": "При первом запуске SearXNG получил"
+        }
+      ],
+      "proposedOptionId": "incident",
+      "rationale": "Зафиксирован конкретный Input/output error на bind mount и способ восстановления контейнера после загрузки конфигурации на диск. Описывается произошедший сбой."
+    },
+    {
+      "id": "agat-source-014",
+      "family": "classification",
+      "taskOrigin": "assessment-of-documented-incident",
+      "extracts": [
+        {
+          "sourceId": "report-results",
+          "type": "paragraph",
+          "contains": "Первый запуск обнаружил Temporal SDK"
+        }
+      ],
+      "proposedOptionId": "incident",
+      "rationale": "Реальная проверка остановилась из-за несовпадения установленного SDK с lock-файлом; после установки зависимостей обнаружены отсутствующие модели и Temporal. Это разбор сбоя окружения тестового запуска.",
+      "reviewFocus": "Инцидент относится к инженерному стенду, не к промышленной эксплуатации."
+    },
+    {
+      "id": "agat-source-015",
+      "family": "classification",
+      "taskOrigin": "assessment-of-documented-incident",
+      "extracts": [
+        {
+          "sourceId": "report-results",
+          "type": "paragraph",
+          "contains": "экспериментальная ветка отклонения дополнительно получила"
+        }
+      ],
+      "proposedOptionId": "incident",
+      "rationale": "В экспериментальном harness ветка reject получила HTTP 400 из-за отсутствия обязательной причины. Зафиксировано нарушение контракта тестовым клиентом; из этого нельзя выводить дефект проверки API.",
+      "reviewFocus": "Проверить, что исправление клиента не переименовано в неисправность серверного контроля."
+    },
+    {
+      "id": "agat-source-016",
+      "family": "classification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "keycloak-readme",
+          "type": "paragraph",
+          "contains": "В проекте нет MCP-серверов"
+        }
+      ],
+      "proposedOptionId": "other",
+      "rationale": "Это запись о текущем состоянии: черновик сохранён, интеграции отсутствуют, runtime ограничен. В ней нет самостоятельной заявки на новую функцию, восстановление ранее работавшей системы или выдачу прав. По рубрике выбирается other.",
+      "reviewFocus": "Пограничный случай: отсутствие сформулированной заявки. Если рецензенты требуют дополнительный контекст действия, оставить замечание и не угадывать access."
+    },
+    {
+      "id": "agat-source-017",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "keycloak-readme",
+          "type": "paragraph",
+          "contains": "Облако, кластер и Git-репозиторий пользователь ещё не выбрал"
+        }
+      ],
+      "action": "Подготовить план установки Keycloak, привязанный к выбранной целевой инфраструктуре.",
+      "requiredInputs": [
+        "Выбранная целевая среда или облако",
+        "Конкретный Kubernetes cluster reference",
+        "Целевой Git-репозиторий"
+      ],
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Протокол прямо сообщает, что облако, кластер и Git-репозиторий ещё не выбраны. Для привязки плана к целевой среде этих значений не хватает; подставлять вымышленные адреса нельзя."
+    },
+    {
+      "id": "agat-source-018",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "keycloak-verification",
+          "type": "json-pointer",
+          "pointer": "/live/idempotentInstaller"
+        }
+      ],
+      "action": "Кратко изложить зафиксированный результат повторной установки пакета.",
+      "requiredInputs": [
+        "Число новых агентов при повторе",
+        "Создан ли новый процесс при повторе"
+      ],
+      "proposedOptionId": "sufficient",
+      "rationale": "Источник сообщает createdAgents=0 и createdProcess=false on repeated run. Для пересказа именно этого результата оба требуемых сведения уже есть; запускать установку заново не требуется."
+    },
+    {
+      "id": "agat-source-019",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "github-issue-2",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "action": "Подготовить незаполненный протокол будущей UX-проверки в границах issue.",
+      "requiredInputs": [
+        "Количество ролей и участников",
+        "Поля для фиксации среды",
+        "Структура записи сценария",
+        "Граница между подготовкой шаблона и проведением исследования"
+      ],
+      "proposedOptionId": "sufficient",
+      "rationale": "Заданы пять ролей и пять участников, поля среды, начальное состояние/действия/ожидаемый результат/препятствия и явное исключение проведения исследования. Для пустого протокола имена участников и реальные устройства заранее не нужны."
+    },
+    {
+      "id": "agat-source-020",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "github-issue-3",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "action": "Составить список критериев приёмки сохранения provenance установленного агента.",
+      "requiredInputs": [
+        "Какие сведения о шаблоне сохранять",
+        "Должно ли переименование сохранять provenance",
+        "Поведение старых и вручную созданных агентов",
+        "Требуемые проверки и документация"
+      ],
+      "proposedOptionId": "sufficient",
+      "rationale": "Issue перечисляет identifier/version, независимость от имени, явное отсутствие provenance у старых или ручных записей, тесты и документацию. Для извлечения критериев не нужны ещё не назначенные сроки и исполнители."
+    },
+    {
+      "id": "agat-source-021",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "roadmap",
+          "type": "line",
+          "contains": "| USE-008 |"
+        }
+      ],
+      "action": "Запустить предметный двухнедельный пилот SP-102 по записи roadmap.",
+      "requiredInputs": [
+        "Две конкретные команды-участницы",
+        "Назначенный владелец сценария",
+        "Зафиксированный ручной baseline",
+        "Численные или проверяемые quality/effort критерии перехода"
+      ],
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Запись требует подтвердить команды, владельца и baseline, но не содержит их конкретных значений и согласованных порогов. Наличие задачи собрать эти сведения не означает, что они уже собраны."
+    },
+    {
+      "id": "agat-source-022",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "docker-validation",
+          "type": "paragraph",
+          "contains": "Панель и API доступны по адресу"
+        },
+        {
+          "sourceId": "docker-validation",
+          "type": "line",
+          "contains": "curl --fail http://127.0.0.1:8788/api/v1/health"
+        }
+      ],
+      "action": "Выписать из протокола URL проверки здоровья именно описанного локального стенда.",
+      "requiredInputs": [
+        "Базовый адрес coordinator на момент протокола",
+        "Путь health endpoint"
+      ],
+      "proposedOptionId": "sufficient",
+      "rationale": "Указаны http://127.0.0.1:8788 и /api/v1/health. Для извлечения исторического URL данных достаточно; это не обещание текущей доступности сервиса."
+    },
+    {
+      "id": "agat-source-023",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "report-results",
+          "type": "paragraph",
+          "contains": "Сырые ответы удалены"
+        }
+      ],
+      "action": "Установить точную причину первого отказа REPORT_RUBRIC_FAILED: ошибка модели или непринятая рубрикой равнозначная формулировка.",
+      "requiredInputs": [
+        "Исходный ответ модели этого запуска",
+        "Условия сработавшей рубрики и результат их сопоставления с ответом"
+      ],
+      "proposedOptionId": "needs_clarification",
+      "rationale": "Исходные ответы удалены, а протокол не разрешает альтернативные причины. Нужны дополнительные доказательства; если получить их нельзя, причина остаётся неизвестной."
+    },
+    {
+      "id": "agat-source-024",
+      "family": "clarification",
+      "taskOrigin": "assistant-authored-assessment-of-real-record",
+      "extracts": [
+        {
+          "sourceId": "github-issue-3",
+          "type": "json-pointer",
+          "pointer": "/body"
+        }
+      ],
+      "action": "Опубликовать согласованные дату поставки и ответственного за issue SP-001.",
+      "requiredInputs": [
+        "Назначенный исполнитель",
+        "Согласованный срок поставки"
+      ],
+      "proposedOptionId": "needs_clarification",
+      "rationale": "В issue прямо сказано, что сроки и исполнители не назначены. Приёмочные критерии не позволяют восстановить эти назначения."
+    }
+  ]
+}

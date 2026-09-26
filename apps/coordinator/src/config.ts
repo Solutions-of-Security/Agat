@@ -189,6 +189,7 @@ export interface CoordinatorConfig {
   serveWeb: boolean;
   webDistPath: string;
   leaseTtlSeconds: number;
+  decisionShadowEnabled: boolean;
   allowedOrigins: string[];
   localWorkerLauncherEnabled: boolean;
   localWorkerNamespace: string;
@@ -390,6 +391,7 @@ export function loadConfig(): CoordinatorConfig {
     serveWeb: booleanFromEnv(process.env.AGAT_SERVE_WEB, true),
     webDistPath: path.resolve(currentDir, "../../web/dist"),
     leaseTtlSeconds: integerFromEnv(process.env.AGAT_LEASE_TTL_SECONDS, 180),
+    decisionShadowEnabled: booleanFromEnv(process.env.AGAT_DECISION_SHADOW_ENABLED, false),
     allowedOrigins: (process.env.AGAT_ALLOWED_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173")
       .split(",")
       .map((origin) => origin.trim())

@@ -5,6 +5,9 @@ import { DatabaseSync } from "node:sqlite";
 
 import { PostgresDatabaseSync, type PostgresDatabaseOptions } from "./postgres-database.js";
 import type { SyncDatabase } from "./sync-database.js";
+import { createDecisionShadowLease, normalizeDecisionShadowConfig, supportsDecisionShadow,
+  unavailableDecision, validateDecisionShadowResult, type DecisionShadowLease,
+  type DecisionShadowConfig, type DecisionShadowObservation } from "./local-decisions.js";
 import {
   S3ArtifactObjectStoreSync,
   artifactObjectKey,
@@ -1010,6 +1013,7 @@ function normalizeCredentialInput(input: CreateCredentialInput, currentScope?: C
 export interface StoreOptions {
   seedDemo?: boolean;
   leaseTtlSeconds?: number;
+  decisionShadowEnabled?: boolean;
   artifactsDir?: string;
   credentialsKey?: string;
   temporalProcesses?: boolean;
@@ -1049,6 +1053,7 @@ export class AgatStore {
   readonly db: SyncDatabase;
   readonly stateStoreDriver: "sqlite" | "postgresql";
   private readonly leaseTtlSeconds: number;
+  private readonly decisionShadowEnabled: boolean;
   private readonly artifactsDir: string;
   private readonly credentialsKey: string;
   private readonly temporalProcesses: boolean;
@@ -1149,6 +1154,7 @@ export class AgatStore {
       Object.defineProperty(this.db, "dialect", { value: "sqlite", enumerable: true });
     }
     this.leaseTtlSeconds = options.leaseTtlSeconds ?? 180;
+    this.decisionShadowEnabled = options.decisionShadowEnabled ?? false;
     this.artifactsDir = path.resolve(options.artifactsDir ?? "./data/artifacts");
     this.credentialsKey = options.credentialsKey ?? "agat-local-credentials-key";
     this.temporalProcesses = options.temporalProcesses ?? false;
@@ -7134,7 +7140,7 @@ export class AgatStore {
         LEFT JOIN runs r ON r.id = s.run_id AND r.project_id = ?
         WHERE a.id NOT IN ('__agat_system__', '__agat_eval_judge__')
           AND (a.is_builtin = 1 OR a.project_id = ?)
-        GROUP BY a.id
+        GROUP BY a.id, pr.id, pv.prompt_id, pv.version
         ORDER BY
           a.is_builtin DESC,
           CASE a.id WHEN 'collector' THEN 0 WHEN 'analyst' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END,
@@ -9117,6 +9123,27 @@ export class AgatStore {
       const vector = normalizeEmbeddingVector(rawQuery.vector);
       const topK = clampInteger(rawQuery.topK, 1, 20, 6);
       const placeholders = collectionIds.map(() => "?").join(",");
+      // A model/dimension mismatch is a broken retrieval request, not a valid
+      // search with no relevant documents. Validate every selected collection
+      // before the candidate limit/topK can hide an incompatible index.
+      const collections = this.db.prepare(`
+        SELECT id, embedding_model FROM knowledge_collections
+        WHERE project_id = ? AND id IN (${placeholders})
+      `).all(project, ...collectionIds) as Row[];
+      if (collections.length !== collectionIds.length || collections.some((collection) => collection.embedding_model !== embeddingModel)) {
+        throw new Error("Embedding-модель retrieval не совпадает с выбранной коллекцией");
+      }
+      const indexedDimensions = this.db.prepare(`
+        SELECT DISTINCT ch.embedding_model, ch.embedding_dimensions
+        FROM knowledge_chunks ch JOIN knowledge_documents d ON d.id = ch.document_id
+        WHERE ch.collection_id IN (${placeholders}) AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
+      `).all(...collectionIds) as Row[];
+      for (const indexed of indexedDimensions) {
+        const dimensions = Number(indexed.embedding_dimensions);
+        if (indexed.embedding_model !== embeddingModel || !Number.isInteger(dimensions)
+          || dimensions < 1) throw new Error("Индекс embeddings содержит некорректные метаданные");
+        if (dimensions !== vector.length) throw new Error("Размерность retrieval не совпадает с индексом коллекции");
+      }
       const candidates = this.db.prepare(`
         SELECT ch.*, d.name AS document_name, d.source_uri, d.content_sha256 AS document_sha256, d.original_sha256,
           c.name AS collection_name, c.embedding_model
@@ -9134,10 +9161,11 @@ export class AgatStore {
         try {
           storedVector = normalizeEmbeddingVector(stored);
         } catch {
-          return [];
+          throw new Error("Индекс embeddings содержит повреждённый вектор");
         }
+        if (storedVector.length !== Number(candidate.embedding_dimensions)) throw new Error("Индекс embeddings содержит неверную размерность вектора");
         const score = cosineSimilarity(vector, storedVector);
-        if (score === null) return [];
+        if (score === null || !Number.isFinite(score)) throw new Error("Индекс embeddings не позволяет вычислить сходство запроса");
         return [{
           score: Math.round(score * 1_000_000) / 1_000_000,
           content: String(candidate.content),
@@ -10334,7 +10362,9 @@ export class AgatStore {
         resultDestination: "history",
       }, project);
       const stage = this.db.prepare("SELECT id FROM stages WHERE run_id = ? ORDER BY position LIMIT 1").get(created.id) as Row;
-      this.db.prepare("UPDATE stages SET process_node_id = ? WHERE id = ?").run(node.id, String(stage.id));
+      this.db.prepare("UPDATE stages SET process_node_id = ?, activity_json = ? WHERE id = ?").run(
+        node.id, JSON.stringify(node.config.decisionShadow ? { decisionShadowConfig: node.config.decisionShadow } : {}), String(stage.id),
+      );
       this.addEvent(created.id, String(stage.id), null, "info", "process.node.test.created", `Создан тест шага «${node.name}»`, {
         processNodeId: node.id,
         agentId: node.config.agentId,
@@ -11795,6 +11825,32 @@ export class AgatStore {
         output: String(row.output ?? ""),
       }));
       const rawActivity = parseJson<Record<string, unknown>>(candidate.activity_json, {});
+      let decisionShadow: DecisionShadowLease | undefined;
+      if (candidate.stage_kind === "agent" && rawActivity.decisionShadowConfig && !rawActivity.decisionShadowObservation) {
+        const labels = parseJson<Record<string, string>>(node.labels_json, {});
+        let unavailable: string | null = !this.decisionShadowEnabled ? "disabled" : null;
+        if (!unavailable) {
+          try {
+            const config = normalizeDecisionShadowConfig(rawActivity.decisionShadowConfig);
+            if (!supportsDecisionShadow(labels.decisionShadow, config)) {
+              unavailable = "unsupported_worker";
+            } else {
+              decisionShadow = createDecisionShadowLease(config, String(candidate.stage_id),
+                typeof candidate.stage_input === "string" ? candidate.stage_input : String(candidate.run_input));
+              rawActivity.decisionShadowLease = decisionShadow;
+            }
+          } catch {
+            unavailable = "invalid_input";
+          }
+        }
+        if (unavailable) {
+          rawActivity.decisionShadowObservation = unavailableDecision(unavailable);
+          this.addDecisionShadowEvent(String(candidate.run_id), String(candidate.stage_id), nodeId,
+            rawActivity.decisionShadowObservation as DecisionShadowObservation);
+        }
+        this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?")
+          .run(JSON.stringify(rawActivity), String(candidate.stage_id));
+      }
       let activity: LeasePayload["activity"];
       if (candidate.stage_kind === "http" || candidate.stage_kind === "compensation") {
         const request = rawActivity.request && typeof rawActivity.request === "object"
@@ -11954,6 +12010,7 @@ export class AgatStore {
         mcpTools: selectedMcpTools,
         knowledge,
         ...(activity ? { activity } : {}),
+        ...(decisionShadow ? { decisionShadow } : {}),
       };
       });
     } catch (error) {
@@ -11967,13 +12024,77 @@ export class AgatStore {
     }
   }
 
+  private addDecisionShadowEvent(runId: string, stageId: string, nodeId: string, observation: DecisionShadowObservation): void {
+    this.addEvent(runId, stageId, nodeId, "info", "decision.shadow", "Сохранено shadow-наблюдение; основной маршрут сохранён", {
+      mode: "shadow", fallback: "primary", status: observation.status, reason: observation.reason,
+      ...(observation.result ? { inputSha256: observation.result.inputSha256,
+        selectedOptionId: observation.result.selectedOptionId, durationMs: observation.result.durationMs } : {}),
+    });
+  }
+
+  private replayDecisionShadow(instanceId: string, runId: string, node: ProcessGraphNode,
+    stageId: string, state: string | null): Record<string, unknown> {
+    if (!node.config.decisionShadow) return {};
+    const config = node.config.decisionShadow;
+    const activity: Record<string, unknown> = { decisionShadowConfig: config };
+    const instance = this.db.prepare("SELECT replay_mode, replay_of_instance_id FROM process_instances WHERE id = ?")
+      .get(instanceId) as Row;
+    if (instance.replay_mode !== "safe") return activity;
+    const visit = Number((this.db.prepare("SELECT COUNT(*) AS count FROM stages WHERE run_id = ? AND process_node_id = ?")
+      .get(runId, node.id) as Row).count);
+    const source = this.db.prepare(`
+      SELECT s.id, s.activity_json FROM stages s JOIN process_instances pi ON pi.run_id = s.run_id
+      WHERE pi.id = ? AND s.process_node_id = ? AND s.status = 'completed'
+      ORDER BY s.position LIMIT 1 OFFSET ?
+    `).get(String(instance.replay_of_instance_id), node.id, visit) as Row | undefined;
+    try {
+      const runInput = (this.db.prepare("SELECT input FROM runs WHERE id = ?").get(runId) as Row).input;
+      const lease = createDecisionShadowLease(config, stageId, state ?? String(runInput));
+      activity.decisionShadowLease = lease;
+      const previous = parseJson<Record<string, unknown>>(source?.activity_json, {});
+      const previousLease = previous.decisionShadowLease as DecisionShadowLease | undefined;
+      if (source && previous.decisionShadowObservation && previousLease?.inputSha256 === lease.inputSha256
+          && previousLease?.profileSha256 === lease.profileSha256) {
+        activity.decisionShadowObservation = {
+          ...previous.decisionShadowObservation as DecisionShadowObservation, reusedFromStageId: String(source.id),
+        };
+      } else {
+        activity.decisionShadowObservation = unavailableDecision("safe_replay_unavailable");
+      }
+    } catch {
+      activity.decisionShadowObservation = unavailableDecision("safe_replay_unavailable");
+    }
+    return activity;
+  }
+
+  recordDecisionShadow(nodeId: string, leaseId: string, raw: unknown): DecisionShadowObservation {
+    return this.transaction(() => {
+      const stage = this.db.prepare(`
+        SELECT s.id, s.run_id, s.activity_json FROM stages s JOIN runs r ON r.id = s.run_id
+        WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ?
+          AND r.status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
+      `).get(nodeId, leaseId, nowIso()) as Row | undefined;
+      if (!stage) throw new Error("Активная аренда не найдена");
+      const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      if (activity.decisionShadowObservation) return activity.decisionShadowObservation as DecisionShadowObservation;
+      if (!activity.decisionShadowLease || !activity.decisionShadowConfig) throw new Error("Shadow-проверка не назначена");
+      const config = normalizeDecisionShadowConfig(activity.decisionShadowConfig);
+      const observation = validateDecisionShadowResult(raw, activity.decisionShadowLease as DecisionShadowLease, config.profileJson);
+      activity.decisionShadowObservation = observation;
+      this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
+      this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId, observation);
+      return observation;
+    });
+  }
+
   renewLease(nodeId: string, leaseId: string): boolean {
     const result = this.db
       .prepare(`
         UPDATE stages SET lease_expires_at = ?, updated_at = ?
-        WHERE node_id = ? AND lease_id = ? AND status = 'running'
+        WHERE node_id = ? AND lease_id = ? AND status = 'running' AND lease_expires_at > ?
       `)
-      .run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId);
+      .run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId, nowIso());
     return result.changes === 1;
   }
 
@@ -12016,10 +12137,18 @@ export class AgatStore {
           JOIN runs r ON r.id = s.run_id
           JOIN agents a ON a.id = s.agent_id
           WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running'
+          ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
         `)
         .get(nodeId, leaseId) as Row | undefined;
       if (!stage) throw new Error("Активная аренда не найдена");
       if (output.length > 900_000) throw new Error("Результат этапа превышает лимит 900000 символов");
+      const shadowActivity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      if (shadowActivity.decisionShadowLease && !shadowActivity.decisionShadowObservation) {
+        shadowActivity.decisionShadowObservation = unavailableDecision("missing_result");
+        this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(shadowActivity), String(stage.id));
+        this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId,
+          shadowActivity.decisionShadowObservation as DecisionShadowObservation);
+      }
       const executingMcpCalls = Number((this.db.prepare(`
         SELECT COUNT(*) AS count FROM mcp_tool_calls
         WHERE lease_id = ? AND status = 'executing'
@@ -12588,6 +12717,16 @@ export class AgatStore {
       events,
       artifacts,
       manifest: this.executionManifest(run),
+      decisionObservations: (this.db.prepare("SELECT id, activity_json FROM stages WHERE run_id = ? ORDER BY position")
+        .all(runId) as Row[]).flatMap((stage) => {
+        const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+        const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
+        return activity.decisionShadowObservation ? [{ stageId: String(stage.id),
+          profileSha256: (activity.decisionShadowLease as DecisionShadowLease | undefined)?.profileSha256 ?? null,
+          context: decisionConfig ? { kind: decisionConfig.kind, question: decisionConfig.question,
+            options: decisionConfig.options } : null,
+          observation: activity.decisionShadowObservation }] : [];
+      }),
       comparison: typeof run.evaluation_group_id === "string" && !goldenEvaluation
         ? this.evaluationComparison(run.evaluation_group_id, project)
         : null,
@@ -12819,6 +12958,8 @@ export class AgatStore {
       const worker = parseJson<Record<string, unknown> | null>(stage.worker_snapshot_json, null);
       const metrics = normalizeExecutionMetrics(parseJson<Record<string, unknown>>(stage.metrics_json, {}));
       const routing = parseJson<ModelRoutingDecision | null>(stage.routing_json, null);
+      const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      const shadowLease = activity.decisionShadowLease as DecisionShadowLease | undefined;
       return {
         stageId: stage.id,
         position: Number(stage.position),
@@ -12829,6 +12970,11 @@ export class AgatStore {
         worker,
         routing,
         metrics,
+        ...(activity.decisionShadowConfig ? { decisionShadow: {
+          profileSha256: shadowLease?.profileSha256 ?? null,
+          inputSha256: shadowLease?.inputSha256 ?? null,
+          observation: activity.decisionShadowObservation ?? null,
+        } } : {}),
       };
     });
     const base = {
@@ -14823,7 +14969,10 @@ export class AgatStore {
         tokenId,
         lastOutput,
         JSON.stringify(this.captureAgentSnapshot(agentRow, "process_queue", projectId, timestamp)),
-        JSON.stringify(requiresApproval && node.config.approvalForm ? { form: node.config.approvalForm } : {}),
+        JSON.stringify({
+          ...(requiresApproval && node.config.approvalForm ? { form: node.config.approvalForm } : {}),
+          ...this.replayDecisionShadow(instanceId, runId, node, stageId, lastOutput),
+        }),
         timestamp,
         timestamp,
       );

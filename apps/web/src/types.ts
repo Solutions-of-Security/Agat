@@ -1087,6 +1087,36 @@ export interface Artifact {
   createdAt: string;
 }
 
+export interface RunDecisionObservation {
+  stageId: string;
+  profileSha256: string | null;
+  context?: {
+    kind: "choice" | "boolean" | "score";
+    question: string;
+    options: Array<{ id: string; description: string; abstain: boolean; value?: boolean | number }>;
+  } | null;
+  observation: {
+    mode: "shadow";
+    fallback: "primary";
+    status: "ok" | "abstain" | "error" | "unavailable";
+    reason: string;
+    reusedFromStageId?: string;
+    result?: {
+      value?: string | boolean | number | null;
+      selectedOptionId?: string | null;
+      selectedProbability?: number;
+      margin?: number;
+      durationMs?: number;
+      inputSha256?: string;
+      runtimeVersion?: string;
+      model?: { repository?: string; revision?: string };
+      calibration?: { status?: string; temperature?: number };
+      policy?: { minProbability?: number; minMargin?: number };
+      distribution?: Array<{ id: string; probability: number; logit: number }>;
+    };
+  };
+}
+
 export interface RunTrace {
   run: Run;
   events: AgatEvent[];
@@ -1107,6 +1137,7 @@ export interface RunTrace {
     qualitySource: "deterministic" | "human" | "model_judge" | null;
     gates: GoldenEvalGates;
   } | null;
+  decisionObservations?: RunDecisionObservation[];
   truncated: boolean;
   tracePolicy: {
     rawReasoningStored: false;

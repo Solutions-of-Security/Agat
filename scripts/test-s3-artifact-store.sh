@@ -14,12 +14,17 @@ tenant_password="tenant-artifact-test"
 minio_user="agatminio"
 minio_password="agat-minio-test-secret"
 bucket="agat-artifact-test"
+minio_image="agat-minio-integration:9e49d5e-go1.27.1"
 
 cleanup() {
   docker rm --force "${postgres_container}" "${minio_container}" >/dev/null 2>&1 || true
   docker network rm "${network}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+# BuildKit reuses the pinned source/toolchain layers on subsequent local runs.
+# Do not depend on discontinued upstream MinIO binary registries.
+docker build --tag "${minio_image}" "${repo_root}/deploy/test/minio"
 
 docker network create "${network}" >/dev/null
 docker run --detach \
@@ -41,7 +46,7 @@ docker run --detach \
   --publish 127.0.0.1::9000 \
   --env MINIO_ROOT_USER="${minio_user}" \
   --env MINIO_ROOT_PASSWORD="${minio_password}" \
-  quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data >/dev/null
+  "${minio_image}" server /data >/dev/null
 
 postgres_port="$(docker port "${postgres_container}" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
 minio_port="$(docker port "${minio_container}" 9000/tcp | sed -E 's/.*:([0-9]+)$/\1/')"

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "agat.decision.development-verification.v1",
+  "createdAt": "2026-09-26T10:20:42.084675+00:00",
+  "status": "pass",
+  "runtimeVersion": "0.3.0",
+  "implementationSha256": "b10259eefa8805e8e1d61488692f91a0a7da85133c3cdd083a8622e9b65f0a34",
+  "hardware": {
+    "chip": "Apple M1 Max",
+    "unifiedMemoryBytes": 34359738368,
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O"
+  },
+  "checks": {
+    "datasetRebuiltIdentically": true,
+    "comparisonRecomputedIdenticallyExceptTimestamp": true,
+    "approvedSourceFilesUnchanged": true,
+    "reservedCaseCount": 9,
+    "reservedCasesScored": 0,
+    "modelScoreReports": 2,
+    "inferenceCalls": 60,
+    "backendErrors": 0,
+    "historicalCalibrationAndQualificationUnchanged": true,
+    "gpuTestsPassed": 2,
+    "docsCheck": {
+      "command": "npm run docs:check",
+      "status": "pass",
+      "nodeTests": 12,
+      "pythonTests": 2,
+      "localLinks": 834,
+      "markdownFiles": 114,
+      "catalogCategories": 7,
+      "processTemplates": 13
+    },
+    "unitTests": {
+      "command": ".venv/decision/bin/python -m unittest discover -s decision_runtime/tests -p 'test_*.py'",
+      "python": "3.13",
+      "total": 66,
+      "passed": 63,
+      "skipped": 3,
+      "skipReason": "Opt-in GPU suite; two model/GPU/HTTP tests were run separately. Historical calibrated HTTP test requires a new calibration artifact for this implementation."
+    },
+    "corpusRebuilds": {
+      "v1": "pass",
+      "v2": "pass",
+      "artifactsPerVersion": 8,
+      "inputsPerVersion": 24,
+      "sourceSnapshots": 9
+    },
+    "gitDiffCheck": "pass",
+    "newDevelopmentTests": 19
+  },
+  "evidenceFiles": {
+    "runtime-check-http.json": "8831ef3e010cac5855752d2760bb8ec724d030efdf18483c065ab1699c90b0e7",
+    "qwen-base-scores.json": "d58eab339da22e329192056569bc29e0fe86015a2c06068efbfdf44ca7726dbd",
+    "runtime-check.json": "2c9e52fd126483cfba4b60487f083ae45fb49dcd4226cd8718652ca3c522f1be",
+    "comparison.json": "aab8640334d7ca7f7c298bce5dd7c533f40b016d2740bd434465a8f00c5daa0d",
+    "decider-scores.json": "9c52c11f098f357993285ddea49674ac9130d29a2d8777a42fc357f414830fc5",
+    "dataset.json": "1df355a93e541eb9a7ea3637eb2ed3278b41f46c7e34ab0aa1cc5eb77c4f6008"
+  },
+  "qualifiedForRouting": false,
+  "routingEnabled": false,
+  "completedAt": "2026-09-26T10:22:11.277404+00:00",
+  "sha256": "414027a70a65143a94ba43c6174d97e7530939e83cf870d2a1535f82c7b79504"
+}

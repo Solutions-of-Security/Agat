@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "qualification": "internal-report-real-qwen3-temporal-v1",
+  "status": "FAIL",
+  "startedAt": "2026-09-20T19:42:12.910Z",
+  "finishedAt": "2026-09-20T19:42:18.303Z",
+  "approvalActor": "automated-synthetic-qualification",
+  "humanReview": false,
+  "checks": [
+    {
+      "id": "configuration",
+      "title": "Безопасная конфигурация и версии зависимостей",
+      "status": "PASS",
+      "details": {
+        "model": "qwen3:8b",
+        "embeddingModel": "embeddinggemma",
+        "namespace": "default",
+        "timeoutSeconds": 1800,
+        "ollama": "http://127.0.0.1:11434",
+        "temporal": "127.0.0.1:7233"
+      },
+      "durationMs": 172
+    },
+    {
+      "id": "ollama",
+      "title": "Локальный Ollama",
+      "status": "PASS",
+      "details": {
+        "version": "0.34.0"
+      },
+      "durationMs": 42
+    },
+    {
+      "id": "qwen3",
+      "title": "Установленная локальная модель Qwen3",
+      "status": "FAIL",
+      "code": "MODEL_NOT_INSTALLED",
+      "durationMs": 0
+    },
+    {
+      "id": "embeddingModel",
+      "title": "Установленная embeddinggemma",
+      "status": "FAIL",
+      "code": "MODEL_NOT_INSTALLED",
+      "durationMs": 0
+    },
+    {
+      "id": "embeddings",
+      "title": "Реальный запрос embeddings",
+      "status": "FAIL",
+      "code": "EMBEDDING_MODEL_UNAVAILABLE",
+      "durationMs": 0
+    },
+    {
+      "id": "temporal",
+      "title": "Temporal Server и namespace",
+      "status": "FAIL",
+      "code": "TEMPORAL_UNAVAILABLE",
+      "durationMs": 5168
+    },
+    {
+      "id": "build",
+      "title": "Сборка coordinator и Temporal worker",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "runtime",
+      "title": "Изолированный runtime и реальные pollers",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "installation",
+      "title": "Установка пакета и блокировка неготового запуска",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "ingestion",
+      "title": "Индексация синтетических источников",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "retrieval",
+      "title": "Три этапа Qwen3 и проверяемые цитаты",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "report",
+      "title": "Контрольные числа, формулы и ограничения",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "approval",
+      "title": "Согласование через API и защита итогового артефакта",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "recovery",
+      "title": "SIGKILL coordinator/worker и продолжение того же workflow",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "download",
+      "title": "Авторизованное скачивание и проверка SHA-256",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "history",
+      "title": "История реального Temporal и завершение workflow",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "stability",
+      "title": "Неизменность моделей и входных файлов",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "cleanup",
+      "title": "Завершение собственных процессов и удаление временного состояния",
+      "status": "PASS",
+      "details": {
+        "processesStopped": true,
+        "temporaryStateRemoved": true,
+        "rawEvidenceRetained": false
+      },
+      "durationMs": 0
+    }
+  ],
+  "versions": {
+    "node": "v25.8.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "python": "Python 3.14.3",
+    "temporalSdk": {
+      "client": "1.24.0",
+      "common": "1.24.0",
+      "worker": "1.24.0",
+      "workflow": "1.24.0",
+      "activity": "1.24.0",
+      "proto": "1.24.0"
+    },
+    "ollama": "0.34.0"
+  },
+  "inputs": {
+    "sha256": "bc1883fdbeb43c52ef320b2fdb046e7223f34e02e6b93ac0f1cabf0543660685",
+    "files": {
+      "apps/coordinator/package.json": "f1992eec69ed996eb3518f4d450244596aa4c79ac20dc2d08dfaf48754d9aa1a",
+      "apps/coordinator/src/a2a-transport.ts": "63021d0f1030f552b02feb7113540dccf6293c85f6272ccd75445a3a1d4b3c95",
+      "apps/coordinator/src/a2a.ts": "d388493e84f3e5d901a097453957f4cd2dc0ea3a2eb959d790ca2fc54d231b39",
+      "apps/coordinator/src/approval-decisions.ts": "7957d5e641f31722459ccf5b19f905c4c8e5bcb50f417b9b82f64f34ff2fd373",
+      "apps/coordinator/src/artifact-object-store.ts": "6b5d566f0098c492870dae83c440f6092b5a0d2ccd0a7de51f8536f919905d13",
+      "apps/coordinator/src/artifact-object-worker.ts": "e4e1a5a6dc2f28da53477c233bae8615d6b423019d959da56b3a74eac618f5b2",
+      "apps/coordinator/src/artifact-store-admin.ts": "3f9324e8725b76d5aa867f2ace4b055fd0754fca5f6e7d402a197d3d129e8da3",
+      "apps/coordinator/src/artifact-store-bootstrap.ts": "33f182d41a5afe4eb17381a115fdfa550a5c3fed870dd6747b2f165c44424579",
+      "apps/coordinator/src/auth.ts": "3940850c4dde5eb3bfe3cd155ba387aee48751cc1a32d88a1b7e520397fee664",
+      "apps/coordinator/src/config.ts": "615ef85211a6132d8bff2bb4a992fc95f2e66f83fea1cb46286f426def591ef2",
+      "apps/coordinator/src/credentials.ts": "f19c39361b34e470492f163a5267351a8407d0beaaaee778400f8851061343c8",
+      "apps/coordinator/src/database.ts": "f0d6e0f904331b2088d1bfc6a02c13b08b2fd75db7f0a0c2a6b35324570c4565",
+      "apps/coordinator/src/edge-attestation.ts": "09550b8354d60cc894a38c0660c9f9353792edd8a50eb5bb59ca9b71f932166d",
+      "apps/coordinator/src/knowledge-citations.ts": "79b19d4a8b4d50e30c25dace3b4ad60e839f709b05faa05a2c717fc7b1633d80",
+      "apps/coordinator/src/knowledge-file-parser.ts": "5aa12b677cdcc72e837aee4b978ae5284deabefddaa5df808b107eacb367ed2b",
+      "apps/coordinator/src/knowledge-files.ts": "f936641e646bfaa8fe198b6a786cf02f674dfea06dd9a7d3f67bfd58889e8409",
+      "apps/coordinator/src/knowledge.ts": "17dc301b05d7b5d2e635990b63636a76d6b8eac4cd9690229263765b60156379",
+      "apps/coordinator/src/local-workers.ts": "494187f19523dc4caadf54905b7bad9ae5a7ea816f2880e4e2bba127cf2edf93",
+      "apps/coordinator/src/mcp-policy.ts": "a99c68e5f46a22d257ed9a96dedab44c91c84abd845a8311e2e15fd59d6aded8",
+      "apps/coordinator/src/mcp.ts": "2d57556910c6935f7d75a1846cbd13838ad92212843e1ec7b05e4c82b4de9dfc",
+      "apps/coordinator/src/postgres-admission.ts": "6bb7a153cd363b70430d1f42fbe490a06d29a856698f940cda930d4de91de8fb",
+      "apps/coordinator/src/postgres-database.ts": "1f7d4a1ab278e3d3576845fbe57006d271e93235e5fbff061b6c9b60e84e54bb",
+      "apps/coordinator/src/postgres-resilience.ts": "9a4af1cee41a389ae3c20f1463cb0390b3502f1e03d19f99a418fd71e538b295",
+      "apps/coordinator/src/postgres-schema-migrator.ts": "4605a3c6d17ac933f847e8e4cc3155fd9d50bad1d8f8a04ff63b65c833cfe0e7",
+      "apps/coordinator/src/postgres-worker.ts": "aceac5b15714fe31f00d7b097680c8713acb1692bc2a54a58295dd27f14f887a",
+      "apps/coordinator/src/process-bpmn.ts": "905f0930fa1545e38b31c2490db6393e120ddd53231ba4295e09cdabda051b33",
+      "apps/coordinator/src/process-catalog.ts": "31825bcdd2185522e64ab7a00462c37860d81a1fcffa74ceb8d9174b102141d6",
+      "apps/coordinator/src/process-engine.ts": "e7bd8a82053d3f485d88b17febe39b25d71d9c2b218a2dba7928f79062c1aafa",
+      "apps/coordinator/src/process-expressions.ts": "810d99028805805cf983e5c3ddbe1db70ae6d57a5d52ef77056bd3a76bd99c3a",
+      "apps/coordinator/src/process-forms.ts": "4c1c48e8e9b1588e827d33bb5f99f1fecf14d90c8e453d9723a0c42b573d81e4",
+      "apps/coordinator/src/process-packs.ts": "2aad330eb1f21022baf7e7c8cb57416e2897357ab5d74d86beba59fdf61d2581",
+      "apps/coordinator/src/process-runtime.ts": "792d2a3f4e8b7410d612e8ffe47e5b0b0d44268be76d369336e4790e0c1e9463",
+      "apps/coordinator/src/process-versioning.ts": "171141cbb11c7ab54d8e37599cb2d2e8618360135f4fc613cb67db7b8acaf50b",
+      "apps/coordinator/src/region-loss-dr.ts": "57412325ef87356fcee20039f643ef128ab600536c8e3e03eebb59905db18542",
+      "apps/coordinator/src/sandbox.ts": "ff9194a8a29cd4170c4cdda563b49f372945f30a08c29a11fc6c4c139ea89feb",
+      "apps/coordinator/src/scenario-preflight.ts": "7215257f43711fd770a8533bc924957e96149ea8c1b86fb597d1464d82a713f6",
+      "apps/coordinator/src/security.ts": "f417b1d6cc7d622a71d30d437e97006b1651403e63a703115b4fee808bb0e98d",
+      "apps/coordinator/src/server.ts": "c601342a15a53af1dd6ce520aa148a7bdddd3c04ac428ed0a8b885eaba5e04a5",
+      "apps/coordinator/src/siem-export.ts": "7a3ea0e966ada8158967c40f219505e00cc1946215798dadd5641ac95e75bd11",
+      "apps/coordinator/src/sqlite-postgres-migrator.ts": "d12fb01af8ff23b17c4cf5eda2aa42b200a31a63fee4677b4bd040bfc20e874e",
+      "apps/coordinator/src/sync-database.ts": "6135e0932306972bab1fb937075584366776c6d5cc9e784f4ed03f5928d676d5",
+      "apps/coordinator/src/telemetry.ts": "37eb4c2c997065995678a1a057b63482d185fd70eed5bf92e001380033106d32",
+      "apps/coordinator/src/types.ts": "ef266ea0a1413d5ee8b7598341166151db7b56872373751bd8e64f937b830e42",
+      "apps/coordinator/tsconfig.json": "89a3dda3e83a160e286adc4136001978f20eb22703ce65589330fbf4c6da8643",
+      "apps/temporal-worker/package.json": "8056a930cd48df4aa08ee92b6febf96b01faffca0b38b90f33a73642ab8b00a7",
+      "apps/temporal-worker/src/activities.ts": "3cabfd6579aded675f910af95b400cadb63cb5d93e22d4b334c54f89bff0df6e",
+      "apps/temporal-worker/src/build-workflows.ts": "1a91cd36328cb9ba3a9248258e2b70c33cbcc9ce2d222a0acb9fff7d4979db01",
+      "apps/temporal-worker/src/config.ts": "81fcee86d097d49e5636cde1a98492b2548970224eb57126d5f61bb614b17f71",
+      "apps/temporal-worker/src/contracts.ts": "5bf1718801dc05a7951c01a1adcdb050da3e3923fea534b496495efe1562d4f0",
+      "apps/temporal-worker/src/replay-fixtures.ts": "bd547390666ab037366930d3333564780893672466c1f517e0f91d628b590cbe",
+      "apps/temporal-worker/src/worker.ts": "58205b9fb8bcd25c04595392f17f62ec81b8e431c136e6116d4f12d0a51e9e9e",
+      "apps/temporal-worker/src/workflows.ts": "bae603846cd95b5376fd2e9487437c74cb853424ac88abcd4449cb3793b9b7d2",
+      "apps/temporal-worker/tsconfig.json": "89a3dda3e83a160e286adc4136001978f20eb22703ce65589330fbf4c6da8643",
+      "docs/qualification/internal-report/fixtures/sources.json": "9d95876d6c5d2af6aa222850f9f938be23c9c28c68bba5cc23f4651f1d205a9d",
+      "package-lock.json": "157be2c984409d9faa17689085f3e38c254f6fc18ac11305829b8d7bf19e039f",
+      "package.json": "9de485bc42899a64f71031e266a7ab2d4f8a7466630ea2410c17844130b3bfbe",
+      "scripts/lib/internal-report-qualification.mjs": "fb71cccedc50b02cb0182ba4c5efaa29381ae19661f03c89c5a0d53e5f72a0f3",
+      "scripts/qualify-internal-report.mjs": "c7f3e3b9ad335e5303488bfa6cdf34d122ee42079c0e378abc03ab8ea721e246",
+      "workers/agat_worker.py": "bf55ef43e19d93fedd953f252c47117d9e289e159d31a9fac639039aa29ff208",
+      "workers/telemetry.py": "25d34e1f5bc0d2db4e33188a173e2fc8d4e1a721d6f4cf4eecf5af76ce87439f",
+      "workers/test_web_tools.py": "1e482876b3b00ee5eb56ab99d30e1a130c3cd1c443361e2c412d90eb28a2f723",
+      "workers/test_worker_attestation.py": "6bf90ddff47da831fb6f839dc82ab1c4a6fb77616d8f459acb39716718922f9c",
+      "workers/web_tools.py": "811bcd3871e8c64f1dceb66360035dc0d224a0775142a2e073b59cf56e8bec4e"
+    }
+  },
+  "git": {
+    "commit": "63bd93d8fa847cf268a86c6ad590a8165dfd0eed",
+    "dirty": true
+  },
+  "exitCode": 2
+}

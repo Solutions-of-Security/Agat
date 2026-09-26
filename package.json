@@ -36,12 +36,13 @@
     "k8s:token": "bash scripts/k8s-admin-token.sh",
     "k8s:up": "bash scripts/k8s-up.sh",
     "start": "npm run start --workspace @agat/coordinator",
-    "test": "npm run test:coordinator && npm run test:web && npm run test:worker && npm run test:temporal && npm run test:process-pack",
+    "test": "npm run test:coordinator && npm run test:web && npm run test:worker && npm run test:decision && npm run test:temporal && npm run test:process-pack",
     "test:coordinator": "npm run test --workspace @agat/coordinator",
     "test:ollama-rag": "bash scripts/test-real-ollama-rag.sh",
     "test:temporal": "npm run test --workspace @agat/temporal-worker",
     "test:web": "npm test --workspace @agat/web",
     "test:worker": "python3 -m unittest discover -s workers -p 'test_*.py'",
+    "test:decision": "python3 -m unittest discover -s decision_runtime/tests -p 'test_*.py'",
     "temporal:promote": "bash scripts/temporal-rollout.sh promote",
     "temporal:ramp": "bash scripts/temporal-rollout.sh ramp",
     "temporal:status": "bash scripts/temporal-rollout.sh status",
@@ -51,7 +52,10 @@
     "docs:check": "node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p \"test_*.py\" && npm run docs:links:check && npm run docs:processes:check",
     "test:browser": "playwright test",
     "test:process-pack": "node --import tsx --test docs/tests/process-pack.test.ts",
-    "test:process-pack:ui": "node --import tsx docs/tests/process-pack-ui.mjs"
+    "test:process-pack:ui": "node --import tsx docs/tests/process-pack-ui.mjs",
+    "qualify:internal-report": "node scripts/qualify-internal-report.mjs",
+    "qualify:decision-shadow": "node --import tsx scripts/qualify-decision-shadow.ts",
+    "test:qualification": "node --test scripts/test/internal-report-qualification.test.mjs"
   },
   "engines": {
     "node": ">=22.13"
