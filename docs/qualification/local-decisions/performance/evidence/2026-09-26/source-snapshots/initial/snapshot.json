@@ -1,0 +1,127 @@
+{
+  "bundleSha256": "5fa4741ed391b38b9d0989800ed2fc83f0469c196d29ae289287d95e317ce4ba",
+  "comparison": {
+    "after": {
+      "counts": {
+        "duplicateRecords": 2,
+        "sourceRecords": 6,
+        "uniqueRequestPeriods": 4
+      },
+      "periods": [
+        {
+          "exceptions": 1,
+          "period": "2026-07",
+          "processingHours": "4",
+          "requests": 2,
+          "sourceId": "requests-P1"
+        },
+        {
+          "exceptions": 1,
+          "period": "2026-08",
+          "processingHours": "3",
+          "requests": 2,
+          "sourceId": "requests-P2"
+        }
+      ],
+      "sourceSha256": "c685ab96ab4ba9167a3cfc8117a900145edb047e19d9bfd73217427cf13d5d0e"
+    },
+    "aggregateValuesChanged": null,
+    "before": null,
+    "previousBundleSha256": null,
+    "sourceBytesChanged": null,
+    "status": "initial",
+    "tableBytesChanged": null
+  },
+  "createdAt": "2026-09-26T18:43:10.641780+00:00",
+  "files": {
+    "bundle.json": {
+      "sha256": "0d619e1d324972d8bc552324c306597146c8e580740ad697ed427162006f5869",
+      "sizeBytes": 86102
+    },
+    "calculation.json": {
+      "sha256": "0cb9bcad435b397a296af3f98419eb280474485e081b2146cebdf8d8a3d92e40",
+      "sizeBytes": 14313
+    },
+    "mapping.json": {
+      "sha256": "c3962e47da9fe97d8e974ecb68d8fc80dfdf41374a7d1442559e25b3e9c6ed11",
+      "sizeBytes": 942
+    },
+    "process.json": {
+      "sha256": "aec7b5ad4e4b141b92777b3b346a9382584a55cda98db8ac963733151b8fe34f",
+      "sizeBytes": 67780
+    },
+    "report.md": {
+      "sha256": "7c7a23a4c0cacc233e73fba1601f3d09b66abe96c6a7450c79c09701b10cdc86",
+      "sizeBytes": 4260
+    },
+    "source.csv": {
+      "sha256": "c685ab96ab4ba9167a3cfc8117a900145edb047e19d9bfd73217427cf13d5d0e",
+      "sizeBytes": 168
+    }
+  },
+  "humanReviewed": false,
+  "implementationSha256": "4a69c4737653dcd590baff41ac6943c5eb86b40c315e5b4a95a5fcb631beb1f4",
+  "installedInUserDeployment": false,
+  "qualifiedForRouting": false,
+  "recipe": {
+    "decimalPlaces": 3,
+    "mapping": {
+      "columns": {
+        "hasException": "reopened",
+        "period": "period",
+        "processingHours": "hours",
+        "requestId": "request_id"
+      },
+      "deduplication": {
+        "conflict": "reject",
+        "key": [
+          "period",
+          "requestId"
+        ],
+        "matching": "typed_values"
+      },
+      "periods": [
+        "2026-07",
+        "2026-08"
+      ],
+      "population": {
+        "comparablePeriods": true,
+        "exceptionScope": "boolean_per_counted_request",
+        "hoursScope": "same_counted_requests",
+        "id": "authored-request-periods",
+        "recordScope": "one_complete_request_per_period"
+      },
+      "schemaVersion": "agat.report.request-csv-mapping.v1",
+      "sourceId": "requests",
+      "sourceUri": "urn:agat:request-records:authored-diagnostic",
+      "units": {
+        "hasException": "boolean_0_1",
+        "processingHours": "hours"
+      }
+    },
+    "name": "Учебный снимок заявок: июль и август",
+    "schemaVersion": "agat.report.request-snapshot-recipe.v1",
+    "table": {
+      "firstLine": 2,
+      "through": "end_of_file"
+    }
+  },
+  "recipeSha256": "b4adcbf57b5f0b10eb4d75d2c509268ee4f74f52b7a4ab206718facb28f41ddc",
+  "routingEnabled": false,
+  "schemaVersion": "agat.report.request-snapshot.v1",
+  "sha256": "84e072b140089a679a4289c4a0e4ccba54353d5badea1f96da284c42e6a6b217",
+  "sourceCompletenessVerified": false,
+  "sourceRead": {
+    "changedNs": 1790448190635114008,
+    "device": 16777230,
+    "inode": 363529890,
+    "matchingReads": 2,
+    "method": "same_descriptor_two_reads_and_metadata",
+    "modifiedNs": 1790448190584908871,
+    "path": "/Users/mdavliatshin/Documents/Workspace/Agat/docs/qualification/local-decisions/performance/evidence/2026-09-26/source-snapshots/exports/initial.csv",
+    "sha256": "c685ab96ab4ba9167a3cfc8117a900145edb047e19d9bfd73217427cf13d5d0e",
+    "sizeBytes": 168
+  },
+  "sourceTruthVerified": false,
+  "status": "prepared_requires_review"
+}

@@ -1,0 +1,150 @@
+{
+  "bundleSha256": "115ddf608d8e6a14b55d36dcbbdc7017bd94f5467603ac42f3efd76827118fab",
+  "comparison": {
+    "after": {
+      "counts": {
+        "duplicateRecords": 2,
+        "sourceRecords": 7,
+        "uniqueRequestPeriods": 5
+      },
+      "periods": [
+        {
+          "exceptions": 1,
+          "period": "2026-07",
+          "processingHours": "4.5",
+          "requests": 3,
+          "sourceId": "requests-P1"
+        },
+        {
+          "exceptions": 1,
+          "period": "2026-08",
+          "processingHours": "3",
+          "requests": 2,
+          "sourceId": "requests-P2"
+        }
+      ],
+      "sourceSha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b"
+    },
+    "aggregateValuesChanged": true,
+    "before": {
+      "counts": {
+        "duplicateRecords": 2,
+        "sourceRecords": 6,
+        "uniqueRequestPeriods": 4
+      },
+      "periods": [
+        {
+          "exceptions": 1,
+          "period": "2026-07",
+          "processingHours": "4",
+          "requests": 2,
+          "sourceId": "requests-P1"
+        },
+        {
+          "exceptions": 1,
+          "period": "2026-08",
+          "processingHours": "3",
+          "requests": 2,
+          "sourceId": "requests-P2"
+        }
+      ],
+      "sourceSha256": "c685ab96ab4ba9167a3cfc8117a900145edb047e19d9bfd73217427cf13d5d0e"
+    },
+    "previousBundleSha256": "5fa4741ed391b38b9d0989800ed2fc83f0469c196d29ae289287d95e317ce4ba",
+    "sourceBytesChanged": true,
+    "status": "changed",
+    "tableBytesChanged": true
+  },
+  "createdAt": "2026-09-26T18:43:10.787597+00:00",
+  "files": {
+    "bundle.json": {
+      "sha256": "af87bceeee0a00450212fadb3670d99c55ae24fe467edcf3c5aef3112334c2a0",
+      "sizeBytes": 88800
+    },
+    "calculation.json": {
+      "sha256": "cf5f18633fb58a4431326c08e430bee0b0e0673e7ee513d6eae85b810c8ee475",
+      "sizeBytes": 15014
+    },
+    "mapping.json": {
+      "sha256": "fcb1f18095d98b257a80e7b78cf0a9bd8e63267cb613b314014ec3b868c7c854",
+      "sizeBytes": 942
+    },
+    "process.json": {
+      "sha256": "debdb5bb184921ec082a05f934e14130c921d040d486569eb4750a54ac969168",
+      "sizeBytes": 69710
+    },
+    "report.md": {
+      "sha256": "42c8f6e0a93d63fd0954a2c7c8fb97f862164d84a9893c1ce2f4c6e800e057a2",
+      "sizeBytes": 4264
+    },
+    "source.csv": {
+      "sha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b",
+      "sizeBytes": 186
+    }
+  },
+  "humanReviewed": false,
+  "implementationSha256": "4a69c4737653dcd590baff41ac6943c5eb86b40c315e5b4a95a5fcb631beb1f4",
+  "installedInUserDeployment": false,
+  "qualifiedForRouting": false,
+  "recipe": {
+    "decimalPlaces": 3,
+    "mapping": {
+      "columns": {
+        "hasException": "reopened",
+        "period": "period",
+        "processingHours": "hours",
+        "requestId": "request_id"
+      },
+      "deduplication": {
+        "conflict": "reject",
+        "key": [
+          "period",
+          "requestId"
+        ],
+        "matching": "typed_values"
+      },
+      "periods": [
+        "2026-07",
+        "2026-08"
+      ],
+      "population": {
+        "comparablePeriods": true,
+        "exceptionScope": "boolean_per_counted_request",
+        "hoursScope": "same_counted_requests",
+        "id": "authored-request-periods",
+        "recordScope": "one_complete_request_per_period"
+      },
+      "schemaVersion": "agat.report.request-csv-mapping.v1",
+      "sourceId": "requests",
+      "sourceUri": "urn:agat:request-records:authored-diagnostic",
+      "units": {
+        "hasException": "boolean_0_1",
+        "processingHours": "hours"
+      }
+    },
+    "name": "Учебный снимок заявок: июль и август",
+    "schemaVersion": "agat.report.request-snapshot-recipe.v1",
+    "table": {
+      "firstLine": 2,
+      "through": "end_of_file"
+    }
+  },
+  "recipeSha256": "b4adcbf57b5f0b10eb4d75d2c509268ee4f74f52b7a4ab206718facb28f41ddc",
+  "routingEnabled": false,
+  "schemaVersion": "agat.report.request-snapshot.v1",
+  "sha256": "1e5745e34c83817eabe4ac475aeb5ad5195d2e518328a701f5b3d55d84a776a0",
+  "sourceCompletenessVerified": false,
+  "sourceRead": {
+    "changedNs": 1790448190636602018,
+    "device": 16777230,
+    "inode": 363529891,
+    "matchingReads": 2,
+    "method": "same_descriptor_two_reads_and_metadata",
+    "modifiedNs": 1790448190585072409,
+    "path": "/Users/mdavliatshin/Documents/Workspace/Agat/docs/qualification/local-decisions/performance/evidence/2026-09-26/source-snapshots/exports/updated.csv",
+    "sha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b",
+    "sizeBytes": 186
+  },
+  "sourceTruthVerified": false,
+  "status": "prepared_requires_review"
+}
