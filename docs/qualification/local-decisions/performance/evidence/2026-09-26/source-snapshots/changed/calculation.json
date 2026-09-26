@@ -1,0 +1,508 @@
+{
+  "binding": {
+    "aggregation": [
+      {
+        "duplicateRecordIds": [
+          "requests-L6"
+        ],
+        "exceptions": 1,
+        "includedRecordIds": [
+          "requests-L3",
+          "requests-L5",
+          "requests-L9"
+        ],
+        "period": "2026-07",
+        "processingHours": "4.5",
+        "requests": 3,
+        "sourceId": "requests-P1",
+        "sourceRecordCount": 4
+      },
+      {
+        "duplicateRecordIds": [
+          "requests-L8"
+        ],
+        "exceptions": 1,
+        "includedRecordIds": [
+          "requests-L4",
+          "requests-L7"
+        ],
+        "period": "2026-08",
+        "processingHours": "3",
+        "requests": 2,
+        "sourceId": "requests-P2",
+        "sourceRecordCount": 3
+      }
+    ],
+    "arithmeticInput": {
+      "periods": [
+        {
+          "exceptions": 1,
+          "period": "2026-07",
+          "processingHours": "4.5",
+          "requests": 3,
+          "sourceId": "requests-P1"
+        },
+        {
+          "exceptions": 1,
+          "period": "2026-08",
+          "processingHours": "3",
+          "requests": 2,
+          "sourceId": "requests-P2"
+        }
+      ],
+      "schemaVersion": "agat.report.operations-input.v1",
+      "sourceSha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b"
+    },
+    "arithmeticInputSha256": "2ed97c455958d8b3db75c2d1592dd543b903d9457d1227e6d34ea7875af4975a",
+    "cellsMatchSelectedCsv": true,
+    "counts": {
+      "duplicateRecords": 2,
+      "sourceRecords": 7,
+      "uniqueRequestPeriods": 5
+    },
+    "deduplicationApplied": true,
+    "identitySemanticsVerified": false,
+    "implementationSha256": "45a908e140ca31c6498c9a9ab2aaaf87cf64f77d98b2c2296081e9ae98c6d0ae",
+    "limitations": [
+      "The caller selects the source, table, columns, periods, units and identity scope.",
+      "Only equal typed values for the same period/requestId are collapsed; conflicting values are rejected.",
+      "IDs are exact case-sensitive strings; the same ID in different periods is counted once per period.",
+      "Each row must describe a complete request-period, not an event or a partial duration.",
+      "Source truth, completeness and the real-world meaning of IDs and population declarations are not verified."
+    ],
+    "mapping": {
+      "columns": {
+        "hasException": "reopened",
+        "period": "period",
+        "processingHours": "hours",
+        "requestId": "request_id"
+      },
+      "deduplication": {
+        "conflict": "reject",
+        "key": [
+          "period",
+          "requestId"
+        ],
+        "matching": "typed_values"
+      },
+      "expectedSha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b",
+      "periods": [
+        "2026-07",
+        "2026-08"
+      ],
+      "population": {
+        "comparablePeriods": true,
+        "exceptionScope": "boolean_per_counted_request",
+        "hoursScope": "same_counted_requests",
+        "id": "authored-request-periods",
+        "recordScope": "one_complete_request_per_period"
+      },
+      "schemaVersion": "agat.report.request-csv-mapping.v1",
+      "sourceId": "requests",
+      "sourceUri": "urn:agat:request-records:authored-diagnostic",
+      "table": {
+        "firstLine": 2,
+        "lastLine": 9
+      },
+      "units": {
+        "hasException": "boolean_0_1",
+        "processingHours": "hours"
+      }
+    },
+    "mappingSha256": "b2e4b31f760685217f247a5af3afc00376d9b542bc580bcc4a6fd4a50d1f1693",
+    "populationAlignmentVerified": false,
+    "qualifiedForRouting": false,
+    "records": [
+      {
+        "byteEnd": 79,
+        "byteStart": 61,
+        "cells": {
+          "hours": "1.5",
+          "period": "2026-07",
+          "reopened": "1",
+          "request_id": "001"
+        },
+        "duplicateOf": null,
+        "firstLine": 3,
+        "included": true,
+        "lastLine": 3,
+        "rawRecord": "2026-07,001,1.5,1\n",
+        "rawRecordSha256": "a25f3418882ea3674bab167812fe940cf87b22011868a9ba2b16bdaa81a899a6",
+        "sourceId": "requests-L3",
+        "values": {
+          "hasException": "1",
+          "period": "2026-07",
+          "processingHours": "1.5",
+          "requestId": "001"
+        }
+      },
+      {
+        "byteEnd": 95,
+        "byteStart": 79,
+        "cells": {
+          "hours": "1",
+          "period": "2026-08",
+          "reopened": "0",
+          "request_id": "001"
+        },
+        "duplicateOf": null,
+        "firstLine": 4,
+        "included": true,
+        "lastLine": 4,
+        "rawRecord": "2026-08,001,1,0\n",
+        "rawRecordSha256": "7690f086340c4249c72b3c0e577176534724ac246b327a4a3fac1c65c7cb0ced",
+        "sourceId": "requests-L4",
+        "values": {
+          "hasException": "0",
+          "period": "2026-08",
+          "processingHours": "1",
+          "requestId": "001"
+        }
+      },
+      {
+        "byteEnd": 111,
+        "byteStart": 95,
+        "cells": {
+          "hours": "2.5",
+          "period": "2026-07",
+          "reopened": "0",
+          "request_id": "1"
+        },
+        "duplicateOf": null,
+        "firstLine": 5,
+        "included": true,
+        "lastLine": 5,
+        "rawRecord": "2026-07,1,2.5,0\n",
+        "rawRecordSha256": "2094f537c23bf5c80b40359e211fb68471f5cbe5cf6b61862b4d1bfc95861ab0",
+        "sourceId": "requests-L5",
+        "values": {
+          "hasException": "0",
+          "period": "2026-07",
+          "processingHours": "2.5",
+          "requestId": "1"
+        }
+      },
+      {
+        "byteEnd": 134,
+        "byteStart": 111,
+        "cells": {
+          "hours": "1.500000",
+          "period": "2026-07",
+          "reopened": "1",
+          "request_id": "001"
+        },
+        "duplicateOf": "requests-L3",
+        "firstLine": 6,
+        "included": false,
+        "lastLine": 6,
+        "rawRecord": "2026-07,001,1.500000,1\n",
+        "rawRecordSha256": "18b6a0fd08c5310fc740918e0b50c02d5f58a210fa83054b5d949fbfa6960210",
+        "sourceId": "requests-L6",
+        "values": {
+          "hasException": "1",
+          "period": "2026-07",
+          "processingHours": "1.500000",
+          "requestId": "001"
+        }
+      },
+      {
+        "byteEnd": 150,
+        "byteStart": 134,
+        "cells": {
+          "hours": "2",
+          "period": "2026-08",
+          "reopened": "1",
+          "request_id": "A-2"
+        },
+        "duplicateOf": null,
+        "firstLine": 7,
+        "included": true,
+        "lastLine": 7,
+        "rawRecord": "2026-08,A-2,2,1\n",
+        "rawRecordSha256": "3579f55e9abfa3c3ea53868b3f04fbb6b631e86619c2ed76ead7d7a6e7cb721d",
+        "sourceId": "requests-L7",
+        "values": {
+          "hasException": "1",
+          "period": "2026-08",
+          "processingHours": "2",
+          "requestId": "A-2"
+        }
+      },
+      {
+        "byteEnd": 168,
+        "byteStart": 150,
+        "cells": {
+          "hours": "1.0",
+          "period": "2026-08",
+          "reopened": "0",
+          "request_id": "001"
+        },
+        "duplicateOf": "requests-L4",
+        "firstLine": 8,
+        "included": false,
+        "lastLine": 8,
+        "rawRecord": "2026-08,001,1.0,0\n",
+        "rawRecordSha256": "64592975583bfd6ece5e0b15401cabbeac92900442b79c2e5b1d6aef3be387b8",
+        "sourceId": "requests-L8",
+        "values": {
+          "hasException": "0",
+          "period": "2026-08",
+          "processingHours": "1.0",
+          "requestId": "001"
+        }
+      },
+      {
+        "byteEnd": 186,
+        "byteStart": 168,
+        "cells": {
+          "hours": "0.5",
+          "period": "2026-07",
+          "reopened": "0",
+          "request_id": "NEW"
+        },
+        "duplicateOf": null,
+        "firstLine": 9,
+        "included": true,
+        "lastLine": 9,
+        "rawRecord": "2026-07,NEW,0.5,0\n",
+        "rawRecordSha256": "6cde27ee6e63fc57e8c7f415804d28b5eefa0d41f1aac8fd9106aef87f66b34d",
+        "sourceId": "requests-L9",
+        "values": {
+          "hasException": "0",
+          "period": "2026-07",
+          "processingHours": "0.5",
+          "requestId": "NEW"
+        }
+      }
+    ],
+    "routingEnabled": false,
+    "schemaVersion": "agat.report.request-records.v1",
+    "sha256": "c403a90d49c97c9cceaa6ea7934414a7d05ec81cdd2cb295e4cca5b40a6925a1",
+    "source": {
+      "byteLength": 186,
+      "encoding": "utf-8",
+      "id": "requests",
+      "sha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b",
+      "tableByteEnd": 186,
+      "tableByteStart": 28,
+      "tableSha256": "183eb0f7ed4f11e7ef1d0df10f5a0001dc2d712913d25a25bded2cb718bd92c7",
+      "tableText": "period,request_id,hours,reopened\n2026-07,001,1.5,1\n2026-08,001,1,0\n2026-07,1,2.5,0\n2026-07,001,1.500000,1\n2026-08,A-2,2,1\n2026-08,001,1.0,0\n2026-07,NEW,0.5,0\n",
+      "uri": "urn:agat:request-records:authored-diagnostic"
+    },
+    "sourceBytesMatched": true,
+    "sourceCompletenessVerified": false,
+    "sourceTruthVerified": false,
+    "status": "aggregated"
+  },
+  "calculation": {
+    "arithmetic": "exact_rational",
+    "formulas": {
+      "exceptionRatePercent": "exceptions / requests * 100",
+      "meanHoursPerRequest": "processingHours / requests",
+      "percentagePointChange": "second_rate_percent - first_rate_percent",
+      "relativeChangePercent": "(second - first) / first * 100"
+    },
+    "implementationSha256": "dc72df280f93c9f4bd189c51917350d3578d3a93ac9e652077322364a13d6e9b",
+    "input": {
+      "periods": [
+        {
+          "exceptions": 1,
+          "period": "2026-07",
+          "processingHours": "4.5",
+          "requests": 3,
+          "sourceId": "requests-P1"
+        },
+        {
+          "exceptions": 1,
+          "period": "2026-08",
+          "processingHours": "3",
+          "requests": 2,
+          "sourceId": "requests-P2"
+        }
+      ],
+      "schemaVersion": "agat.report.operations-input.v1",
+      "sourceSha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b"
+    },
+    "inputSha256": "2ed97c455958d8b3db75c2d1592dd543b903d9457d1227e6d34ea7875af4975a",
+    "limitations": [
+      "Arithmetic is conditional on supplied records; extraction, source truth and population alignment are not verified.",
+      "Exceptions count requests with an exception, at most once per counted request.",
+      "Period order is explicit input order; no date inference, causal inference or semantic classification.",
+      "Display values are rounded; exact fractions remain in the machine result."
+    ],
+    "metrics": {
+      "exceptionRatePercent": {
+        "change": {
+          "display": "16.667",
+          "exact": {
+            "denominator": "3",
+            "numerator": "50"
+          },
+          "status": "defined",
+          "unit": "percentage_points"
+        },
+        "first": {
+          "display": "33.333",
+          "exact": {
+            "denominator": "3",
+            "numerator": "100"
+          },
+          "status": "defined",
+          "unit": "percent"
+        },
+        "relativeChangePercent": {
+          "display": "50.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "50"
+          },
+          "status": "defined",
+          "unit": "percent"
+        },
+        "second": {
+          "display": "50.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "50"
+          },
+          "status": "defined",
+          "unit": "percent"
+        }
+      },
+      "meanHoursPerRequest": {
+        "change": {
+          "display": "0.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "0"
+          },
+          "status": "defined",
+          "unit": "hours_per_request"
+        },
+        "first": {
+          "display": "1.500",
+          "exact": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "status": "defined",
+          "unit": "hours_per_request"
+        },
+        "relativeChangePercent": {
+          "display": "0.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "0"
+          },
+          "status": "defined",
+          "unit": "percent"
+        },
+        "second": {
+          "display": "1.500",
+          "exact": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "status": "defined",
+          "unit": "hours_per_request"
+        }
+      },
+      "processingHours": {
+        "change": {
+          "display": "-1.500",
+          "exact": {
+            "denominator": "2",
+            "numerator": "-3"
+          },
+          "status": "defined",
+          "unit": "hours"
+        },
+        "first": {
+          "display": "4.500",
+          "exact": {
+            "denominator": "2",
+            "numerator": "9"
+          },
+          "status": "defined",
+          "unit": "hours"
+        },
+        "relativeChangePercent": {
+          "display": "-33.333",
+          "exact": {
+            "denominator": "3",
+            "numerator": "-100"
+          },
+          "status": "defined",
+          "unit": "percent"
+        },
+        "second": {
+          "display": "3.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "3"
+          },
+          "status": "defined",
+          "unit": "hours"
+        }
+      },
+      "requests": {
+        "change": {
+          "display": "-1.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "-1"
+          },
+          "status": "defined",
+          "unit": "requests"
+        },
+        "first": {
+          "display": "3.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "3"
+          },
+          "status": "defined",
+          "unit": "requests"
+        },
+        "relativeChangePercent": {
+          "display": "-33.333",
+          "exact": {
+            "denominator": "3",
+            "numerator": "-100"
+          },
+          "status": "defined",
+          "unit": "percent"
+        },
+        "second": {
+          "display": "2.000",
+          "exact": {
+            "denominator": "1",
+            "numerator": "2"
+          },
+          "status": "defined",
+          "unit": "requests"
+        }
+      }
+    },
+    "qualifiedForRouting": false,
+    "rounding": {
+      "decimalPlaces": 3,
+      "mode": "half_even"
+    },
+    "routingEnabled": false,
+    "schemaVersion": "agat.report.operations-result.v1",
+    "sha256": "009b89b18d400fbbbc6cb1b1c13b685ff1df6dc2f01784ed030691adfa2b4d16",
+    "sourceSha256": "415e50c48ea67ecb2c9ee939c395ce74ee49a9ac6d5ada991a8f99a40252e24b",
+    "sourceValuesVerified": false,
+    "status": "calculated"
+  },
+  "identitySemanticsVerified": false,
+  "populationAlignmentVerified": false,
+  "qualifiedForRouting": false,
+  "routingEnabled": false,
+  "schemaVersion": "agat.report.request-calculation.v1",
+  "sha256": "2c19f74b70dd0c597126dd1f845add295128adac52c9cb20262e00666b9cd818",
+  "sourceCompletenessVerified": false,
+  "sourceTruthVerified": false,
+  "status": "calculated"
+}
