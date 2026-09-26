@@ -86,4 +86,4 @@ python3 -m unittest scripts.test.test_decision_performance -v
 
 [Срок действия retrieval-аренды](./retrieval-lease-validity.md): воспроизведён и исправлен поиск по истёкшему lease до maintenance. SQLite и две реплики PostgreSQL проверяют отказ без записей и восстановление только по новому lease.
 
-[Изолированный исполнитель retrieval](./retrieval-isolated-executor.md): полный поиск в постоянном worker, ограниченная очередь и проверки credentials/lease после ожидания. Подготовлен парный HTTP-протокол с настоящим maintenance; включение в обычный coordinator ожидает результатов.
+[Изолированный исполнитель retrieval](./retrieval-isolated-executor.md): полный поиск в постоянном worker, ограниченная очередь и проверки credentials/lease после ожидания. Парный HTTP-опыт с настоящим maintenance подтвердил 84/84 поиска и меньшие наблюдаемые задержки health. SQLite сохраняет задержки фоновых записей; операторский opt-in PostgreSQL требует учёта pool budget, readiness и конфликтующих изменений.

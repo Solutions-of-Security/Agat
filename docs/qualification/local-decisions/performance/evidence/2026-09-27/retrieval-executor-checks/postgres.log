@@ -1,0 +1,33 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+(node:24506) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (1348.04475ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (36619.725958ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (426.941583ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (27291.771292ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (788.558583ms)
+(node:24506) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24506) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1723.454083ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1163.280459ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4292.402625ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (97.995583ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (235.05525ms)
+  ✔ rejects a schema Job while a coordinator replica is active (258.800334ms)
+  ✔ rejects runtime startup after out-of-band schema drift (194.099792ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (706.200541ms)
+✔ PostgreSQL Fleet/HA integration (81105.277083ms)
+ℹ tests 13
+ℹ suites 1
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 81846.767209

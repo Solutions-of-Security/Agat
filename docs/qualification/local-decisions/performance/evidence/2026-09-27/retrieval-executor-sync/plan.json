@@ -1,0 +1,86 @@
+{
+  "implementationCommit": "c3942a83e35aa7e0c7a9d3a08f0581d454f3411a",
+  "sourceSha256": {
+    "scripts/run-rag-http-probe.py": "10395ef3f83d4a6cb4fb11d8d383b8b0c373b3f66c4de3f9303225d89e7450b0",
+    "scripts/serve-rag-http-probe.ts": "f1eabc5fdbd88a40a5795935b54e33404fb34ad9cdef68b62ea6fdcd58c7f16b",
+    "scripts/verify-rag-http-probe.py": "c4f78fb499eb9eb04aeefdfcc23232c0a9af48c40f082415dcf0cab8df5260c4",
+    "package-lock.json": "157be2c984409d9faa17689085f3e38c254f6fc18ac11305829b8d7bf19e039f",
+    "apps/coordinator/src/server.ts": "879ebc7538765267dea9acf38d22395c8c32302f35e3019d75a8d6d75d451f82",
+    "apps/coordinator/src/config.ts": "f4c5a618470a72f27d857691f76bbdeba6a68c64f86248743edd9c3bd6f0b3fa",
+    "apps/coordinator/src/database.ts": "31377692d2ed709a7ee4e8cb8916bda2a6c07e999c7e66ffe957b8a3fa1f2914",
+    "apps/coordinator/src/knowledge.ts": "459c7a23c46d4d7142465dae8c51d8379bafe345292ecffde742169a2502a536",
+    "apps/coordinator/src/knowledge-ranking.ts": "d95638133fbe7757735d3376f9e4b8a5c87a5e18a74faf7ecc4cab954281d4b1",
+    "apps/coordinator/src/postgres-database.ts": "ac96e6b23f4916846554e4d8c50785491e996be8f5b99219e2e8f451a9bdefdd",
+    "apps/coordinator/src/postgres-worker.ts": "0a839f1b2e5307aa87e41e3a0b95c3d1ba76055a672dd5ca9c3eb18208ebe46b",
+    "apps/coordinator/src/postgres-response-buffer.ts": "0aca269b85ec601f7729ba35fcecddbfc6fa5fb4a08f01e3deebd670d0491cfe",
+    "apps/coordinator/src/sync-database.ts": "b265dcc0aee5b05a656e8e33c4d5e07d744a73d3048e58f4be9b58a401877bfd",
+    "apps/coordinator/src/knowledge-search-executor.ts": "d78cf4bb617040fffc91f1da60db1b04f41682fec155902c42ed5f19b39718a9",
+    "apps/coordinator/src/knowledge-search-worker.ts": "e96933e86b86e1480992f68ee1ceb11a329f97f29d264ff116259412665824c3"
+  },
+  "nodeVersion": "v24.14.0",
+  "candidates": 9716,
+  "dimensions": 768,
+  "candidateLimit": 10000,
+  "verifyDatabaseCandidateCount": true,
+  "executionMode": "sync",
+  "maintenanceIntervalMs": 1000,
+  "phases": [
+    {
+      "id": "warmup",
+      "concurrency": 1
+    },
+    {
+      "id": "idle",
+      "concurrency": 0
+    },
+    {
+      "id": "c1-r1",
+      "concurrency": 1
+    },
+    {
+      "id": "c1-r2",
+      "concurrency": 1
+    },
+    {
+      "id": "c1-r3",
+      "concurrency": 1
+    },
+    {
+      "id": "c2-r1",
+      "concurrency": 2
+    },
+    {
+      "id": "c2-r2",
+      "concurrency": 2
+    },
+    {
+      "id": "c2-r3",
+      "concurrency": 2
+    },
+    {
+      "id": "c4-r1",
+      "concurrency": 4
+    },
+    {
+      "id": "c4-r2",
+      "concurrency": 4
+    },
+    {
+      "id": "c4-r3",
+      "concurrency": 4
+    }
+  ],
+  "healthIntervalMs": 100,
+  "maxHealthInflight": 4,
+  "searchRequestTimeoutSeconds": 15,
+  "fixture": "One old exact vector, all others orthogonal; values +/-1/3; synthetic, no semantic quality claim",
+  "hostLoadAtStart": [
+    25.8955078125,
+    29.36376953125,
+    26.265625
+  ],
+  "backendOrder": [
+    "sqlite",
+    "postgresql"
+  ]
+}
