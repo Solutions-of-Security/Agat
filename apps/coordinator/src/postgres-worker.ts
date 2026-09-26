@@ -1,8 +1,7 @@
 import { parentPort } from "node:worker_threads";
 
 import pg, { type Pool, type PoolClient, type QueryResult } from "pg";
-
-const RESPONSE_HEADER_BYTES = 16;
+import { POSTGRES_RESPONSE_HEADER_BYTES as RESPONSE_HEADER_BYTES } from "./postgres-response-buffer.js";
 
 interface AccessScope {
   kind: "system" | "tenant";

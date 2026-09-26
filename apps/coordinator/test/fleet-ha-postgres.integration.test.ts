@@ -52,6 +52,27 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     await migratePostgresSchemaAndAdmit();
   });
 
+  it("reuses the response buffer across large, short, SQL-error and oversized responses", () => {
+    runWithPostgresSystemScope(() => {
+      const database = new PostgresDatabaseSync({ systemUrl, tenantUrl, roleMode: "runtime",
+        applicationName: "response-buffer-integration", poolMax: 1, connectTimeoutMs: 5000,
+        idleTimeoutMs: 5000, statementTimeoutMs: 30000, responseBytes: 1_048_576, sslMode: "disable" });
+      try {
+        for (let sequence = 0; sequence < 8; sequence++) {
+          const content = `Данные ${sequence} 🐈`.repeat(20_000);
+          const saved = database.prepare("SELECT ?::text AS content").get(content);
+          assert.equal(saved?.content, content);
+          assert.deepEqual(database.prepare("SELECT ?::integer AS sequence").get(sequence), { sequence });
+          assert.equal(saved?.content, content, "a later response must not mutate a previously decoded value");
+        }
+        assert.throws(() => database.prepare("SELECT repeat('x', 1100000) AS content").get(), /exceeds bridge limit/);
+        assert.deepEqual(database.prepare("SELECT 42 AS value").get(), { value: 42 });
+        assert.throws(() => database.prepare("SELECT 1 / 0").get(), /division by zero/);
+        assert.deepEqual(database.prepare("SELECT 43 AS value").get(), { value: 43 });
+      } finally { database.close(); }
+    });
+  });
+
   it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
     runWithPostgresSystemScope(() => {
       const suffix = randomUUID().slice(0, 8);
