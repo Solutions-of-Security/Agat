@@ -78,9 +78,20 @@ test("report source links target the precise document/page/chunk and preserve ci
 test("each grouped citation links to its own source while preserving generated punctuation and whitespace", () => {
   const second = { ...source, marker: "K2", retrievalId: "retrieval-b", provenance: {
     ...source.provenance, documentId: "second", documentName: "Second.md", chunkId: "second-chunk" } };
-  for (const text of ["Sources [K1, K2]", "Sources [K1/K2]", "Sources [K1 ,\tK2/K1]", "Sources [K1] [K2]"]) {
+  const anchor = (item: KnowledgeSource, label: string) => renderToStaticMarkup(createElement("a", {
+    href: knowledgeSourceHref(item), title: item.provenance.documentName,
+  }, label));
+  const firstLink = anchor(source, "K1");
+  const secondLink = anchor(second, "K2");
+  const cases = [
+    ["Sources [K1, K2]", `Sources [${firstLink}, ${secondLink}]`],
+    ["Sources [K1/K2]", `Sources [${firstLink}/${secondLink}]`],
+    ["Sources [K1 ,\tK2/K1]", `Sources [${firstLink} ,\t${secondLink}/${firstLink}]`],
+    ["Sources [K1] [K2]", `Sources ${anchor(source, "[K1]")} ${anchor(second, "[K2]")}`],
+  ];
+  for (const [text, expected] of cases) {
     const html = renderToStaticMarkup(createElement(KnowledgeLinkedOutput, { text, sources: [source, second] }));
-    assert.equal(html.replace(/<[^>]*>/g, ""), text);
+    assert.equal(html, `<pre>${expected}</pre>`);
     assert.equal((html.match(/<a /g) ?? []).length, (text.match(/K\d+/g) ?? []).length);
     assert.match(html, /documentId=document/);assert.match(html, /documentId=second/);
     assert.match(html, /chunkId=chunk-2/);assert.match(html, /chunkId=second-chunk/);
