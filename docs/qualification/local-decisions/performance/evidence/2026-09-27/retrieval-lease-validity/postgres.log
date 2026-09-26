@@ -1,0 +1,28 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+(node:14376) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (184.81825ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (8367.113417ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (199.369625ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (13757.928333ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (742.219542ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (718.96375ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (3963.072292ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (104.192667ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (200.661417ms)
+  ✔ rejects a schema Job while a coordinator replica is active (192.826541ms)
+  ✔ rejects runtime startup after out-of-band schema drift (170.345792ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (661.052833ms)
+✔ PostgreSQL Fleet/HA integration (30685.059667ms)
+ℹ tests 12
+ℹ suites 1
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31204.597666

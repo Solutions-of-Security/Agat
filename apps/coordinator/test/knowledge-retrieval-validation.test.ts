@@ -24,8 +24,25 @@ function setup(dimensions: number[]) {
   const query = (vector: number[], ids = collections, model = "embeddinggemma") => ({ embeddingModel: model, collectionIds: ids, vector, topK: 1 });
   const search = (queries: ReturnType<typeof query>[]) => store.searchKnowledge(nodeId, lease.leaseId, { queries });
   const retrieved = () => (store.getRunTrace(run.id)!.events as Array<{ type: string }>).filter(event => event.type === "knowledge.retrieved");
-  return { store, collections, run, query, search, retrieved };
+  return { store, collections, run, nodeId, lease, query, search, retrieved };
 }
+
+test("expired retrieval leases fail before maintenance and stay invalid after reassignment", () => {
+  const { store, run, nodeId, lease, query, search, retrieved } = setup([2]);
+  store.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?")
+    .run(new Date(Date.now() - 1000).toISOString(), lease.leaseId);
+  assert.equal(store.db.prepare("SELECT status FROM stages WHERE lease_id = ?").get(lease.leaseId)!.status, "running");
+  assert.equal(store.renewLease(nodeId, lease.leaseId), false);
+  assert.throws(() => search([query([1, 1])]), /Активная stage-аренда не найдена/);
+  assert.equal(retrieved().length, 0);
+  assert.equal(store.getRunKnowledgeSources(run.id)!.length, 0);
+  store.maintenanceTick();
+  const replacement = store.leaseNext(nodeId)!;
+  assert.ok(replacement); assert.equal(replacement.run.id, run.id); assert.notEqual(replacement.leaseId, lease.leaseId);
+  assert.throws(() => search([query([1, 1])]), /Активная stage-аренда не найдена/);
+  const result = store.searchKnowledge(nodeId, replacement.leaseId, { queries: [query([1, 1])] });
+  assert.equal(result.hits[0]!.marker, "K1"); assert.equal(retrieved().length, 1);
+});
 
 test("wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds", () => {
   const { query, search, retrieved } = setup([3]);

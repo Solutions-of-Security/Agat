@@ -1,0 +1,42 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+(node:12696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (1459.763333ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (11049.966917ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (255.9855ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (14279.461292ms)
+  ✖ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (441.38825ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (886.012792ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4714.9895ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (116.125083ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (250.828375ms)
+  ✔ rejects a schema Job while a coordinator replica is active (237.619208ms)
+  ✔ rejects runtime startup after out-of-band schema drift (179.183875ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (712.174958ms)
+✖ PostgreSQL Fleet/HA integration (38685.681958ms)
+ℹ tests 12
+ℹ suites 1
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39632.157708
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:17:3903
+✖ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (441.38825ms)
+  TypeError: Cannot read properties of null (reading 'leaseId')
+      at <anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:220:58)
+      at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)
+      at runWithPostgresSystemScope (/private/tmp/agat-search-budget-20260927/apps/coordinator/src/postgres-database.ts:26:25)
+      at TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:203:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)

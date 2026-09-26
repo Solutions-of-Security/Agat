@@ -9101,7 +9101,8 @@ export class AgatStore {
       SELECT s.id, s.run_id, s.agent_id, r.project_id, r.knowledge_collection_ids_json
       FROM stages s JOIN runs r ON r.id = s.run_id
       WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running'
-    `).get(nodeId, leaseId) as Row | undefined;
+        AND s.lease_expires_at > ?
+    `).get(nodeId, leaseId, nowIso()) as Row | undefined;
     if (!stage) throw new Error("Активная stage-аренда не найдена");
     if (this.stateStoreDriver === "postgresql") {
       this.db.prepare("SELECT id FROM runs WHERE id = ? FOR UPDATE").get(String(stage.run_id));

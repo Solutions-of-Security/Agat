@@ -1,0 +1,29 @@
+(node:8130) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ expired retrieval leases fail before maintenance and stay invalid after reassignment (64.948125ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 669.233708
+
+✖ failing tests:
+
+test at apps/coordinator/test/knowledge-retrieval-validation.test.ts:1:1738
+✖ expired retrieval leases fail before maintenance and stay invalid after reassignment (64.948125ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/knowledge-retrieval-validation.test.ts:36:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /Активная stage-аренда не найдена/,
+    operator: 'throws',
+    diff: 'simple'
+  }
