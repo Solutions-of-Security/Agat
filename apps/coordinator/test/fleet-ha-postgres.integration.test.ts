@@ -199,6 +199,55 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-lease-"));
+      const first = store(`rag-lease-a-${suffix}`, artifacts);
+      const second = store(`rag-lease-b-${suffix}`, artifacts);
+      try {
+        first.updateScheduler("parallel", 10);
+        const projectId = `rag-lease-${suffix}`;
+        first.createProject({ id: projectId, name: projectId, homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const model = `rag-lease-${suffix}`;
+        const agent = first.createAgent({ name: "Lease fixture", role: "Test", systemPrompt: "Fixture", model }, projectId);
+        const node = first.registerNode({ enrollmentToken: "test", name: model, platform: "test",
+          models: [model], embeddingModels: [model], maxConcurrency: 1,
+          region: cellRegion, residencyDomain: cellResidencyDomain }).id;
+        const collection = String(first.createKnowledgeCollection({ name: "Lease source", embeddingModel: model }, projectId).id);
+        first.ingestKnowledgeDocument(collection, { name: "Source", content: "Recorded lease fixture." }, projectId);
+        const embedding = first.leaseKnowledgeEmbedding(node)!;
+        assert.ok(embedding);
+        first.completeKnowledgeEmbedding(node, embedding.leaseId, embedding.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })));
+        const run = first.createRun({ name: "Lease", input: "Synthetic query", agentIds: [String(agent.id)],
+          approvalRequired: false, knowledgeCollectionIds: [collection] }, projectId);
+        const lease = first.leaseNext(node)!;
+        assert.ok(lease); assert.equal(lease.run.id, run.id);
+        const request = { queries: [{ embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 }] };
+        first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?")
+          .run(new Date(Date.now() - 1000).toISOString(), lease.leaseId);
+        assert.equal(second.db.prepare("SELECT status FROM stages WHERE lease_id = ?").get(lease.leaseId)!.status, "running");
+        assert.equal(second.renewLease(node, lease.leaseId), false);
+        assert.throws(() => second.searchKnowledge(node, lease.leaseId, request), /Активная stage-аренда не найдена/);
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 0);
+        assert.equal(first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(run.id).length, 0);
+        assert.equal((first.getRunTrace(run.id, projectId)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 0);
+        second.maintenanceTick();
+        const replacement = first.leaseNext(node)!;
+        assert.ok(replacement); assert.equal(replacement.run.id, run.id); assert.notEqual(replacement.leaseId, lease.leaseId);
+        assert.throws(() => second.searchKnowledge(node, lease.leaseId, request), /Активная stage-аренда не найдена/);
+        assert.equal(second.searchKnowledge(node, replacement.leaseId, request).hits[0]!.marker, "K1");
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 1);
+        assert.equal((first.getRunTrace(run.id, projectId)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 1);
+        first.completeLease(node, replacement.leaseId, "completed", []);
+      } finally {
+        first.close(); second.close();
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
     runWithPostgresSystemScope(() => {
       const suffix = randomUUID().slice(0, 8);
