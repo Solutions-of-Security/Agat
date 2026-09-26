@@ -23,7 +23,7 @@ const tenantUrl = process.env.AGAT_TEST_POSTGRES_TENANT_URL ?? "";
 const cellRegion = process.env.AGAT_REGION ?? "local";
 const cellResidencyDomain = process.env.AGAT_RESIDENCY_DOMAIN ?? cellRegion;
 
-function store(instanceId: string, artifactsDir: string): AgatStore {
+function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandidates?: number): AgatStore {
   return new AgatStore(":postgresql:", {
     stateStoreDriver: "postgresql",
     postgres: {
@@ -43,6 +43,7 @@ function store(instanceId: string, artifactsDir: string): AgatStore {
     residencyDomain: cellResidencyDomain,
     requireSignedWorkerReleases: false,
     decisionShadowEnabled: true,
+    knowledgeSearchMaxCandidates,
     artifactsDir,
   });
 }
@@ -69,6 +70,31 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(database.prepare("SELECT 42 AS value").get(), { value: 42 });
         assert.throws(() => database.prepare("SELECT 1 / 0").get(), /division by zero/);
         assert.deepEqual(database.prepare("SELECT 43 AS value").get(), { value: 43 });
+      } finally { database.close(); }
+    });
+  });
+
+  it("ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary", () => {
+    runWithPostgresSystemScope(() => {
+      const database = new PostgresDatabaseSync({ systemUrl, tenantUrl, roleMode: "runtime",
+        applicationName: "rag-wide-budget", poolMax: 1, connectTimeoutMs: 5000,
+        idleTimeoutMs: 5000, statementTimeoutMs: 30000, responseBytes: 1_048_576, sslMode: "disable" });
+      try {
+        const vector = Array<number>(4096).fill(1 / 3);
+        const exact = JSON.stringify(vector);
+        const orthogonal = JSON.stringify(vector.map((value, index) => index % 2 ? -value : value));
+        assert.ok(Buffer.byteLength(exact) * 10000 > 512 * 1024 * 1024);
+        database.exec("BEGIN");
+        const ranked = database.prepare(`SELECT n AS ordinal, 4096 AS embedding_dimensions,
+          CASE WHEN n = 10000 THEN ?::text ELSE ?::text END AS embedding_json
+          FROM generate_series(1,10000) n ORDER BY n`)
+          .rankKnowledgeCandidates!({ vector, topK: 1, maxCandidates: 10000 }, exact, orthogonal);
+        assert.equal(ranked.length, 1);
+        assert.equal(ranked[0]!.candidate.ordinal, 10000);
+        assert.equal(ranked[0]!.score, 1);
+        assert.equal("embedding_json" in ranked[0]!.candidate, false);
+        assert.equal(Number(database.prepare("SELECT count(*) AS count FROM pg_cursors WHERE name LIKE 'agat_cursor_%'").get()!.count), 0);
+        database.exec("COMMIT");
       } finally { database.close(); }
     });
   });
@@ -117,6 +143,57 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         first.close();
         if (updating) await updating;
         await writer.end();
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-budget-"));
+      const configured = store(`rag-budget-${suffix}`, artifacts, 6001);
+      const standard = store(`rag-default-${suffix}`, artifacts);
+      try {
+        const projectId = `rag-budget-${suffix}`;
+        configured.createProject({ id: projectId, name: projectId, homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const model = `rag-budget-${suffix}`;
+        const agent = configured.createAgent({ name: "Budget fixture", role: "Test", systemPrompt: "Fixture", model }, projectId);
+        const node = configured.registerNode({ enrollmentToken: "test", name: model, platform: "test",
+          models: [model], embeddingModels: [model], maxConcurrency: 1,
+          region: cellRegion, residencyDomain: cellResidencyDomain }).id;
+        const collection = (name: string) => String(configured.createKnowledgeCollection({ name,
+          embeddingModel: model, chunkSize: 400, chunkOverlap: 0 }, projectId).id);
+        const main = collection("Main"), extra = collection("Extra");
+        const target = configured.ingestKnowledgeDocument(main, { name: "Old best", content: "Old exact source." }, projectId);
+        for (let index = 0; index < 2; index++) {
+          configured.ingestKnowledgeDocument(main, { name: `Filler ${index}`, content: "A".repeat(3000 * 400) }, projectId);
+        }
+        configured.ingestKnowledgeDocument(extra, { name: "Extra", content: "Over the operator budget." }, projectId);
+        for (let lease; (lease = configured.leaseKnowledgeEmbedding(node));) {
+          configured.completeKnowledgeEmbedding(node, lease.leaseId, lease.chunks.map(chunk => ({ chunkId: chunk.id,
+            embedding: lease.document.id === target.id ? [1, 0] : [0, 1] })));
+        }
+        configured.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(String(target.id));
+        const run = configured.createRun({ name: "Budget", input: "Synthetic query", agentIds: [String(agent.id)],
+          approvalRequired: false, knowledgeCollectionIds: [main, extra] }, projectId);
+        const lease = configured.leaseNext(node)!;
+        const query = (ids: string[]) => ({ embeddingModel: model, collectionIds: ids, vector: [1, 0], topK: 1, maxCandidates: 10000 });
+        assert.throws(() => standard.searchKnowledge(node, lease.leaseId, { queries: [query([main])] }), /retrieval.*5000/);
+        assert.equal(configured.getRunKnowledgeSources(run.id, projectId)!.length, 0);
+        const result = configured.searchKnowledge(node, lease.leaseId, { queries: [query([main])] });
+        assert.equal(result.hits[0]!.provenance.documentId, target.id);
+        assert.equal(result.hits[0]!.marker, "K1");
+        assert.throws(() => configured.searchKnowledge(node, lease.leaseId,
+          { queries: [query([main]), query([main, extra])] }), /retrieval.*6001/);
+        const saved = configured.db.prepare("SELECT queries_json FROM knowledge_retrievals WHERE run_id = ?").all(run.id);
+        assert.equal(saved.length, 1);
+        assert.equal(JSON.parse(String(saved[0]!.queries_json))[0].candidateLimit, 6001);
+        assert.equal(configured.searchKnowledge(node, lease.leaseId, { queries: [query([main])] }).hits[0]!.marker, "K2");
+        assert.equal(configured.getRunKnowledgeSources(run.id, projectId)!.length, 2);
+      } finally {
+        configured.close(); standard.close();
         fs.rmSync(artifacts, { recursive: true, force: true });
       }
     });

@@ -58,7 +58,12 @@ def main():
                 'chunkSize', 'chunkOverlap', 'topK', 'passes', 'queries', 'documentCount', 'chunkCount', 'documents', 'nodeVersion'):
         assert plans[0][key] == plans[1][key], f'Changed experiment input: {key}'
     for name in ('launcher-plan.json', 'postgres-image.json'):
-        assert read(args.before, name) == read(args.after, name), f'Changed host/runtime setup: {name}'
+        left, right = [read(path, name) for path in (args.before, args.after)]
+        if name == 'launcher-plan.json':
+            for item in (left, right):
+                item.setdefault('copies', 1)
+                item.setdefault('candidateLimit', 5000)
+        assert left == right, f'Changed host/runtime setup: {name}'
     embeddings = [read(path, 'embedding.json') for path in (args.before, args.after)]
     for key in ('uniqueChunks', 'queryVectors', 'queryVectorsSha256', 'vectorsSha256', 'vectorDigests'):
         assert embeddings[0][key] == embeddings[1][key], f'Changed embeddings: {key}'

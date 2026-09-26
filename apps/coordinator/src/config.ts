@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeKnowledgeSearchMaxCandidates } from "./knowledge.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,6 +15,11 @@ function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
 function integerFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function knowledgeSearchMaxCandidatesFromEnv(value: string | undefined): number {
+  const parsed = value === undefined ? undefined : /^\d+$/.test(value.trim()) ? Number(value) : Number.NaN;
+  return normalizeKnowledgeSearchMaxCandidates(parsed, "AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES");
 }
 
 export type TemporalTarget = "local" | "cloud" | "self-hosted";
@@ -190,6 +196,7 @@ export interface CoordinatorConfig {
   webDistPath: string;
   leaseTtlSeconds: number;
   decisionShadowEnabled: boolean;
+  knowledgeSearchMaxCandidates: number;
   allowedOrigins: string[];
   localWorkerLauncherEnabled: boolean;
   localWorkerNamespace: string;
@@ -392,6 +399,7 @@ export function loadConfig(): CoordinatorConfig {
     webDistPath: path.resolve(currentDir, "../../web/dist"),
     leaseTtlSeconds: integerFromEnv(process.env.AGAT_LEASE_TTL_SECONDS, 180),
     decisionShadowEnabled: booleanFromEnv(process.env.AGAT_DECISION_SHADOW_ENABLED, false),
+    knowledgeSearchMaxCandidates: knowledgeSearchMaxCandidatesFromEnv(process.env.AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES),
     allowedOrigins: (process.env.AGAT_ALLOWED_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173")
       .split(",")
       .map((origin) => origin.trim())

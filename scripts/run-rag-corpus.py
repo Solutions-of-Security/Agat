@@ -65,6 +65,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence-dir', type=Path, required=True)
     parser.add_argument('--source-ref', required=True, help='Full commit SHA containing public top-level docs/*.md')
+    parser.add_argument('--copies', type=int, choices=(1, 4), default=1,
+                        help='Four named copies create a declared synthetic scale profile (up to 10000 candidates)')
     args = parser.parse_args()
     evidence = args.evidence_dir.resolve()
     if not evidence.is_relative_to(ROOT / 'docs') or evidence == ROOT / 'docs' or evidence.exists():
@@ -84,9 +86,11 @@ def main():
     def command(argv, **kwargs):
         return subprocess.run(argv, cwd=ROOT, check=True, text=True, capture_output=True, timeout=60, **kwargs).stdout.strip()
     env = {key: value for key, value in os.environ.items() if not key.startswith('AGAT_')}
+    env['AGAT_RAG_CORPUS_COPIES'] = str(args.copies)
     write_new(evidence / 'launcher-plan.json', {'sourceRef': args.source_ref, 'modelDigest': DIGEST, 'settings': settings,
                'machine': {'system': platform.system(), 'release': platform.release(), 'architecture': platform.machine()},
-               'maximumPhaseSeconds': 600, 'retrievalOrder': ['sqlite', 'postgresql'], 'modelDisabledDuringRetrieval': True})
+               'maximumPhaseSeconds': 600, 'retrievalOrder': ['sqlite', 'postgresql'], 'modelDisabledDuringRetrieval': True,
+               'copies': args.copies, 'candidateLimit': 5000 if args.copies == 1 else 10000})
     def interrupted(_number, _frame):
         raise KeyboardInterrupt('Corpus probe interrupted')
     signal.signal(signal.SIGTERM, interrupted)
