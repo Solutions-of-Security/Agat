@@ -1,8 +1,9 @@
-import { cosineSimilarity, KNOWLEDGE_MAX_SEARCH_CANDIDATES, normalizeEmbeddingVector } from "./knowledge.js";
+import { cosineSimilarity, normalizeEmbeddingVector, normalizeKnowledgeSearchMaxCandidates } from "./knowledge.js";
 
 export interface KnowledgeRankingOptions {
   vector: number[];
   topK: number;
+  maxCandidates?: number;
 }
 
 export interface RankedKnowledgeCandidate {
@@ -15,9 +16,11 @@ export class KnowledgeCandidateRanker {
   readonly results: RankedKnowledgeCandidate[] = [];
   private readonly vector: number[];
   private readonly topK: number;
+  private readonly maxCandidates: number;
   private count = 0;
 
   constructor(options: KnowledgeRankingOptions) {
+    this.maxCandidates = normalizeKnowledgeSearchMaxCandidates(options.maxCandidates);
     this.vector = normalizeEmbeddingVector(options.vector);
     if (!Number.isInteger(options.topK) || options.topK < 1 || options.topK > 20) {
       throw new Error("Retrieval topK должен быть целым числом от 1 до 20");
@@ -26,8 +29,8 @@ export class KnowledgeCandidateRanker {
   }
 
   add(candidate: Record<string, unknown>): void {
-    if (++this.count > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
-      throw new Error(`Лимит локального retrieval — ${KNOWLEDGE_MAX_SEARCH_CANDIDATES} готовых фрагментов на query; сузьте набор коллекций или используйте индексируемый поиск`);
+    if (++this.count > this.maxCandidates) {
+      throw new Error(`Лимит локального retrieval — ${this.maxCandidates} готовых фрагментов на query; сузьте набор коллекций или измените операторский бюджет поиска`);
     }
     let storedVector: number[];
     try {

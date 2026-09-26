@@ -43,11 +43,11 @@ import { CoordinatorTelemetry } from "./telemetry.js";
 import {
   chunkKnowledgeText,
   KNOWLEDGE_EMBEDDING_BATCH_SIZE,
-  KNOWLEDGE_MAX_SEARCH_CANDIDATES,
   normalizeEmbeddingVector,
   normalizeKnowledgeCollectionIds,
   normalizeKnowledgeCollectionInput,
   normalizeKnowledgeDocumentInput,
+  normalizeKnowledgeSearchMaxCandidates,
   normalizeMemoryInput,
 } from "./knowledge.js";
 import {
@@ -1014,6 +1014,7 @@ export interface StoreOptions {
   seedDemo?: boolean;
   leaseTtlSeconds?: number;
   decisionShadowEnabled?: boolean;
+  knowledgeSearchMaxCandidates?: number;
   artifactsDir?: string;
   credentialsKey?: string;
   temporalProcesses?: boolean;
@@ -1054,6 +1055,7 @@ export class AgatStore {
   readonly stateStoreDriver: "sqlite" | "postgresql";
   private readonly leaseTtlSeconds: number;
   private readonly decisionShadowEnabled: boolean;
+  private readonly knowledgeSearchMaxCandidates: number;
   private readonly artifactsDir: string;
   private readonly credentialsKey: string;
   private readonly temporalProcesses: boolean;
@@ -1090,6 +1092,7 @@ export class AgatStore {
   private transactionDepth = 0;
 
   constructor(dbPath: string, options: StoreOptions = {}) {
+    this.knowledgeSearchMaxCandidates = normalizeKnowledgeSearchMaxCandidates(options.knowledgeSearchMaxCandidates);
     this.stateStoreDriver = options.stateStoreDriver ?? "sqlite";
     if (this.stateStoreDriver === "postgresql" && (!options.postgres?.systemUrl || !options.postgres.tenantUrl)) {
       throw new Error("PostgreSQL state store требует system и tenant URL");
@@ -9155,13 +9158,14 @@ export class AgatStore {
         ORDER BY ch.embedded_at DESC
         LIMIT ?
       `);
-      const params = [project, ...collectionIds, embeddingModel, embeddingModel, KNOWLEDGE_MAX_SEARCH_CANDIDATES + 1];
+      const params = [project, ...collectionIds, embeddingModel, embeddingModel, this.knowledgeSearchMaxCandidates + 1];
       // Both paths validate every candidate and retain the same float64 topK.
       // PostgreSQL keeps vectors beside its cursor, crossing the bridge once
       // with selected metadata only. SQLite consumes its native iterator here.
+      const ranking = { vector, topK, maxCandidates: this.knowledgeSearchMaxCandidates };
       const ranked = statement.rankKnowledgeCandidates
-        ? statement.rankKnowledgeCandidates({ vector, topK }, ...params)
-        : rankKnowledgeCandidates(statement.iterate(...params), { vector, topK });
+        ? statement.rankKnowledgeCandidates(ranking, ...params)
+        : rankKnowledgeCandidates(statement.iterate(...params), ranking);
       for (const { candidate, score } of ranked) {
         const hit: Omit<KnowledgeSearchHit, "marker"> = {
           score,
@@ -9190,6 +9194,7 @@ export class AgatStore {
         embeddingModel,
         collectionIds,
         topK,
+        candidateLimit: this.knowledgeSearchMaxCandidates,
         dimensions: vector.length,
         vectorSha256: sha256Text(JSON.stringify(vector)),
       });

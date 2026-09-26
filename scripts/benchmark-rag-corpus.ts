@@ -57,24 +57,31 @@ if (phase === "plan") {
   assert.equal(git("rev-parse", `${option}^{commit}`).trim(), option);
   const names = git("ls-tree", "--name-only", `${option}:docs`).trim().split("\n").filter(name => /^[^/]+\.md$/.test(name)).sort();
   assert.ok(names.length >= 20 && names.length <= 100);
-  const documents = names.map(name => {
+  const originals = names.map(name => {
     const raw = git("show", `${option}:docs/${name}`);
     const normalized = normalizeKnowledgeDocumentInput({ name, sourceUri: `agat://rag-corpus/docs/${name}`, content: raw, mediaType: "text/markdown" });
     return { ...normalized, path: `docs/${name}`, rawSha256: sha(raw), contentSha256: sha(normalized.content),
       chunks: chunkKnowledgeText(normalized.content, 400, 40).map(chunk => ({ ...chunk, sha256: sha(chunk.content) })) };
   });
+  const copies = Number(process.env.AGAT_RAG_CORPUS_COPIES ?? "1");
+  assert.ok(copies === 1 || copies === 4);
+  const candidateLimit = copies === 1 ? 5000 : 10000;
+  const documents = copies === 1 ? originals : Array.from({ length: copies }, (_, copy) =>
+    originals.map(document => ({ ...document, name: `copy-${copy + 1}-${document.name}`,
+      sourceUri: `${document.sourceUri}?copy=${copy + 1}`, copy: copy + 1 }))).flat();
   const chunks = documents.reduce((sum, document) => sum + document.chunks.length, 0);
-  assert.ok(chunks >= 1000 && chunks <= 5000, "Corpus must fit the stated exact-search boundary");
+  assert.ok(chunks >= 1000 && chunks <= candidateLimit, "Corpus must fit the frozen operator budget");
   write(data, "corpus.json", documents);
   const plan = { schemaVersion: "agat.rag.corpus-plan.v1", createdAt: new Date().toISOString(), sourceCommit: option,
     corpusSha256: sha(fs.readFileSync(path.join(data, "corpus.json"))),
     model: "embeddinggemma:latest", modelDigest: "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
     embeddingSettings, dimensions: 768, chunkSize: 400, chunkOverlap: 40, topK: 8, passes: 5, queries,
     documentCount: documents.length, chunkCount: chunks,
+    copies, candidateLimit,
     documents: documents.map(({ content: _content, chunks: parts, ...document }) => ({ ...document, chunks: parts.length })),
     sourceSha256: sources(), nodeVersion: process.version,
     design: "One first pass plus four repeats; one fresh search process per backend; no model inference during retrieval",
-    scope: "Repository technical documents; direct AgatStore calls, no HTTP, worker scheduling, answer generation or independent semantic labels" };
+    scope: `${copies} named copy/copies of repository technical documents; repeated copies are synthetic growth, not independent sources. Direct AgatStore calls, no HTTP, worker scheduling, answer generation or independent semantic labels` };
   write(evidence, "plan.json", plan);
   console.log(`plan: ${documents.length} documents, ${chunks} chunks`);
 } else {
@@ -126,6 +133,7 @@ if (phase === "plan") {
     }
     const store = new AgatStore(option === "sqlite" ? path.join(data, "state.db") : ":postgresql:", {
       seedDemo: false, stateStoreDriver: option, artifactsDir: path.join(data, `artifacts-${option}`),
+      knowledgeSearchMaxCandidates: plan.candidateLimit,
       region: "eu-test-1", residencyDomain: "eu-test", requireSignedWorkerReleases: false,
       ...(option === "postgresql" ? { postgresSchemaMode: "runtime" as const,
         coordinatorInstanceId: `rag-corpus-${phase}`, postgres: { systemUrl: process.env.AGAT_POSTGRES_URL!, tenantUrl: process.env.AGAT_POSTGRES_TENANT_URL!,

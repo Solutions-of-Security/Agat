@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgatStore } from "../src/database.js";
-import { KNOWLEDGE_MAX_SEARCH_CANDIDATES } from "../src/knowledge.js";
+import { KNOWLEDGE_DEFAULT_SEARCH_CANDIDATES } from "../src/knowledge.js";
 
 test("full candidate boundary preserves an old exact match, rejects truncation across collections, and rolls back multi-query search", () => {
   const store = new AgatStore(":memory:", { seedDemo: false });
@@ -15,8 +15,8 @@ test("full candidate boundary preserves an old exact match, rejects truncation a
     const extraCollection = collection("Newest extra source");
     const target = store.ingestKnowledgeDocument(targetCollection, { name: "Exact target", content: "Synthetic exact target." }) as { id: string };
     const fillers = store.ingestKnowledgeDocument(fillerCollection, { name: "Orthogonal chunks",
-      content: "A".repeat((KNOWLEDGE_MAX_SEARCH_CANDIDATES - 1) * 400) }) as { chunkCount: number };
-    assert.equal(fillers.chunkCount, KNOWLEDGE_MAX_SEARCH_CANDIDATES - 1);
+      content: "A".repeat((KNOWLEDGE_DEFAULT_SEARCH_CANDIDATES - 1) * 400) }) as { chunkCount: number };
+    assert.equal(fillers.chunkCount, KNOWLEDGE_DEFAULT_SEARCH_CANDIDATES - 1);
     store.ingestKnowledgeDocument(extraCollection, { name: "Extra", content: "One additional synthetic orthogonal chunk." });
     // Actual ingestion and embedding-completion paths, with declared 2D fixture vectors.
     for (let lease; (lease = store.leaseKnowledgeEmbedding(node));) {

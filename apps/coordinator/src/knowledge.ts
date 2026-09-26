@@ -8,7 +8,16 @@ import type {
 export const KNOWLEDGE_MAX_DOCUMENT_CHARACTERS = 2_000_000;
 export const KNOWLEDGE_MAX_VECTOR_DIMENSIONS = 4_096;
 export const KNOWLEDGE_EMBEDDING_BATCH_SIZE = 32;
-export const KNOWLEDGE_MAX_SEARCH_CANDIDATES = 5_000;
+export const KNOWLEDGE_DEFAULT_SEARCH_CANDIDATES = 5_000;
+export const KNOWLEDGE_MAX_SEARCH_CANDIDATES = 10_000;
+
+export function normalizeKnowledgeSearchMaxCandidates(value: unknown, field = "knowledgeSearchMaxCandidates"): number {
+  if (value === undefined) return KNOWLEDGE_DEFAULT_SEARCH_CANDIDATES;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > KNOWLEDGE_MAX_SEARCH_CANDIDATES) {
+    throw new Error(`${field}: целое число от 1 до ${KNOWLEDGE_MAX_SEARCH_CANDIDATES}`);
+  }
+  return value;
+}
 
 export interface NormalizedKnowledgeCollectionInput {
   name: string;

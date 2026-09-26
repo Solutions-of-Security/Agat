@@ -2752,6 +2752,7 @@ async function main(): Promise<void> {
     seedDemo: config.seedDemo,
     leaseTtlSeconds: config.leaseTtlSeconds,
     decisionShadowEnabled: config.decisionShadowEnabled,
+    knowledgeSearchMaxCandidates: config.knowledgeSearchMaxCandidates,
     artifactsDir: config.artifactsDir,
     credentialsKey: config.credentialsKey,
     temporalProcesses: config.temporalEnabled,
