@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { parentPort } from "node:worker_threads";
 
 import pg, { type Pool, type PoolClient, type QueryResult } from "pg";
 import { POSTGRES_RESPONSE_HEADER_BYTES as RESPONSE_HEADER_BYTES } from "./postgres-response-buffer.js";
+import { KnowledgeCandidateRanker, type KnowledgeRankingOptions } from "./knowledge-ranking.js";
 
 interface AccessScope {
   kind: "system" | "tenant";
@@ -24,11 +26,12 @@ interface PostgresWorkerOptions {
 }
 
 interface WorkerRequest {
-  operation: "initialize" | "close" | "all" | "get" | "run" | "exec";
+  operation: "initialize" | "close" | "all" | "get" | "run" | "exec" | "rankKnowledge";
   options?: PostgresWorkerOptions;
   sql?: string;
   params?: unknown[];
   scope?: AccessScope;
+  ranking?: KnowledgeRankingOptions;
   shared: SharedArrayBuffer;
 }
 
@@ -391,6 +394,35 @@ function finalResult(result: QueryResult | QueryResult[]): QueryResult {
   } : result;
 }
 
+async function rankKnowledge(request: WorkerRequest, scope: AccessScope): Promise<unknown> {
+  if (!transactionClient || !sameScope(transactionScope, scope)) {
+    throw new Error("PostgreSQL retrieval требует открытую transaction с тем же scope");
+  }
+  if (!request.ranking) throw new Error("PostgreSQL retrieval options отсутствуют");
+  const ranker = new KnowledgeCandidateRanker(request.ranking);
+  const cursor = `agat_cursor_${randomUUID().replaceAll("-", "")}`;
+  await executeScoped(scope, `DECLARE ${cursor} NO SCROLL CURSOR WITHOUT HOLD FOR ${request.sql ?? ""}`,
+    (request.params ?? []).map(decodeParam));
+  let failed = false;
+  try {
+    while (true) {
+      const rows = finalResult(await executeScoped(scope, `FETCH FORWARD 64 FROM ${cursor}`, [])).rows;
+      for (const row of rows) ranker.add(row);
+      if (rows.length < 64) return ranker.results;
+    }
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await executeScoped(scope, `CLOSE ${cursor}`, []);
+    } catch (error) {
+      // Failed SQL can abort the transaction; rollback releases the cursor.
+      if (!failed) throw error;
+    }
+  }
+}
+
 async function handle(request: WorkerRequest): Promise<unknown> {
   if (request.operation === "initialize") {
     if (!request.options) throw new Error("PostgreSQL worker options отсутствуют");
@@ -417,6 +449,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     return { closed: true };
   }
   const scope = request.scope ?? { kind: "system" };
+  if (request.operation === "rankKnowledge") return rankKnowledge(request, scope);
   const result = finalResult(await executeScoped(
     scope,
     request.sql ?? "",

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import type { DatabaseValue, SyncDatabase, SyncStatement } from "./sync-database.js";
 import { PostgresResponseBuffer, PostgresResponseTimeout } from "./postgres-response-buffer.js";
+import type { KnowledgeRankingOptions, RankedKnowledgeCandidate } from "./knowledge-ranking.js";
 
 const DEFAULT_RESPONSE_BYTES = 32 * 1_024 * 1_024;
 const CURSOR_BATCH_ROWS = 64;
@@ -85,6 +86,10 @@ class PostgresStatement implements SyncStatement {
   all(...params: DatabaseValue[]): Record<string, unknown>[] {
     const value = this.database.request("all", this.sql, params);
     return value as Record<string, unknown>[];
+  }
+
+  rankKnowledgeCandidates(options: KnowledgeRankingOptions, ...params: DatabaseValue[]): RankedKnowledgeCandidate[] {
+    return this.database.request("rankKnowledge", this.sql, params, options) as RankedKnowledgeCandidate[];
   }
 
   *iterate(...params: DatabaseValue[]): IterableIterator<Record<string, unknown>> {
@@ -179,7 +184,7 @@ export class PostgresDatabaseSync implements SyncDatabase {
     return new PostgresStatement(this, sql);
   }
 
-  request(operation: "all" | "get" | "run" | "exec", sql: string, params: DatabaseValue[]): unknown {
+  request(operation: "all" | "get" | "run" | "exec" | "rankKnowledge", sql: string, params: DatabaseValue[], ranking?: KnowledgeRankingOptions): unknown {
     if (this.closed) throw new Error("PostgreSQL state store уже закрыт");
     const scope = postgresAccess.getStore() ?? { kind: "system" as const };
     if (scope.kind === "tenant" && !scope.projectId) {
@@ -190,6 +195,7 @@ export class PostgresDatabaseSync implements SyncDatabase {
       sql,
       params: params.map(encodeValue),
       scope,
+      ...(ranking ? { ranking } : {}),
     });
   }
 

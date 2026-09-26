@@ -73,6 +73,55 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("ranks all worker cursor batches against one snapshot while another connection updates the source", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rank-snapshot-"));
+      const first = store(`rank-snapshot-${suffix}`, artifacts);
+      const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+      let updating: Promise<Error | null> | undefined;
+      try {
+        const projectId = `rank-snapshot-${suffix}`;
+        first.createProject({ id: projectId, name: "Original snapshot", homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        await writer.connect();
+        const lock = Math.floor(Math.random() * 1_000_000_000) + 1;
+        await writer.query("SELECT pg_advisory_lock($1::bigint)", [lock]);
+        // The server waits for the ranker's first FETCH to hold a snapshot and
+        // block on our lock. No timing assumption about Node scheduling is used.
+        updating = writer.query(`DO $probe$
+          DECLARE deadline timestamptz := clock_timestamp() + interval '5 seconds';
+          BEGIN
+            LOOP
+              EXIT WHEN EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                AND classid = 0::oid AND objid = ${lock}::oid AND objsubid = 1 AND NOT granted);
+              IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'ranker never reached its snapshot gate'; END IF;
+              PERFORM pg_sleep(0.01);
+            END LOOP;
+            UPDATE projects SET name = 'Changed by concurrent writer' WHERE id = '${projectId}';
+            PERFORM pg_advisory_unlock(${lock}::bigint);
+          END $probe$`).then(() => null, error => error as Error);
+        first.db.exec("BEGIN");
+        const ranked = first.db.prepare(`SELECT n AS ordinal, p.name AS content, 2 AS embedding_dimensions,
+          CASE WHEN n = 129 THEN '[1,0]' ELSE '[0,1]' END AS embedding_json,
+          CASE WHEN n = 1 THEN pg_advisory_xact_lock(?::bigint) END AS gate
+          FROM projects p CROSS JOIN generate_series(1,130) n WHERE p.id = ? ORDER BY n`)
+          .rankKnowledgeCandidates!({ vector: [1, 0], topK: 1 }, lock, projectId);
+        assert.equal(ranked[0]!.candidate.ordinal, 129, "winner must be beyond two FETCH batches");
+        assert.equal(ranked[0]!.candidate.content, "Original snapshot");
+        assert.equal(Number(first.db.prepare("SELECT count(*) AS count FROM pg_cursors WHERE name LIKE 'agat_cursor_%'").get()!.count), 0);
+        first.db.exec("COMMIT");
+        assert.equal(await updating, null);
+        assert.equal(first.db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId)!.name, "Changed by concurrent writer");
+      } finally {
+        first.close();
+        if (updating) await updating;
+        await writer.end();
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
     runWithPostgresSystemScope(() => {
       const suffix = randomUUID().slice(0, 8);
@@ -193,6 +242,30 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           .run("A".repeat(400), String(document.id));
 
         const openCursors = () => Number(first.db.prepare("SELECT COUNT(*) AS count FROM pg_cursors WHERE name LIKE 'agat_cursor_%'").get()!.count);
+        const selected = first.db.prepare("SELECT * FROM knowledge_chunks WHERE collection_id = ? ORDER BY ordinal");
+        assert.ok(selected.rankKnowledgeCandidates);
+        assert.throws(() => selected.rankKnowledgeCandidates!({ vector, topK: 1 }, large), /открытую transaction/);
+        first.db.exec("BEGIN");
+        const ranked = selected.rankKnowledgeCandidates!({ vector, topK: 20 }, large);
+        assert.equal(ranked.length, 20);
+        assert.ok(ranked.every(hit => hit.score === 1 && !("embedding_json" in hit.candidate)));
+        assert.equal(openCursors(), 0, "ranking closes its worker-owned cursor before returning metadata");
+        const precise = first.db.prepare(`SELECT n AS id, 2 AS embedding_dimensions,
+          CASE WHEN n = 12 THEN '[1,1]' ELSE '[1,' || (1 + n::double precision * 1e-9)::text || ']' END AS embedding_json
+          FROM generate_series(1,12) n ORDER BY n`)
+          .rankKnowledgeCandidates!({ vector: [1, 0], topK: 8 });
+        assert.equal(precise[0]!.candidate.id, 12, "worker transport preserves the float64 winner");
+        assert.ok(precise[0]!.score > precise[1]!.score);
+        assert.throws(() => first.db.prepare(`SELECT n, 2 AS embedding_dimensions, '[1,0]' AS embedding_json
+          FROM generate_series(1,5001) n ORDER BY n`).rankKnowledgeCandidates!({ vector: [1, 0], topK: 1 }), /Лимит локального retrieval.*5000/);
+        assert.equal(openCursors(), 0, "capacity failure releases the worker cursor");
+        first.db.exec("ROLLBACK");
+        first.db.exec("BEGIN");
+        assert.throws(() => first.db.prepare(`SELECT n, 1 / (129 - n) AS value,
+          2 AS embedding_dimensions, '[1,0]' AS embedding_json FROM generate_series(1,130) n`)
+          .rankKnowledgeCandidates!({ vector: [1, 0], topK: 1 }), /division by zero/);
+        first.db.exec("ROLLBACK");
+        assert.equal(openCursors(), 0);
         first.db.exec("BEGIN");
         for (const row of first.db.prepare("SELECT n FROM generate_series(1, 130) AS n").iterate()) {
           assert.equal(row.n, 1);
@@ -235,6 +308,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         enterPostgresTenantScope(foreignProjectId);
         first.db.exec("BEGIN");
         assert.deepEqual([...first.db.prepare("SELECT id FROM knowledge_chunks WHERE collection_id = ?").iterate(large)], []);
+        assert.deepEqual(selected.rankKnowledgeCandidates!({ vector, topK: 1 }, large), []);
         first.db.exec("COMMIT");
         enterPostgresTenantScope(projectId);
         first.db.exec("BEGIN");

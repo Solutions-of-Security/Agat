@@ -27,6 +27,7 @@ const write = (directory: string, name: string, value: unknown) => fs.writeFileS
 const sourceFiles = ["scripts/benchmark-rag-corpus.ts", "scripts/run-rag-corpus.py", "scripts/lib/rag_corpus.py",
   "apps/coordinator/src/database.ts", "apps/coordinator/src/knowledge.ts", "apps/coordinator/src/postgres-database.ts",
   "apps/coordinator/src/postgres-worker.ts", "apps/coordinator/src/postgres-response-buffer.ts",
+  "apps/coordinator/src/knowledge-ranking.ts",
   "apps/coordinator/src/sync-database.ts", "scripts/lib/decision-rag.ts", "package-lock.json"];
 const sources = () => Object.fromEntries(sourceFiles.map(name => [name, sha(fs.readFileSync(path.join(root, name)))]));
 const queries = [
