@@ -1,0 +1,57 @@
+{
+  "baselineCommit": "e84ef0bc503407df853cb184080eaad99d3222c9",
+  "finding": "CodeQL js/polynomial-redos in bearerToken",
+  "checkRun": "https://github.com/Solutions-of-Security/Agat/runs/108510292644",
+  "before": {
+    "node": "v24.14.0",
+    "rows": [
+      {
+        "spaces": 4000,
+        "result": null,
+        "milliseconds": 25.286374999999992
+      },
+      {
+        "spaces": 8000,
+        "result": null,
+        "milliseconds": 99.442084
+      },
+      {
+        "spaces": 16000,
+        "result": null,
+        "milliseconds": 391.42233300000004
+      }
+    ]
+  },
+  "after": {
+    "node": "v24.14.0",
+    "rows": [
+      {
+        "spaces": 4000,
+        "result": null,
+        "milliseconds": 0.08445799999998371
+      },
+      {
+        "spaces": 8000,
+        "result": null,
+        "milliseconds": 0.028999999999996362
+      },
+      {
+        "spaces": 16000,
+        "result": null,
+        "milliseconds": 0.015499999999974534
+      }
+    ]
+  },
+  "coordinatorPassed": 242,
+  "parserTestsPassed": 2,
+  "typecheckExitCode": 0,
+  "sourceSha256": "93bc7080ad856cd9ec203cd9e8e9c6303c5106c7b1f19ebf27b3adfeed39634a",
+  "logSha256": {
+    "bearer-unit.log": "85af72aeefc7e6088b525fdf3fdd39e6f6f808230be98baf9eb1a0e118c40019",
+    "bearer-coordinator.log": "e14607cebf886e8217b7bb935e035642d827914d76330bb9727ffab5b9a00d0b",
+    "bearer-types.log": "0775e67994a80b36845bf651a8f405aafde42894dccb0475bd1414729bd73872"
+  },
+  "limitations": [
+    "Local timing diagnostic, not an HTTP SLO; original header grammar retained."
+  ]
+}

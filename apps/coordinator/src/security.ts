@@ -16,6 +16,11 @@ export function tokensEqual(left: string, right: string): boolean {
 
 export function bearerToken(header: string | undefined): string | null {
   if (!header) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match?.[1] ?? null;
+  const value = header.trim();
+  // Keep prefix whitespace separate from the token scan: overlapping greedy
+  // groups can backtrack quadratically on a long malformed header.
+  const prefix = /^Bearer\s+/i.exec(value);
+  if (!prefix) return null;
+  const token = value.slice(prefix[0].length);
+  return token && !/[\r\n\u2028\u2029]/.test(token) ? token : null;
 }

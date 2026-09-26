@@ -23,6 +23,7 @@ SOURCES = ['scripts/run-rag-http-probe.py', 'scripts/serve-rag-http-probe.ts', '
            'apps/coordinator/src/knowledge.ts', 'apps/coordinator/src/knowledge-ranking.ts',
            'apps/coordinator/src/postgres-database.ts', 'apps/coordinator/src/postgres-worker.ts',
            'apps/coordinator/src/postgres-response-buffer.ts', 'apps/coordinator/src/sync-database.ts']
+SOURCES += ['apps/coordinator/src/knowledge-search-executor.ts', 'apps/coordinator/src/knowledge-search-worker.ts']
 
 
 def sha(data):
@@ -167,6 +168,8 @@ def main():
         raise RuntimeError('Do not run the evidence probe with Python optimization')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence-dir', type=Path, required=True)
+    parser.add_argument('--execution-mode', choices=['sync', 'isolated'], default='sync')
+    parser.add_argument('--maintenance-interval-ms', type=int, choices=[0, 1000], default=0)
     args = parser.parse_args()
     evidence = args.evidence_dir.resolve()
     if evidence.exists() or not evidence.is_relative_to(ROOT / 'docs') or evidence == ROOT / 'docs':
@@ -186,6 +189,7 @@ def main():
     plan = {'implementationCommit': implementation, 'sourceSha256': sources,
             'nodeVersion': node_version, 'candidates': 9716, 'dimensions': 768, 'candidateLimit': 10000,
             'verifyDatabaseCandidateCount': True,
+            'executionMode': args.execution_mode, 'maintenanceIntervalMs': args.maintenance_interval_ms,
             'phases': [{'id': 'warmup', 'concurrency': 1}, {'id': 'idle', 'concurrency': 0}]
                       + [{'id': f'c{c}-r{r}', 'concurrency': c} for c in (1, 2, 4) for r in (1, 2, 3)],
             'healthIntervalMs': 100, 'maxHealthInflight': 4, 'searchRequestTimeoutSeconds': 15,

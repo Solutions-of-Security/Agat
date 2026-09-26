@@ -13,6 +13,7 @@ import { loadConfig } from "../apps/coordinator/src/config.js";
 import { createCoordinatorServer } from "../apps/coordinator/src/server.js";
 import { runWithPostgresSystemScope } from "../apps/coordinator/src/postgres-database.js";
 import { migratePostgresSchemaAndAdmit } from "../apps/coordinator/src/postgres-schema-migrator.js";
+import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../apps/coordinator/src/knowledge-search-executor.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 assert.equal(process.argv.length, 5);
@@ -29,6 +30,10 @@ for (const [name, expected] of Object.entries(plan.sourceSha256)) {
 }
 assert.equal(plan.candidates, 9716); assert.equal(plan.dimensions, 768);
 assert.equal(plan.candidateLimit, 10000); assert.equal(plan.nodeVersion, process.version);
+const executionMode = plan.executionMode ?? "sync";
+const maintenanceIntervalMs = plan.maintenanceIntervalMs ?? 0;
+assert.ok(["sync", "isolated"].includes(executionMode));
+assert.ok([0, 1000].includes(maintenanceIntervalMs));
 if (backend === "postgresql") {
   assert.equal(process.env.AGAT_RAG_HTTP_DISPOSABLE, "1");
   for (const key of ["AGAT_POSTGRES_URL", "AGAT_POSTGRES_TENANT_URL", "AGAT_POSTGRES_MIGRATION_URL"]) {
@@ -37,7 +42,8 @@ if (backend === "postgresql") {
   }
   await migratePostgresSchemaAndAdmit();
 }
-const store = new AgatStore(backend === "sqlite" ? path.join(data, "state.sqlite") : ":postgresql:", {
+const dbPath = backend === "sqlite" ? path.join(data, "state.sqlite") : ":postgresql:";
+const storeOptions: KnowledgeSearchStoreOptions = {
   seedDemo: false, stateStoreDriver: backend as "sqlite" | "postgresql",
   artifactsDir: path.join(data, "artifacts"), knowledgeSearchMaxCandidates: plan.candidateLimit,
   region: "eu-test-1", residencyDomain: "eu-test", requireSignedWorkerReleases: false,
@@ -46,12 +52,16 @@ const store = new AgatStore(backend === "sqlite" ? path.join(data, "state.sqlite
       tenantUrl: process.env.AGAT_POSTGRES_TENANT_URL!, roleMode: "runtime" as const,
       applicationName: "rag-http-probe", poolMax: 1, connectTimeoutMs: 5000,
       idleTimeoutMs: 30000, statementTimeoutMs: 30000, sslMode: "disable" as const } } : {}),
-});
+};
+const store = new AgatStore(dbPath, storeOptions);
 const config = { ...loadConfig(), host: "127.0.0.1", port: 0, serveWeb: false,
   knowledgeSearchMaxCandidates: plan.candidateLimit,
   adminToken: "rag-http-disposable-admin", oidcEnabled: false, sandboxEnabled: false,
   a2aEnabled: false, mcpEnabled: false, siemEnabled: false, localWorkerLauncherEnabled: false };
-const server = createCoordinatorServer(config, store);
+let executor: KnowledgeSearchExecutor | undefined;
+let maintenanceTimer: NodeJS.Timeout | undefined;
+const server = createCoordinatorServer(config, store, undefined, undefined, undefined, undefined,
+  executionMode === "isolated" ? { search: (...args) => executor!.search(...args) } : undefined);
 const lines = createInterface({ input: process.stdin });
 const lag = monitorEventLoopDelay({ resolution: 10 });
 const reply = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -61,7 +71,8 @@ const vector = Array<number>(plan.dimensions).fill(1 / 3);
 const orthogonal = vector.map((value, index) => index % 2 ? -value : value);
 const phases: unknown[] = [];
 let databaseCandidates = 0;
-let phase: { id: string; leases: Array<{ node: string; lease: string; run: string }> } | undefined;
+let phase: { id: string; leases: Array<{ node: string; lease: string; run: string }>;
+  maintenance: Array<{ durationMs: number; error: string | null }> } | undefined;
 try {
   store.createProject({ id: project, name: project, homeRegion: "eu-test-1", allowedRegions: ["eu-test-1"], residencyDomain: "eu-test" });
   store.updateScheduler("sequential", 4); store.updateModelRouterPolicy({ enabled: false });
@@ -94,6 +105,14 @@ try {
   assert.equal(databaseCandidates, plan.candidates);
   const nodes = Array.from({ length: 4 }, (_, index) => registerNode(`rag-http-${index}`));
   store.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(String(target.id));
+  if (executionMode === "isolated") executor = await KnowledgeSearchExecutor.create(dbPath, storeOptions, { maxPending: 4, timeoutMs: 30_000 });
+  if (maintenanceIntervalMs) maintenanceTimer = setInterval(() => {
+    const started = performance.now();
+    let error: string | null = null;
+    try { runWithPostgresSystemScope(() => store.maintenanceTick()); }
+    catch (failure) { error = failure instanceof Error ? failure.message : "Maintenance failed"; }
+    phase?.maintenance.push({ durationMs: round(performance.now() - started), error });
+  }, maintenanceIntervalMs);
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const address = server.address(); assert.ok(address && typeof address === "object");
   reply({ type: "ready", port: address.port, indexed, databaseCandidates, target: target.id, nodeVersion: process.version,
@@ -114,7 +133,7 @@ try {
         const lease = store.leaseNext(node.id)!; assert.equal(lease.run.id, run.id);
         return { node: node.id, token: node.token, lease: lease.leaseId, run: run.id };
       });
-      phase = { id: command.id, leases };
+      phase = { id: command.id, leases, maintenance: [] };
       lag.reset(); lag.enable(); await delay(20);
       // Disposable bearer credentials only cross this private pipe; evidence excludes them.
       reply({ type: "prepared", id: command.id, leases: leases.map(({ lease, token }) => ({ lease, token })) });
@@ -135,6 +154,7 @@ try {
         store.completeLease(item.node, item.lease, "completed", []);
       }
       const result = { type: "finished", id: phase.id, verifiedRetrievals: phase.leases.length, retrievals, eventLoop,
+        executionMode, maintenance: phase.maintenance, executor: executor?.snapshot() ?? null,
         memory: process.memoryUsage(), processLifetimePeakRssBytes: process.resourceUsage().maxRSS * 1024 };
       phases.push(result); phase = undefined; reply(result);
     } else { throw new Error("Unknown probe control command"); }
@@ -143,7 +163,9 @@ try {
   fs.writeFileSync(path.join(evidence, `server-${backend}.json`), `${JSON.stringify({ planSha256: sha(planBytes),
     backend, nodeVersion: process.version, indexed, databaseCandidates, target: target.id, phases }, null, 2)}\n`, { flag: "wx" });
 } finally {
+  clearInterval(maintenanceTimer);
   lag.disable(); lines.close(); server.closeAllConnections();
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  await executor?.close();
   runWithPostgresSystemScope(() => store.close());
 }
