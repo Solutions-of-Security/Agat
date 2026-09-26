@@ -74,12 +74,23 @@ def verify(directory):
         if plan.get('verifyDatabaseCandidateCount'):
             assert client['databaseCandidates'] == server['databaseCandidates'] == plan['candidates']
         assert len(client['phases']) == len(server['phases']) == len(expected_phases)
-        groups = {str(c): {'searches': [], 'health': [], 'skipped': 0, 'loopMax': []} for c in (0, 1, 2, 4)}
+        groups = {str(c): {'searches': [], 'health': [], 'skipped': 0, 'loopMax': [], 'maintenance': []} for c in (0, 1, 2, 4)}
         run_ids = []
+        maintenance_calls = 0
         for expected, observed, actual in zip(expected_phases, client['phases'], server['phases'], strict=True):
             count, label = expected['concurrency'], expected['id']
             assert observed['id'] == actual['id'] == label
             assert observed['concurrency'] == actual['verifiedRetrievals'] == count
+            if 'executionMode' in plan:
+                assert plan['executionMode'] in ('sync', 'isolated') and actual['executionMode'] == plan['executionMode']
+                assert plan['maintenanceIntervalMs'] in (0, 1000)
+                maintenance_calls += len(actual['maintenance'])
+                for tick in actual['maintenance']:
+                    assert tick['error'] is None and math.isfinite(tick['durationMs']) and tick['durationMs'] >= 0
+                if plan['executionMode'] == 'isolated':
+                    assert actual['executor'] == {'active': 0, 'queued': 0, 'maxPending': 4, 'accepting': True}
+                else:
+                    assert actual['executor'] is None
             assert len(observed['searches']) == len(actual['retrievals']) == count
             assert observed['observedHttpConcurrency'] == intervals(observed['searches']) == count
             for row in observed['searches']:
@@ -116,11 +127,17 @@ def verify(directory):
             group['searches'].extend(row['wallMs'] for row in observed['searches'])
             group['health'].extend(row['wallMs'] for row in dispatched)
             group['skipped'] += skipped; group['loopMax'].append(loop['maxMs'])
+            if 'executionMode' in plan:
+                group['maintenance'].extend(tick['durationMs'] for tick in actual['maintenance'])
         assert len(run_ids) == len(set(run_ids)) == 22
+        if plan.get('maintenanceIntervalMs'):
+            assert maintenance_calls > 0 and any(tick for actual in server['phases'] if actual['id'] == 'idle' for tick in actual['maintenance'])
         results[backend] = {key: {'search': summary(value['searches']), 'healthDispatched': summary(value['health']),
-            'healthNotDispatched': value['skipped'], 'maxEventLoopDelayMs': max(value['loopMax'])} for key, value in groups.items()}
+            'healthNotDispatched': value['skipped'], 'maxEventLoopDelayMs': max(value['loopMax']),
+            **({'maintenance': summary(value['maintenance'])} if 'executionMode' in plan else {})} for key, value in groups.items()}
     return {'status': 'verified', 'implementationCommit': plan['implementationCommit'], 'planSha256': plan_sha,
             **({'databaseCandidatesVerifiedPerBackend': plan['candidates']} if plan.get('verifyDatabaseCandidateCount') else {}),
+            **({'executionMode': plan['executionMode'], 'maintenanceIntervalMs': plan['maintenanceIntervalMs']} if 'executionMode' in plan else {}),
             'launcherSha256': sha((directory / 'launcher-result.json').read_bytes()), 'measuredSearches': 42,
             'warmupSearches': 2, 'summary': results,
             'limitations': ['Health latency covers dispatched probes only; skipped arrivals remain separate.',
@@ -128,13 +145,27 @@ def verify(directory):
                             'Synthetic vectors with an analytically known winner; no model or semantic qualification.']}
 
 
+def compare(control, isolated):
+    before, after = verify(control), verify(isolated)
+    plans = [json.loads((directory / 'plan.json').read_text()) for directory in (control, isolated)]
+    assert plans[0]['executionMode'] == 'sync' and plans[1]['executionMode'] == 'isolated'
+    assert plans[0]['maintenanceIntervalMs'] == plans[1]['maintenanceIntervalMs'] == 1000
+    for key in ('implementationCommit', 'sourceSha256', 'nodeVersion', 'candidates', 'dimensions', 'candidateLimit',
+                'phases', 'healthIntervalMs', 'maxHealthInflight', 'searchRequestTimeoutSeconds', 'fixture', 'backendOrder'):
+        assert plans[0][key] == plans[1][key], f'Incompatible pair: {key}'
+    return {'status': 'comparable', 'measuredSearchesVerified': before['measuredSearches'] + after['measuredSearches'],
+            'implementationCommit': before['implementationCommit'], 'sync': before, 'isolated': after,
+            'limitations': ['Sequential runs on a shared host; differences are descriptive, not a production SLO or a causal estimate.']}
+
+
 def main():
     if not __debug__:
         raise RuntimeError('Evidence verification requires Python assertions')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence-dir', type=Path, required=True)
+    parser.add_argument('--compare-control', type=Path)
     args = parser.parse_args()
-    print(json.dumps(verify(args.evidence_dir), indent=2))
+    print(json.dumps(compare(args.compare_control, args.evidence_dir) if args.compare_control else verify(args.evidence_dir), indent=2))
 
 
 if __name__ == '__main__':

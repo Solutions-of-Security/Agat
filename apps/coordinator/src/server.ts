@@ -42,6 +42,7 @@ import {
   type ProcessRuntime,
 } from "./process-runtime.js";
 import { bearerToken, tokensEqual } from "./security.js";
+import { KnowledgeSearchExecutorError, type KnowledgeSearchService } from "./knowledge-search-executor.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import { McpGateway } from "./mcp.js";
 import { createSandboxExecutor } from "./sandbox.js";
@@ -621,6 +622,7 @@ export function createCoordinatorServer(
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
   }, undefined, createSandboxExecutor(config)),
   edgeAttestation: EdgeAttestationVerifier = createEdgeAttestationVerifier(config),
+  knowledgeSearch?: KnowledgeSearchService,
 ): http.Server {
   const scenarioContext = (): ScenarioPreflightContext => ({
     runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
@@ -2573,7 +2575,10 @@ export function createCoordinatorServer(
       if (request.method === "POST" && knowledgeSearchLeaseId) {
         const node = requireWorker(request, store);
         const body = await readJson<KnowledgeSearchRequest>(request);
-        json(response, 200, store.searchKnowledge(String(node.id), knowledgeSearchLeaseId, body));
+        const result = knowledgeSearch
+          ? await knowledgeSearch.search(bearerToken(request.headers.authorization)!, String(node.id), knowledgeSearchLeaseId, body)
+          : store.searchKnowledge(String(node.id), knowledgeSearchLeaseId, body);
+        json(response, 200, result);
         return;
       }
 
@@ -2699,6 +2704,7 @@ export function createCoordinatorServer(
         return;
       }
       const status = error instanceof HttpError
+        || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError
         || error instanceof EdgeAttestationError

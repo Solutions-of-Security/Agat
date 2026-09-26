@@ -10,6 +10,7 @@ import pg from "pg";
 import { AgatStore } from "../src/database.js";
 import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
+import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
 import {
   enterPostgresTenantScope,
@@ -23,8 +24,8 @@ const tenantUrl = process.env.AGAT_TEST_POSTGRES_TENANT_URL ?? "";
 const cellRegion = process.env.AGAT_REGION ?? "local";
 const cellResidencyDomain = process.env.AGAT_RESIDENCY_DOMAIN ?? cellRegion;
 
-function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandidates?: number): AgatStore {
-  return new AgatStore(":postgresql:", {
+function storeOptions(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandidates?: number): KnowledgeSearchStoreOptions {
+  return {
     stateStoreDriver: "postgresql",
     postgres: {
       systemUrl,
@@ -45,7 +46,11 @@ function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandi
     decisionShadowEnabled: true,
     knowledgeSearchMaxCandidates,
     artifactsDir,
-  });
+  };
+}
+
+function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandidates?: number): AgatStore {
+  return new AgatStore(":postgresql:", storeOptions(instanceId, artifactsDir, knowledgeSearchMaxCandidates));
 }
 
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
@@ -244,6 +249,51 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       } finally {
         first.close(); second.close();
         fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("isolates whole retrieval transactions across workers without duplicate markers or partial writes", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-executor-"));
+      const first = store(`rag-executor-${suffix}`, artifacts);
+      const executors: KnowledgeSearchExecutor[] = [];
+      try {
+        first.updateScheduler("parallel", 10);
+        const projectId = `rag-executor-${suffix}`;
+        first.createProject({ id: projectId, name: projectId, homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const model = `rag-executor-${suffix}`;
+        const agent = first.createAgent({ name: "Executor fixture", role: "Test", systemPrompt: "Fixture", model }, projectId);
+        const node = first.registerNode({ enrollmentToken: "test", name: model, platform: "test",
+          models: [model], embeddingModels: [model], maxConcurrency: 1,
+          region: cellRegion, residencyDomain: cellResidencyDomain });
+        const collection = String(first.createKnowledgeCollection({ name: "Executor source", embeddingModel: model }, projectId).id);
+        const document = first.ingestKnowledgeDocument(collection, { name: "Source", content: "Concurrent executor fixture." }, projectId);
+        const embedding = first.leaseKnowledgeEmbedding(node.id)!; assert.ok(embedding);
+        first.completeKnowledgeEmbedding(node.id, embedding.leaseId, embedding.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })));
+        const run = first.createRun({ name: "Executor", input: "Synthetic query", agentIds: [String(agent.id)],
+          approvalRequired: false, knowledgeCollectionIds: [collection] }, projectId);
+        const lease = first.leaseNext(node.id)!; assert.equal(lease.run.id, run.id);
+        for (let index = 0; index < 2; index++) executors.push(await KnowledgeSearchExecutor.create(":postgresql:",
+          storeOptions(`rag-executor-${index}-${suffix}`, artifacts)));
+        const query = { embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 };
+        const search = (index: number, queries = [query]) => executors[index]!.search(node.token, node.id, lease.leaseId, { queries });
+        const results = await Promise.all([search(0), search(1)]);
+        assert.deepEqual(results.map(row => row.hits[0]!.marker).sort(), ["K1", "K2"]);
+        assert.ok(results.every(row => row.hits[0]!.provenance.documentId === document.id));
+        await assert.rejects(search(0, [query, { ...query, vector: [1, 0, 0] }]), /Размерность retrieval/);
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 2);
+        assert.equal((await search(1)).hits[0]!.marker, "K3");
+        assert.equal((first.getRunTrace(run.id, projectId)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 3);
+        first.db.prepare("UPDATE nodes SET credential_state = 'revoked' WHERE id = ?").run(node.id);
+        await assert.rejects(search(0), /Токен узла недействителен/);
+        assert.equal(first.getRunKnowledgeSources(run.id, projectId)!.length, 3);
+        first.completeLease(node.id, lease.leaseId, "completed", []);
+      } finally {
+        await Promise.all(executors.map(executor => executor.close()));
+        first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
       }
     });
   });
