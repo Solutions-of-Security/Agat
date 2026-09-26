@@ -1,0 +1,134 @@
+{
+  "status": "verified",
+  "checks": {
+    "before": {
+      "implementationCommit": "d990d721cbaaeb0358475fce3fbfa152753a4731",
+      "launcherSha256": "de6082642cc90f0f68f801f39e4d7f24203138d416bd057d162569e5b06fd45a",
+      "filesVerified": 17,
+      "sourceFilesVerified": 12,
+      "verification": {
+        "status": "verified",
+        "planSha256": "ee987aa4167053e57df8d938a35f7ea5470d8da9a52b53e489531a03dea770ad",
+        "summary": {
+          "sqlite": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              130.448,
+              122.44,
+              118.799,
+              118.008,
+              112.609,
+              107.876,
+              107.69,
+              110.416
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 110.579,
+            "warmP95Ms": 113.65,
+            "warmMaxMs": 115.078,
+            "baselineRssBytes": 141918208,
+            "processLifetimePeakRssBytes": 196263936
+          },
+          "postgresql": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              357.169,
+              342.125,
+              335.65,
+              340.965,
+              375.92,
+              368.53,
+              336.938,
+              333.749
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 342.014,
+            "warmP95Ms": 388.768,
+            "warmMaxMs": 422.995,
+            "baselineRssBytes": 163889152,
+            "processLifetimePeakRssBytes": 343343104
+          }
+        }
+      }
+    },
+    "after": {
+      "implementationCommit": "d990d721cbaaeb0358475fce3fbfa152753a4731",
+      "launcherSha256": "0add49d2d6daced306a99b29bb4f6c4e24efdcfbc2816eac2588f0ad6a9442fd",
+      "filesVerified": 17,
+      "sourceFilesVerified": 12,
+      "verification": {
+        "status": "verified",
+        "planSha256": "a40c9e57a63c659f6752f08e8d6b7b1fa650b8cbb149fbc17f3133a2f346295b",
+        "summary": {
+          "sqlite": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              465.532,
+              454.624,
+              437.251,
+              436.327,
+              433.87,
+              439.037,
+              436.282,
+              431.773
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 443.328,
+            "warmP95Ms": 481.63,
+            "warmMaxMs": 528.159,
+            "baselineRssBytes": 141262848,
+            "processLifetimePeakRssBytes": 195444736
+          },
+          "postgresql": {
+            "attempts": 40,
+            "verifiedTopK": 40,
+            "firstPassMs": [
+              1565.529,
+              1606.462,
+              1773.754,
+              1574.149,
+              1559.517,
+              1595.049,
+              2348.78,
+              1663.522
+            ],
+            "warmSamples": 32,
+            "warmP50Ms": 1332.394,
+            "warmP95Ms": 1598.795,
+            "warmMaxMs": 1619.548,
+            "baselineRssBytes": 161054720,
+            "processLifetimePeakRssBytes": 318799872
+          }
+        }
+      }
+    }
+  },
+  "identicalSourceVectors": 2429,
+  "identicalQueryVectors": 8,
+  "growth": {
+    "copies": [
+      1,
+      4
+    ],
+    "candidates": [
+      2429,
+      9716
+    ],
+    "independentlyVerifiedSearches": 160,
+    "scope": "Repeated documents increase candidate count, not source diversity"
+  },
+  "modelDescriptionHashes": {
+    "before": "60228104656b1f8fe1d6d886924d53e256b5b62e9912383d5903cdeff264d2f0",
+    "after": "60228104656b1f8fe1d6d886924d53e256b5b62e9912383d5903cdeff264d2f0",
+    "match": true,
+    "note": "The whole /api/show hash is reported separately. Raw descriptions were not retained, so differing hashes remain unexplained; recorded identity/settings and all vectors are checked."
+  },
+  "limits": [
+    "One sequential comparison; no randomized crossover or production SLO inference.",
+    "Process RSS excludes PostgreSQL server, Docker VM and unloaded Ollama.",
+    "Historical process IDs are not probed here because IDs may be reused."
+  ]
+}
