@@ -1,0 +1,52 @@
+{
+  "status": "pass",
+  "commands": {
+    "docs": {
+      "command": "npm run docs:check",
+      "exitCode": 0,
+      "log": "docs.log",
+      "sha256": "e839804dd13e7e272b34cee153e3dba2e6b2f94d20ef898ea9b88d6fe4b60247"
+    },
+    "coordinator": {
+      "command": "npm run test:coordinator",
+      "exitCode": 0,
+      "log": "coordinator.log",
+      "sha256": "983d21d560bc91fa008152c3f6c0badbd2fb562c71c12acbf02e5070e0215a70"
+    },
+    "types": {
+      "command": "npm run typecheck --workspace @agat/coordinator",
+      "exitCode": 0,
+      "log": "types.log",
+      "sha256": "88c1a6ca9126795736e1a2ec4bec716115a6e66d07a74cdd7fa53ff8331eaade"
+    }
+  },
+  "fileHashes": {
+    "scripts/probe-pgvector.py": "694fd7d5245a23640d4a1d74bb93b13ad1e5192a015a1e7186f4d0e3020370b2",
+    "scripts/lib/pgvector_probe.py": "0ace4fe73ba8e9abe02e1f450a601368ce51de984e8b75b543f22dc4222c8ecd",
+    "scripts/test/test_pgvector_probe.py": "ca4830a7199bdb4e9b3c01ec2a249fa1f30733ceafb537f227e5376ade6eaeba",
+    "apps/coordinator/test/knowledge-retrieval-capacity.test.ts": "203dc72628bd72c4c17247c1580d4750e940354cedd7ab64cb54f7c7c00db185",
+    "docs/qualification/local-decisions/performance/pgvector-compatibility.md": "a6819a505b110abf0fa80473c146f5c52c2d52848d6428d54cd5c7ebdef4c2d2"
+  },
+  "probeChecks": 13,
+  "unitPythonTests": 143,
+  "coordinatorTests": 228,
+  "documentationNodeTests": 12,
+  "externalContainerCheck": "docker ps --all --filter name=agat-pgvector-probe- returned no containers",
+  "limits": "Single synthetic run; not an application pgvector integration or quality qualification",
+  "architectureAudit": {
+    "schema_version": 1,
+    "target": "docs/qualification/local-decisions/performance/pgvector-compatibility.md",
+    "profile": "assessment",
+    "files_checked": 1,
+    "errors": 0,
+    "warnings": 0,
+    "status": "PASS",
+    "issues": []
+  },
+  "finalLinkCheck": {
+    "command": "npm run docs:links:check",
+    "exitCode": 0,
+    "targets": 1371,
+    "markdownFiles": 159
+  }
+}
