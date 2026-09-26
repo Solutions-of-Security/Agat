@@ -26,12 +26,14 @@
 
 Образы SearXNG и локального Temporal server закреплены версией и multi-arch digest, чтобы повторный запуск не получил непроверенное изменение из плавающего `latest`. Keycloak, оба PostgreSQL и Kong также используют фиксированные версии. Скрипт дополнительно собирает доверенный `agat-local/sandbox-wasi:1.7.0`; загружаемые OCI tools обязаны указывать полный digest.
 
+MinIO собирается локально из закреплённых официальных исходников: [Dockerfile](../deploy/minio/Dockerfile) проверяет SHA-256 архива и использует Go image по digest. Образ `agat-local/minio:1.7.0` сохраняет UID/GID 1000 существующего PVC. Первая сборка требует доступа к Docker Hub, GitHub и Go modules; последующие используют build cache. Подробности и проверка сохранности S3-версии после restart: [обновление локального MinIO](./releases/2026-09-26-local-minio.md).
+
 ## Требования
 
 1. Docker Desktop запущен.
 2. В `Settings → Kubernetes` создан и запущен встроенный кластер.
 3. Активен kube-context `docker-desktop`.
-4. Установлены `kubectl`, `docker`, `curl` и `openssl`.
+4. Установлены `kubectl`, `docker`, `curl`, `openssl` и Node.js >= 22.13.
 
 Проверка:
 
@@ -52,8 +54,8 @@ npm run k8s:up
 
 1. проверит `docker-desktop` и готовность node;
 2. создаст namespace, application Secret с отдельными Artifact Store keys и coordinator PostgreSQL Secret при первом запуске;
-3. соберёт четыре образа под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker и WASI sandbox;
-4. при upgrade остановит coordinator replicas, применит Kustomize и дождётся bucket/role-bootstrap/schema/admission Jobs;
+3. соберёт пять образов под архитектуру Kubernetes node: coordinator/web, model worker, Temporal worker, WASI sandbox и MinIO;
+4. при upgrade остановит coordinator replicas, применит Kustomize, после пересборки перезапустит существующий MinIO, дождётся его readiness и bucket/role-bootstrap/schema/admission Jobs;
 5. только после schema v25 marker и versioned bucket поднимет PostgreSQL runtime, Keycloak, Temporal, coordinator, Temporal worker, SearXNG, model worker и Kong;
 6. проверит Kong `/api/v1/health`, OIDC discovery и Temporal UI через localhost.
 
@@ -274,6 +276,8 @@ kubectl delete namespace agat
 ```bash
 AGAT_K8S_SKIP_BUILD=true npm run k8s:up
 ```
+
+Этот режим требует уже собранный `agat-local/minio` с выбранным tag. Если образ отсутствует, скрипт завершается до изменения Kubernetes; выполните обычный `npm run k8s:up`. При пересборке существующий MinIO перезапускается с прежним PVC в рамках локального maintenance; его единственный экземпляр кратковременно недоступен.
 
 Для локальных mutable tags задан `imagePullPolicy: Always`: при каждом rollout node запрашивает актуальный образ у registry mirror Docker Desktop, а не оставляет предыдущую сборку в containerd cache.
 

@@ -1,0 +1,52 @@
+{
+  "date": "2026-09-26",
+  "scope": "local Docker integration and offline manifests; no Kubernetes rollout",
+  "checks": [
+    {
+      "path": "integration.log",
+      "sha256": "1ff7b2e7d07fdee38f6773d98eb480aa0771e8c55a58b00f536e56c8248bfd49",
+      "original_sha256": "1ff7b2e7d07fdee38f6773d98eb480aa0771e8c55a58b00f536e56c8248bfd49",
+      "normalization": "strip trailing whitespace at EOF; append one newline"
+    },
+    {
+      "path": "render.log",
+      "sha256": "337c951a68455d1b422cd3e7ae8e6c3fa58e273b75d913812c59589b087077fa",
+      "original_sha256": "337c951a68455d1b422cd3e7ae8e6c3fa58e273b75d913812c59589b087077fa",
+      "normalization": "strip trailing whitespace at EOF; append one newline"
+    },
+    {
+      "path": "typecheck.log",
+      "sha256": "0775e67994a80b36845bf651a8f405aafde42894dccb0475bd1414729bd73872",
+      "original_sha256": "88c1a6ca9126795736e1a2ec4bec716115a6e66d07a74cdd7fa53ff8331eaade",
+      "normalization": "strip trailing whitespace at EOF; append one newline"
+    },
+    {
+      "path": "render-check.py",
+      "sha256": "973bdb37d0983480d0fd92866e4a0dd7ddd9108ca9e4a5cff690bd765bc6801f",
+      "original_sha256": "e902a4b5c83aa5f4d9acc49f6519134bf5a7c84d91363ac08a393ae592f3e811",
+      "normalization": "strip trailing whitespace at EOF; append one newline; resolve repository from evidence location"
+    }
+  ],
+  "sources": [
+    {
+      "path": "deploy/minio/Dockerfile",
+      "sha256": "5a3c34bd2f897f02b3f30757112b44402c96f92fe59b246c5e4767010b30373e"
+    },
+    {
+      "path": "deploy/k8s/docker-desktop/artifact-store.yaml",
+      "sha256": "a6f14ccc749fe254e854beb54e9475706731df1144398f2a8854de21a19aebd1"
+    },
+    {
+      "path": "scripts/k8s-up.sh",
+      "sha256": "a673aae678c0c59b5718f682a80308e369738e0822cb6c386b0a19d7c0115198"
+    },
+    {
+      "path": "scripts/test-s3-artifact-store.sh",
+      "sha256": "c375422418d129bef30099754f3eeb8cc1739d43f5e606a80b81e37561889618"
+    },
+    {
+      "path": "apps/coordinator/test/artifact-store-postgres.integration.test.ts",
+      "sha256": "cace908371755ecea9b687b5461fd47c00f8e1136dfe0e44974e83f019c5e325"
+    }
+  ]
+}

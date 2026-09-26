@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,6 +8,7 @@ import { describe, it } from "node:test";
 
 import {
   CreateBucketCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutBucketVersioningCommand,
   S3Client,
@@ -106,7 +108,7 @@ function createArtifact(store: AgatStore, suffix: string): { projectId: string; 
 }
 
 describe("S3-compatible Artifact Store integration", { skip: !enabled }, () => {
-  it("migrates BYTEA, verifies cross-replica cache, isolates outbox and deletes by version", async () => {
+  it("migrates BYTEA, verifies cross-replica cache, isolates outbox, deletes by version and survives restart", async () => {
     const s3 = new S3Client({
       endpoint,
       region: "us-east-1",
@@ -225,6 +227,51 @@ describe("S3-compatible Artifact Store integration", { skip: !enabled }, () => {
       assert.equal(Number(cascadeOutbox?.count) >= 1, true);
       const cascadeLifecycle = runWithPostgresSystemScope(() => first.runArtifactLifecycle(20));
       assert.equal(cascadeLifecycle.delivered >= 1, true);
+
+      const restartContainer = process.env.AGAT_TEST_S3_RESTART_CONTAINER;
+      if (restartContainer) {
+        // Only the disposable container created by the integration shell script.
+        assert.match(restartContainer, /^agat-artifact-minio-[0-9]+-[0-9]+$/);
+        assert.equal(new URL(endpoint).hostname, "127.0.0.1");
+        const survivor = runWithPostgresSystemScope(() => createArtifact(first, randomUUID().slice(0, 8)));
+        const saved = runWithPostgresSystemScope(() => first.db.prepare(`
+          SELECT storage_backend, storage_state, object_key, object_version_id
+          FROM artifacts WHERE id = ?
+        `).get(survivor.artifactId));
+        assert.equal(saved?.storage_backend, "s3");
+        assert.equal(saved?.storage_state, "ready");
+        assert.equal(typeof saved?.object_key, "string");
+        assert.equal(typeof saved?.object_version_id, "string");
+
+        execFileSync("docker", ["restart", "--timeout", "10", restartContainer], { timeout: 30_000, stdio: "pipe" });
+        // Docker can allocate a different ephemeral host port on restart.
+        const published = execFileSync("docker", ["port", restartContainer, "9000/tcp"], {
+          encoding: "utf8", timeout: 10_000,
+        }).trim();
+        assert.match(published, /^127\.0\.0\.1:[0-9]+$/);
+        const restartedEndpoint = `http://${published}`;
+        const deadline = Date.now() + 30_000;
+        let ready = false;
+        while (Date.now() < deadline) {
+          try { ready = (await fetch(new URL("/minio/health/ready", restartedEndpoint), { signal: AbortSignal.timeout(1000) })).ok; }
+          catch { ready = false; }
+          if (ready) break;
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        assert.equal(ready, true, "the restarted local MinIO must become ready");
+        const restarted = new S3Client({
+          endpoint: restartedEndpoint, region: "us-east-1", forcePathStyle: true,
+          credentials: { accessKeyId, secretAccessKey },
+        });
+        try {
+          const persisted = await restarted.send(new GetObjectCommand({ Bucket: bucket,
+            Key: String(saved?.object_key), VersionId: String(saved?.object_version_id) }));
+          assert.equal(await persisted.Body!.transformToString(), survivor.content,
+            "the exact version must survive the server restart on the mounted volume");
+        } finally {
+          restarted.destroy();
+        }
+      }
     } finally {
       runWithPostgresSystemScope(() => {
         first.close();
