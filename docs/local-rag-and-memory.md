@@ -42,6 +42,8 @@ Collection IDs фиксируются в run при создании. Повто
 
 Перед ранжированием coordinator проверяет совпадение embedding-модели и размерности запроса с индексом каждой выбранной коллекции. Несовместимый query или повреждённый проверяемый вектор возвращают ошибку до генерации; пустой ответ поиска не маскирует этот отказ. Корректный поиск по необязательной пустой коллекции по-прежнему может вернуть ноль фрагментов. [Исправление и сквозные проверки отказа/восстановления](./qualification/local-decisions/performance/retrieval-failures.md).
 
+Набор больше 5000 готовых кандидатов на query отклоняется: старые фрагменты не исключаются молча ради ограничения выборки. Сортировка и `topK` используют неокруглённый cosine score; округление до шести знаков выполняется для итоговых hits. [Проверки границы и близких векторов](./qualification/local-decisions/performance/retrieval-capacity.md).
+
 ## Подготовка embedding-модели
 
 Для Ollama:
@@ -205,7 +207,7 @@ SQLite backup уже включает knowledge store. Делайте согла
 - `text/*`, PDF и DOCX; максимум 2 000 000 извлечённых символов на документ;
 - character/paragraph chunking и страницы PDF; без OCR, layout engine DOCX, распознавания изображений и извлечения вложенных файлов;
 - до 32 chunks в embedding batch и до 4096 измерений vector;
-- cosine brute-force внутри максимум 5000 свежих кандидатов на query;
+- cosine brute-force по максимум 5000 готовых фрагментов выбранных collections на query; превышение даёт явную ошибку, поиск только по свежей части индекса не выполняется;
 - до 32 collections на run, 8 embedding queries и 20 итоговых hits;
 - нет hybrid BM25, reranker, semantic cache и автоматического выбора embedding model;
 - SQLite рассчитан на один coordinator; PostgreSQL/pgvector нужен вместе с HA-этапом;
