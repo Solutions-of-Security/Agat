@@ -185,6 +185,7 @@ def main():
     evidence.mkdir(parents=True)
     plan = {'implementationCommit': implementation, 'sourceSha256': sources,
             'nodeVersion': node_version, 'candidates': 9716, 'dimensions': 768, 'candidateLimit': 10000,
+            'verifyDatabaseCandidateCount': True,
             'phases': [{'id': 'warmup', 'concurrency': 1}, {'id': 'idle', 'concurrency': 0}]
                       + [{'id': f'c{c}-r{r}', 'concurrency': c} for c in (1, 2, 4) for r in (1, 2, 3)],
             'healthIntervalMs': 100, 'maxHealthInflight': 4, 'searchRequestTimeoutSeconds': 15,
@@ -241,6 +242,7 @@ def main():
                     try:
                         ready = reply(process, timeout=300)
                         assert ready['type'] == 'ready' and ready['indexed'] == plan['candidates']
+                        assert ready['databaseCandidates'] == plan['candidates']
                         for item in plan['phases']:
                             print(f"{backend}: {item['id']}", flush=True)
                             result = phase(process, ready, item['id'], item['concurrency'])
@@ -255,7 +257,8 @@ def main():
                     finally:
                         stop(process)
                         write(evidence / f'client-{backend}.json', {'planSha256': sha((evidence / 'plan.json').read_bytes()),
-                            'backend': backend, 'target': ready['target'] if ready else None, 'phases': phases})
+                            'backend': backend, 'target': ready['target'] if ready else None,
+                            'databaseCandidates': ready['databaseCandidates'] if ready else None, 'phases': phases})
                         log.flush()
                         diagnostic = (Path(folder) / 'stderr.log').read_text(errors='replace')[-16384:]
                         diagnostic = re.sub(r'postgres(?:ql)?://[^\s\"\']+', '<disposable-postgres-url>', diagnostic)

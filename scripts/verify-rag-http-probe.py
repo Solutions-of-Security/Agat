@@ -71,6 +71,8 @@ def verify(directory):
         assert client['backend'] == server['backend'] == backend
         assert client['target'] == server['target'] and isinstance(client['target'], str)
         assert server['indexed'] == plan['candidates'] and server['nodeVersion'] == plan['nodeVersion']
+        if plan.get('verifyDatabaseCandidateCount'):
+            assert client['databaseCandidates'] == server['databaseCandidates'] == plan['candidates']
         assert len(client['phases']) == len(server['phases']) == len(expected_phases)
         groups = {str(c): {'searches': [], 'health': [], 'skipped': 0, 'loopMax': []} for c in (0, 1, 2, 4)}
         run_ids = []
@@ -118,6 +120,7 @@ def verify(directory):
         results[backend] = {key: {'search': summary(value['searches']), 'healthDispatched': summary(value['health']),
             'healthNotDispatched': value['skipped'], 'maxEventLoopDelayMs': max(value['loopMax'])} for key, value in groups.items()}
     return {'status': 'verified', 'implementationCommit': plan['implementationCommit'], 'planSha256': plan_sha,
+            **({'databaseCandidatesVerifiedPerBackend': plan['candidates']} if plan.get('verifyDatabaseCandidateCount') else {}),
             'launcherSha256': sha((directory / 'launcher-result.json').read_bytes()), 'measuredSearches': 42,
             'warmupSearches': 2, 'summary': results,
             'limitations': ['Health latency covers dispatched probes only; skipped arrivals remain separate.',

@@ -60,6 +60,7 @@ const project = "rag-http-probe", model = "rag-http-fixture";
 const vector = Array<number>(plan.dimensions).fill(1 / 3);
 const orthogonal = vector.map((value, index) => index % 2 ? -value : value);
 const phases: unknown[] = [];
+let databaseCandidates = 0;
 let phase: { id: string; leases: Array<{ node: string; lease: string; run: string }> } | undefined;
 try {
   store.createProject({ id: project, name: project, homeRegion: "eu-test-1", allowedRegions: ["eu-test-1"], residencyDomain: "eu-test" });
@@ -85,11 +86,17 @@ try {
     }));
   }
   assert.equal(indexed, plan.candidates);
+  databaseCandidates = Number(store.db.prepare(`SELECT count(*) AS count FROM knowledge_chunks ch
+    JOIN knowledge_documents d ON d.id = ch.document_id JOIN knowledge_collections c ON c.id = ch.collection_id
+    WHERE c.project_id = ? AND c.id = ? AND c.embedding_model = ? AND ch.embedding_model = ?
+      AND ch.embedding_dimensions = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'`)
+    .get(project, collection, model, model, plan.dimensions)!.count);
+  assert.equal(databaseCandidates, plan.candidates);
   const nodes = Array.from({ length: 4 }, (_, index) => registerNode(`rag-http-${index}`));
   store.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(String(target.id));
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const address = server.address(); assert.ok(address && typeof address === "object");
-  reply({ type: "ready", port: address.port, indexed, target: target.id, nodeVersion: process.version,
+  reply({ type: "ready", port: address.port, indexed, databaseCandidates, target: target.id, nodeVersion: process.version,
     query: { queries: [{ embeddingModel: model, collectionIds: [collection], vector, topK: 1 }] } });
   for await (const line of lines) {
     assert.ok(line.length <= 2048);
@@ -134,7 +141,7 @@ try {
   }
   assert.equal(phase, undefined);
   fs.writeFileSync(path.join(evidence, `server-${backend}.json`), `${JSON.stringify({ planSha256: sha(planBytes),
-    backend, nodeVersion: process.version, indexed, target: target.id, phases }, null, 2)}\n`, { flag: "wx" });
+    backend, nodeVersion: process.version, indexed, databaseCandidates, target: target.id, phases }, null, 2)}\n`, { flag: "wx" });
 } finally {
   lag.disable(); lines.close(); server.closeAllConnections();
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
