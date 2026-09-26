@@ -1,0 +1,40 @@
+
+> agat-platform@1.7.0 docs:check
+> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p "test_*.py" && npm run docs:links:check && npm run docs:processes:check
+
+✔ checks Markdown reference links, images, escaped spaces and fragments (5.9635ms)
+✔ ignores fenced code, inline code and external links (2.38925ms)
+✔ reports missing files and case differences on all platforms (1.673292ms)
+✔ rejects links outside the checkout while allowing repository-root links (1.961417ms)
+✔ does not accept a generated local file absent from the repository (1.57775ms)
+✔ qualification accepts only explicit loopback addresses, without credentials or redirects (0.94125ms)
+✔ model identity requires installed digest, Qwen3 architecture and local capability (0.413458ms)
+✔ ingestion fails for changed content, missing or incompatible embeddings (0.767334ms)
+✔ citations must resolve to both ingested sources on each real model stage (2.428959ms)
+✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.692875ms)
+✔ history evidence excludes payloads, secrets, failures and host identities (0.5045ms)
+✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (5532.375125ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5612.66825
+............................................................................................................................................
+----------------------------------------------------------------------
+Ran 140 tests in 3.344s
+
+OK
+
+> agat-platform@1.7.0 docs:links:check
+> node scripts/check-doc-links.mjs
+
+Checked 1347 local link targets in 157 Markdown files (including filename case).
+External URLs, fragment anchors and raw HTML are outside this check.
+
+> agat-platform@1.7.0 docs:processes:check
+> node --import tsx scripts/export-process-catalog.ts --check
+
+Проверено: 7 категорий, 13 шаблонов; catalog.md, catalog.json.

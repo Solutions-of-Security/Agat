@@ -1,0 +1,22 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (604.044416ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1200.7575ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (6565.447083ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (157.128834ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (224.473167ms)
+  ✔ rejects a schema Job while a coordinator replica is active (226.341833ms)
+  ✔ rejects runtime startup after out-of-band schema drift (265.119958ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (749.816333ms)
+✔ PostgreSQL Fleet/HA integration (11898.205459ms)
+ℹ tests 8
+ℹ suites 1
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12390.6155

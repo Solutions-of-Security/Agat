@@ -219,6 +219,8 @@ Golden datasets, human rubric, model judge и prompt registry реализова
 
 ## Проверки реализации
 
+[Измерение на корпусе документации](./qualification/local-decisions/performance/retrieval-corpus.md) использует 66 документов и 2429 настоящих 768-мерных embeddings. Повторное использование response buffer ограничивает его выделение одним буфером на PostgreSQL bridge; результаты поиска сверены независимым oracle. Это проверка ресурсов и корректности topK внутри текущего лимита, без квалификации семантического качества или production SLO.
+
 - `apps/coordinator/test/knowledge-files.test.ts`: PDF со страницами (включая пустую), Unicode и таблицы DOCX, повреждения/лимиты, XMLEntities, сохранение оригинала, project scope, переиндексация и отзыв старых leases, сохранение цитат после удаления и миграция старой БД.
 - `apps/coordinator/test/knowledge-files-http.test.ts`: загрузка/предпросмотр/скачивание/reindex через HTTP, authentication, изоляция проектов и parse errors.
 - `apps/web/test/knowledge-files.test.ts`: чтение файлов без повреждения bytes, лимиты, выбор страницы/фрагмента, HTML escaping, ошибки разбора, предупреждение stale source, ссылки и Markdown export.
