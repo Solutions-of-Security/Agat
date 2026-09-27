@@ -67,6 +67,35 @@ test("SQLite rechecks lease expiry after consuming candidates and rolls back bef
   assert.equal(store.searchKnowledge(nodeId, replacement.leaseId, { queries: [query([1, 1])] }).hits[0]!.marker, "K1");
 });
 
+test("SQLite rolls back retrieval and its event when the lease expires during event persistence", context => {
+  context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const { store, run, nodeId, lease, query, search, retrieved } = setup([2]);
+  const prepare = store.db.prepare.bind(store.db);
+  let eventWritten = false;
+  store.db.prepare = sql => {
+    const statement = prepare(sql);
+    if (/INSERT INTO events\s*\(/.test(sql)) {
+      const get = statement.get.bind(statement);
+      statement.get = (...params) => {
+        const result = get(...params);
+        eventWritten = true;
+        context.mock.timers.tick(Date.parse(lease.expiresAt) - Date.now() + 1);
+        return result;
+      };
+    }
+    return statement;
+  };
+  try { assert.throws(() => search([query([1, 1])]), /Активная stage-аренда не найдена/); }
+  finally { store.db.prepare = prepare; }
+  assert.ok(eventWritten, "The real event INSERT must finish before time advances");
+  assert.equal(store.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(run.id).length, 0);
+  assert.equal(retrieved().length, 0);
+  assert.equal(store.getRunKnowledgeSources(run.id)!.length, 0);
+  store.maintenanceTick(); store.heartbeatNode(nodeId, {});
+  const replacement = store.leaseNext(nodeId)!; assert.ok(replacement);
+  assert.equal(store.searchKnowledge(nodeId, replacement.leaseId, { queries: [query([1, 1])] }).hits[0]!.marker, "K1");
+});
+
 test("wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds", () => {
   const { query, search, retrieved } = setup([3]);
   assert.throws(() => search([query([1, 1, 1], undefined, "another-model")]), /Embedding-модель retrieval/);

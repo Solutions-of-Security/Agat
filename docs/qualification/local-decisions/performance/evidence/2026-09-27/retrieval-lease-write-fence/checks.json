@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "capturedAt": "2026-09-27T12:37:20.824695+00:00",
+  "baselineCommit": "77bb6eab807c2b0b4e2b207e03d2122357401f5f",
+  "node": "v24.14.0",
+  "before": {
+    "postgresExitCode": 1,
+    "postgresFailedAssertions": 2,
+    "durableRetrievalsPerFault": 1,
+    "durableEventsPerFault": 1,
+    "sqliteExitCode": 1,
+    "sqliteFailedAssertions": 1
+  },
+  "after": {
+    "postgresTargetedPassed": 2,
+    "sqliteTargetedPassed": 7,
+    "durableRetrievalsAfterExpiry": 0,
+    "durableEventsAfterExpiry": 0,
+    "replacementLeaseMarker": "K1",
+    "sameExecutorRecovers": true
+  },
+  "coordinatorPassed": 248,
+  "postgresPassed": 28,
+  "typecheckExitCode": 0,
+  "coordinatorBuildExitCode": 0,
+  "docsChecks": {
+    "nodeTestsPassed": 12,
+    "pythonTestsPassed": 152,
+    "linkTargets": 1482,
+    "markdownFiles": 173,
+    "processTemplates": 13,
+    "exitCode": 0
+  },
+  "architecture": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 0
+  },
+  "verificationBoundary": "Lease rechecked after the final retrieval event write, before requesting COMMIT; no promise about commit/response timing or clock jumps.",
+  "recoveryNote": "Temporary checkout and unfinished verification logs were unavailable after environment restart. These baseline and final results were rerun in a permanent independent checkout; no missing log is counted as passing.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "f85bf1ac3574ef0569ff0c5cacbe9e533dcccc9d479e90307985ee9a7a5d7cbd",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "2ad1eaaead1c818ec596a94a2760ec46cad162b6d9f19f2a1ab98eb2b47a57d8",
+    "apps/coordinator/test/knowledge-retrieval-validation.test.ts": "07c88f5b512f706fd803505d903642d00a3bb5246403a55227ccb3f18484fb92"
+  },
+  "logSha256": {
+    "after-postgres.log": "4653bdf5886fe8dcadb1fb9381ca038b05fd5c5a2c8f61314a360c9c79ee39f6",
+    "after-sqlite.log": "6ffbb0f8c967dcc066d8cc12d8b726e6e680abd4943238cfc46763025640150d",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "before-postgres.log": "e104ed756a9278fe5bffe4aa948266b6e64e8439048f91b21ff387904213404a",
+    "before-sqlite.log": "352cf2ba77dc88b0c877b94674de2db24e800e42552d0f1e26cfa80184af062b",
+    "coordinator.log": "bbd3c1735180161de4cb1f2ca8754e55df468f1d068271aadb08e174b97e40b3",
+    "doc-links.log": "5447d50095a3be003cf83eb876885ebf7e6bed91eea9848c0f085f3d86ee6ae4",
+    "docs.log": "1973f9eb258cf6de3dd1d916136c249514740f6e6411ca0462d15960b769681e",
+    "postgres.log": "16e64f0521c45b6c5b994778131d5cd0cf6d17edb7374b635c7d457243ec16d0",
+    "typecheck.log": "d0e26de60b8d4d72bc32cddfb9d8f8d802bfd0e0b1bca6bc690079b6924ebef9"
+  },
+  "logNormalization": "Trimmed trailing whitespace and blank lines; diagnostic contents preserved."
+}
