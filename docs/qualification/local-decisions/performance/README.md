@@ -155,3 +155,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Модельный burst после idle](./embedding-idle-model.md): 258 точных model-ответов, 62 закрытых helper, освобождённая память и отдельная цена первого запроса после retirement; явный opt-in worker — следующий gate.
 
 [Idle opt-in обычного worker](./embedding-worker-idle-opt-in.md): отдельный срок хранения session helpers, default disabled, воспроизведённые idle/restart, graceful drain и неизвестный COMMIT через PostgreSQL.
+
+[Production idle opt-in на настоящей модели](./embedding-worker-idle-model.md): 528 точных сохранённых векторов, 32 lease/completion, 12 reaped helpers, отдельный холодный запрос и общий lifecycle обычного worker.
