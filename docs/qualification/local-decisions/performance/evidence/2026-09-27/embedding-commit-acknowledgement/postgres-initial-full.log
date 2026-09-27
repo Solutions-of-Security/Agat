@@ -1,0 +1,150 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (246.627291ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (11295.991333ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (861.209834ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (379.017959ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (218.321833ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (27194.376125ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (623.949458ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1460.85375ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing knowledge_retrievals (6067.6575ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing events (5932.246291ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (5906.063542ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (780.18025ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5820.861458ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (816.816917ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2613.735ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3388.251542ms)
+  ✔ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (terminal) (3361.161917ms)
+  ℹ Independent connection observed 1 committed vectors and one knowledge.document.ready before disconnect
+  ✔ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (partial) (3573.897958ms)
+  ℹ Independent connection observed 32 committed vectors and one knowledge.embedding.batch.completed before disconnect
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (2242.558958ms)
+  ℹ Successful COMMIT observed after 43 ms
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (3266.856709ms)
+  ℹ Successful COMMIT observed after 42 ms
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1293.129542ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6269.874334ms)
+(node:24248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (9699.986666ms)
+  ✔ serializes embedding dimensions across jobs with different dimensions (1288.68725ms)
+  ℹ Concurrent dimensions/different dimensions: HTTP 200/400, first collection=2
+  ✔ serializes embedding dimensions across jobs with matching dimensions (1301.011375ms)
+  ℹ Concurrent dimensions/matching dimensions: HTTP 200/200, first collection=2
+  ✔ serializes embedding dimensions across jobs with separate collections (1362.179166ms)
+  ℹ Concurrent dimensions/separate collections: HTTP 200/200, first collection=2
+  ✔ embedding completion rechecks lease expiry after waiting for its collection (5904.699042ms)
+  ℹ Completion after collection wait: HTTP 400, indexed=0, events=0
+  ✔ stage renewal checks current ownership after expiry during its SQL lock wait (6271.699208ms)
+  ℹ Stage renewal/expiry: HTTP 404
+  ✔ stage renewal checks current ownership after reassignment during its SQL lock wait (962.379917ms)
+  ℹ Stage renewal/reassignment: HTTP 404
+  ✔ stage renewal checks current ownership after renewal during its SQL lock wait (6080.521583ms)
+  ℹ Stage renewal/renewal: HTTP 204
+  ✔ stage renewal rolls back when its UPDATE waits past the admitted deadline (6334.040125ms)
+  ℹ stage renewal/UPDATE wait: HTTP 404
+  ✔ embedding renewal rolls back when its UPDATE waits past the admitted deadline (6643.17325ms)
+  ℹ embedding renewal/UPDATE wait: HTTP 404
+  ✔ embedding renew respects expiry while waiting for job ownership over HTTP (6393.345917ms)
+  ℹ Embedding renew/expiry: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects reassignment while waiting for job ownership over HTTP (1122.343542ms)
+  ℹ Embedding renew/reassignment: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects renewal while waiting for job ownership over HTTP (5967.24625ms)
+  ℹ Embedding renew/renewal: HTTP 204, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects expiry while waiting for job ownership over HTTP (5948.649125ms)
+  ℹ Embedding complete/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects reassignment while waiting for job ownership over HTTP (1054.838875ms)
+  ℹ Embedding complete/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects renewal while waiting for job ownership over HTTP (5947.965625ms)
+  ℹ Embedding complete/renewal: HTTP 200, job=completed, document=ready, indexed=1, events=1
+  ✔ embedding fail respects expiry while waiting for job ownership over HTTP (6012.4435ms)
+  ℹ Embedding fail/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects reassignment while waiting for job ownership over HTTP (958.788791ms)
+  ℹ Embedding fail/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects renewal while waiting for job ownership over HTTP (5952.387584ms)
+  ℹ Embedding fail/renewal: HTTP 200, job=pending, document=pending, indexed=0, events=1
+  ✔ embedding complete rolls back when an event lock outlasts its lease over HTTP (6035.289208ms)
+  ℹ Embedding complete/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding fail rolls back when an event lock outlasts its lease over HTTP (6073.6355ms)
+  ℹ Embedding fail/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding maintenance preserves a renewal that holds its job row past the old expiry (3977.918125ms)
+  ℹ Embedding maintenance/renewal: health=200, job=running, document=indexing, failures=0
+  ✔ embedding maintenance stays responsive while a late completion rolls back across coordinators (6704.519041ms)
+  ℹ Embedding maintenance/completion: HTTP 400, health=200, job=running, document=indexing, indexed=0, events=0
+  ✔ maintenance preserves a timely renewal while its stage row is locked (4034.599625ms)
+  ℹ Renewal after maintenance: health=200, stage=running, expiryEvents=0
+  ✔ maintenance preserves an admitted completion held past expiry by an event lock (7773.106458ms)
+  ℹ Completion after maintenance: health=200, run=completed, expiryEvents=0
+  ✔ maintenance reclaims an expired lease once across two coordinators (5553.6155ms)
+  ℹ Two maintainers: healthy=2, expiryEvents=1
+  ✔ checks current ownership before complete after a concurrent expiry over HTTP (6064.584042ms)
+  ℹ complete/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent reassignment over HTTP (1037.260041ms)
+  ℹ complete/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent renewal over HTTP (6053.659625ms)
+  ℹ complete/renewal: wait=stage read, HTTP 200, stage=completed, artifacts=3
+  ✔ checks current ownership before fail after a concurrent expiry over HTTP (6179.455875ms)
+  ℹ fail/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent reassignment over HTTP (997.838ms)
+  ℹ fail/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent renewal over HTTP (6140.19425ms)
+  ℹ fail/renewal: wait=stage read, HTTP 200, stage=queued, artifacts=0
+  ✔ rejects shadow results when the lease expires during stage lock over HTTP (6356.332375ms)
+  ℹ After expiry at stage lock: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during event insert over HTTP (6271.744708ms)
+  ℹ After expiry at event insert: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during idempotent retry over HTTP (6394.4815ms)
+  ℹ After expiry at idempotent retry: HTTP 400, observation=true, events=1
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1450.484417ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4017.225916ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (98.2575ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (350.392792ms)
+  ✔ rejects a schema Job while a coordinator replica is active (372.690333ms)
+  ✔ rejects runtime startup after out-of-band schema drift (170.088792ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (1239.589625ms)
+✔ PostgreSQL Fleet/HA integration (274312.376209ms)
+ℹ tests 64
+ℹ suites 1
+ℹ pass 64
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 274816.815459
