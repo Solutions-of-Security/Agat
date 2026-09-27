@@ -149,3 +149,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Стоимость parent guard](./embedding-parent-guard.md): 264 одинаковых model-ответа, 176 reaped helpers, ABBA до/после и независимость соседнего владельца после SIGKILL.
 
 [Idle budget session helpers](./embedding-idle-budget.md): native CPU/RSS/footprint при 1/4/32 слотах, проверенное преобразование Mach ticks, 148 закрытых helpers и 296 точных HTTP-ответов.
+
+[Прототип idle retirement](./embedding-idle-prototype.md): освобождение незанятых helpers, безопасный admission/close и два burst по 32 слота; 13 HTTP/process проверок на macOS/Linux.
