@@ -857,6 +857,93 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  for (const fault of ["oversized-success", "unfinished-error"] as const) it(`real Python embedding worker bounds model HTTP and recovers on a new lease (${fault})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0);
+      f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
+      const collection = String(f.first.createKnowledgeCollection({ name: "Bounded model response", embeddingModel: f.project }, f.project).id);
+      const document = String(f.first.ingestKnowledgeDocument(collection, { name: "Bounded source", content: "Synthetic source for a bounded model response." }, f.project).id);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      const errors: unknown[] = [], heldResponses: http.ServerResponse[] = [];
+      let modelCalls = 0, refusedConnectionClosed = false;
+      const model = http.createServer((request, response) => {
+        void (async () => {
+          assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
+          const parts: Buffer[] = []; for await (const chunk of request) parts.push(Buffer.from(chunk));
+          const body = JSON.parse(Buffer.concat(parts).toString("utf8")) as { model: string; input: string[] };
+          assert.equal(body.model, f.project); assert.equal(body.input.length, 1);
+          modelCalls++; assert.ok(modelCalls <= 2, "The fixture must recover on the second model attempt");
+          if (modelCalls === 1) {
+            response.on("close", () => { refusedConnectionClosed = true; });
+            if (fault === "oversized-success") {
+              const prefix = JSON.stringify({ data: [{ index: 0, embedding: [1, 0] }] });
+              const oversized = prefix + " ".repeat(8 * 1024 * 1024 + 1 - Buffer.byteLength(prefix));
+              response.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(oversized) });
+              response.end(oversized);
+            } else {
+              response.writeHead(500, { "content-type": "text/plain", "content-length": 16 * 1024 });
+              response.write("e".repeat(4096)); heldResponses.push(response);
+              // Keep the error tail pending. A prefix-bounded client must close
+              // this connection and recover without waiting for the rest.
+            }
+          } else {
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end(JSON.stringify({ data: [{ index: 0, embedding: [0, 1] }] }));
+          }
+        })().catch(error => { errors.push(error); response.writeHead(500); response.end(); });
+      });
+      try {
+        await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+        const address = model.address(); assert.ok(address && typeof address === "object");
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(`embedding-bounds-${randomUUID().slice(0, 8)}`, f.artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        worker = startObservedEmbeddingWorker({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1` });
+        await eventually(async () => f.first.db.prepare("SELECT status FROM knowledge_documents WHERE id = ?").get(document)!.status === "ready",
+          "Worker did not bound the rejected model response and recover through a new lease");
+        assert.deepEqual(await worker.stop(), { code: 0, signal: null });
+        const observed = worker.result();
+        const leased = observed.requests.filter(request => request.path.endsWith("/lease") && request.status === 200);
+        assert.equal(leased.length, 2); assert.equal(new Set(leased.map(request => request.leaseId)).size, 2);
+        assert.ok(leased.every(request => request.documentId === document));
+        const failed = observed.requests.filter(request => request.path.endsWith("/fail"));
+        assert.equal(failed.length, 1); assert.equal(failed[0]!.status, 200);
+        assert.equal(failed[0]!.path, `/api/v1/workers/knowledge/leases/${leased[0]!.leaseId}/fail`);
+        const completed = observed.requests.filter(request => request.path.endsWith("/complete"));
+        assert.equal(completed.length, 1); assert.equal(completed[0]!.status, 200);
+        assert.equal(completed[0]!.path, `/api/v1/workers/knowledge/leases/${leased[1]!.leaseId}/complete`);
+        assert.deepEqual(completed[0]!.chunkIds, leased[1]!.chunkIds);
+        const job = f.first.db.prepare("SELECT status, failures, node_id, lease_id, lease_expires_at, last_error FROM knowledge_embedding_jobs WHERE document_id = ?").get(document);
+        assert.deepEqual(job, { status: "completed", failures: 1, node_id: null, lease_id: null, lease_expires_at: null, last_error: null });
+        assert.deepEqual(f.first.db.prepare("SELECT embedding_json, embedding_dimensions FROM knowledge_chunks WHERE document_id = ?").all(document),
+          [{ embedding_json: "[0,1]", embedding_dimensions: 2 }]);
+        const events = f.first.db.prepare("SELECT type, data_json FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${document}%`);
+        assert.deepEqual(events.map(event => event.type), ["knowledge.embedding.retrying", "knowledge.document.ready"]);
+        assert.match(JSON.parse(String(events[0]!.data_json)).error, fault === "oversized-success" ? /response exceeds 8388608 bytes/ : /HTTP 500/);
+        assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []); assert.equal(observed.events.length, 8);
+        for (const lease of leased) {
+          const execution = observed.events.filter(event => event.operation === "execute" && event.leaseId === lease.leaseId);
+          const renewer = observed.events.filter(event => event.operation === "renew" && event.leaseId === lease.leaseId);
+          assert.deepEqual(execution.map(event => event.event), ["call", "return"]);
+          assert.deepEqual(renewer.map(event => event.event), ["call", "return"]);
+          assert.ok(renewer[1]!.atNs <= execution[1]!.atNs);
+        }
+        assert.equal(modelCalls, 2); assert.equal(refusedConnectionClosed, true); assert.deepEqual(errors, []);
+        assert.equal(fs.existsSync(path.join(f.artifacts, "embedding-worker-credentials.json")), false);
+        context.diagnostic(`${fault}: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited`);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
+      finally {
+        for (const response of heldResponses) { if (!response.destroyed) response.end("e".repeat(12 * 1024)); }
+        await worker?.stop(); await child?.stop(); model.closeAllConnections();
+        await new Promise<void>(resolve => model.close(() => resolve()));
+        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+      }
+    });
+  });
+
   it("real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP", async context => {
     await runWithPostgresSystemScope(async () => {
       const f = await embeddingLeaseFixture(0);

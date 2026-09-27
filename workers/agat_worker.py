@@ -45,6 +45,9 @@ from web_tools import (
 
 VERSION = "1.7.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
+# Covers the supported 32 x 4096 finite-float batch with JSON overhead.
+MAX_EMBEDDING_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_EMBEDDING_ERROR_BYTES = 4096
 
 WEB_SYSTEM_PROMPT = """
 У тебя есть управляемые инструменты web_search и web_fetch. Используй их, когда
@@ -538,9 +541,13 @@ class LocalModelClient:
             )
             try:
                 with urllib.request.urlopen(request, timeout=900) as response:
-                    result = json.loads(response.read().decode("utf-8"))
+                    raw = response.read(MAX_EMBEDDING_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_EMBEDDING_RESPONSE_BYTES:
+                    raise RuntimeError(f"Embedding endpoint response exceeds {MAX_EMBEDDING_RESPONSE_BYTES} bytes")
+                result = json.loads(raw.decode("utf-8"))
             except urllib.error.HTTPError as error:
-                detail = error.read().decode("utf-8", errors="replace")
+                with error:
+                    detail = error.read(MAX_EMBEDDING_ERROR_BYTES).decode("utf-8", errors="replace")
                 raise RuntimeError(
                     f"Embedding endpoint returned HTTP {error.code}: {detail[:1000]}"
                 ) from error
