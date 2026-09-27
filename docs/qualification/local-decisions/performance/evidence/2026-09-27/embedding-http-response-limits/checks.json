@@ -1,0 +1,70 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "d67e7f94d80f61942a7bdaf139175ca23dac81bd",
+  "node": "v24.14.0",
+  "python": "3.14.3",
+  "postgres": "17.6",
+  "checks": {
+    "beforeUnit": {
+      "methods": 7,
+      "expectedAssertionFailures": 4,
+      "expectedTimeoutErrorsInSubcases": 2,
+      "positiveControlMethods": 2
+    },
+    "unitTargeted": {
+      "pass": 7,
+      "fail": 0
+    },
+    "workerUnit": {
+      "pass": 59,
+      "skip": 1,
+      "fail": 0,
+      "skipReason": "LangGraph dependency is not installed"
+    },
+    "postgresTargeted": {
+      "pass": 5,
+      "fail": 0,
+      "scope": "Two HTTP-body faults, one renewal-cancellation case and two COMMIT recovery controls; complete 70-case suite is delegated to PR CI."
+    },
+    "typecheck": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 165,
+      "localLinks": 1549,
+      "markdownFiles": 186,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "sourceSha256": {
+    "workers/agat_worker.py": "8a39e6ab11bdc384fc0faee6f148c2511d864bdc032335d530655195c41bd17c",
+    "workers/test_embedding_http_limits.py": "4f00b1113d07d92ffd073978a594d4cf38fbfae3a7639699d2005fe3600e2bba",
+    "apps/coordinator/test/embedding-worker-probe.py": "4458147404c034b19bc61355b5ff6213cdde3bf4c7bf499c2b0016b594beda44",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "db47bc5fbf74360a57d9af928019492023b8201b080b3cda1a6c9d1b7b939404"
+  },
+  "logSha256": {
+    "before-unit.log": "43f6458037563f8f4ca2c0ce605724f38bf49f62475e90fd27a21a674ee00548",
+    "unit-targeted.log": "a8eb6ab73f569dfc7d99cb5df28ff8ae26b8b6daeff600f7cd89dbf4050afc9f",
+    "worker-unit.log": "9f16db2aeae6b0d499422d33554e8a1bbc9763d331eb6d0d360ab205a1e1251b",
+    "postgres-targeted.log": "c887362588c9c7ccdac3c44e6445455ff4017140823fedd1b01de64be0a23400",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "2444dbc1be04522c13713bfcf131386c7382b1af140ead9feba38610711e0ef7",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-unit.log": "7e52bc6e0ece44e3c7fc322ac47632863622498d401de7e186c46f32f116d06f",
+    "unit-targeted.log": "a8eb6ab73f569dfc7d99cb5df28ff8ae26b8b6daeff600f7cd89dbf4050afc9f",
+    "worker-unit.log": "9f16db2aeae6b0d499422d33554e8a1bbc9763d331eb6d0d360ab205a1e1251b",
+    "postgres-targeted.log": "c887362588c9c7ccdac3c44e6445455ff4017140823fedd1b01de64be0a23400",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "2444dbc1be04522c13713bfcf131386c7382b1af140ead9feba38610711e0ef7",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "boundary": "Bounds response-body bytes before parsing, not total Python allocation or wall-clock wait; existing endpoint URL, proxy/redirect behavior and timeout=900 retained.",
+  "logNormalization": "Trailing whitespace and final blank lines removed; expected failing baseline retained separately."
+}

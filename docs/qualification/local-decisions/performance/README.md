@@ -123,3 +123,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Восстановление настоящего Python worker](./embedding-worker-recovery.md): после потерянного COMMIT-ответа тот же worker завершает остаток и следующий документ; HTTP attempts, завершение renewal threads и точные сохранённые векторы проверяются независимо.
 
 [Отмена после окончательного отказа embedding renewal](./embedding-worker-lease-cancellation.md): HTTP 404 во время model HTTP прекращает renewer и отправку устаревших complete/fail; временные ошибки связи сохраняют нормальное продолжение.
+
+[Ограничение чтения embedding model HTTP](./embedding-http-response-limits.md): успешный JSON до 8 МиБ, error prefix до 4096 байт; два real-worker сценария подтверждают recovery с новой арендой и сохранением только успешного результата.
