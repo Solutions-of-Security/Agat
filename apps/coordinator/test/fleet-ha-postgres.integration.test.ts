@@ -166,6 +166,57 @@ async function retrievalLeaseRaceFixture() {
   }
 }
 
+async function stageMaintenanceFixture(replicas: number) {
+  const suffix = randomUUID().slice(0, 8), project = `maintenance-${suffix}`;
+  const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-maintenance-"));
+  const first = store(`maintenance-store-${suffix}`, artifacts);
+  const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+  const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>> & { instance: string }> = [];
+  const pending: Promise<unknown>[] = [];
+  try {
+    await writer.connect(); first.updateScheduler("parallel", 10);
+    first.createProject({ id: project, name: project, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model: project }, project);
+    const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
+      maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain });
+    const run = first.createRun({ name: project, input: "Synthetic source", agentIds: [String(agent.id)],
+      approvalRequired: false, resultDestination: "artifacts" }, project);
+    const lease = first.leaseNext(worker.id)!; assert.equal(lease.run.id, run.id);
+    for (let index = 0; index < replicas; index++) {
+      const instance = `maintenance-${suffix}-${index}`;
+      children.push({ instance, ...await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts,
+        { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" })) });
+    }
+    const heartbeatAfter = async (index: number, timestamp: number) => {
+      await delay(Math.max(0, timestamp - Date.now()));
+      await eventually(async () => {
+        const result = await writer.query("SELECT last_seen FROM coordinator_replicas WHERE instance_id = $1", [children[index]!.instance]);
+        if (Date.parse(String(result.rows[0]?.last_seen)) >= timestamp) return true;
+        // Heartbeat can precede expiry by a few ms while cleanup's later SELECT
+        // already sees an expired lease and blocks. Observe that SQL directly.
+        await writer.query("SELECT pg_stat_clear_snapshot()");
+        const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [`agat-${children[index]!.instance}-system`]);
+        return waiting.rows.some(row => /UPDATE stages\s+SET status/.test(String(row.query)));
+      }, "The coordinator did not reach maintenance at the required timestamp");
+    };
+    const health = (index: number) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/health`,
+      { signal: AbortSignal.timeout(1_500) }).then(async response => { await response.text(); return { status: response.status }; },
+      error => ({ error }));
+    const expirationEvents = () => first.db.prepare("SELECT id FROM events WHERE run_id = ? AND type = 'lease.expired'").all(run.id);
+    return { first, writer, children, pending, worker, run, lease, project, heartbeatAfter, health, expirationEvents,
+      close: async () => {
+        await writer.query("ROLLBACK").catch(() => {});
+        await Promise.all(children.map(child => child.stop())); await Promise.allSettled(pending);
+        first.cancelRun(run.id, project); await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      } };
+  } catch (error) {
+    await writer.query("ROLLBACK").catch(() => {}); await Promise.all(children.map(child => child.stop()));
+    await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error;
+  }
+}
+
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
@@ -936,6 +987,94 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         }
         await f.close();
       }
+    });
+  });
+
+  it("maintenance preserves a timely renewal while its stage row is locked", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await stageMaintenanceFixture(1);
+      try {
+        const expires = Date.now() + 2_000, renewed = new Date(Date.now() + 60_000).toISOString();
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN");
+        const renewal = await f.writer.query(`UPDATE stages SET lease_expires_at = $1
+          WHERE node_id = $2 AND lease_id = $3 AND status = 'running' AND lease_expires_at > $4`,
+        [renewed, f.worker.id, f.lease.leaseId, new Date().toISOString()]);
+        assert.equal(renewal.rowCount, 1, "Renewal must start while the lease is valid");
+        await f.heartbeatAfter(0, expires);
+        const health = await f.health(0);
+        await f.writer.query("COMMIT");
+        assert.ok("status" in await f.health(0), "Maintenance did not finish after releasing renewal");
+        const stage = f.first.db.prepare("SELECT status, lease_id, lease_expires_at FROM stages WHERE id = ?").get(f.lease.stage.id)!;
+        context.diagnostic(`Renewal after maintenance: health=${"status" in health ? health.status : "timeout"}, stage=${stage.status}, expiryEvents=${f.expirationEvents().length}`);
+        assert.equal(stage.status, "running"); assert.equal(stage.lease_id, f.lease.leaseId); assert.equal(stage.lease_expires_at, renewed);
+        assert.equal(f.expirationEvents().length, 0);
+        assert.ok("status" in health); assert.equal(health.status, 200);
+        f.first.completeLease(f.worker.id, f.lease.leaseId, "RENEWED OUTPUT");
+        assert.equal(f.first.getRun(f.run.id, f.project)!.status, "completed");
+      } finally { await f.close(); }
+    });
+  });
+
+  it("maintenance preserves an admitted completion held past expiry by an event lock", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await stageMaintenanceFixture(2);
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN"); await f.writer.query("LOCK TABLE events IN SHARE MODE");
+        const completing = fetch(`http://127.0.0.1:${f.children[0]!.port}/api/v1/leases/${f.lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${f.worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ output: "ADMITTED OUTPUT", artifacts: [{ name: "admitted.txt", content: "ADMITTED ARTIFACT" }] }),
+          signal: AbortSignal.timeout(15_000),
+        }).then(async response => ({ status: response.status, body: await response.text() })).then(value => ({ value }), error => ({ error }));
+        f.pending.push(completing);
+        await eventually(async () => {
+          await f.writer.query("SELECT pg_stat_clear_snapshot()");
+          const waiting = await f.writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+            [`agat-${f.children[0]!.instance}-system`]);
+          if (!waiting.rows.length) return false;
+          assert.match(waiting.rows[0].query, /INSERT INTO events/); return true;
+        }, "Completion did not reach the event lock while owning the stage row");
+        assert.ok(Date.now() < expires);
+        await f.heartbeatAfter(1, expires);
+        const health = await f.health(1);
+        await f.writer.query("ROLLBACK");
+        const result = await within(completing, 5_000, "Admitted completion did not finish after releasing the event lock");
+        assert.ok("value" in result); assert.equal(result.value.status, 200);
+        assert.ok("status" in await f.health(1));
+        const run = f.first.getRun(f.run.id, f.project)!;
+        context.diagnostic(`Completion after maintenance: health=${"status" in health ? health.status : "timeout"}, run=${run.status}, expiryEvents=${f.expirationEvents().length}`);
+        assert.equal(run.status, "completed");
+        assert.equal((run.stages as Array<{ output: string }>)[0]!.output, "ADMITTED OUTPUT");
+        assert.equal(f.first.listRunArtifacts(f.run.id, f.project).length, 3);
+        assert.equal(f.expirationEvents().length, 0);
+        assert.ok("status" in health); assert.equal(health.status, 200);
+      } finally { await f.close(); }
+    });
+  });
+
+  it("maintenance reclaims an expired lease once across two coordinators", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await stageMaintenanceFixture(2);
+      try {
+        const expires = Date.now() + 2_000;
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN"); await f.writer.query("SELECT id FROM stages WHERE id = $1 FOR UPDATE", [f.lease.stage.id]);
+        await Promise.all([f.heartbeatAfter(0, expires), f.heartbeatAfter(1, expires)]);
+        const health = await Promise.all([f.health(0), f.health(1)]);
+        await f.writer.query("ROLLBACK"); const released = Date.now();
+        await Promise.all([f.heartbeatAfter(0, released), f.heartbeatAfter(1, released)]);
+        assert.ok("status" in await f.health(0)); assert.ok("status" in await f.health(1));
+        context.diagnostic(`Two maintainers: healthy=${health.filter(result => "status" in result).length}, expiryEvents=${f.expirationEvents().length}`);
+        assert.equal(f.expirationEvents().length, 1);
+        for (const result of health) { assert.ok("status" in result); assert.equal(result.status, 200); }
+        f.first.heartbeatNode(f.worker.id, {});
+        const replacement = f.first.leaseNext(f.worker.id)!; assert.ok(replacement);
+        assert.notEqual(replacement.leaseId, f.lease.leaseId);
+        f.first.completeLease(f.worker.id, replacement.leaseId, "RECOVERED OUTPUT");
+        assert.equal(f.first.getRun(f.run.id, f.project)!.status, "completed");
+      } finally { await f.close(); }
     });
   });
 

@@ -1,0 +1,118 @@
+(node:63897) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ maintenance rolls back stage and run changes if its retry event cannot persist (50.283ms)
+✖ maintenance rolls back stage and run changes if its failure event cannot persist (32.876667ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 588.110875
+
+✖ failing tests:
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:3769
+✖ maintenance rolls back stage and run changes if its retry event cannot persist (50.283ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    [Object: null prototype] {
+      activity_json: null,
+      agent_id: 'collector',
+      agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"d8a5f3a9-672a-490f-80e2-2f990d712c89","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.910Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"646cf53279f7308dfc5df09c1a720d6f0a1c6f31598992e97f16d7e2a5b73d0c"}',
+      attempt: 1,
+  ...
+      idempotency_key: null,
+  +   lease_expires_at: null,
+  +   lease_id: null,
+  -   lease_expires_at: '2000-01-01T00:00:00.000Z',
+  -   lease_id: 'f09daa9e-7115-459b-ba81-6bb2b18da892',
+      lease_traceparent: '00-1122b37b83595d8220833d8559e75da0-5191e2b46384ca18-01',
+      max_attempts: 3,
+      metrics_json: '{}',
+  +   node_id: null,
+  -   node_id: 'dfe625cd-60c2-444a-8688-d1fc8504db4d',
+      output: null,
+      position: 0,
+      process_node_id: null,
+      process_token_id: null,
+      requires_approval: 0,
+  ...
+      started_at: '2026-09-27T13:50:57.914Z',
+  +   status: 'queued',
+  +   updated_at: '2026-09-27T13:50:57.915Z',
+  -   status: 'running',
+  -   updated_at: '2026-09-27T13:50:57.914Z',
+      worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.914Z","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.913Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}'
+    }
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:98:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { id: '9b8b3e99-3040-420e-b8ab-4bf145071184', run_id: 'b689ece8-1b0d-4ec0-93ea-78cebee10fe5', agent_id: 'collector', position: 0, status: 'queued', node_id: null, lease_id: null, lease_expires_at: null, attempt: 1, max_attempts: 3, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"d8a5f3a9-672a-490f-80e2-2f990d712c89","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.910Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"646cf53279f7308dfc5df09c1a720d6f0a1c6f31598992e97f16d7e2a5b73d0c"}', lease_traceparent: '00-1122b37b83595d8220833d8559e75da0-5191e2b46384ca18-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.914Z","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.913Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.913Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T13:50:57.910Z', updated_at: '2026-09-27T13:50:57.915Z', started_at: '2026-09-27T13:50:57.914Z', completed_at: null },
+    expected: { id: '9b8b3e99-3040-420e-b8ab-4bf145071184', run_id: 'b689ece8-1b0d-4ec0-93ea-78cebee10fe5', agent_id: 'collector', position: 0, status: 'running', node_id: 'dfe625cd-60c2-444a-8688-d1fc8504db4d', lease_id: 'f09daa9e-7115-459b-ba81-6bb2b18da892', lease_expires_at: '2000-01-01T00:00:00.000Z', attempt: 1, max_attempts: 3, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"d8a5f3a9-672a-490f-80e2-2f990d712c89","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.910Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"646cf53279f7308dfc5df09c1a720d6f0a1c6f31598992e97f16d7e2a5b73d0c"}', lease_traceparent: '00-1122b37b83595d8220833d8559e75da0-5191e2b46384ca18-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.914Z","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.913Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.913Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"dfe625cd-60c2-444a-8688-d1fc8504db4d","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T13:50:57.910Z', updated_at: '2026-09-27T13:50:57.914Z', started_at: '2026-09-27T13:50:57.914Z', completed_at: null },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:3769
+✖ maintenance rolls back stage and run changes if its failure event cannot persist (32.876667ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    [Object: null prototype] {
+      activity_json: null,
+      agent_id: 'collector',
+      agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"9ed09ec4-38d1-4da1-9da6-02905830c86b","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.951Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"1ff68b7127e1d6b44e37c50c1dca94b7a8730a07e655fb32890efdb12210f23c"}',
+      attempt: 1,
+      available_at: null,
+  +   completed_at: '2026-09-27T13:50:57.953Z',
+  -   completed_at: null,
+      created_at: '2026-09-27T13:50:57.951Z',
+      id: '23c41ba4-c47c-446d-b0e8-a00c70846ad1',
+      idempotency_key: null,
+  +   lease_expires_at: null,
+  +   lease_id: null,
+  -   lease_expires_at: '2000-01-01T00:00:00.000Z',
+  -   lease_id: 'c8527736-cb9d-40ad-8529-a6f55fc85870',
+      lease_traceparent: '00-a7af80c1d2d86a1b8a57030c76a211e6-cca94e655f257f63-01',
+      max_attempts: 1,
+      metrics_json: '{}',
+  +   node_id: null,
+  -   node_id: '18795e81-97ce-47cc-8806-015e3724fa87',
+      output: null,
+      position: 0,
+      process_node_id: null,
+      process_token_id: null,
+      requires_approval: 0,
+  ...
+      started_at: '2026-09-27T13:50:57.952Z',
+  +   status: 'failed',
+  +   updated_at: '2026-09-27T13:50:57.953Z',
+  -   status: 'running',
+  -   updated_at: '2026-09-27T13:50:57.952Z',
+      worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.952Z","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.952Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}'
+    }
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:98:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { id: '23c41ba4-c47c-446d-b0e8-a00c70846ad1', run_id: '215e713e-c206-4834-af12-56d36d2d8aa9', agent_id: 'collector', position: 0, status: 'failed', node_id: null, lease_id: null, lease_expires_at: null, attempt: 1, max_attempts: 1, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"9ed09ec4-38d1-4da1-9da6-02905830c86b","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.951Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"1ff68b7127e1d6b44e37c50c1dca94b7a8730a07e655fb32890efdb12210f23c"}', lease_traceparent: '00-a7af80c1d2d86a1b8a57030c76a211e6-cca94e655f257f63-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.952Z","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.952Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.952Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T13:50:57.951Z', updated_at: '2026-09-27T13:50:57.953Z', started_at: '2026-09-27T13:50:57.952Z', completed_at: '2026-09-27T13:50:57.953Z' },
+    expected: { id: '23c41ba4-c47c-446d-b0e8-a00c70846ad1', run_id: '215e713e-c206-4834-af12-56d36d2d8aa9', agent_id: 'collector', position: 0, status: 'running', node_id: '18795e81-97ce-47cc-8806-015e3724fa87', lease_id: 'c8527736-cb9d-40ad-8529-a6f55fc85870', lease_expires_at: '2000-01-01T00:00:00.000Z', attempt: 1, max_attempts: 1, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"9ed09ec4-38d1-4da1-9da6-02905830c86b","registryPromptVersion":1,"capturedAt":"2026-09-27T13:50:57.951Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"1ff68b7127e1d6b44e37c50c1dca94b7a8730a07e655fb32890efdb12210f23c"}', lease_traceparent: '00-a7af80c1d2d86a1b8a57030c76a211e6-cca94e655f257f63-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T13:50:57.952Z","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":[],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.952Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T13:50:57.952Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"18795e81-97ce-47cc-8806-015e3724fa87","nodeName":"Maintenance fixture","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T13:50:57.951Z', updated_at: '2026-09-27T13:50:57.952Z', started_at: '2026-09-27T13:50:57.952Z', completed_at: null },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

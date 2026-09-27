@@ -68,3 +68,47 @@ for (const action of ["complete", "fail"] as const) {
     });
   }
 }
+
+for (const terminal of [false, true]) {
+  test(`maintenance rolls back stage and run changes if its ${terminal ? "failure" : "retry"} event cannot persist`, () => {
+    const store = new AgatStore(":memory:", { seedDemo: false });
+    try {
+      const worker = store.registerNode({ enrollmentToken: "test", name: "Maintenance fixture", platform: "test",
+        models: ["test-model"], maxConcurrency: 1 }).id;
+      const run = store.createRun({ name: "Maintenance rollback", input: "Fixture", agentIds: ["collector"], approvalRequired: false });
+      const lease = store.leaseNext(worker)!; assert.ok(lease);
+      store.db.prepare("UPDATE stages SET lease_expires_at = ?, max_attempts = ? WHERE lease_id = ?")
+        .run("2000-01-01T00:00:00.000Z", terminal ? 1 : 3, lease.leaseId);
+      const stage = () => store.db.prepare("SELECT * FROM stages WHERE id = ?").get(lease.stage.id)!;
+      const runState = () => store.db.prepare("SELECT * FROM runs WHERE id = ?").get(run.id)!;
+      const events = () => (store.getRunTrace(run.id)!.events as Array<{ type: string }>);
+      const beforeStage = stage(), beforeRun = runState(), beforeEvents = events().length;
+      const prepare = store.db.prepare.bind(store.db);
+      let reachedWrite = false;
+      store.db.prepare = sql => {
+        const statement = prepare(sql);
+        if (/INSERT INTO events\s*\(/.test(sql)) statement.get = () => {
+          reachedWrite = true; throw new Error("Injected maintenance event failure");
+        };
+        return statement;
+      };
+      try { assert.throws(() => store.maintenanceTick(), /Injected maintenance event failure/); }
+      finally { store.db.prepare = prepare; }
+      assert.ok(reachedWrite);
+      assert.deepEqual(stage(), beforeStage); assert.deepEqual(runState(), beforeRun);
+      assert.equal(events().length, beforeEvents);
+      store.maintenanceTick(); store.maintenanceTick();
+      const expirationEvents = events().filter(e => e.type === (terminal ? "stage.failed" : "lease.expired"));
+      assert.equal(expirationEvents.length, 1);
+      if (terminal) {
+        assert.equal(stage().status, "failed"); assert.equal(runState().status, "failed");
+      } else {
+        store.heartbeatNode(worker, {});
+        const replacement = store.leaseNext(worker)!; assert.ok(replacement);
+        assert.notEqual(replacement.leaseId, lease.leaseId);
+        store.completeLease(worker, replacement.leaseId, "RECOVERED");
+        assert.equal(runState().status, "completed");
+      }
+    } finally { store.close(); }
+  });
+}
