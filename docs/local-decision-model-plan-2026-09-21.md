@@ -120,6 +120,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Idle budget session helpers](./qualification/local-decisions/performance/embedding-idle-budget.md) измерен native counters с проверкой Mach timebase: 148 helpers и 296 повторных HTTP-запросов, все ресурсы закрыты. У 32 слотов guard потребляет 1,339–1,351% одного ядра в простое; сумма RSS около 934 MiB, footprint около 561 MiB. Следующий gate — прототип освобождения простаивающих сессий с безопасными гонками request/close и повторным прогревом; production defaults сохранены.
 
+[Прототип idle retirement](./qualification/local-decisions/performance/embedding-idle-prototype.md) освобождает только незанятые helper, сохраняет deadline/cancellation admission и выполняет join maintenance при close. 13 real HTTP/process тестов прошли на macOS и Linux; два burst по 32 слота дали 64 точных ответа с возвратом helper count/FD между ними. Следующий gate — модельный burst → idle → burst с полными vectors и ценой повторного startup; production worker не переключён.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
