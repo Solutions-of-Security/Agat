@@ -131,3 +131,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Цена изолированного embedding HTTP](./embedding-transport-profile.md): 312 loopback-запросов, 180 очищенных subprocess, batch/concurrency-профиль и серия отмен; независимый replay сохраняет наблюдаемый overhead и пределы измерения.
 
 [Транспорт на настоящей embeddinggemma](./embedding-model-transport.md): 68 парных вызовов, точное совпадение полных vectors, закреплённые модель/входы и измеренная доля расходов subprocess для batch 1/32.
+
+[Прототип постоянного embedding helper](./embedding-session-prototype.md): 256 парных loopback-вызовов, проверка владения и отмены, явная стоимость readiness/idle RSS; обычный worker сохраняет прежний transport.

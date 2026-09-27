@@ -273,6 +273,46 @@ class EmbeddingSessionTests(unittest.TestCase):
                     session.warmup()
             self.assertIsNone(session.process_id)
 
+    def test_cancelled_owner_hands_fresh_helper_to_queued_successor(self):
+        with endpoint(Echo) as port, observed_processes() as children, EmbeddingSession() as session:
+            session.warmup()
+            with slow_endpoint('headers') as (url, entered, release), ThreadPoolExecutor(max_workers=2) as pool:
+                cancelled = threading.Event()
+                owner = pool.submit(request, session, url, cancelled=cancelled)
+                self.assertTrue(entered.wait(2))
+                waiting = threading.Event()
+
+                def successor():
+                    waiting.set()
+                    return request(session, f'http://127.0.0.1:{port}/echo')
+
+                following = pool.submit(successor)
+                self.assertTrue(waiting.wait(2))
+                self.assertFalse(following.done())
+                cancelled.set()
+                with self.assertRaisesRegex(RuntimeError, 'cancelled'):
+                    owner.result(timeout=2)
+                self.assertIn('request', json.loads(following.result(timeout=2)))
+                self.assertFalse(release.is_set())
+                self.assertEqual(session.starts, 2)
+                self.assertIsNotNone(children[0].returncode)
+                self.assertIsNone(children[1].poll())
+                release.set()
+
+    def test_idle_close_kills_helper_that_ignores_pipe_eof(self):
+        with tempfile.TemporaryDirectory() as directory, observed_processes() as children, EmbeddingSession() as session:
+            helper = Path(directory) / 'ignore-eof.py'
+            helper.write_text("import sys,struct,time\ni=sys.stdin.buffer;o=sys.stdout.buffer\n"
+                              "n,=struct.unpack('!Q',i.read(8));f=i.read(n);b=f[:8]+b'Sready-v1'\n"
+                              "o.write(struct.pack('!Q',len(b))+b);o.flush();time.sleep(30)\n")
+            with patch.object(embedding_session, '__file__', str(helper)):
+                session.warmup()
+            began = time.monotonic()
+            session.close()
+            self.assertLess(time.monotonic() - began, 2)
+            self.assertNotEqual(children[0].returncode, 0)
+            self.assertEqual(session.starts, session.reaps)
+
     def test_idle_helper_exit_is_reaped_and_next_request_recovers(self):
         with endpoint(Echo) as port, observed_processes() as children, EmbeddingSession() as session:
             session.warmup()
