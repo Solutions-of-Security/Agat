@@ -1,0 +1,70 @@
+(node:46686) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ shadow rejects lease expiry during stage read and preserves only previously committed observations (59.528709ms)
+ℹ After expiry at stage read: observation=true, events=1
+✖ shadow rejects lease expiry during event insert and preserves only previously committed observations (36.140791ms)
+ℹ After expiry at event insert: observation=true, events=1
+✖ shadow rejects lease expiry during idempotent retry and preserves only previously committed observations (39.553417ms)
+ℹ After expiry at idempotent retry: observation=true, events=1
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 805.746417
+
+✖ failing tests:
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during stage read and preserves only previously committed observations (59.528709ms)
+  AssertionError [ERR_ASSERTION]: An expired owner must be rejected even on an idempotent retry
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:316:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during event insert and preserves only previously committed observations (36.140791ms)
+  AssertionError [ERR_ASSERTION]: An expired owner must be rejected even on an idempotent retry
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:316:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during idempotent retry and preserves only previously committed observations (39.553417ms)
+  AssertionError [ERR_ASSERTION]: An expired owner must be rejected even on an idempotent retry
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:316:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

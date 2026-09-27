@@ -12121,12 +12121,15 @@ export class AgatStore {
   recordDecisionShadow(nodeId: string, leaseId: string, raw: unknown): DecisionShadowObservation {
     return this.transaction(() => {
       const stage = this.db.prepare(`
-        SELECT s.id, s.run_id, s.activity_json FROM stages s JOIN runs r ON r.id = s.run_id
+        SELECT s.id, s.run_id, s.activity_json, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
         WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ?
           AND r.status = 'running'
         ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
       `).get(nodeId, leaseId, nowIso()) as Row | undefined;
       if (!stage) throw new Error("Активная аренда не найдена");
+      // The query's timestamp may predate a row-lock wait, including on retries.
+      const leaseExpiresAt = Date.parse(String(stage.lease_expires_at));
+      if (!Number.isFinite(leaseExpiresAt) || leaseExpiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
       const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
       if (activity.decisionShadowObservation) return activity.decisionShadowObservation as DecisionShadowObservation;
       if (!activity.decisionShadowLease || !activity.decisionShadowConfig) throw new Error("Shadow-проверка не назначена");
@@ -12135,6 +12138,8 @@ export class AgatStore {
       activity.decisionShadowObservation = observation;
       this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
       this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId, observation);
+      // Roll back both writes if persistence outlasted ownership, before COMMIT.
+      if (leaseExpiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
       return observation;
     });
   }

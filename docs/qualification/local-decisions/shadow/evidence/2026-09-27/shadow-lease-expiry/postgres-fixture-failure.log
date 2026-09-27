@@ -1,0 +1,77 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:46762) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ rejects shadow results when the lease expires during stage lock over HTTP (5919.769917ms)
+  ℹ After expiry at stage lock: HTTP 200, observation=true, events=1
+  ✖ rejects shadow results when the lease expires during event insert over HTTP (209.068292ms)
+  ✖ rejects shadow results when the lease expires during idempotent retry over HTTP (226.777ms)
+✖ PostgreSQL Fleet/HA integration (7815.670083ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8245.330959
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20704
+✖ rejects shadow results when the lease expires during stage lock over HTTP (5919.769917ms)
+  AssertionError [ERR_ASSERTION]: An expired lease must not acknowledge a shadow observation
+
+  200 !== 400
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1011:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:944:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 21)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20704
+✖ rejects shadow results when the lease expires during event insert over HTTP (209.068292ms)
+  error: duplicate key value violates unique constraint "processes_name_key"
+      at PostgresDatabaseSync.call (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:220:21)
+      at PostgresDatabaseSync.request (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:195:17)
+      at PostgresStatement.run (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:129:26)
+      at AgatStore.createProcess (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/database.ts:9492:8)
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:972:33)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:944:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    code: '23505',
+    detail: 'Key (name)=(Shadow expiry) already exists.',
+    constraint: 'processes_name_key'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20704
+✖ rejects shadow results when the lease expires during idempotent retry over HTTP (226.777ms)
+  error: duplicate key value violates unique constraint "processes_name_key"
+      at PostgresDatabaseSync.call (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:220:21)
+      at PostgresDatabaseSync.request (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:195:17)
+      at PostgresStatement.run (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:129:26)
+      at AgatStore.createProcess (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/database.ts:9492:8)
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:972:33)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:944:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    code: '23505',
+    detail: 'Key (name)=(Shadow expiry) already exists.',
+    constraint: 'processes_name_key'
+  }
