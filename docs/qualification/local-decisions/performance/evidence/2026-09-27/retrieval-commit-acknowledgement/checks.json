@@ -1,0 +1,86 @@
+{
+  "status": "PASS",
+  "capturedAt": "2026-09-27T01:49:13.670630+00:00",
+  "baselineCommit": "60d7892c1b0c23d890a3b8a777991ac277306522",
+  "baseMergeCommit": "d14c3f8fefdee64103b23822af3d5a13200ac7c3",
+  "node": "v24.14.0",
+  "before": {
+    "exitCode": 1,
+    "failedAssertions": 1,
+    "observedCommittedSources": 1,
+    "responseWaitMs": 2500,
+    "reason": "Successful COMMIT was independently observed, but connection loss did not yield an operational response in the bounded window."
+  },
+  "targetedAfter": {
+    "postgresPassed": 3,
+    "modes": [
+      "isolated-disconnect",
+      "isolated-withhold",
+      "sync-disconnect"
+    ],
+    "initialSourcesRetained": 1,
+    "explicitNextMarker": "K2",
+    "automaticReplay": false
+  },
+  "coordinatorPassed": 247,
+  "postgresPassed": 26,
+  "typecheckExitCode": 0,
+  "proxyStrictTypecheckExitCode": 0,
+  "coordinatorBuildExitCode": 0,
+  "testRevisionNote": "The final targeted pass includes explicit Buffer guards added after the full PostgreSQL run started; production sources were unchanged.",
+  "docsChecks": {
+    "nodeTestsPassed": 12,
+    "pythonTestsPassed": 152,
+    "linkTargets": 1469,
+    "markdownFiles": 171,
+    "exitCode": 0
+  },
+  "architecture": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 0
+  },
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "c67d9367396aae7979ff0d4b5d887f4f2a6da8c083baef2f953738f567243f67",
+    "apps/coordinator/src/knowledge-search-executor.ts": "db87fa8a1f62ee66a0932303ab485ce2ab385b6c27f6e4417bcd9d829286d250",
+    "apps/coordinator/src/knowledge-search-worker.ts": "678cdada2b1188a4facb1a1376a28336a0ff311349d5322fc24610e8c0b38133",
+    "apps/coordinator/src/postgres-worker.ts": "04c7a8eaecadb0e68a19813e9719c7239a6102b96da897bedb4ef8a1992b8cf8",
+    "apps/coordinator/src/server.ts": "29a68b507fee72a4e78aa1cd7289b7b571131857dc4042279868eb8c65f7aafb",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "ad732cbe6570e406bef9d42a81fa2fa766bd9e5aa87d39c77791992c07cef6c4",
+    "apps/coordinator/test/postgres-commit-proxy.ts": "291ea2646017a02e86e4a51dfbfcbb73c642488baac4a74c1016e8fab0be931c"
+  },
+  "logSha256": {
+    "architecture.json": "5486d7977f3225db8a0a9e40b17807e2b1640deb0a0b5608cb1ffafc4b313a42",
+    "before.log": "9904fbf6110b47556f4cb80706a8abb1a42e26a2916cf522a62e4f2ee6f3613f",
+    "coordinator.log": "9b32d515b1ab70194f77823d77a45f89c03e76707afa885f14ead33dc73c4c3c",
+    "docs.log": "8a5d1af34e7810cd9086cb8dddac2faabc862536c180aa1ce15a53a0391a5599",
+    "postgres.log": "5a7a009a91d05ecdda8797f711dbfd905aa62b193928be351b06aaae2edfbdcd",
+    "proxy-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "targeted-final.log": "26afd573ec50cf48488e6d09d720f9d6de9c3d47ec916d507ab40931bd0fb210",
+    "targeted-initial.log": "1395ce52c9abd6b4efb397337d5878d7d6b62a4cc251f917a04e550da719e790",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "ci-before-nodelay.log": "73fa9b8623fac6b592883384ae066a234e4823cd06d1850f4600bd0b2a353d35",
+    "nodelay-targeted.log": "bfb3337fef1d0c2c748f5e2a245fd4c79b0db0d066ad08ee27af3e77580fc0b0",
+    "nodelay-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "logNormalization": "Removed trailing whitespace and blank lines; diagnostic contents preserved.",
+  "ciFixtureFollowup": {
+    "firstRun": "https://github.com/Solutions-of-Security/Agat/actions/runs/36286720831",
+    "failedTests": 1,
+    "reason": "withhold did not reach the real COMMIT before its existing 1000 ms search deadline; the test-only proxy retained Nagle unlike pg",
+    "change": "setNoDelay(true) on both proxy sockets and report premature HTTP completion",
+    "deadlineChanged": false,
+    "productionChanged": false,
+    "targetedPassed": 3,
+    "observedCommitMs": [
+      75,
+      63
+    ],
+    "proxyStrictTypecheckExitCode": 0,
+    "ciRetest": "Pending at this evidence commit; required before merge",
+    "sourceSha256": {
+      "apps/coordinator/test/postgres-commit-proxy.ts": "56ec25f9bfc821f28cff55a65cb39fba0e3b1a62d8c683c9db8c753d68826c05",
+      "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "23028137dce5c9d115b2b29f46063713b24ea5eb52491d31758dfc113c0e14d5"
+    }
+  }
+}

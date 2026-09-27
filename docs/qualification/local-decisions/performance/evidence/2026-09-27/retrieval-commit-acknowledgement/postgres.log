@@ -1,0 +1,68 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (1103.53025ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (33217.593208ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (862.2155ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (404.675166ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (238.442417ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (17294.022709ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (852.257834ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (2057.92325ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (6090.297917ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (1128.604375ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5924.803ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (915.233333ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (3180.580625ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3524.85225ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (2533.308541ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (3810.307333ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1438.016958ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6506.167458ms)
+(node:56395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (9709.352584ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (966.252125ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4457.702875ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (141.083375ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (307.135042ms)
+  ✔ rejects a schema Job while a coordinator replica is active (318.580833ms)
+  ✔ rejects runtime startup after out-of-band schema drift (186.245083ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (846.564708ms)
+✔ PostgreSQL Fleet/HA integration (116637.138625ms)
+ℹ tests 26
+ℹ suites 1
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 117395.714292

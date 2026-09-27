@@ -15,6 +15,7 @@ import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.j
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
+import { interceptRetrievalCommit } from "./postgres-commit-proxy.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -83,7 +84,8 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
       });
     });
     assert.ok(port > 0);
-    return { port, stop, closed, signal: () => child.kill("SIGTERM") };
+    return { port, stop, closed, signal: () => child.kill("SIGTERM"),
+      diagnostic: () => diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>") };
   } catch (error) { await stop(); throw error; }
 }
 
@@ -649,6 +651,93 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       } finally {
         await f.writer.query("ROLLBACK"); await child?.stop(); await Promise.allSettled(pending); await f.close();
       }
+    });
+  });
+
+  for (const fault of ["disconnect", "withhold"] as const) it(`fails closed when a committed retrieval loses its COMMIT acknowledgement (${fault})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      const instance = `rag-commit-${randomUUID().slice(0, 8)}`;
+      const proxy = await interceptRetrievalCommit(systemUrl, `agat-retrieval-${instance}-system`);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const pending: Promise<unknown>[] = [];
+      try {
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts, {
+          AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl),
+          AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: fault === "disconnect" ? "10000" : "1000" }));
+        const base = `http://127.0.0.1:${child.port}/api/v1`;
+        const headers = { authorization: `Bearer ${f.node.token}`, "content-type": "application/json" };
+        const search = () => {
+          const result = fetch(`${base}/leases/${f.lease.leaseId}/knowledge/search`, { method: "POST", headers,
+            body: JSON.stringify(f.request), signal: AbortSignal.timeout(15_000) })
+            .then(async response => ({ status: response.status, body: await response.json() }));
+          pending.push(result); return result;
+        };
+        const started = performance.now();
+        const active = search();
+        await within(Promise.race([proxy.committed, active.then(result => {
+          throw new Error(`Search returned HTTP ${result.status} before the COMMIT fault was established`);
+        })]), 5_000, "Fault fixture did not observe a real successful COMMIT");
+        context.diagnostic(`Successful COMMIT observed after ${Math.round(performance.now() - started)} ms`);
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1, "Independent connection must see committed K1 before its acknowledgement is lost");
+        const queued = search();
+        await eventually(async () => {
+          const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(2_000) });
+          return (await response.json() as { knowledgeSearch: { queued: number } }).knowledgeSearch.queued === 1;
+        }, "Queued request was not admitted before the COMMIT connection failure");
+        if (fault === "disconnect") proxy.disconnect();
+        const expectedStatus = fault === "disconnect" ? 503 : 504;
+        assert.equal((await within(active, 2_500, "Lost COMMIT acknowledgement did not produce a bounded operational failure")).status, expectedStatus);
+        assert.equal((await queued).status, expectedStatus);
+        const health = await fetch(`${base}/health`); assert.equal(health.status, 503); await health.json();
+        assert.equal((await search()).status, 503);
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1);
+        assert.deepEqual(proxy.errors, []);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts));
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1, "Restart must retain K1 without replaying active or queued requests");
+        const explicit = await fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${f.lease.leaseId}/knowledge/search`,
+          { method: "POST", headers, body: JSON.stringify(f.request), signal: AbortSignal.timeout(5_000) });
+        assert.equal(explicit.status, 200);
+        assert.equal((await explicit.json() as { hits: Array<{ marker: string }> }).hits[0]!.marker, "K2");
+      } catch (error) {
+        context.diagnostic(child?.diagnostic() ?? "Main did not start");
+        throw error;
+      } finally {
+        await proxy.close(); await child?.stop(); await Promise.allSettled(pending); await f.close();
+      }
+    });
+  });
+
+  it("reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      const instance = `rag-sync-commit-${randomUUID().slice(0, 8)}`;
+      const proxy = await interceptRetrievalCommit(systemUrl, `agat-${instance}-system`);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let pending: Promise<Response> | undefined;
+      try {
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts, {
+          AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl), AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        const base = `http://127.0.0.1:${child.port}/api/v1`;
+        const search = () => fetch(`${base}/leases/${f.lease.leaseId}/knowledge/search`, { method: "POST",
+          headers: { authorization: `Bearer ${f.node.token}`, "content-type": "application/json" },
+          body: JSON.stringify(f.request), signal: AbortSignal.timeout(10_000) });
+        pending = search();
+        await within(proxy.committed, 5_000, "Sync fault did not reach a successful COMMIT");
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1);
+        proxy.disconnect();
+        const rejected = await within(pending, 2_500, "Sync main did not recover from its broken SQL connection");
+        assert.equal(rejected.status, 503);
+        assert.match((await rejected.json() as { error: string }).error, /COMMIT неизвестен/);
+        const health = await fetch(`${base}/health`); assert.equal(health.status, 200); await health.json();
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1);
+        const explicit = await search(); assert.equal(explicit.status, 200);
+        assert.equal((await explicit.json() as { hits: Array<{ marker: string }> }).hits[0]!.marker, "K2");
+        assert.deepEqual(proxy.errors, []);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(child?.diagnostic() ?? "Main did not start"); throw error; }
+      finally { await proxy.close(); await child?.stop(); await pending?.catch(() => {}); await f.close(); }
     });
   });
 

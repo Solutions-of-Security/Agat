@@ -2751,6 +2751,8 @@ export function createCoordinatorServer(
         ? error.status
         : error instanceof A2ATransportError
           ? error.httpStatus
+        : error instanceof Error && "code" in error && error.code === "AGAT_COMMIT_UNKNOWN"
+          ? 503
         : 400;
       json(response, status, { error: safeMessage(error) });
     }

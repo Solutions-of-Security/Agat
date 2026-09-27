@@ -1,0 +1,44 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:51473) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:51473) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ fails closed when a committed retrieval loses its COMMIT acknowledgement (9149.455875ms)
+  ℹ (node:51523) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:51523) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:65275
+State store: postgresql
+HA-cell: eu-test-1/eu-test · rag-commit-d8ca9134
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-rag-lock-mgxIBB
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+✖ PostgreSQL Fleet/HA integration (10598.076959ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11182.121583
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:6611
+✖ fails closed when a committed retrieval loses its COMMIT acknowledgement (9149.455875ms)
+  Error: Connection loss did not produce an immediate operational failure
+      at Timeout.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:116:39)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)

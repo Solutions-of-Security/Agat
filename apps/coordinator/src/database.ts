@@ -16217,7 +16217,12 @@ export class AgatStore {
       this.db.exec("COMMIT");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      try { this.db.exec("ROLLBACK"); }
+      catch (rollbackError) {
+        // A failed COMMIT may already have released a broken connection. Its
+        // unknown outcome must survive the now-impossible rollback attempt.
+        if (!(error instanceof Error && "code" in error && error.code === "AGAT_COMMIT_UNKNOWN")) throw rollbackError;
+      }
       throw error;
     } finally {
       this.transactionDepth = 0;
