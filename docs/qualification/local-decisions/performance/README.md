@@ -101,3 +101,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Deadline при SQL-блокировке служебного HTTP](./retrieval-control-lock-deadline.md): воспроизведена задержка main timer при renew, ожидающем stage активного поиска. Остаток срока передаётся в PostgreSQL statement_timeout; проверены отказ без replay, rollback, cursor cleanup и restart.
 
 [Потеря подтверждения COMMIT](./retrieval-commit-acknowledgement.md): настоящий commit подтверждён отдельным соединением до fault; isolated отдаёт 503/504 и закрывает очередь, sync заменяет повреждённое соединение. Сохранённый `K1` не повторяется; только явный запрос создаёт `K2`.
+
+[Повтор main HTTP после SQL deadline](./retrieval-deadline-http.md): ещё 42/42 поиска и 2 warmup прошли полный replay на одном commit. Isolated health max при конкурентности 4 — 34 мс против 6755 мс в sync, пропусков probes нет; медиана поиска выше во всех сериях. Зафиксированы реальные maintenance, память, штатный exit и удаление контейнеров.

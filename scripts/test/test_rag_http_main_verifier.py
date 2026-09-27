@@ -47,7 +47,10 @@ class MainHttpEvidenceTest(unittest.TestCase):
             yield target
 
     def test_main_pair_replays_exactly(self):
-        self.assertEqual(verifier.compare(SYNC, ISOLATED), read(EVIDENCE / 'retrieval-main-comparison.json'))
+        for name in ('retrieval-main', 'retrieval-deadline-main'):
+            with self.subTest(pair=name):
+                self.assertEqual(verifier.compare(EVIDENCE / f'{name}-sync', EVIDENCE / f'{name}-isolated'),
+                                 read(EVIDENCE / f'{name}-comparison.json'))
 
     def test_historical_handler_pair_replays_unchanged(self):
         self.assertEqual(verifier.compare(EVIDENCE / 'retrieval-executor-sync', EVIDENCE / 'retrieval-executor-isolated'),
