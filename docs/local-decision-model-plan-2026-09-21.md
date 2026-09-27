@@ -126,6 +126,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Idle opt-in обычного worker](./qualification/local-decisions/performance/embedding-worker-idle-opt-in.md) добавляет строго проверяемый срок хранения helper, выключенный по умолчанию. 20 целевых lifecycle/config проверок и пять настоящих PostgreSQL-сценариев подтверждают reap между lease, SIGTERM drain, отмену после renewal 404 и сохранение 34 векторов при потерянном COMMIT reply. Следующий gate — настоящий model burst через этот production opt-in; выбор производственного timeout остаётся у оператора.
 
+[Production idle opt-in на настоящей модели](./qualification/local-decisions/performance/embedding-worker-idle-model.md) завершил 32 worker-вызова, сохранил 528 точных vectors через SQLite/coordinator и закрыл восемь worker/12 helpers. После простоя helper RSS падает до нуля; первый одиночный вызов наблюдался в диапазоне 203–231 мс вместо 42–71 мс у keep. Выборка мала, SLO не заявлен. Следующий gate — передача трёх transport/deadline/idle настроек через Compose и общий Kubernetes ConfigMap без изменения defaults.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
