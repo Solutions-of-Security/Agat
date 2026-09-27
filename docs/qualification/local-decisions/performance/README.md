@@ -115,3 +115,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Продление аренды после ожидания SQL](./lease-renewal-deadlines.md) закрывает устаревший cutoff stage renewal и поздний UPDATE stage/embedding; SQL-only продление откатывается при истечении прежнего срока.
 
 [Размерность при конкуренции jobs](./embedding-dimension-concurrency.md) защищает общий embedding-индекс блокировкой коллекции перед job; смешанный индекс [2, 3] воспроизведён и устранён на двух coordinator с положительными контролями.
+
+[План HTTP-профиля embedding/renewal](./embedding-http.md) фиксирует нагрузку двух coordinator, контроль состояния индекса и независимые служебные запросы до измерений.
