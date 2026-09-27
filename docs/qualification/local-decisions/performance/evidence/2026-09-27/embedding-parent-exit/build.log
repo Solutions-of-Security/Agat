@@ -1,0 +1,65 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 812B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.13-slim
+#2 ...
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.13-slim
+#2 DONE 2.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 89B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 19.22kB done
+#5 DONE 0.0s
+
+#6 [ 1/10] FROM docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+#6 resolve docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b 0.0s done
+#6 DONE 0.0s
+
+#7 [ 4/10] RUN pip install --no-cache-dir --requirement /opt/agat/requirements.txt
+#7 CACHED
+
+#8 [ 2/10] RUN useradd --create-home --uid 10001 agat && mkdir -p /state && chown agat:agat /state
+#8 CACHED
+
+#9 [ 3/10] COPY workers/requirements.txt /opt/agat/requirements.txt
+#9 CACHED
+
+#10 [ 5/10] COPY --chown=agat:agat workers/agat_worker.py /opt/agat/agat_worker.py
+#10 CACHED
+
+#11 [ 6/10] COPY --chown=agat:agat workers/web_tools.py /opt/agat/web_tools.py
+#11 CACHED
+
+#12 [ 7/10] COPY --chown=agat:agat workers/telemetry.py /opt/agat/telemetry.py
+#12 CACHED
+
+#13 [ 8/10] COPY --chown=agat:agat workers/local_decisions.py /opt/agat/local_decisions.py
+#13 CACHED
+
+#14 [ 9/10] COPY --chown=agat:agat workers/embedding_http.py /opt/agat/embedding_http.py
+#14 DONE 0.0s
+
+#15 [10/10] COPY --chown=agat:agat workers/embedding_transport.py /opt/agat/embedding_transport.py
+#15 DONE 0.0s
+
+#16 exporting to image
+#16 exporting layers 0.0s done
+#16 exporting manifest sha256:3d4441ca7c0ed5b15505f63a0e9c647f251524ce8f4cbb5f1db31d0d0b022f1c done
+#16 exporting config sha256:c578a9cde8325a4235749be76f888615e55093348019176f96592cf55478e457 done
+#16 exporting attestation manifest sha256:6e805e94e3a9f9451cefb664dec6b8b31bc7097f98259b3d1c371d20515b72b2 done
+#16 exporting manifest list sha256:927050befe221bf4b1b3c47ddffb494cc540b313acf3452dac24de5b0b7fc619 done
+#16 naming to docker.io/library/agat-worker:embedding-parent-exit-20260927 done
+#16 unpacking to docker.io/library/agat-worker:embedding-parent-exit-20260927 0.0s done
+#16 DONE 0.1s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/dro8t91hszaojsfn3b5cz8q7q

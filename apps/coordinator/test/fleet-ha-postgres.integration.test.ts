@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -111,6 +111,7 @@ interface EmbeddingWorkerObservation {
   sessionRequests: EmbeddingWorkerObservation["transports"];
   sessionRetired: EmbeddingWorkerObservation["transports"];
   signals: Array<{ number: number; atNs: number }>;
+  helpers: Array<{ pid: number; atNs: number }>;
   events: Array<{ operation: string; event: string; leaseId: string; threadId: number; atNs: number }>;
   requests: Array<{ path: string; status: number; startedNs: number; finishedNs: number; leaseId?: string; documentId?: string; chunkIds?: string[] }>;
 }
@@ -134,6 +135,8 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
   const records = (prefix: string) => output.split("\n").slice(0, -1).filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
   return { closed, diagnostic: () => `${diagnostic}\n${output}`, signal: () => child.kill("SIGTERM"),
     signals: () => records("AGAT_EMBEDDING_WORKER_SIGNAL ") as EmbeddingWorkerObservation["signals"],
+    helpers: () => records("AGAT_EMBEDDING_WORKER_HELPER ") as EmbeddingWorkerObservation["helpers"],
+    kill: () => child.kill("SIGKILL"),
     requests: () => records("AGAT_EMBEDDING_WORKER_REQUEST ") as EmbeddingWorkerObservation["requests"],
     events: () => records("AGAT_EMBEDDING_WORKER_EVENT ") as EmbeddingWorkerObservation["events"],
     result: () => { const results = records("AGAT_EMBEDDING_WORKER_PROBE "); assert.equal(results.length, 1); return results[0] as EmbeddingWorkerObservation; },
@@ -1134,6 +1137,107 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       finally {
         releaseModel(); await worker?.stop(); await successor?.stop(); await child?.stop(); model.closeAllConnections();
         await new Promise<void>(resolve => model.close(() => resolve()));
+        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+      }
+    });
+  });
+
+  for (const transport of ["isolated", "session"] as const) for (const phase of ["headers", "body"] as const) it(`real Python embedding helper exits when its worker is killed during model HTTP (${phase}, ${transport})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0);
+      f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
+      const collection = String(f.first.createKnowledgeCollection({ name: "Parent exit", embeddingModel: f.project }, f.project).id);
+      const document = String(f.first.ingestKnowledgeDocument(collection, { name: "Interrupted source", content: "Synthetic source owned by an abruptly stopped worker." }, f.project).id);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let successor: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let firstResponse: http.ServerResponse | undefined, enteredModel!: () => void;
+      const entered = new Promise<void>(resolve => { enteredModel = resolve; });
+      const modelErrors: unknown[] = [];
+      let calls = 0, disconnected = false;
+      const model = http.createServer((request, response) => {
+        void (async () => {
+          assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
+          const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { model: string; input: string[] };
+          assert.equal(body.model, f.project); assert.equal(body.input.length, 1);
+          calls++; assert.ok(calls <= 2);
+          if (calls === 1) {
+            firstResponse = response;
+            response.once("close", () => { disconnected = true; });
+            if (phase === "body") response.writeHead(200, { "content-type": "application/json" }).write('{"data":[');
+            enteredModel();
+          } else response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [{ index: 0, embedding: [0, 1] }] }));
+        })().catch(error => { modelErrors.push(error); if (!response.destroyed) response.writeHead(500).end(); });
+      });
+      const job = () => f.first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures FROM knowledge_embedding_jobs WHERE document_id = ?").get(document)!;
+      const events = () => f.first.db.prepare("SELECT type FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${document}%`);
+      try {
+        await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+        const address = model.address(); assert.ok(address && typeof address === "object");
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(`embedding-parent-${randomUUID().slice(0, 8)}`, f.artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        const input = { coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1`, embeddingTransport: transport, embeddingTimeout: 30 };
+        worker = startObservedEmbeddingWorker(input);
+        await within(Promise.race([entered, worker.closed.then(result => {
+          throw new Error(`Worker exited before model HTTP: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+        })]), 8_000, "Worker did not start model HTTP");
+        await eventually(async () => worker!.helpers().length === 1, "Helper PID was not observed");
+        const owned = job(); assert.equal(owned.status, "running"); assert.equal(owned.node_id, f.worker.id);
+        const killedAt = performance.now(); assert.equal(worker.kill(), true);
+        assert.deepEqual(await within(worker.closed, 3_000, "SIGKILL did not terminate the parent worker"), { code: null, signal: "SIGKILL" });
+        await eventually(async () => disconnected, "Helper kept model HTTP alive after its worker exited");
+        const disconnectMs = performance.now() - killedAt;
+        const helperPid = worker.helpers()[0]!.pid;
+        const stillExecuting = () => {
+          try {
+            const state = execFileSync("ps", ["-o", "stat=", "-p", String(helperPid)], { encoding: "utf8", timeout: 1_000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+            // An orphan's exit status belongs to the adopting init/subreaper.
+            // Z has exited and owns no sockets, but may await that external reap.
+            return state !== "" && !state.startsWith("Z");
+          } catch (error) {
+            if ((error as { status?: number }).status === 1) return false;
+            throw error;
+          }
+        };
+        await eventually(async () => !stillExecuting(), "Disconnected helper kept executing without its owner");
+        assert.ok(disconnectMs < 5_000, "Parent-exit cleanup must precede the 30-second embedding deadline");
+        assert.equal(calls, 1); assert.deepEqual(modelErrors, []);
+        assert.deepEqual(job(), owned, "Killed worker must not manufacture a terminal result or clear its durable lease");
+        assert.deepEqual(events(), []);
+        assert.equal(worker.requests().filter(row => row.path.endsWith("/complete") || row.path.endsWith("/fail")).length, 0);
+        assert.equal(f.first.db.prepare("SELECT embedding_json FROM knowledge_chunks WHERE document_id = ?").get(document)!.embedding_json, null);
+        // Expire only this interrupted lease. The real maintenance path, not a
+        // fabricated /fail, makes its durable work available for a new owner.
+        f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE document_id = ?").run(new Date(Date.now() - 1000).toISOString(), document);
+        f.first.maintenanceTick(); assert.equal(job().status, "pending");
+        assert.equal(job().failures, 1);
+        successor = startObservedEmbeddingWorker({ ...input, nodeId: f.other.id, token: f.other.token });
+        await eventually(async () => job().status === "completed", "New worker did not recover the interrupted durable embedding job");
+        assert.deepEqual(await successor.stop(), { code: 0, signal: null });
+        const observed = successor.result();
+        const leases = observed.requests.filter(row => row.path.endsWith("/lease") && row.status === 200);
+        assert.equal(leases.length, 1); assert.equal(leases[0]!.documentId, document); assert.notEqual(leases[0]!.leaseId, owned.lease_id);
+        assert.equal(calls, 2); assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []);
+        const reaped = transport === "isolated" ? observed.transports : observed.sessionRetired;
+        assert.equal(reaped.length, 1); assert.equal(reaped[0]!.returncode, 0);
+        assert.equal(reaped[0]!.stdinClosed, true); assert.equal(reaped[0]!.stdoutClosed, true);
+        assert.equal(f.first.db.prepare("SELECT embedding_json FROM knowledge_chunks WHERE document_id = ?").get(document)!.embedding_json, "[0,1]");
+        assert.equal(events().filter(row => row.type === "knowledge.document.ready").length, 1);
+        context.diagnostic(`${phase}/${transport}: worker SIGKILL; model HTTP closed after ${disconnectMs.toFixed(1)} ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event`);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}\n${successor?.diagnostic() ?? "Successor did not start"}`); throw error; }
+      finally {
+        // During the baseline failure the parent is already dead and cannot
+        // reap its helper. Only the observed helper with the still-open owned
+        // model request can need this test cleanup signal.
+        if (!disconnected) for (const helper of worker?.helpers() ?? []) {
+          try { process.kill(helper.pid, "SIGKILL"); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+        }
+        firstResponse?.destroy(); await worker?.stop(); await successor?.stop(); await child?.stop();
+        model.closeAllConnections(); await new Promise<void>(resolve => model.close(() => resolve()));
         f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
       }
     });

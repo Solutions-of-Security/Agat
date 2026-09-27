@@ -1,0 +1,66 @@
+test_loopback_profile_records_and_reaps_guarded_helper (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_loopback_profile_records_and_reaps_guarded_helper) ... FAIL
+test_model_profile_records_guarded_helper_without_real_model (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_model_profile_records_guarded_helper_without_real_model) ... FAIL
+
+======================================================================
+FAIL: test_loopback_profile_records_and_reaps_guarded_helper (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_loopback_profile_records_and_reaps_guarded_helper)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/test/test_embedding_profile_process_tracking.py", line 19, in test_loopback_profile_records_and_reaps_guarded_helper
+    phase = loopback.phase({'id': 'observer-probe', 'mode': 'isolated', 'kind': 'success',
+                            'batch': 1, 'dimensions': 768, 'concurrency': 2, 'calls': 2},
+                           fixture, loopback.agat_worker.LocalModelClient)
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/profile-embedding-transport.py", line 280, in phase
+    list(executor.map(one, range(item['calls'])))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 639, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 311, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 450, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 395, in __get_result
+    raise self._exception
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/profile-embedding-transport.py", line 271, in one
+    assert len(owned) == (1 if item['mode'] == 'isolated' else 0)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_model_profile_records_guarded_helper_without_real_model (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_model_profile_records_guarded_helper_without_real_model)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/test/test_embedding_profile_process_tracking.py", line 41, in test_model_profile_records_guarded_helper_without_real_model
+    observed = model.run_phase({'id': identity, 'mode': 'isolated', 'batch': 1, 'concurrency': 1, 'calls': 1}, None)
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/profile-embedding-model-transport.py", line 95, in run_phase
+    observed = list(executor.map(call, range(item['calls'])))
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 639, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 311, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 450, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 395, in __get_result
+    raise self._exception
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "/Users/mdavliatshin/Developer/Agat-recovery-20260927/scripts/profile-embedding-model-transport.py", line 89, in call
+    assert len(owned) == (item['mode'] == 'isolated')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.425s
+
+FAILED (failures=2)

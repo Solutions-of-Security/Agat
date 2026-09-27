@@ -139,3 +139,9 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Длительная работа embedding-сессий](./embedding-session-endurance.md): 480 success + 10 controlled faults за две минуты, контрольный PID, все recovery, серии idle RSS/FD и фактическая задержка отмены под нагрузкой.
 
 [Session opt-in обычного worker](./embedding-worker-session-opt-in.md): ограниченный lazy pool, общий timeout очереди/HTTP, input budget и закрытие после drain; отдельные PostgreSQL-проверки реального worker в обоих режимах.
+
+[Полный RAG с session transport](./embedding-worker-rag.md): 12 процессов, 36 этапов и 44 embedding-запроса с одинаковыми prompts/outputs; явный учёт постоянной памяти и отсутствие устойчивого end-to-end ускорения.
+
+[Graceful остановка embedding worker](./embedding-worker-drain.md): SIGTERM закрывает admission, сохраняет реальный renewal и terminal result; restart выполняет только pending работу.
+
+[Принудительное завершение родителя](./embedding-parent-exit.md): воспроизведено и исправлено сохранение helper HTTP после SIGKILL worker; Unix parent guard закрывает собственные ресурсы, durable lease восстанавливается через maintenance.

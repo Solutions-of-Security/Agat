@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,40 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+
+def parent_watch_arguments() -> list[str]:
+    # Unix changes PPID after reparenting; Windows retains the original number.
+    return ["--parent-pid", str(os.getpid())] if os.name == "posix" else []
+
+
+def watch_parent(arguments: list[str]) -> None:
+    """Install a child-only Unix guard before accepting any model request.
+
+    The expected PID comes from the spawning worker, not getppid() at startup:
+    the owner may already have exited while this interpreter was importing.
+    No preexec_fn runs in the multithreaded worker. Only this disposable helper
+    exits on owner loss; it never signals another process or submits a result.
+    """
+    if not arguments:
+        return
+    if (os.name != "posix" or len(arguments) != 2 or arguments[0] != "--parent-pid"
+            or not arguments[1].isascii() or not arguments[1].isdecimal()
+            or len(arguments[1]) > 10 or not 0 < int(arguments[1]) <= 2**31 - 1):
+        raise SystemExit("Invalid embedding helper parent binding")
+    expected = int(arguments[1])
+    if os.getppid() != expected:
+        raise SystemExit("Embedding helper parent exited before startup")
+
+    def guard() -> None:
+        while os.getppid() == expected:
+            time.sleep(0.05)
+        # The owner cannot consume this response or reap the helper. Exit even
+        # if urllib or stdout is blocked, closing only our private descriptors.
+        # The adopting init/subreaper is responsible for collecting exit status.
+        os._exit(1)
+
+    threading.Thread(target=guard, name="embedding-parent-watch", daemon=True).start()
 
 
 def validate_timeout(timeout: float) -> None:
@@ -41,7 +76,7 @@ def request_embedding_response(url: str, payload: dict, headers: dict[str, str],
                           "timeout": timeout, "maxResponseBytes": max_response_bytes,
                           "maxErrorBytes": max_error_bytes}, ensure_ascii=False).encode("utf-8")
     check_deadline()
-    with subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve())],
+    with subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve()), *parent_watch_arguments()],
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.DEVNULL) as process:
         try:
@@ -96,4 +131,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    watch_parent(sys.argv[1:])
     main()
