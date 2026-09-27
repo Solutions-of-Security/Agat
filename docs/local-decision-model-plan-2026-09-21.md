@@ -122,6 +122,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Прототип idle retirement](./qualification/local-decisions/performance/embedding-idle-prototype.md) освобождает только незанятые helper, сохраняет deadline/cancellation admission и выполняет join maintenance при close. 13 real HTTP/process тестов прошли на macOS и Linux; два burst по 32 слота дали 64 точных ответа с возвратом helper count/FD между ними. Следующий gate — модельный burst → idle → burst с полными vectors и ценой повторного startup; production worker не переключён.
 
+[Модельный burst после idle](./qualification/local-decisions/performance/embedding-idle-model.md) завершил 258 точных ответов и reap всех 62 helpers. Idle retirement освобождает 29 MiB на слот (117–120 MiB при четырёх), но первые запросы второго burst имеют наблюдаемую p50 на 54–83 мс выше; тёплые вызовы разобраны отдельно. Lifecycle 14/14 на macOS/Linux, независимый replay и 11 mutation-тестов прошли. Следующий gate — явная настройка idle timeout обычного session worker с default disabled и проверкой настоящего lease/recovery-пути.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

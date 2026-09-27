@@ -86,6 +86,7 @@ def verify(directory):
             difference = max(abs(a - b) for a, b in zip(v, reference, strict=True))
             dot = math.fsum(a * b for a, b in zip(v, reference, strict=True))
             norm = math.sqrt(math.fsum(x * x for x in v) * math.fsum(x * x for x in reference))
+            assert norm > 0 and math.isfinite(norm)
             distance = max(0.0, 1 - dot / norm)
             assert difference <= 1e-6 and distance <= 1e-10
             max_component, max_cosine = max(max_component, difference), max(max_cosine, distance)
