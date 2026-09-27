@@ -1,0 +1,54 @@
+test_lost_lease_releases_worker_before_model_body_finishes (__main__.DeadlineBaseline.test_lost_lease_releases_worker_before_model_body_finishes) ... ERROR
+test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) ...
+  test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='headers') ... ERROR
+  test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='body') ... ERROR
+  test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='error') ... ERROR
+
+======================================================================
+ERROR: test_lost_lease_releases_worker_before_model_body_finishes (__main__.DeadlineBaseline.test_lost_lease_releases_worker_before_model_body_finishes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/test_embedding_http_deadline_baseline.py", line 65, in test_lost_lease_releases_worker_before_model_body_finishes
+    self.assertTrue(entered.wait(2)); future.result(timeout=1.2)
+                                      ~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 452, in result
+    raise TimeoutError()
+TimeoutError
+
+======================================================================
+ERROR: test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='headers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/test_embedding_http_deadline_baseline.py", line 54, in test_total_deadline_includes_headers_success_and_error_bodies
+    future.result(timeout=1.2)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 452, in result
+    raise TimeoutError()
+TimeoutError
+
+======================================================================
+ERROR: test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='body')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/test_embedding_http_deadline_baseline.py", line 54, in test_total_deadline_includes_headers_success_and_error_bodies
+    future.result(timeout=1.2)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 452, in result
+    raise TimeoutError()
+TimeoutError
+
+======================================================================
+ERROR: test_total_deadline_includes_headers_success_and_error_bodies (__main__.DeadlineBaseline.test_total_deadline_includes_headers_success_and_error_bodies) (mode='error')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/test_embedding_http_deadline_baseline.py", line 54, in test_total_deadline_includes_headers_success_and_error_bodies
+    future.result(timeout=1.2)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/concurrent/futures/_base.py", line 452, in result
+    raise TimeoutError()
+TimeoutError
+
+----------------------------------------------------------------------
+Ran 2 tests in 4.857s
+
+FAILED (errors=4)

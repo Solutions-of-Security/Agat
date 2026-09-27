@@ -287,7 +287,7 @@ class _RagModelClient(LocalModelClient):
         )
         self.requests: list[list[dict[str, Any]]] = []
 
-    def embed(self, _model: str, inputs: list[str]) -> list[list[float]]:
+    def embed(self, _model: str, inputs: list[str], *, cancelled=None) -> list[list[float]]:
         return [[1.0, 0.0] for _input in inputs]
 
     def _chat(
@@ -1154,17 +1154,14 @@ class LocalKnowledgeTests(unittest.TestCase):
                 "model": "embeddinggemma",
             }
         ).encode("utf-8")
-        with patch("agat_worker.urllib.request.urlopen", return_value=_FakeResponse(payload)) as open_url:
+        with patch("agat_worker.request_embedding_response", return_value=payload) as request_http:
             vectors = client.embed("embeddinggemma", ["first", "second"])
 
         self.assertEqual(vectors, [[1.0, 0.0], [0.0, 1.0]])
-        request = open_url.call_args.args[0]
-        self.assertEqual(request.full_url, "http://127.0.0.1:11434/v1/embeddings")
-        self.assertEqual(json.loads(request.data), {
-            "model": "embeddinggemma",
-            "input": ["first", "second"],
-        })
-        self.assertEqual(request.headers["Authorization"], "Bearer ollama")
+        url, request_payload, headers = request_http.call_args.args
+        self.assertEqual(url, "http://127.0.0.1:11434/v1/embeddings")
+        self.assertEqual(request_payload, {"model": "embeddinggemma", "input": ["first", "second"]})
+        self.assertEqual(headers["Authorization"], "Bearer ollama")
 
     def test_injects_provenance_and_untrusted_context_policy(self) -> None:
         coordinator = _FakeKnowledgeCoordinator()

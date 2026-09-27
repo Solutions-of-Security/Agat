@@ -1,0 +1,119 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "f9a16ea289845b9d7db142e5ee2144aad0d553ff",
+  "node": "v24.14.0",
+  "hostPython": "3.14.3",
+  "postgres": "17.6",
+  "checks": {
+    "beforeUnit": {
+      "methods": 2,
+      "expectedTimeoutErrors": 4
+    },
+    "reproductionFixed": {
+      "methods": 2,
+      "pass": 2,
+      "fail": 0
+    },
+    "fixtureSignatureFailure": {
+      "fail": 1,
+      "reason": "Existing RAG fake did not accept the new cancelled keyword; its signature was updated."
+    },
+    "workerUnit": {
+      "pass": 70,
+      "skip": 1,
+      "skipReason": "Host LangGraph dependency is not installed"
+    },
+    "postgresTargeted": {
+      "pass": 8,
+      "fail": 0,
+      "scope": "Five HTTP faults, production renewal cancellation and two COMMIT recovery controls; full 73-case suite runs in PR CI."
+    },
+    "typecheck": "pass",
+    "unitTargeted": {
+      "pass": 26,
+      "fail": 0,
+      "newMethods": 11
+    },
+    "linuxFixtureImportFailure": {
+      "errors": 1,
+      "reason": "The initial container test harness omitted decision_runtime used by existing tests. Added a read-only fixture mount without changing the worker image."
+    },
+    "linuxImage": {
+      "python": "3.13.15",
+      "pass": 71,
+      "skip": 0,
+      "fail": 0,
+      "imageId": "sha256:3b787971403a8edc72e61f9cde49147022caca92d654de4dd9355807dddfc16b",
+      "network": "none",
+      "runtimeSource": "/opt/agat; verified image files, tests and decision_runtime fixture mounted read-only"
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 165,
+      "localLinks": 1555,
+      "markdownFiles": 187,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    },
+    "tlsFixtureCorrection": {
+      "minimumVersion": "TLSv1.2",
+      "previousTestSha256": "20a8bc0890147da8922f9486193e84ba6aa2eb031383202e59c0d28cdc2b714a",
+      "hostPass": 70,
+      "hostSkip": 1,
+      "linuxPass": 71,
+      "linuxSkip": 0,
+      "reason": "Make the test HTTPS server minimum explicit for CodeQL; production urllib transport unchanged."
+    }
+  },
+  "sourceSha256": {
+    "workers/embedding_http.py": "be676a9efa4fe323ddaeb6eae472b875e8ae63f45b301b60f5189ef738211f05",
+    "workers/agat_worker.py": "bf01e0246b56718280b930e51ea900b8647fcf33fc35234ef3d3959fa3f17bdb",
+    "workers/Dockerfile": "af9d5d607b82322128b2d96549bffd13cbdc3224ed2e2066758ee9f958f4ae4b",
+    "workers/test_embedding_http_deadline.py": "61c8d72d30ac4f3cf33449910f80219b5f36badd9c0ad1a00588103f8245dd27",
+    "workers/test_embedding_http_limits.py": "4f00b1113d07d92ffd073978a594d4cf38fbfae3a7639699d2005fe3600e2bba",
+    "workers/test_embedding_cancellation.py": "45e4e87bd26a320d35a92145811196424c8ab0950483e48c5ff2f58f50e726b4",
+    "workers/test_web_tools.py": "6c9a868a177307077b998f4e04b810cfc894016f6d36c8f01d4ebff470e4a5e9",
+    "apps/coordinator/test/embedding-worker-probe.py": "92439c72bc2d5c916410b4d1c082c91f7ea2dd38d3c3a83da6071636e7cf7e2f",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "c72a1ac090b87788d4349f71838bab91a873321417c8269b5d9c985074c6bd15"
+  },
+  "logSha256": {
+    "before-unit.log": "f8278a0ed5211af984a39fccbc6617805a863c8055dffa1127158436f7fa68fb",
+    "reproduction-fixed.log": "23eb03d7965c1f688793b227a6903a2a4ca31da6f6adc00d216852f48774120b",
+    "fixture-signature-failure.log": "e11a997bb68e2db8c498792fa32c73179b20bc28db149ccae01dbed63a30635c",
+    "worker-unit.log": "c8b429ffcb9ef52571f1dd9b4f97464d4bf68133a3951efa13ec5646e4507e1d",
+    "postgres-targeted.log": "cd09bf8cb573870abf7a4cd459ba1bd32c568425c7433a9a8ba64e951cecc56e",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "unit-targeted.log": "b4b201435b3dbf91750f2d7a6d42ed1d0a296ac11e990dabf816902f78ab9e83",
+    "docs.log": "cba90219b9351d15e5cb3a4d6c08cb880da4ca42e86596bef598b01b5664519b",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "image-build.log": "81cae0d250634a020b8e006bec13501257f0d19db770ce5b51ff3f552b7f9c25",
+    "linux-unit.log": "7295558679bef2e3efc4382c6b96c1dadfa2c0ac41710a0efef60dfb9f0fb598",
+    "linux-fixture-import-failure.log": "b4f3c0c72b44b1c0053403a74fda3659674263d15c21a13629cf0b51f46e83b8",
+    "tls-worker-unit.log": "43b468577c359533342478d1087727651e3d3fdf1d901060a7f4f649751eab52",
+    "tls-linux-unit.log": "03c89919dc14b72a1261f6a902e3deada0d7b8c446edfeda1465a112518f8798"
+  },
+  "rawLogSha256": {
+    "before-unit.log": "ff52f3283a0eea3615b6d008268d7bb0bd84ac3d9061117f0aecb653d07c3811",
+    "reproduction-fixed.log": "23eb03d7965c1f688793b227a6903a2a4ca31da6f6adc00d216852f48774120b",
+    "fixture-signature-failure.log": "e11a997bb68e2db8c498792fa32c73179b20bc28db149ccae01dbed63a30635c",
+    "worker-unit.log": "c8b429ffcb9ef52571f1dd9b4f97464d4bf68133a3951efa13ec5646e4507e1d",
+    "postgres-targeted.log": "cd09bf8cb573870abf7a4cd459ba1bd32c568425c7433a9a8ba64e951cecc56e",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "unit-targeted.log": "b4b201435b3dbf91750f2d7a6d42ed1d0a296ac11e990dabf816902f78ab9e83",
+    "docs.log": "cba90219b9351d15e5cb3a4d6c08cb880da4ca42e86596bef598b01b5664519b",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "image-build.log": "14e1b4215834a2711b3d919a49cfec6998b10f1c1bd466a6628c0fd2e20812e6",
+    "linux-unit.log": "7295558679bef2e3efc4382c6b96c1dadfa2c0ac41710a0efef60dfb9f0fb598",
+    "linux-fixture-import-failure.log": "b4f3c0c72b44b1c0053403a74fda3659674263d15c21a13629cf0b51f46e83b8",
+    "tls-worker-unit.log": "43b468577c359533342478d1087727651e3d3fdf1d901060a7f4f649751eab52",
+    "tls-linux-unit.log": "03c89919dc14b72a1261f6a902e3deada0d7b8c446edfeda1465a112518f8798"
+  },
+  "baselineReproducerSha256": "c0df98b704283e70dbedc71a94952f5fd2ed62ef425661796ae526b4eb757ed4",
+  "boundary": "Client wait and subprocess cleanup; no promise of backend compute cancellation or hard real-time process startup/reaping. Host tests are macOS; Windows is not qualified.",
+  "logNormalization": "Trailing whitespace and final blank lines removed; expected baseline and stale fixture failure retained separately."
+}
