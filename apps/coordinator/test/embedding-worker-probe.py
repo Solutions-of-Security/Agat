@@ -1,0 +1,89 @@
+"""Observe the real worker loop on loopback; credentials arrive through stdin."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sys
+import threading
+import time
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "workers"))
+import agat_worker  # noqa: E402
+
+
+def main() -> int:
+    supplied = json.load(sys.stdin)
+    url = urlsplit(supplied["coordinator"])
+    if url.scheme != "http" or url.hostname != "127.0.0.1" or not url.port or url.username or url.password:
+        raise ValueError("The embedding worker fixture requires a loopback coordinator")
+    credentials = Path(supplied["artifacts"]) / "embedding-worker-credentials.json"
+    agat_worker.save_credentials(credentials, {"id": supplied["nodeId"], "token": supplied["token"]})
+    sys.argv = ["agat_worker.py", "--coordinator", supplied["coordinator"],
+                "--models", supplied["model"], "--embedding-models", supplied["model"],
+                "--credentials", str(credentials), "--model-url", "http://127.0.0.1:1/v1",
+                "--model-discovery", "off", "--concurrency", "1", "--poll-interval", "0.2",
+                "--region", supplied["region"], "--residency-domain", supplied["residencyDomain"],
+                "--no-web", "--dry-run"]
+    events: list[dict] = []
+    requests: list[dict] = []
+    active_requests: dict[int, dict] = {}
+    lock = threading.Lock()
+    execute_code = agat_worker.execute_knowledge_lease.__code__
+    renew_code = agat_worker.knowledge_lease_renewer.__code__
+    request_code = agat_worker.CoordinatorClient.request.__code__
+    error_code = agat_worker.ApiError.__init__.__code__
+
+    def observe(frame, event, result):
+        code = frame.f_code
+        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code}:
+            return
+        thread_id = threading.get_native_id()
+        with lock:
+            if code in {execute_code, renew_code}:
+                lease_id = frame.f_locals["lease"]["leaseId"] if code is execute_code else frame.f_locals["lease_id"]
+                events.append({"operation": "execute" if code is execute_code else "renew",
+                               "event": event, "leaseId": lease_id, "threadId": thread_id,
+                               "atNs": time.monotonic_ns()})
+            elif code is request_code:
+                route = frame.f_locals["path"]
+                if not route.startswith("/api/v1/workers/knowledge/"):
+                    return
+                if event == "call":
+                    record = {"path": route, "startedNs": time.monotonic_ns(), "threadId": thread_id}
+                    if route.endswith("/complete"):
+                        record["chunkIds"] = [item["chunkId"] for item in frame.f_locals["body"]["embeddings"]]
+                    active_requests[thread_id] = record
+                    requests.append(record)
+                else:
+                    record = active_requests.pop(thread_id)
+                    record["finishedNs"] = time.monotonic_ns()
+                    response = frame.f_locals.get("response")
+                    if response is not None:
+                        record["status"] = response.status
+                    if isinstance(result, dict) and route.endswith("/lease"):
+                        record["leaseId"] = result["leaseId"]
+                        record["documentId"] = result["document"]["id"]
+                        record["chunkIds"] = [item["id"] for item in result["chunks"]]
+            elif event == "call" and thread_id in active_requests:
+                active_requests[thread_id]["status"] = frame.f_locals["status"]
+
+    config = agat_worker.parse_args()
+    try:
+        sys.setprofile(observe)
+        threading.setprofile(observe)
+        code = agat_worker.worker_loop(config)
+    finally:
+        sys.setprofile(None)
+        threading.setprofile(None)
+        credentials.unlink(missing_ok=True)
+    print("AGAT_EMBEDDING_WORKER_PROBE " + json.dumps({
+        "exitCode": code, "python": sys.version.split()[0], "events": events, "requests": requests,
+        "activeRequests": len(active_requests),
+        "liveThreads": [thread.name for thread in threading.enumerate() if thread is not threading.main_thread()],
+    }), flush=True)
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

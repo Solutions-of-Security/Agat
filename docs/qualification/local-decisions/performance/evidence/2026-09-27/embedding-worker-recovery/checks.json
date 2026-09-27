@@ -1,0 +1,65 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "83c0a7f95ff408e0674641b063306786f6e31a13",
+  "node": "v24.14.0",
+  "python": "3.14.3",
+  "postgres": "17.6",
+  "runtimeChanged": false,
+  "checks": {
+    "initialPostgres": {
+      "pass": 2,
+      "fail": 0
+    },
+    "workerUnit": {
+      "pass": 44,
+      "skip": 1,
+      "fail": 0,
+      "skipReason": "LangGraph dependency is not installed"
+    },
+    "typecheck": "pass",
+    "postgres": {
+      "pass": 67,
+      "fail": 0
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 165,
+      "localLinks": 1538,
+      "markdownFiles": 184,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "sourceSha256": {
+    "apps/coordinator/test/embedding-worker-probe.py": "a0787eda1b5d7e56d835c6ac0f3823534a77202ec0fa98b01e3d008d583cd10a",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "441060fe69d7287919034da9c2efcbdcf5adf3c706da43ef3c8e1319244906ae",
+    "apps/coordinator/test/postgres-commit-proxy.ts": "ee068f31316e8a757fd8bba99615dc9632bac84fdb4561e94c6caf3871c696d0",
+    "workers/agat_worker.py": "4b1cf86c9841f525b28b7a514b00b717e3191cbc98d4c835f5018f0cc4f65d95",
+    "apps/coordinator/src/database.ts": "4837c0df0d9157441443f4e14780c5299f0fef677aff6528b7931a27598db411",
+    "apps/coordinator/src/postgres-worker.ts": "04c7a8eaecadb0e68a19813e9719c7239a6102b96da897bedb4ef8a1992b8cf8",
+    "apps/coordinator/src/server.ts": "29a68b507fee72a4e78aa1cd7289b7b571131857dc4042279868eb8c65f7aafb"
+  },
+  "logSha256": {
+    "postgres-initial.log": "b92a07928abca2d474bcb752e75a3cb81ee8655efc1a2d21e8e01335d21dbd6f",
+    "worker-unit.log": "9056ea9ed84fbb7761527605c11c89866f8be18fc37991f425f6955cf7b341b4",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "postgres.log": "7be7ff4eee54bf6ed9ba4f5b1d15b85e2dfd817767ae3662a89869bf39e46cc2",
+    "docs.log": "c1b2e43a218ebd5f680327585d6f93d0d7a739e1c7f7e13f8bfdf4ec733a1b21",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "postgres-initial.log": "b92a07928abca2d474bcb752e75a3cb81ee8655efc1a2d21e8e01335d21dbd6f",
+    "worker-unit.log": "9056ea9ed84fbb7761527605c11c89866f8be18fc37991f425f6955cf7b341b4",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "postgres.log": "7be7ff4eee54bf6ed9ba4f5b1d15b85e2dfd817767ae3662a89869bf39e46cc2",
+    "docs.log": "c1b2e43a218ebd5f680327585d6f93d0d7a739e1c7f7e13f8bfdf4ec733a1b21",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "boundary": "Real worker loop, client and renewal threads with standard dry-run synthetic embeddings; no inference model quality, long-running inference or renewal loss claim.",
+  "logNormalization": "Trailing whitespace and final blank lines removed."
+}
