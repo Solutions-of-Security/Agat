@@ -67,6 +67,8 @@ with make_server(DecisionEngine(Backend()),0) as server:
 `], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   const lines = createInterface({ input: backend.stdout! });let chatCalls = 0, embedCalls = 0, invalidVectors = false;
   const serverErrors: unknown[] = [];
+  let nextEmbeddingResponse = 0, primaryBarrierReleased = false;
+  const firstPrimaryResponses: Array<() => void> = [];
   const primary = http.createServer((req, res) => {
     let raw = "";req.on("data", chunk => { raw += chunk; });req.on("end", () => {
       try {
@@ -76,8 +78,11 @@ with make_server(DecisionEngine(Backend()),0) as server:
         embedCalls++;assert.equal(body.model, fixture.rag!.embeddingModel);assert.equal(body.truncate, false);
         assert.ok(body.input.length >= 1 && body.input.length <= 2);
         const embeddings = body.input.map((text: string) => invalidVectors ? [0, 0, 0] : [1, text.length % 7 + 1, 1]);
+        // A model server may serialize embedding batches. Pace valid replies so
+        // primary concurrency cannot depend on two subprocesses starting together.
+        nextEmbeddingResponse = Math.max(performance.now(), nextEmbeddingResponse) + 250;
         setTimeout(() => res.end(JSON.stringify({ model: body.model, embeddings, prompt_eval_count: 20,
-          total_duration: 1_000_000, load_duration: 1000 })), 20);
+          total_duration: 1_000_000, load_duration: 1000 })), nextEmbeddingResponse - performance.now());
       } else {
         assert.equal(req.url, "/api/chat");chatCalls++;
         const prompt = body.messages.map((message: any) => message.content).join("\n");
@@ -85,9 +90,19 @@ with make_server(DecisionEngine(Backend()),0) as server:
         for (const source of fixture.rag!.sources) assert.ok(prompt.includes(source.content));
         const markers = [...new Set([...prompt.matchAll(/\[(K[0-9]+)\]/g)].map(match => match[0]))];
         assert.ok(markers.length >= 2);
-        setTimeout(() => res.end(JSON.stringify({ model: "fixture-primary", done: true, done_reason: "stop", total_duration: 1_000_000,
+        const complete = () => res.end(JSON.stringify({ model: "fixture-primary", done: true, done_reason: "stop", total_duration: 1_000_000,
           message: { content: `Учебные данные июля и августа ${markers.join(" ")}; причины неизвестны.` },
-          prompt_eval_count: 100, eval_count: 20 })), 100);
+          prompt_eval_count: 100, eval_count: 20 }));
+        if (chatCalls <= 2) {
+          // Hold the first request until the second real worker slot reaches
+          // primary HTTP. This proves overlap despite serialized embeddings.
+          firstPrimaryResponses.push(complete);
+          if (firstPrimaryResponses.length === 2) {
+            primaryBarrierReleased = true;
+            const replies = firstPrimaryResponses.splice(0);
+            setTimeout(() => replies.forEach(reply => reply()), 100);
+          }
+        } else setTimeout(complete, 100);
       }
       } catch (error) { serverErrors.push(error);res.writeHead(502).end(); }
     });
@@ -104,8 +119,11 @@ with make_server(DecisionEngine(Backend()),0) as server:
     const profile = await decisionProfile(decisionUrl);
     const result = await workflowPhase({ phase: { id: "rag_shadow", shadow: true, runs: 2, concurrency: 2 },
       fixture, model: "fixture-primary", primaryUrl, decisionUrl, profileJson: profile.profileJson, timeoutMs: 15_000, metadataId: "fixed_fixture" });
-    assert.equal(result.status, "observed", result.failure ?? "incomplete");
+    assert.equal(result.status, "observed", JSON.stringify({ failure: result.failure,
+      maxPrimaryRequestsInFlight: result.maxPrimaryRequestsInFlight, primaryCalls: result.primaryCalls.length,
+      decisionCalls: result.decisionCalls.length, embeddingCalls: result.embeddingCalls?.length }));
     assert.deepEqual(serverErrors, []);
+    assert.equal(primaryBarrierReleased, true);assert.equal(firstPrimaryResponses.length, 0);
     assert.equal(result.workflows.length, 2);assert.equal(chatCalls, 6);assert.equal(embedCalls, 8);
     assert.equal(result.embeddingCalls!.length, 8);assert.equal(result.rag!.sources.length, 2);
     assert.equal(result.maxPrimaryRequestsInFlight, 2);
