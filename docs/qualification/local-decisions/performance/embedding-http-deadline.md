@@ -41,6 +41,8 @@ npm run typecheck
 npm run docs:check
 ```
 
+После CodeQL-проверки для тестового HTTPS-сервера явно задан `minimum_version = TLSv1_2`; настройки production urllib не менялись. Повторные полные suites: host **70 PASS + 1 SKIP**, Linux image **71/71 PASS**.
+
 ## Границы и следующий gate
 
 Проверяется ожидание клиента, а не прекращение вычислений удалённой модели. Backend может продолжать inference после закрытия соединения. Это не hard real-time гарантия: создание процесса на уровне ОС и его reaping могут добавить задержку; уже поздний результат parent отвергает. JSON parsing и валидация bounded body выполняются после завершения HTTP. Жёсткое внешнее убийство самого worker и Windows здесь не квалифицированы; normal shutdown worker всё ещё дожидается активных работ в пределах их срока.
