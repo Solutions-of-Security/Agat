@@ -16,7 +16,9 @@ export interface MainProbeMetrics {
 }
 type ObserverReply = MainProbeMetrics | { type: "probe-started"; id: string };
 
-export async function startMainCoordinator(data: string, mode: "sync" | "isolated", compiledSha256: Record<string, string>) {
+export async function startMainCoordinator(data: string, mode: "sync" | "isolated", compiledSha256: Record<string, string>, options: { instanceId?: string } = {}) {
+  const instanceId = options.instanceId ?? "rag-http-main";
+  assert.match(instanceId, /^[a-z][a-z0-9-]{0,79}$/);
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   assert.ok(Object.keys(compiledSha256).length > 0);
   for (const [name, expected] of Object.entries(compiledSha256)) {
@@ -30,7 +32,7 @@ export async function startMainCoordinator(data: string, mode: "sync" | "isolate
       AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql", AGAT_ARTIFACTS_DIR: path.join(data, "artifacts"),
       AGAT_POSTGRES_URL: process.env.AGAT_POSTGRES_URL, AGAT_POSTGRES_TENANT_URL: process.env.AGAT_POSTGRES_TENANT_URL,
       AGAT_POSTGRES_POOL_MAX: "4", AGAT_POSTGRES_SSL_MODE: "disable", AGAT_REGION: "eu-test-1", AGAT_RESIDENCY_DOMAIN: "eu-test",
-      AGAT_COORDINATOR_INSTANCE_ID: "rag-http-main", AGAT_KNOWLEDGE_SEARCH_EXECUTION: mode,
+      AGAT_COORDINATOR_INSTANCE_ID: instanceId, AGAT_KNOWLEDGE_SEARCH_EXECUTION: mode,
       AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "30000", AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES: "10000",
       AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false", AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false",
       AGAT_SERVE_WEB: "false", AGAT_SEED_DEMO: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false",
