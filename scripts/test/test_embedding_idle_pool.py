@@ -48,6 +48,28 @@ class IdlePoolTests(unittest.TestCase):
         self.assertEqual(children, [])
         self.assertEqual({thread.ident for thread in threading.enumerate()}, before)
 
+    def test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper(self):
+        for cancellation in (False, True):
+            with self.subTest(cancellation=cancellation), endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+                with IdleEmbeddingSessionPool(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+                    request(pool, f'http://127.0.0.1:{port}/echo')
+                    self.eventually(lambda: pool._sessions[0].idle_reaps == 1)
+                    cancelled = threading.Event()
+                    fresh = executor.submit(request, pool, url, timeout=2 if cancellation else .3, cancelled=cancelled)
+                    try:
+                        self.assertTrue(entered.wait(2))
+                        if cancellation:
+                            cancelled.set()
+                        with self.assertRaisesRegex(RuntimeError, 'cancelled' if cancellation else 'deadline'):
+                            fresh.result(2)
+                        self.assertFalse(release.is_set())
+                        self.assertEqual(len(children), 2)
+                        self.assertTrue(all(child.returncode is not None and child.stdin.closed and child.stdout.closed for child in children))
+                        self.assertIn('request', json.loads(request(pool, f'http://127.0.0.1:{port}/echo')))
+                        self.assertEqual(len(children), 3)
+                    finally:
+                        release.set()
+
     def test_unused_pool_is_lazy_and_close_is_idempotent(self):
         with observed_processes() as children:
             pool = IdleEmbeddingSessionPool(32, idle_timeout=.03)
