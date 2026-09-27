@@ -8,6 +8,7 @@ import { KnowledgeCandidateRanker, type KnowledgeRankingOptions } from "./knowle
 interface AccessScope {
   kind: "system" | "tenant";
   projectId?: string;
+  deadline?: number;
 }
 
 interface PostgresWorkerOptions {
@@ -39,6 +40,7 @@ let systemPool: Pool | null = null;
 let tenantPool: Pool | null = null;
 let transactionClient: PoolClient | null = null;
 let transactionScope: AccessScope | null = null;
+let statementTimeoutMs = 0;
 
 function sslOptions(options: PostgresWorkerOptions): false | {
   rejectUnauthorized: boolean;
@@ -316,7 +318,19 @@ function postgresSql(sql: string): string {
 }
 
 function sameScope(left: AccessScope | null, right: AccessScope): boolean {
-  return left?.kind === right.kind && left?.projectId === right.projectId;
+  return left?.kind === right.kind && left?.projectId === right.projectId && left?.deadline === right.deadline;
+}
+
+async function setRemainingTimeout(client: PoolClient, scope: AccessScope): Promise<void> {
+  if (scope.deadline === undefined) return;
+  const remaining = Math.ceil(scope.deadline - performance.now());
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    throw Object.assign(new Error("Истёк PostgreSQL deadline запроса"), { code: "AGAT_DEADLINE" });
+  }
+  // The server must cancel lock waits even when main's JS timer cannot run.
+  // LOCAL resets at transaction end; never extend the operator's SQL timeout.
+  const timeout = statementTimeoutMs > 0 ? Math.min(statementTimeoutMs, remaining) : remaining;
+  await client.query("SELECT set_config('statement_timeout', $1, true)", [`${timeout}ms`]);
 }
 
 async function setTenantScope(client: PoolClient, scope: AccessScope): Promise<void> {
@@ -339,6 +353,7 @@ async function executeScoped(
     transactionScope = scope;
     try {
       const result = await transactionClient.query("BEGIN");
+      await setRemainingTimeout(transactionClient, scope);
       await setTenantScope(transactionClient, scope);
       return result;
     } catch (error) {
@@ -351,6 +366,9 @@ async function executeScoped(
   if (transactionControl === "COMMIT" || transactionControl === "ROLLBACK") {
     if (!transactionClient) throw new Error("PostgreSQL transaction не открыта");
     if (!sameScope(transactionScope, scope)) throw new Error("PostgreSQL transaction scope изменился");
+    // Leave the client attached if the deadline already expired: the caller's
+    // catch must still be able to ROLLBACK. Cleanup itself has no deadline gate.
+    if (transactionControl === "COMMIT") await setRemainingTimeout(transactionClient, scope);
     const client = transactionClient;
     transactionClient = null;
     transactionScope = null;
@@ -362,14 +380,17 @@ async function executeScoped(
   }
   if (transactionClient) {
     if (!sameScope(transactionScope, scope)) throw new Error("PostgreSQL transaction scope изменился");
+    await setRemainingTimeout(transactionClient, scope);
     return transactionClient.query(normalized, params);
   }
-  if (scope.kind === "system") return systemPool.query(normalized, params);
-  const client = await tenantPool.connect();
+  if (scope.kind === "system" && scope.deadline === undefined) return systemPool.query(normalized, params);
+  const client = await (scope.kind === "system" ? systemPool : tenantPool).connect();
   try {
     await client.query("BEGIN READ WRITE");
+    await setRemainingTimeout(client, scope);
     await setTenantScope(client, scope);
     const result = await client.query(normalized, params);
+    await setRemainingTimeout(client, scope);
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -426,6 +447,7 @@ async function rankKnowledge(request: WorkerRequest, scope: AccessScope): Promis
 async function handle(request: WorkerRequest): Promise<unknown> {
   if (request.operation === "initialize") {
     if (!request.options) throw new Error("PostgreSQL worker options отсутствуют");
+    statementTimeoutMs = request.options.statementTimeoutMs;
     systemPool = createPool(request.options.systemUrl, request.options, "system");
     tenantPool = createPool(request.options.tenantUrl || request.options.systemUrl, request.options, "tenant");
     await systemPool.query("SELECT 1");

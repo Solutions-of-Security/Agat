@@ -14,6 +14,7 @@ const CURSOR_BATCH_ROWS = 64;
 export interface PostgresAccessScope {
   kind: "system" | "tenant";
   projectId?: string;
+  deadline?: number;
 }
 
 const postgresAccess = new AsyncLocalStorage<PostgresAccessScope>();
@@ -22,8 +23,9 @@ export function enterPostgresTenantScope(projectId: string): void {
   postgresAccess.enterWith({ kind: "tenant", projectId });
 }
 
-export function runWithPostgresSystemScope<T>(callback: () => T): T {
-  return postgresAccess.run({ kind: "system" }, callback);
+export function runWithPostgresSystemScope<T>(callback: () => T, deadline?: number): T {
+  if (deadline !== undefined && !Number.isFinite(deadline)) throw new Error("Некорректный PostgreSQL deadline");
+  return postgresAccess.run({ kind: "system", ...(deadline === undefined ? {} : { deadline }) }, callback);
 }
 
 export interface PostgresDatabaseOptions {

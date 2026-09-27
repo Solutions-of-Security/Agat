@@ -72,6 +72,10 @@ export class KnowledgeSearchExecutor implements KnowledgeSearchService {
         this.fail(new KnowledgeSearchExecutorError(504, "Ответ retrieval получен после deadline; результат может быть сохранён"));
         return;
       }
+      if (!message.ok && message.status === 504) {
+        this.fail(new KnowledgeSearchExecutorError(504, "Истёк срок PostgreSQL retrieval; результат активного запроса неизвестен"));
+        return;
+      }
       this.active = undefined;
       if (message.ok) this.finish(task, undefined, message.value);
       else this.finish(task, new KnowledgeSearchExecutorError(message.status === 401 ? 401 : 400, String(message.error)));
@@ -156,7 +160,7 @@ export class KnowledgeSearchExecutor implements KnowledgeSearchService {
         continue;
       }
       this.active = task;
-      try { this.worker.postMessage({ type: "search", id: task.id, token: task.token, nodeId: task.nodeId, leaseId: task.leaseId, request: task.request }); }
+      try { this.worker.postMessage({ type: "search", id: task.id, deadline: task.deadline, token: task.token, nodeId: task.nodeId, leaseId: task.leaseId, request: task.request }); }
       catch { this.fail(new KnowledgeSearchExecutorError(503, "Не удалось передать retrieval исполнителю")); }
       return;
     }

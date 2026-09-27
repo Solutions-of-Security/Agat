@@ -97,3 +97,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [HTTP-профиль обычного main](./retrieval-main-http.md): 42/42 поиска + 2 warmup на одном commit, реальный maintenance и один pool budget. При конкурентности 4 health max 8563 → 78 мс, пропуски health probes 232 → 0; скорость поиска не улучшилась одинаково. Девять replay-тестов включены в CI с доступом к исходным commits.
 
 [Повторная проверка lease перед сохранением](./retrieval-lease-locking.md): поиск отклоняет истечение и отмену во время ожидания; PostgreSQL row locks удерживаются после ranking, чтобы чтение индекса не задерживало продление.
+
+[Deadline при SQL-блокировке служебного HTTP](./retrieval-control-lock-deadline.md): воспроизведена задержка main timer при renew, ожидающем stage активного поиска. Остаток срока передаётся в PostgreSQL statement_timeout; проверены отказ без replay, rollback, cursor cleanup и restart.

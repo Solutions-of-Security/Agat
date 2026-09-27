@@ -18,7 +18,7 @@ try {
   port.close();
 }
 
-port.on("message", (message: { type: string; id: number; token: string; nodeId: string; leaseId: string; request: KnowledgeSearchRequest }) => {
+port.on("message", (message: { type: string; id: number; deadline?: number; token: string; nodeId: string; leaseId: string; request: KnowledgeSearchRequest }) => {
   runWithPostgresSystemScope(() => {
     if (message.type === "close") {
       store.close(); port.close(); return;
@@ -35,8 +35,9 @@ port.on("message", (message: { type: string; id: number; token: string; nodeId: 
       const value = store.searchKnowledge(message.nodeId, message.leaseId, message.request);
       port.postMessage({ type: "result", id: message.id, ok: true, value });
     } catch (error) {
-      port.postMessage({ type: "result", id: message.id, ok: false, status: 400,
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      port.postMessage({ type: "result", id: message.id, ok: false, status: code === "AGAT_DEADLINE" || code === "57014" ? 504 : 400,
         error: error instanceof Error ? error.message : "Ошибка retrieval" });
     }
-  });
+  }, message.deadline);
 });

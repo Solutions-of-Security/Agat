@@ -1,0 +1,28 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:30814) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:30814) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ enforces the retrieval deadline while main is blocked renewing the same stage (7067.161ms)
+✖ PostgreSQL Fleet/HA integration (8621.332916ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9117.163916
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:18:3042
+✖ enforces the retrieval deadline while main is blocked renewing the same stage (7067.161ms)
+  Error: Retrieval deadline and health waited for the external run lock while main renewed its stage
+      at Timeout.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:114:39)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
