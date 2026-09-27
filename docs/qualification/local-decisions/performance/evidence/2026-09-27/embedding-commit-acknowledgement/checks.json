@@ -1,0 +1,79 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "bbbfb7805e595109e7bdc1673ec3a9fa2009c4f2",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "runtimeChanged": false,
+  "checks": {
+    "initialTargeted": {
+      "pass": 5,
+      "fail": 0
+    },
+    "initialFull": {
+      "pass": 64,
+      "fail": 0,
+      "scope": "Before adding the withheld embedding reply scenario"
+    },
+    "fixtureExpectationFailure": {
+      "pass": 0,
+      "fail": 1,
+      "reason": "Expected the whole bridge to close; pg query_timeout actually replaces the connection and health remains 200. Runtime unchanged."
+    },
+    "postgresTargeted": {
+      "pass": 6,
+      "fail": 0,
+      "embeddingCases": 3
+    },
+    "typecheck": "pass",
+    "proxyTypecheck": "pass",
+    "postgres": {
+      "pass": 65,
+      "fail": 0
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 165,
+      "localLinks": 1534,
+      "markdownFiles": 183,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "sourceSha256": {
+    "apps/coordinator/test/postgres-commit-proxy.ts": "ee068f31316e8a757fd8bba99615dc9632bac84fdb4561e94c6caf3871c696d0",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "821a76b9fb69661a14452f2eb8a844d32b5cd1d021fb1b764a96daddf65361aa",
+    "apps/coordinator/src/database.ts": "4837c0df0d9157441443f4e14780c5299f0fef677aff6528b7931a27598db411",
+    "apps/coordinator/src/postgres-worker.ts": "04c7a8eaecadb0e68a19813e9719c7239a6102b96da897bedb4ef8a1992b8cf8",
+    "apps/coordinator/src/postgres-database.ts": "0890bd63b3b5de0dd1fa8a58cc66c2dbef05a30cf66f9d5a1e06957149965d10",
+    "apps/coordinator/src/server.ts": "29a68b507fee72a4e78aa1cd7289b7b571131857dc4042279868eb8c65f7aafb"
+  },
+  "logSha256": {
+    "postgres-initial-targeted.log": "f80aeb1e41966698e3f58523c24e9d3574dbf7ff612825ad22f0e46c43a5c0ae",
+    "postgres-initial-full.log": "b0c7e0f280ea2c587edf83abcb359e0ae75e1619d0e4fe1e19f5eea2e8e9e288",
+    "fixture-expectation-failure.log": "4e7492385da43ab8698981d30f9f1ce57adbbf35ae2387f59770d23425c0f4b8",
+    "postgres-targeted.log": "1e7792580519391b4b546ad04c781241d7df293aed1dffdca9a4a48ae10b4bba",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "proxy-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "postgres.log": "7e558619f4ab5c475f29f4649272e75b7cd2e54ce344e1c3c98e6a0365119f5b",
+    "docs.log": "8bc27c8855a12fa5bafb86d7daf342cb04c1b6b8d6e945f75594c956edf79a91"
+  },
+  "rawLogSha256": {
+    "postgres-initial-targeted.log": "f80aeb1e41966698e3f58523c24e9d3574dbf7ff612825ad22f0e46c43a5c0ae",
+    "postgres-initial-full.log": "b0c7e0f280ea2c587edf83abcb359e0ae75e1619d0e4fe1e19f5eea2e8e9e288",
+    "fixture-expectation-failure.log": "53100fad6ad47458219c2be015ab1746e03cfc32515196c8526faaf8d690d429",
+    "postgres-targeted.log": "1e7792580519391b4b546ad04c781241d7df293aed1dffdca9a4a48ae10b4bba",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "proxy-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "postgres.log": "7e558619f4ab5c475f29f4649272e75b7cd2e54ce344e1c3c98e6a0365119f5b",
+    "docs.log": "8bc27c8855a12fa5bafb86d7daf342cb04c1b6b8d6e945f75594c956edf79a91"
+  },
+  "boundary": "Loopback confirmed PostgreSQL COMMIT followed by disconnect or withheld reply. Proves exact state preservation and remaining-batch recovery in observed runs; no universal exactly-once or actual Python worker claim.",
+  "logNormalization": "Trailing whitespace and final blank lines removed; the initial failed fixture expectation is retained separately."
+}

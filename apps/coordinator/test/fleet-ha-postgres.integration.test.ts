@@ -16,7 +16,7 @@ import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.j
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
-import { interceptRetrievalCommit } from "./postgres-commit-proxy.js";
+import { interceptEmbeddingCommit, interceptRetrievalCommit } from "./postgres-commit-proxy.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -217,7 +217,7 @@ async function stageMaintenanceFixture(replicas: number) {
   }
 }
 
-async function embeddingLeaseFixture(replicas = 1) {
+async function embeddingLeaseFixture(replicas = 1, options: { content?: string; chunkSize?: number; chunkOverlap?: number } = {}) {
   const suffix = randomUUID().slice(0, 8), project = `embedding-lease-${suffix}`;
   const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-embedding-lease-"));
   const first = store(`embedding-store-${suffix}`, artifacts);
@@ -232,8 +232,9 @@ async function embeddingLeaseFixture(replicas = 1) {
       models: [], embeddingModels: [project], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
       labels: { pool: project } });
     const worker = register(`${project}-a`), other = register(`${project}-b`);
-    const collection = String(first.createKnowledgeCollection({ name: project, embeddingModel: project }, project).id);
-    const document = String(first.ingestKnowledgeDocument(collection, { name: "Source", content: "Synthetic index source." }, project).id);
+    const collection = String(first.createKnowledgeCollection({ name: project, embeddingModel: project,
+      chunkSize: options.chunkSize, chunkOverlap: options.chunkOverlap }, project).id);
+    const document = String(first.ingestKnowledgeDocument(collection, { name: "Source", content: options.content ?? "Synthetic index source." }, project).id);
     const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document);
     const jobId = String(first.db.prepare("SELECT id FROM knowledge_embedding_jobs WHERE document_id = ?").get(document)!.id);
     for (let index = 0; index < replicas; index++) {
@@ -285,7 +286,7 @@ async function embeddingLeaseFixture(replicas = 1) {
         return waiting.rows.some(row => /UPDATE knowledge_embedding_jobs/.test(String(row.query)));
       }, "Embedding maintenance did not reach the required timestamp");
     };
-    return { first, writer, children, pending, project, worker, other, collection, document, lease, jobId, results,
+    return { first, writer, children, pending, artifacts, project, worker, other, collection, document, lease, jobId, results,
       post, waitForLock, job, doc, indexed, events, assertReady, recover, health, maintenanceAfter,
       close: async () => {
         await writer.query("ROLLBACK").catch(() => {}); await Promise.all(children.map(child => child.stop())); await Promise.allSettled(pending);
@@ -818,6 +819,123 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       } finally {
         await f.writer.query("ROLLBACK"); await child?.stop(); await Promise.allSettled(pending); await f.close();
       }
+    });
+  });
+
+  for (const { batch, fault } of [
+    { batch: "terminal", fault: "disconnect" }, { batch: "partial", fault: "disconnect" }, { batch: "terminal", fault: "withhold" },
+  ] as const) it(`preserves a committed embedding batch after lost COMMIT acknowledgement and restart (${batch}, ${fault})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0, batch === "partial" ? { content: "x".repeat(400 * 33), chunkSize: 400, chunkOverlap: 0 } : {});
+      const instance = `embedding-commit-${randomUUID().slice(0, 8)}`;
+      const proxy = await interceptEmbeddingCommit(systemUrl, `agat-${instance}-system`);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const results = f.lease.chunks.map((chunk, index) => ({ chunkId: chunk.id, embedding: [1, (index + 1) / f.lease.chunks.length] }));
+      const snapshot = () => ({
+        job: f.first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures, last_error, updated_at FROM knowledge_embedding_jobs WHERE id = ?").get(f.jobId)!,
+        document: f.first.db.prepare("SELECT status, chunk_count, embedded_count, error, updated_at FROM knowledge_documents WHERE id = ?").get(f.document)!,
+        chunks: f.first.db.prepare("SELECT id, ordinal, embedding_model, embedding_json, embedding_dimensions, embedded_at FROM knowledge_chunks WHERE document_id = ? ORDER BY ordinal").all(f.document),
+        events: f.first.db.prepare("SELECT id, type, data_json FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.batch.completed', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${f.document}%`),
+      });
+      const post = (action: "complete" | "fail" | "renew" | "lease", leaseId = f.lease.leaseId, embeddings = results, token = f.worker.token) => {
+        const route = action === "lease" ? "lease" : `leases/${leaseId}/${action}`;
+        const pending = fetch(`http://127.0.0.1:${child!.port}/api/v1/workers/knowledge/${route}`, {
+          method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify(action === "complete" ? { embeddings } : action === "fail" ? { error: "Worker could not confirm completion" } : {}),
+          signal: AbortSignal.timeout(10_000),
+        }).then(async response => ({ status: response.status, body: await response.text() }));
+        f.pending.push(pending); void pending.catch(() => {}); return pending;
+      };
+      const rejectOldLease = async () => {
+        const previous = snapshot();
+        for (const action of ["complete", "fail", "renew"] as const) {
+          const rejected = await post(action); assert.equal(rejected.status, action === "renew" ? 404 : 400, rejected.body);
+          assert.match(JSON.parse(rejected.body).error, /[Аа]ренда не найдена/);
+          assert.deepEqual(snapshot(), previous, `Obsolete ${action} must not change committed state or the replacement lease`);
+        }
+      };
+      const waitForMaintenance = async () => {
+        const timestamp = Date.now();
+        await eventually(async () => {
+          const row = await f.writer.query("SELECT last_seen FROM coordinator_replicas WHERE instance_id = $1", [instance]);
+          return Date.parse(String(row.rows[0]?.last_seen)) >= timestamp;
+        }, "Main did not resume maintenance after the lost acknowledgement");
+        const health = await fetch(`http://127.0.0.1:${child!.port}/api/v1/health`, { signal: AbortSignal.timeout(2_000) });
+        assert.equal(health.status, 200); await health.text();
+      };
+      try {
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts, {
+          AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl), AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync",
+          ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) }));
+        const started = performance.now();
+        const active = post("complete");
+        await within(Promise.race([proxy.committed, active.then(result => {
+          throw new Error(`Embedding returned HTTP ${result.status} before the COMMIT fault was established`);
+        })]), 5_000, "Embedding fault did not observe a real successful COMMIT");
+        const committed = snapshot();
+        assert.equal(results.length, batch === "partial" ? 32 : 1);
+        assert.equal(committed.job.status, batch === "partial" ? "pending" : "completed");
+        assert.equal(committed.job.node_id, null); assert.equal(committed.job.lease_id, null); assert.equal(committed.job.lease_expires_at, null);
+        assert.equal(committed.job.failures, 0); assert.equal(committed.job.last_error, null);
+        assert.equal(committed.document.status, batch === "partial" ? "indexing" : "ready");
+        assert.equal(committed.document.chunk_count, batch === "partial" ? 33 : 1);
+        assert.equal(committed.document.embedded_count, results.length); assert.equal(committed.document.error, null);
+        assert.equal(committed.chunks.length, batch === "partial" ? 33 : 1);
+        for (const [index, chunk] of committed.chunks.entries()) {
+          if (index < results.length) {
+            assert.equal(chunk.id, results[index]!.chunkId); assert.equal(chunk.embedding_model, f.project);
+            assert.deepEqual(JSON.parse(String(chunk.embedding_json)), results[index]!.embedding);
+            assert.equal(chunk.embedding_dimensions, 2); assert.ok(Number.isFinite(Date.parse(String(chunk.embedded_at))));
+          } else { assert.equal(chunk.embedding_json, null); assert.equal(chunk.embedding_dimensions, null); assert.equal(chunk.embedded_at, null); }
+        }
+        assert.equal(committed.events.length, 1);
+        assert.equal(committed.events[0]!.type, batch === "partial" ? "knowledge.embedding.batch.completed" : "knowledge.document.ready");
+        assert.deepEqual(JSON.parse(String(committed.events[0]!.data_json)), {
+          projectId: f.project, collectionId: f.collection, documentId: f.document,
+          embeddedChunks: results.length, remainingChunks: batch === "partial" ? 1 : 0, dimensions: 2,
+        });
+        context.diagnostic(`Independent connection observed ${results.length} committed vectors and one ${committed.events[0]!.type} before losing its acknowledgement`);
+        if (fault === "disconnect") proxy.disconnect();
+        const rejected = await within(active, 2_500, "Embedding did not report the uncertain COMMIT within the configured bound");
+        assert.equal(rejected.status, 503, rejected.body); assert.match(JSON.parse(rejected.body).error, /COMMIT неизвестен/);
+        context.diagnostic(`${fault} returned HTTP 503 after ${Math.round(performance.now() - started)} ms; query timeout=${fault === "withhold" ? 1000 : 30000} ms`);
+        // pg's query_timeout handles a withheld reply before the bridge timeout;
+        // the broken pooled connection is replaced and the main remains usable.
+        await rejectOldLease(); await waitForMaintenance();
+        assert.deepEqual(snapshot(), committed, "Connection replacement and maintenance must not replay or undo the batch");
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts, { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        await waitForMaintenance(); await rejectOldLease();
+        assert.deepEqual(snapshot(), committed, "Restart must preserve the exact index, event IDs and job without replay");
+        const next = await post("lease", undefined, undefined, f.other.token);
+        if (batch === "terminal") {
+          assert.equal(next.status, 204); assert.equal(next.body, "");
+          assert.deepEqual(snapshot(), committed, "Completed document must not be offered again");
+        } else {
+          assert.equal(next.status, 200, next.body);
+          const lease = JSON.parse(next.body) as NonNullable<ReturnType<typeof f.first.leaseKnowledgeEmbedding>>;
+          assert.equal(lease.document.id, f.document); assert.notEqual(lease.leaseId, f.lease.leaseId);
+          assert.deepEqual(lease.chunks.map(chunk => chunk.id), [committed.chunks[32]!.id]);
+          assert.equal(f.job().node_id, f.other.id); assert.equal(f.job().lease_id, lease.leaseId);
+          await rejectOldLease();
+          const remaining = lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [0, 1] }));
+          const completed = await post("complete", lease.leaseId, remaining, f.other.token);
+          assert.equal(completed.status, 200, completed.body); assert.deepEqual(JSON.parse(completed.body), { completed: true, remainingChunks: 0 });
+          const final = snapshot();
+          assert.equal(final.job.status, "completed"); assert.equal(final.job.failures, 0);
+          assert.equal(final.document.status, "ready"); assert.equal(final.document.embedded_count, 33);
+          assert.deepEqual(final.chunks.slice(0, 32), committed.chunks.slice(0, 32), "Recovery must leave the first 32 vectors and timestamps untouched");
+          assert.equal(final.chunks[32]!.embedding_json, "[0,1]"); assert.equal(final.chunks[32]!.embedding_dimensions, 2);
+          assert.equal(final.events.length, 2); assert.deepEqual(final.events[0], committed.events[0]);
+          assert.equal(final.events[1]!.type, "knowledge.document.ready");
+          assert.deepEqual(JSON.parse(String(final.events[1]!.data_json)), { projectId: f.project, collectionId: f.collection,
+            documentId: f.document, embeddedChunks: 33, remainingChunks: 0, dimensions: 2 });
+          assert.equal((await post("lease", undefined, undefined, f.other.token)).status, 204);
+        }
+        assert.deepEqual(proxy.errors, []);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(child?.diagnostic() ?? "Main did not start"); throw error; }
+      finally { await proxy.close(); await child?.stop(); await f.close(); }
     });
   });
 

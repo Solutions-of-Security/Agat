@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import net from "node:net";
 
+export function interceptRetrievalCommit(connectionString: string, applicationName: string) {
+  return interceptCommit(connectionString, applicationName, /^INSERT INTO knowledge_retrievals\s*\(/i);
+}
+
+export function interceptEmbeddingCommit(connectionString: string, applicationName: string) {
+  return interceptCommit(connectionString, applicationName, /^UPDATE knowledge_chunks\s+SET embedding_model\s*=/i);
+}
+
 /** Loopback-only fault fixture: forward COMMIT, retain its real server reply.
- * Only the named retrieval connection, after INSERT knowledge_retrievals, is
- * affected. Authentication bytes and SQL payloads are never logged or saved.
+ * Only the named connection after the selected transaction's write is affected.
+ * Authentication bytes and SQL payloads are never logged or saved.
  */
-export async function interceptRetrievalCommit(connectionString: string, applicationName: string) {
+async function interceptCommit(connectionString: string, applicationName: string, write: RegExp) {
   const destination = new URL(connectionString);
   assert.equal(destination.hostname, "127.0.0.1");
   assert.ok(Number(destination.port) > 0);
@@ -26,7 +34,7 @@ export async function interceptRetrievalCommit(connectionString: string, applica
     }
     client.on("close", () => upstream.destroy()); upstream.on("close", () => client.destroy());
     let input: Buffer = Buffer.alloc(0), output: Buffer = Buffer.alloc(0);
-    let startup = true, target = false, wroteRetrieval = false, withholding = false;
+    let startup = true, target = false, wroteTarget = false, withholding = false;
     const broken = (error: unknown) => { errors.push(error as Error); client.destroy(); upstream.destroy(); };
     client.on("data", chunk => {
       try {
@@ -47,8 +55,9 @@ export async function interceptRetrievalCommit(connectionString: string, applica
             const body = packet.subarray(5);
             const query = type === "Q" ? body.toString("utf8").replace(/\0$/, "").trim()
               : type === "P" ? body.subarray(body.indexOf(0) + 1).toString("utf8").split("\0")[0]! : "";
-            if (/^INSERT INTO knowledge_retrievals\s*\(/i.test(query.trim())) wroteRetrieval = true;
-            if (wroteRetrieval && /^COMMIT$/i.test(query) && !fired) {
+            if (/^(?:BEGIN(?: IMMEDIATE)?|ROLLBACK)$/i.test(query.trim())) wroteTarget = false;
+            if (write.test(query.trim())) wroteTarget = true;
+            if (wroteTarget && /^COMMIT$/i.test(query) && !fired) {
               fired = true; withholding = true; held = { client, upstream };
             }
           }

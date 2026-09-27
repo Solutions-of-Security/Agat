@@ -1,0 +1,55 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:25054) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (terminal, withhold) (1837.954416ms)
+  ℹ Independent connection observed 1 committed vectors and one knowledge.document.ready before disconnect
+  ℹ (node:25060) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:60662
+State store: postgresql
+HA-cell: eu-test-1/eu-test · embedding-commit-2a950eb8
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-embedding-lease-FOjUdJ
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+✖ PostgreSQL Fleet/HA integration (3264.648958ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3699.122666
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:6770
+✖ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (terminal, withhold) (1837.954416ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  200 !== 503
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:904:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:828:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 18)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 503,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
