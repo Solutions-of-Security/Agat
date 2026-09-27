@@ -1,0 +1,94 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "0b9a0c7aa9ef1288af68e44fd749d06066e4b006",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforeSqlite": {
+      "expectedFail": 6
+    },
+    "beforePostgres": {
+      "pass": 3,
+      "expectedFail": 3,
+      "httpStatuses": [
+        200,
+        400,
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "targeted": {
+      "pass": 54,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 6,
+      "fail": 0,
+      "httpStatuses": [
+        400,
+        400,
+        200,
+        400,
+        400,
+        200
+      ]
+    },
+    "coordinator": {
+      "pass": 264,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 37,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1508,
+      "markdownFiles": 177,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "boundary": "Admission of a terminal stage response under the row lock before state, event and artifact writes. Does not add rollback of external effects or a physical COMMIT deadline; concurrent maintenance is a separate gate.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "3d4160e49cdb9b6f7ef78aad35263fda44ba10cc9312000eef36b437a08b11b5",
+    "apps/coordinator/test/stage-lease-admission.test.ts": "3cd2d5d3d78be5f84857b12dbe0cf9b626521e38ebad828125b0ad22be398f3e",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "20f4d16447080acad224197c4d20efa64ad701784ff715aba6ed0bde8c59884f"
+  },
+  "logSha256": {
+    "before-sqlite.log": "af444d27958d7bef762f5e32065a8fec727e7d3338ca8bfdfbdfcaa4985fb83b",
+    "before-postgres.log": "76cb04d9bb0417432965af855fcd60c240107fc536b76f2a073270492544c7d2",
+    "targeted.log": "ecf094ae8e567e23fd6e296f1a3ac9390d3129965c2f757d635ca57676d556ad",
+    "postgres-targeted.log": "4fc60c2b74dbfba7415b66d17d28764b3cd15e0dc70efd028d168a4a516b5c5f",
+    "coordinator.log": "0c7362f8a044de3cea2b3785b57fd93919df3c889096fe7d3b0ef5b6f7afd54f",
+    "postgres.log": "58f74eb10435a90b38bcb19b82042d874f12921d6b20272e53066cca3c53b86f",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "8a1799d16d67a8c19e127772b5946f6fdbe5e00debe5a19338948d5bbf95a6ff",
+    "postgres-recovery-fixture-failure.log": "592104483c7f20d8b05bc28f8b00030550d8696c0194ccd76c35576a7f52c622",
+    "postgres-router-fixture-failure.log": "633154a771ed50a4e3f0388bb942803e605ae5e83634d5eb1ce7f903b2b088a8",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-sqlite.log": "af444d27958d7bef762f5e32065a8fec727e7d3338ca8bfdfbdfcaa4985fb83b",
+    "before-postgres.log": "b9a8f5032b4c6972fc2585b6581e199a57981eab28bf8c2dec87d3e81f1cc33e",
+    "targeted.log": "ecf094ae8e567e23fd6e296f1a3ac9390d3129965c2f757d635ca57676d556ad",
+    "postgres-targeted.log": "4fc60c2b74dbfba7415b66d17d28764b3cd15e0dc70efd028d168a4a516b5c5f",
+    "coordinator.log": "0c7362f8a044de3cea2b3785b57fd93919df3c889096fe7d3b0ef5b6f7afd54f",
+    "postgres.log": "58f74eb10435a90b38bcb19b82042d874f12921d6b20272e53066cca3c53b86f",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "8a1799d16d67a8c19e127772b5946f6fdbe5e00debe5a19338948d5bbf95a6ff",
+    "postgres-recovery-fixture-failure.log": "06adac3a81250351f2edab84ee1c7f0b06e754f172b61fedb56f57e24e41dce5",
+    "postgres-router-fixture-failure.log": "5739a88a2c58a785f3615453641bdc24b3fe6655944d704453be69934a336fa5"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostic text preserved. Two failed fixture attempts retained; they assumed retry on the same worker and are not counted as passing."
+}
