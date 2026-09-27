@@ -214,6 +214,60 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("rejects commit after the request deadline, permits rollback and restores the SQL timeout", () => {
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-deadline-"));
+    const first = store(`deadline-${randomUUID().slice(0, 8)}`, artifacts);
+    try {
+      const project = `deadline-${randomUUID().slice(0, 8)}`;
+      first.createProject({ id: project, name: "Original", homeRegion: cellRegion,
+        allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+      const deadline = performance.now() + 500;
+      runWithPostgresSystemScope(() => {
+        first.db.exec("BEGIN");
+        try {
+          first.db.prepare("UPDATE projects SET name = 'Must roll back' WHERE id = ?").run(project);
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, deadline - performance.now() + 20));
+          assert.throws(() => first.db.exec("COMMIT"), (error: unknown) => (error as { code: string }).code === "AGAT_DEADLINE");
+        } finally { first.db.exec("ROLLBACK"); }
+      }, deadline);
+      assert.equal(first.db.prepare("SELECT name FROM projects WHERE id = ?").get(project)!.name, "Original");
+      assert.equal(first.db.prepare("SHOW statement_timeout").get()!.statement_timeout, "30s");
+      assert.equal(first.db.prepare("SELECT 42 AS answer, pg_sleep(0.1)").get()!.answer, 42);
+    } finally { first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); }
+  });
+
+  it("applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation", () => {
+    const database = new PostgresDatabaseSync({ systemUrl, tenantUrl, roleMode: "runtime", applicationName: "rag-cursor-deadline",
+      poolMax: 1, connectTimeoutMs: 5000, idleTimeoutMs: 5000, statementTimeoutMs: 30000, sslMode: "disable" });
+    try {
+      runWithPostgresSystemScope(() => {
+        database.exec("BEGIN");
+        try {
+          assert.throws(() => database.prepare(`SELECT n AS ordinal, 2 AS embedding_dimensions,
+            '[1,0]' AS embedding_json, pg_sleep(0.003) FROM generate_series(1,130) n`)
+            .rankKnowledgeCandidates!({ vector: [1, 0], topK: 1 }),
+          (error: unknown) => (error as { code: string }).code === "57014", "A later FETCH must use the remaining time, not a fresh query budget");
+        } finally { database.exec("ROLLBACK"); }
+      }, performance.now() + 250);
+      assert.equal(Number(database.prepare("SELECT count(*) AS count FROM pg_cursors WHERE name LIKE 'agat_cursor_%'").get()!.count), 0);
+      assert.equal(database.prepare("SHOW statement_timeout").get()!.statement_timeout, "30s");
+      assert.equal(database.prepare("SELECT 43 AS answer").get()!.answer, 43);
+      const pid = database.prepare("SELECT pg_backend_pid() AS pid").get()!.pid;
+      runWithPostgresSystemScope(() => {
+        database.exec("BEGIN");
+        assert.equal(database.prepare("SHOW statement_timeout").get()!.statement_timeout, "30s", "A long request must not extend the operator SQL timeout");
+        database.exec("COMMIT");
+      }, performance.now() + 60_000);
+      runWithPostgresSystemScope(() => {
+        database.exec("BEGIN");
+        assert.notEqual(database.prepare("SHOW statement_timeout").get()!.statement_timeout, "30s");
+        database.exec("COMMIT");
+      }, performance.now() + 500);
+      assert.equal(database.prepare("SELECT pg_backend_pid() AS pid").get()!.pid, pid, "The successful transaction reuses the same physical connection");
+      assert.equal(database.prepare("SHOW statement_timeout").get()!.statement_timeout, "30s", "LOCAL must not leak into the pooled session after commit");
+    } finally { database.close(); }
+  });
+
   it("ranks all worker cursor batches against one snapshot while another connection updates the source", async () => {
     await runWithPostgresSystemScope(async () => {
       const suffix = randomUUID().slice(0, 8);
@@ -531,6 +585,69 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(remaining.rows[0].count, 0, "Shutdown releases both coordinator and retrieval pools");
       } finally {
         await f.writer.query("ROLLBACK"); await child?.stop(); await f.close();
+      }
+    });
+  });
+
+  it("enforces the retrieval deadline while main is blocked renewing the same stage", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      const instance = `rag-control-lock-${randomUUID().slice(0, 8)}`;
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const pending: Promise<unknown>[] = [];
+      try {
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts));
+        const base = `http://127.0.0.1:${child.port}/api/v1`;
+        const headers = { authorization: `Bearer ${f.node.token}`, "content-type": "application/json" };
+        const post = (route: string, body: unknown) => {
+          const result = fetch(`${base}${route}`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) })
+            .then(async response => ({ status: response.status, body: await response.text() }));
+          pending.push(result); return result;
+        };
+        await f.writer.query("BEGIN");
+        await f.writer.query("SELECT id FROM runs WHERE id = $1 FOR UPDATE", [f.run.id]);
+        const started = performance.now();
+        const search = post(`/leases/${f.lease.leaseId}/knowledge/search`, f.request);
+        await f.waitForLock(/FROM runs .*FOR UPDATE/, `agat-retrieval-${instance}-system`);
+        const queued = post(`/leases/${f.lease.leaseId}/knowledge/search`, f.request);
+        await eventually(async () => {
+          const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(2_000) });
+          const status = await response.json() as { knowledgeSearch: { queued: number } };
+          return status.knowledgeSearch.queued === 1;
+        }, "The second retrieval was not queued before main's lock wait");
+        const renewal = post(`/leases/${f.lease.leaseId}/renew`, {});
+        await f.waitForLock(/UPDATE stages SET lease_expires_at/, `agat-${instance}-system`);
+        const health = fetch(`${base}/health`, { signal: AbortSignal.timeout(10_000) }).then(async response => ({ status: response.status, body: await response.json() }));
+        pending.push(health);
+        // Parent is independent of main's blocked event loop. Keep the run lock
+        // beyond the 1 s deadline; only cleanup may release it on failure.
+        const result = await within(Promise.all([search, renewal, health, queued]), 2_500,
+          "Retrieval deadline and health waited for the external run lock while main renewed its stage");
+        assert.ok(performance.now() - started < 3_500);
+        assert.equal(result[0].status, 504);
+        assert.equal(result[1].status, 204);
+        assert.equal(result[2].status, 503);
+        assert.equal(result[3].status, 504);
+        assert.equal((await post(`/leases/${f.lease.leaseId}/knowledge/search`, f.request)).status, 503);
+        await eventually(async () => {
+          await f.writer.query("SELECT pg_stat_clear_snapshot()");
+          const connections = await f.writer.query("SELECT count(*)::integer AS count FROM pg_stat_activity WHERE application_name = ANY($1::text[])",
+            [[`agat-retrieval-${instance}-system`, `agat-retrieval-${instance}-tenant`]]);
+          return connections.rows[0].count === 0;
+        }, "Expired retrieval connections survived while the external run lock was held");
+        await f.writer.query("ROLLBACK");
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 0);
+        assert.equal(f.first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(f.run.id).length, 0);
+        assert.equal((f.first.getRunTrace(f.run.id, f.project)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 0);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts));
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 0, "Restart must not replay either request");
+        const recovered = await fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${f.lease.leaseId}/knowledge/search`,
+          { method: "POST", headers, body: JSON.stringify(f.request), signal: AbortSignal.timeout(5_000) });
+        assert.equal(recovered.status, 200);
+        assert.equal((await recovered.json() as { hits: Array<{ marker: string }> }).hits[0]!.marker, "K1");
+      } finally {
+        await f.writer.query("ROLLBACK"); await child?.stop(); await Promise.allSettled(pending); await f.close();
       }
     });
   });

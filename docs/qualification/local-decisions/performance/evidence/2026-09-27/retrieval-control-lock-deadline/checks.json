@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "capturedAt": "2026-09-27T01:35:07.841252+00:00",
+  "baselineCommit": "b2b0451be5fd146dfe10f47e7ab37546bdc5fd94",
+  "baseMergeCommit": "2bf5368ac3db803297af962b3a1f6e2d18172ec7",
+  "node": "v24.14.0",
+  "before": {
+    "exitCode": 1,
+    "failedAssertions": 1,
+    "retrievalTimeoutMs": 1000,
+    "additionalWaitMs": 2500,
+    "reason": "Main renewal blocked its own retrieval deadline and health behind an external run lock."
+  },
+  "rejectedSupervisorExperiment": {
+    "exitCode": 1,
+    "reason": "Independent Worker.terminate did not release the SQL lock in the same bounded window; the experiment is absent from the final code."
+  },
+  "targetedAfter": {
+    "postgresPassed": 3,
+    "note": "The final full PostgreSQL run additionally verifies LOCAL timeout reset on the same physical connection after successful COMMIT and preservation of the lower operator timeout."
+  },
+  "coordinatorPassed": 247,
+  "postgresPassed": 23,
+  "typecheckExitCode": 0,
+  "coordinatorBuildExitCode": 0,
+  "docsChecks": {
+    "nodeTestsPassed": 12,
+    "pythonTestsPassed": 152,
+    "linkTargets": 1464,
+    "markdownFiles": 170,
+    "exitCode": 0
+  },
+  "architecture": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 0
+  },
+  "sourceSha256": {
+    "apps/coordinator/src/knowledge-search-executor.ts": "25959679b40a31c0101147080b6268e45656463b5923c39367a51bcc0dc0b7e0",
+    "apps/coordinator/src/knowledge-search-worker.ts": "41914208cd73037050b70e8c30b34546e388c4cf8657bfd63336d03c21e3a1e8",
+    "apps/coordinator/src/postgres-database.ts": "0890bd63b3b5de0dd1fa8a58cc66c2dbef05a30cf66f9d5a1e06957149965d10",
+    "apps/coordinator/src/postgres-worker.ts": "5733c8ae6fe42b78cfea8955ebb304368a3c32757f9da6bb68a14b17d85c1cd8",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "1b0b510b2d660aa45a1b98f607199c025d4fe6ecc274c1e9b2776011f6426f1c"
+  },
+  "logSha256": {
+    "architecture.json": "5486d7977f3225db8a0a9e40b17807e2b1640deb0a0b5608cb1ffafc4b313a42",
+    "before.log": "db18c8267c08b3db5a9f2cfe49be5f0b6f30a4a6c32159bddbc437997426cf22",
+    "coordinator.log": "e498823b9dfc6da99e61464d8a8de3d0bb4d9267c49a1794588430088cd72854",
+    "docs.log": "37f7af3143b09ccba0d0c568419b0f3cb1efbab0d1726eb7bba606be1ea1905f",
+    "postgres.log": "b696721b0dff7265a6d411b0734c81c4bca0b37b4f94b75b1fe3e9e78413932f",
+    "sql-targeted.log": "ed402585c721e8d5ec7e9fd38c589aba61da86861a2a8f3a2f1d2f1e06f801a6",
+    "supervisor-rejected.log": "9a51ab2beb438542e4005196a68d1e7ea57bec7589fc99a43e15127e17563227",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593"
+  },
+  "logNormalization": "Removed trailing whitespace and blank lines; diagnostic contents preserved."
+}

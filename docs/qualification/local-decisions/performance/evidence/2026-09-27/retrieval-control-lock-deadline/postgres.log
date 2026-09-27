@@ -1,0 +1,59 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (223.704208ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (10124.639ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (1016.330083ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (454.444834ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (495.123ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (17159.031292ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (758.683208ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1670.709667ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (6201.362334ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (1135.580792ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (6000.125875ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (1742.87275ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (3066.752417ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (5390.747333ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6721.045375ms)
+(node:44836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (5813.658875ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (920.498791ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4985.08625ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (115.9835ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (292.837458ms)
+  ✔ rejects a schema Job while a coordinator replica is active (274.765333ms)
+  ✔ rejects runtime startup after out-of-band schema drift (231.390125ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (851.506542ms)
+✔ PostgreSQL Fleet/HA integration (77204.877291ms)
+ℹ tests 23
+ℹ suites 1
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 77754.955917
