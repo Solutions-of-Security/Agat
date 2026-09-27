@@ -96,6 +96,8 @@ python3 workers/agat_worker.py
 
 `AGAT_EMBEDDING_TRANSPORT=session` (или `--embedding-transport session`) включает постоянные helper с pool не более `--concurrency` процессов. Они запускаются по мере надобности, переиспользуются последовательно и закрываются после drain worker; время ожидания свободного helper входит в общий timeout. Default — `isolated`, один процесс на вызов. [Границы, проверки, память и откат режима](./qualification/local-decisions/performance/embedding-worker-session-opt-in.md).
 
+`AGAT_EMBEDDING_IDLE_TIMEOUT` / `--embedding-idle-timeout` задаёт время хранения свободного session helper: конечное число от 0 до 3600 секунд. По умолчанию `0` — хранить до закрытия worker; положительное значение допускается только с `session`. После простоя helper закрывается, следующий запрос создаёт новый в пределах своего общего timeout. Активный HTTP не прерывается по idle timeout; веса model server эта настройка не выгружает. [Выбор настройки, цена первого запроса и проверка восстановления](./qualification/local-decisions/performance/embedding-worker-idle-opt-in.md).
+
 На macOS/Linux helper также завершается после потери родительского worker, включая SIGKILL: закрывается его model HTTP, но не подтверждается результат и не освобождается durable lease. Повторная работа выдаётся coordinator после обычного истечения аренды. При SIGTERM живой worker выполняет graceful drain. [Проверки принудительной остановки и границы гарантии](./qualification/local-decisions/performance/embedding-parent-exit.md).
 
 Несколько имён задаются через запятую. Worker сообщает их при регистрации и heartbeat; coordinator выдаёт embedding job только узлу, который объявил точную модель collection. Пустой `AGAT_EMBEDDING_MODELS` безопасно отключает индексацию на этом worker.

@@ -1,0 +1,66 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 812B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.13-slim
+#2 ...
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.13-slim
+#2 DONE 2.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 89B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 162.41kB done
+#5 DONE 0.0s
+
+#6 [ 1/10] FROM docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+#6 resolve docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b 0.0s done
+#6 DONE 0.0s
+
+#7 [ 2/10] RUN useradd --create-home --uid 10001 agat && mkdir -p /state && chown agat:agat /state
+#7 CACHED
+
+#8 [ 3/10] COPY workers/requirements.txt /opt/agat/requirements.txt
+#8 CACHED
+
+#9 [ 4/10] RUN pip install --no-cache-dir --requirement /opt/agat/requirements.txt
+#9 CACHED
+
+#10 [ 5/10] COPY --chown=agat:agat workers/agat_worker.py /opt/agat/agat_worker.py
+#10 DONE 0.0s
+
+#11 [ 6/10] COPY --chown=agat:agat workers/web_tools.py /opt/agat/web_tools.py
+#11 DONE 0.1s
+
+#12 [ 7/10] COPY --chown=agat:agat workers/telemetry.py /opt/agat/telemetry.py
+#12 DONE 0.0s
+
+#13 [ 8/10] COPY --chown=agat:agat workers/local_decisions.py /opt/agat/local_decisions.py
+#13 DONE 0.0s
+
+#14 [ 9/10] COPY --chown=agat:agat workers/embedding_http.py /opt/agat/embedding_http.py
+#14 DONE 0.0s
+
+#15 [10/10] COPY --chown=agat:agat workers/embedding_transport.py /opt/agat/embedding_transport.py
+#15 DONE 0.0s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 0.2s done
+#16 exporting manifest sha256:96841c82b4f9abcd554925e07b7fbc5bb0247fe84958f44ef1d126c365763f6a done
+#16 exporting config sha256:d710e13e2b837c513034b053df5a63691307a57280cfe9945e5a8f30a1da2839 done
+#16 exporting attestation manifest sha256:25239916e4948beecdf3218fad3db59cc6f14170970aaaa310bdad3a30bf00ea done
+#16 exporting manifest list sha256:63c107345aca63eaaac8ac28b6f96ad68163aba335c9cffb9dbf62f037647343 done
+#16 naming to docker.io/library/agat-worker:embedding-idle-opt-in-20260928 done
+#16 unpacking to docker.io/library/agat-worker:embedding-idle-opt-in-20260928 0.0s done
+#16 DONE 0.3s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/tby06wv9tm682zypbzqb9hkx6

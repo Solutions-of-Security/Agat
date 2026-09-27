@@ -25,6 +25,8 @@ spec.loader.exec_module(fixture_support)
 
 
 class IdlePoolTests(unittest.TestCase):
+    pool_type = IdleEmbeddingSessionPool
+
     def setUp(self):
         environment = patch.dict(os.environ, {'NO_PROXY': '127.0.0.1', 'no_proxy': '127.0.0.1'})
         environment.start()
@@ -41,17 +43,17 @@ class IdlePoolTests(unittest.TestCase):
         with observed_processes() as children:
             for value in (True, False, 0, -1, float('inf'), float('nan'), '1', None, 3601):
                 with self.subTest(value=value), self.assertRaises(ValueError):
-                    IdleEmbeddingSessionPool(1, idle_timeout=value)
+                    self.pool_type(1, idle_timeout=value)
             for capacity in (0, 33, True):
                 with self.subTest(capacity=capacity), self.assertRaises(ValueError):
-                    IdleEmbeddingSessionPool(capacity, idle_timeout=1)
+                    self.pool_type(capacity, idle_timeout=1)
         self.assertEqual(children, [])
         self.assertEqual({thread.ident for thread in threading.enumerate()}, before)
 
     def test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper(self):
         for cancellation in (False, True):
             with self.subTest(cancellation=cancellation), endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
-                with IdleEmbeddingSessionPool(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+                with self.pool_type(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=1) as executor:
                     request(pool, f'http://127.0.0.1:{port}/echo')
                     self.eventually(lambda: pool._sessions[0].idle_reaps == 1)
                     cancelled = threading.Event()
@@ -72,7 +74,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_unused_pool_is_lazy_and_close_is_idempotent(self):
         with observed_processes() as children:
-            pool = IdleEmbeddingSessionPool(32, idle_timeout=.03)
+            pool = self.pool_type(32, idle_timeout=.03)
             pool.close()
             pool.close()
             self.assertFalse(pool._maintenance.is_alive())
@@ -89,7 +91,7 @@ class IdlePoolTests(unittest.TestCase):
                 CountedEcho.calls += 1
                 super().do_POST()
 
-        with endpoint(CountedEcho) as port, observed_processes() as children, IdleEmbeddingSessionPool(1, idle_timeout=.08) as pool:
+        with endpoint(CountedEcho) as port, observed_processes() as children, self.pool_type(1, idle_timeout=.08) as pool:
             url = f'http://127.0.0.1:{port}/echo'
             first = json.loads(request(pool, url))
             self.eventually(lambda: pool._sessions[0].idle_reaps == 1)
@@ -107,7 +109,7 @@ class IdlePoolTests(unittest.TestCase):
     def test_active_headers_and_body_outlive_idle_timeout_without_interruption(self):
         for mode in ('headers', 'body'):
             with self.subTest(mode=mode), slow_endpoint(mode) as (url, entered, release), observed_processes() as children:
-                with IdleEmbeddingSessionPool(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+                with self.pool_type(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(request, pool, url)
                     try:
                         self.assertTrue(entered.wait(2))
@@ -122,7 +124,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_idle_neighbor_is_retired_while_another_slot_is_active(self):
         with endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
-            with IdleEmbeddingSessionPool(2, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+            with self.pool_type(2, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(request, pool, url)
                 try:
                     self.assertTrue(entered.wait(2))
@@ -138,7 +140,7 @@ class IdlePoolTests(unittest.TestCase):
     def test_admission_waiting_for_retirement_keeps_deadline_and_cancellation(self):
         for cancel_waiter in (False, True):
             with self.subTest(cancel_waiter=cancel_waiter), endpoint(Echo) as port, observed_processes() as children:
-                with IdleEmbeddingSessionPool(1, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+                with self.pool_type(1, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
                     url = f'http://127.0.0.1:{port}/echo'
                     request(pool, url)
                     session = pool._sessions[0]
@@ -172,7 +174,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_caller_waits_for_retirement_then_uses_a_new_helper_once(self):
         with endpoint(Echo) as port, observed_processes() as children:
-            with IdleEmbeddingSessionPool(1, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
+            with self.pool_type(1, idle_timeout=.08) as pool, ThreadPoolExecutor(max_workers=1) as executor:
                 url = f'http://127.0.0.1:{port}/echo'
                 request(pool, url)
                 session, entered, release = pool._sessions[0], threading.Event(), threading.Event()
@@ -201,7 +203,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_queued_cancel_does_not_interrupt_active_lease_or_refresh_idle(self):
         with slow_endpoint('body') as (url, entered, release), observed_processes() as children:
-            with IdleEmbeddingSessionPool(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=2) as executor:
+            with self.pool_type(1, idle_timeout=.05) as pool, ThreadPoolExecutor(max_workers=2) as executor:
                 owner = executor.submit(request, pool, url)
                 try:
                     self.assertTrue(entered.wait(2))
@@ -219,7 +221,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_close_cancels_active_http_and_joins_maintenance_before_return(self):
         with slow_endpoint('body') as (url, entered, release), observed_processes() as children:
-            pool = IdleEmbeddingSessionPool(1, idle_timeout=.03)
+            pool = self.pool_type(1, idle_timeout=.03)
             with ThreadPoolExecutor(max_workers=2) as executor:
                 active = executor.submit(request, pool, url)
                 try:
@@ -236,7 +238,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_close_racing_an_idle_retire_does_not_deadlock_or_reopen(self):
         with endpoint(Echo) as port, observed_processes() as children:
-            pool = IdleEmbeddingSessionPool(1, idle_timeout=.08)
+            pool = self.pool_type(1, idle_timeout=.08)
             session = pool._sessions[0]
             entered, release = threading.Event(), threading.Event()
             original = session._retire
@@ -265,7 +267,7 @@ class IdlePoolTests(unittest.TestCase):
 
     def test_close_signals_active_slot_before_waiting_for_another_slots_retire(self):
         with endpoint(Echo) as port, slow_endpoint('body') as (url, active_entered, body_release), observed_processes() as children:
-            pool = IdleEmbeddingSessionPool(2, idle_timeout=.08)
+            pool = self.pool_type(2, idle_timeout=.08)
             retire_entered, retire_release = threading.Event(), threading.Event()
             with ThreadPoolExecutor(max_workers=2) as executor:
                 active = executor.submit(request, pool, url)
@@ -301,7 +303,7 @@ class IdlePoolTests(unittest.TestCase):
                     pool.close()
 
     def test_maintenance_failure_closes_admission_and_remains_visible(self):
-        with endpoint(Echo) as port, observed_processes(), IdleEmbeddingSessionPool(1, idle_timeout=.08) as pool:
+        with endpoint(Echo) as port, observed_processes(), self.pool_type(1, idle_timeout=.08) as pool:
             url = f'http://127.0.0.1:{port}/echo'
             request(pool, url)
             with patch.object(pool._sessions[0], 'expire_idle', side_effect=OSError('synthetic maintenance failure')):
@@ -315,7 +317,7 @@ class IdlePoolTests(unittest.TestCase):
         fixture = fixture_support.Fixture(32)
         try:
             baseline_fd = fixture_support.guard.support.descriptors()
-            with observed_processes() as children, IdleEmbeddingSessionPool(32, idle_timeout=.3) as pool:
+            with observed_processes() as children, self.pool_type(32, idle_timeout=.3) as pool:
                 client = LocalModelClient(fixture.url, '', embedding_timeout=15, embedding_request=pool.request,
                                           telemetry=WorkerTelemetry(enabled=False))
                 for round_id in range(2):

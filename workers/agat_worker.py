@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from embedding_http import request_embedding_response, validate_timeout as validate_embedding_timeout
+from embedding_transport import validate_idle_timeout as validate_embedding_idle_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
 from telemetry import (
@@ -152,6 +153,7 @@ class WorkerConfig:
     decision_url: str = ""
     embedding_timeout: float = 900
     embedding_transport: str = "isolated"
+    embedding_idle_timeout: float = 0
 
 
 class CoordinatorClient:
@@ -2901,14 +2903,26 @@ def _execute_lease_body(
 def worker_loop(config: WorkerConfig) -> int:
     telemetry = WorkerTelemetry()
     try:
+        validate_embedding_idle_timeout(config.embedding_idle_timeout)
+        if config.embedding_idle_timeout and config.embedding_transport != "session":
+            raise ValueError("Embedding idle timeout requires session transport")
         with ExitStack() as resources:
             embedding_request = None
+            check_embedding_transport = None
             if config.embedding_transport == "session":
-                from embedding_transport import EmbeddingSessionPool
-                transport = resources.enter_context(EmbeddingSessionPool(config.concurrency))
+                from embedding_transport import EmbeddingSessionPool, IdleEmbeddingSessionPool
+                if config.embedding_idle_timeout:
+                    transport = resources.enter_context(IdleEmbeddingSessionPool(
+                        config.concurrency, idle_timeout=config.embedding_idle_timeout))
+                    check_embedding_transport = transport.check_health
+                else:
+                    transport = resources.enter_context(EmbeddingSessionPool(config.concurrency))
                 embedding_request = transport.request
             elif config.embedding_transport != "isolated":
                 raise ValueError("Unknown embedding transport")
+            if check_embedding_transport is not None:
+                return _worker_loop_with_telemetry(config, telemetry, embedding_request,
+                                                   check_embedding_transport=check_embedding_transport)
             return _worker_loop_with_telemetry(config, telemetry, embedding_request)
     finally:
         telemetry.shutdown()
@@ -2917,6 +2931,7 @@ def worker_loop(config: WorkerConfig) -> int:
 def _worker_loop_with_telemetry(
     config: WorkerConfig, telemetry: WorkerTelemetry,
     embedding_request: Callable[..., bytes] | None = None,
+    *, check_embedding_transport: Callable[[], None] | None = None,
 ) -> int:
     discovered_profiles = discover_model_profiles(config)
     if discovered_profiles != config.model_profiles:
@@ -2969,78 +2984,87 @@ def _worker_loop_with_telemetry(
 
     processed = 0
     futures: set[concurrent.futures.Future[None]] = set()
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=config.concurrency, thread_name_prefix="agat-work"
-    ) as executor:
-        while not stop.is_set():
-            done = {future for future in futures if future.done()}
-            for future in done:
-                future.result()
-            futures -= done
+    try:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=config.concurrency, thread_name_prefix="agat-work"
+        ) as executor:
+            while not stop.is_set():
+                if check_embedding_transport is not None:
+                    check_embedding_transport()
+                done = {future for future in futures if future.done()}
+                for future in done:
+                    future.result()
+                futures -= done
 
-            leased_any = False
-            while len(futures) < config.concurrency and not stop.is_set():
-                try:
-                    lease = client.lease()
-                except ApiError as error:
-                    print(f"Lease request failed: {error}", file=sys.stderr, flush=True)
-                    if error.status == 401:
-                        invalidate_credentials(config)
-                        stop.set()
-                    break
-                if lease:
-                    leased_any = True
-                    processed += 1
-                    futures.add(
-                        executor.submit(
-                            execute_lease,
-                            client,
-                            model_client,
-                            lease,
-                            config.models[0],
-                            config.dry_run,
-                            telemetry,
-                        )
-                    )
-                elif config.embedding_models:
+                leased_any = False
+                while len(futures) < config.concurrency and not stop.is_set():
+                    if check_embedding_transport is not None:
+                        check_embedding_transport()
                     try:
-                        knowledge_lease = client.knowledge_lease()
+                        lease = client.lease()
                     except ApiError as error:
-                        print(
-                            f"Embedding lease request failed: {error}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        print(f"Lease request failed: {error}", file=sys.stderr, flush=True)
                         if error.status == 401:
                             invalidate_credentials(config)
                             stop.set()
                         break
-                    if not knowledge_lease:
-                        break
-                    leased_any = True
-                    processed += 1
-                    futures.add(
-                        executor.submit(
-                            execute_knowledge_lease,
-                            client,
-                            model_client,
-                            knowledge_lease,
-                            config.dry_run,
+                    if lease:
+                        leased_any = True
+                        processed += 1
+                        futures.add(
+                            executor.submit(
+                                execute_lease,
+                                client,
+                                model_client,
+                                lease,
+                                config.models[0],
+                                config.dry_run,
+                                telemetry,
+                            )
                         )
-                    )
-                else:
-                    break
-                if config.once:
-                    stop.set()
-                    break
+                    elif config.embedding_models:
+                        try:
+                            knowledge_lease = client.knowledge_lease()
+                        except ApiError as error:
+                            print(
+                                f"Embedding lease request failed: {error}",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                            if error.status == 401:
+                                invalidate_credentials(config)
+                                stop.set()
+                            break
+                        if not knowledge_lease:
+                            break
+                        leased_any = True
+                        processed += 1
+                        futures.add(
+                            executor.submit(
+                                execute_knowledge_lease,
+                                client,
+                                model_client,
+                                knowledge_lease,
+                                config.dry_run,
+                            )
+                        )
+                    else:
+                        break
+                    if config.once:
+                        stop.set()
+                        break
 
-            if stop.is_set():
-                break
-            stop.wait(0.2 if leased_any else config.poll_interval)
+                if stop.is_set():
+                    break
+                stop.wait(0.2 if leased_any else config.poll_interval)
 
-        for future in concurrent.futures.as_completed(futures):
-            future.result()
-    heartbeat.join(timeout=1)
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+        if check_embedding_transport is not None:
+            check_embedding_transport()
+    finally:
+        stop.set()
+        heartbeat.join(timeout=1)
     return 0 if processed or not config.once else 2
 
 
@@ -3073,6 +3097,10 @@ def parse_args() -> WorkerConfig:
         "--embedding-transport", choices=("isolated", "session"),
         default=os.getenv("AGAT_EMBEDDING_TRANSPORT", "isolated").strip().lower(),
         help="Embedding HTTP isolation: one process per call (default), or a bounded reusable session pool",
+    )
+    parser.add_argument(
+        "--embedding-idle-timeout", type=float, default=os.getenv("AGAT_EMBEDDING_IDLE_TIMEOUT", "0"),
+        help="Seconds to retain unused session helpers (0 disables retirement; positive values require session, maximum 3600)",
     )
     parser.add_argument(
         "--embedding-timeout", type=float, default=os.getenv("AGAT_EMBEDDING_TIMEOUT", "900"),
@@ -3297,6 +3325,9 @@ def parse_args() -> WorkerConfig:
 
     try:
         validate_embedding_timeout(args.embedding_timeout)
+        validate_embedding_idle_timeout(args.embedding_idle_timeout)
+        if args.embedding_idle_timeout and args.embedding_transport != "session":
+            raise ValueError("Embedding idle timeout requires session transport")
         if args.embedding_transport not in {"isolated", "session"}:
             raise ValueError("Embedding transport must be isolated or session")
     except ValueError as error:
@@ -3311,6 +3342,7 @@ def parse_args() -> WorkerConfig:
         model_base_url=args.model_url,
         embedding_timeout=args.embedding_timeout,
         embedding_transport=args.embedding_transport,
+        embedding_idle_timeout=args.embedding_idle_timeout,
         model_api_key=args.model_api_key,
         model_discovery=args.model_discovery,
         model_profiles=explicit_profiles,

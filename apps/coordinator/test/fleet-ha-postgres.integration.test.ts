@@ -117,7 +117,7 @@ interface EmbeddingWorkerObservation {
 }
 
 function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: string; nodeId: string; token: string;
-  model: string; region: string; residencyDomain: string; dryRun?: boolean; modelUrl?: string; embeddingTimeout?: number; embeddingTransport?: "isolated" | "session" }) {
+  model: string; region: string; residencyDomain: string; dryRun?: boolean; modelUrl?: string; embeddingTimeout?: number; embeddingIdleTimeout?: number; embeddingTransport?: "isolated" | "session" }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_") && !name.startsWith("OTEL_")));
   const child = spawn("python3", [fileURLToPath(new URL("./embedding-worker-probe.py", import.meta.url))], {
     env: { ...env, AGAT_OTEL_ENABLED: "false", AGAT_WORKER_LABELS: `pool=${input.model}`, PYTHONDONTWRITEBYTECODE: "1" },
@@ -136,6 +136,7 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
   return { closed, diagnostic: () => `${diagnostic}\n${output}`, signal: () => child.kill("SIGTERM"),
     signals: () => records("AGAT_EMBEDDING_WORKER_SIGNAL ") as EmbeddingWorkerObservation["signals"],
     helpers: () => records("AGAT_EMBEDDING_WORKER_HELPER ") as EmbeddingWorkerObservation["helpers"],
+    retired: () => records("AGAT_EMBEDDING_WORKER_RETIRED ") as EmbeddingWorkerObservation["sessionRetired"],
     kill: () => child.kill("SIGKILL"),
     requests: () => records("AGAT_EMBEDDING_WORKER_REQUEST ") as EmbeddingWorkerObservation["requests"],
     events: () => records("AGAT_EMBEDDING_WORKER_EVENT ") as EmbeddingWorkerObservation["events"],
@@ -865,6 +866,114 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  for (const idleTimeout of [0, 0.15]) it(`real Python embedding worker retires idle helpers and drains a resumed lease (${idleTimeout})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0);
+      f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
+      const collection = String(f.first.createKnowledgeCollection({ name: "Idle worker", embeddingModel: f.project }, f.project).id);
+      const documents: string[] = [];
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let successor: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let releaseSecond!: () => void, enteredSecond!: () => void;
+      const released = new Promise<void>(resolve => { releaseSecond = resolve; });
+      const entered = new Promise<void>(resolve => { enteredSecond = resolve; });
+      const modelInputs: string[][] = [], modelErrors: unknown[] = [];
+      let secondClosed = false;
+      const model = http.createServer((request, response) => {
+        void (async () => {
+          assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
+          const parts: Buffer[] = []; for await (const part of request) parts.push(Buffer.from(part));
+          const body = JSON.parse(Buffer.concat(parts).toString("utf8")) as { model: string; input: string[] };
+          assert.equal(body.model, f.project); assert.equal(body.input.length, 1);
+          modelInputs.push(body.input); const call = modelInputs.length;
+          assert.ok(call <= 2, "A completed document must not be sent to the model again");
+          if (call === 2) {
+            response.once("close", () => { secondClosed = true; });
+            enteredSecond(); await released;
+          }
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ data: [{ index: 0, embedding: call === 1 ? [1, 0] : [0, 1] }] }));
+        })().catch(error => { modelErrors.push(error); response.writeHead(500); response.end(); });
+      });
+      const ready = (id: string) => f.first.db.prepare("SELECT status FROM knowledge_documents WHERE id = ?").get(id)?.status === "ready";
+      try {
+        await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+        const address = model.address(); assert.ok(address && typeof address === "object");
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(`embedding-idle-${randomUUID().slice(0, 8)}`, f.artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        const input = { coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1`, embeddingTransport: "session" as const,
+          embeddingIdleTimeout: idleTimeout, embeddingTimeout: 5 };
+        const texts = ["First source before the idle interval.", "Second source after the idle interval."];
+        documents.push(String(f.first.ingestKnowledgeDocument(collection, { name: "Before idle", content: texts[0]! }, f.project).id));
+        worker = startObservedEmbeddingWorker(input);
+        await eventually(async () => ready(documents[0]!) && worker!.events().some(event => event.operation === "execute" && event.event === "return"),
+          "First document did not complete through the ordinary worker");
+        assert.equal(worker.helpers().length, 1);
+        if (idleTimeout) {
+          await eventually(async () => worker!.retired().length === 1, "Idle helper remained alive between leases");
+          assert.ok(worker.retired().every(item => item.returncode === 0 && item.stdinClosed && item.stdoutClosed));
+        } else {
+          await delay(450);
+          assert.deepEqual(worker.retired(), [], "Disabled idle timeout must retain the helper");
+        }
+        documents.push(String(f.first.ingestKnowledgeDocument(collection, { name: "After idle", content: texts[1]! }, f.project).id));
+        await within(Promise.race([entered, worker.closed.then(result => {
+          throw new Error(`Worker exited before resumed model HTTP: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+        })]), 8_000, "Resumed lease did not enter model HTTP");
+        const expectedHelpers = idleTimeout ? 2 : 1;
+        assert.equal(worker.helpers().length, expectedHelpers);
+        assert.equal(new Set(worker.helpers().map(item => item.pid)).size, expectedHelpers);
+        await delay(450);
+        assert.equal(secondClosed, false, "Active HTTP must outlive the idle interval");
+        assert.equal(worker.retired().length, idleTimeout ? 1 : 0);
+        worker.signal();
+        await eventually(async () => worker!.signals().length === 1, "Worker did not observe SIGTERM during resumed inference");
+        assert.equal(secondClosed, false, "Graceful shutdown must drain the resumed lease");
+        releaseSecond();
+        assert.deepEqual(await within(worker.closed, 8_000, "Worker did not finish the resumed lease during drain"), { code: 0, signal: null });
+        const observed = worker.result();
+        assert.ok(documents.every(ready)); assert.deepEqual(modelInputs, texts.map(text => [text])); assert.deepEqual(modelErrors, []);
+        const leases = observed.requests.filter(item => item.path.endsWith("/lease") && item.status === 200);
+        assert.deepEqual(leases.map(item => item.documentId), documents); assert.equal(new Set(leases.map(item => item.leaseId)).size, 2);
+        const terminals = observed.requests.filter(item => item.path.endsWith("/complete") || item.path.endsWith("/fail"));
+        assert.deepEqual(terminals.map(item => item.path), leases.map(item => `/api/v1/workers/knowledge/leases/${item.leaseId}/complete`));
+        assert.deepEqual(terminals.map(item => item.status), [200, 200]);
+        assert.equal(observed.sessionRequests.length, 2); assert.deepEqual(observed.transports, []);
+        assert.equal(observed.sessionRetired.length, expectedHelpers);
+        assert.ok(observed.sessionRetired.every(item => item.returncode === 0 && item.stdinClosed && item.stdoutClosed));
+        assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []);
+        assert.equal(observed.events.length, 8);
+        for (const lease of leases) for (const operation of ["execute", "renew"]) {
+          assert.deepEqual(observed.events.filter(event => event.leaseId === lease.leaseId && event.operation === operation).map(event => event.event), ["call", "return"]);
+        }
+        const snapshot = () => ({
+          chunks: documents.map(id => f.first.db.prepare("SELECT embedding_json, embedding_dimensions FROM knowledge_chunks WHERE document_id = ?").all(id)),
+          jobs: documents.map(id => f.first.db.prepare("SELECT status, failures, lease_id FROM knowledge_embedding_jobs WHERE document_id = ?").get(id)),
+          events: f.first.db.prepare("SELECT id, type FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${collection}%`),
+        });
+        const saved = snapshot();
+        assert.deepEqual(saved.chunks, [[{ embedding_json: "[1,0]", embedding_dimensions: 2 }], [{ embedding_json: "[0,1]", embedding_dimensions: 2 }]]);
+        assert.deepEqual(saved.jobs, documents.map(() => ({ status: "completed", failures: 0, lease_id: null })));
+        assert.deepEqual(saved.events.map(event => event.type), ["knowledge.document.ready", "knowledge.document.ready"]);
+        successor = startObservedEmbeddingWorker(input);
+        await eventually(async () => successor!.requests().some(request => request.path.endsWith("/lease")), "Restarted worker did not poll durable work");
+        assert.deepEqual(await successor.stop(), { code: 0, signal: null });
+        assert.deepEqual(successor.result().liveThreads, []); assert.deepEqual(successor.result().helpers, []);
+        assert.deepEqual(snapshot(), saved); assert.equal(modelInputs.length, 2);
+        context.diagnostic(`idle=${idleTimeout}: two exact vectors/leases, ${expectedHelpers} helpers reaped, SIGTERM drain and restart without replay`);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
+      finally {
+        releaseSecond(); await worker?.stop(); await successor?.stop(); await child?.stop(); model.closeAllConnections();
+        await new Promise<void>(resolve => model.close(() => resolve()));
+        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+      }
+    });
+  });
+
   for (const transport of ["isolated", "session"] as const) for (const fault of ["oversized-success", "unfinished-error", "slow-headers", "slow-success", "slow-error"] as const) it(`real Python embedding worker bounds model HTTP and recovers on a new lease (${fault}, ${transport})`, async context => {
     await runWithPostgresSystemScope(async () => {
       const f = await embeddingLeaseFixture(0);
@@ -1243,7 +1352,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
-  for (const transport of ["isolated", "session"] as const) it(`real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (${transport})`, async context => {
+  for (const transport of ["isolated", "session", "session-idle"] as const) it(`real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (${transport})`, async context => {
     await runWithPostgresSystemScope(async () => {
       const f = await embeddingLeaseFixture(0);
       f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
@@ -1275,7 +1384,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
         worker = startObservedEmbeddingWorker({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
           nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
-          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1`, embeddingTransport: transport });
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1`, embeddingTransport: transport === "isolated" ? "isolated" : "session",
+          embeddingIdleTimeout: transport === "session-idle" ? .15 : 0 });
         await within(Promise.race([entered, worker.closed.then(result => {
           throw new Error(`Worker exited before model HTTP: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
         })]), 8_000, "Real worker did not enter the local model HTTP request");
@@ -1312,7 +1422,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.ok(terminated[0]!.pid > 0); assert.notEqual(terminated[0]!.returncode, null);
         assert.notEqual(terminated[0]!.returncode, 0);
         assert.equal(terminated[0]!.stdinClosed, true); assert.equal(terminated[0]!.stdoutClosed, true);
-        if (transport === "session") {
+        if (transport !== "isolated") {
           assert.deepEqual(observed.transports, []);
           assert.deepEqual(observed.sessionRequests, terminated, "Cancelled session is retired before returning to its lease");
         } else {
@@ -1341,7 +1451,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
-  for (const mode of ["dry-run", "isolated", "session"] as const) for (const fault of ["disconnect", "withhold"] as const) it(`real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (${fault}, ${mode})`, async context => {
+  for (const mode of ["dry-run", "isolated", "session", "session-idle"] as const) for (const fault of ["disconnect", "withhold"] as const) it(`real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (${fault}, ${mode})`, async context => {
     await runWithPostgresSystemScope(async () => {
       const f = await embeddingLeaseFixture(0);
       // Finish the fixture's seed document before starting the observed worker.
@@ -1376,7 +1486,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) }));
         worker = startObservedEmbeddingWorker({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
           nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
-          dryRun: mode === "dry-run", embeddingTransport: mode === "session" ? "session" : "isolated",
+          dryRun: mode === "dry-run", embeddingTransport: mode.startsWith("session") ? "session" : "isolated",
+          embeddingIdleTimeout: mode === "session-idle" ? .15 : 0,
           modelUrl: `http://127.0.0.1:${address.port}/v1` });
         await within(Promise.race([proxy.committed, worker.closed.then(result => {
           throw new Error(`Python worker exited before its COMMIT fault: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
@@ -1385,6 +1496,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(committed.length, 33); assert.equal(committed.filter(chunk => chunk.embedding_json !== null).length, 32);
         assert.equal(committedEvents.length, 1); assert.equal(committedEvents[0]!.type, "knowledge.embedding.batch.completed");
         const following = String(f.first.ingestKnowledgeDocument(collection, { name: "Following source", content: "Another document must use the released worker slot." }, f.project).id);
+        if (mode === "session-idle") await eventually(async () => worker!.retired().length === 1,
+          "Idle helper was not reaped while COMMIT acknowledgement was held");
         if (fault === "disconnect") proxy.disconnect();
         await eventually(async () => {
           const rows = f.first.db.prepare("SELECT id, status FROM knowledge_documents WHERE collection_id = ?").all(collection);
@@ -1441,12 +1554,13 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           } else {
             assert.deepEqual(observed.transports, []);
             assert.equal(observed.sessionRequests.length, 3);
-            assert.equal(new Set(observed.sessionRequests.map(item => item.pid)).size, 1, "Healthy helper survives the completion failure");
+            const used = new Set(observed.sessionRequests.map(item => item.pid));
+            if (mode === "session") assert.equal(used.size, 1, "Healthy helper survives the completion failure");
+            else assert.ok(used.size >= 2 && used.size <= 3, "Idle helper must retire during the completion recovery gap");
             assert.ok(observed.sessionRequests.every(item => item.returncode === null && !item.stdinClosed && !item.stdoutClosed));
-            assert.equal(observed.sessionRetired.length, 1);
-            assert.equal(observed.sessionRetired[0]!.pid, observed.sessionRequests[0]!.pid);
-            assert.equal(observed.sessionRetired[0]!.returncode, 0);
-            assert.equal(observed.sessionRetired[0]!.stdinClosed, true); assert.equal(observed.sessionRetired[0]!.stdoutClosed, true);
+            assert.equal(observed.sessionRetired.length, used.size);
+            assert.deepEqual(new Set(observed.sessionRetired.map(item => item.pid)), used);
+            assert.ok(observed.sessionRetired.every(item => item.returncode === 0 && item.stdinClosed && item.stdoutClosed));
           }
         }
         const jobs = f.first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures, last_error FROM knowledge_embedding_jobs WHERE collection_id = ?").all(collection);

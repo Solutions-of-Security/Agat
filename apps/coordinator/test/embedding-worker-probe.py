@@ -33,6 +33,8 @@ def main() -> int:
                 "--no-web"]
     if "embeddingTransport" in supplied:
         sys.argv.extend(["--embedding-transport", supplied["embeddingTransport"]])
+    if "embeddingIdleTimeout" in supplied:
+        sys.argv.extend(["--embedding-idle-timeout", str(supplied["embeddingIdleTimeout"])])
     if "embeddingTimeout" in supplied:
         sys.argv.extend(["--embedding-timeout", str(supplied["embeddingTimeout"])])
     if supplied.get("dryRun", True):
@@ -111,8 +113,11 @@ def main() -> int:
                 process = frame.f_locals.get("process")
                 if process is not None:
                     target = session_requests if code is session_code else session_retired
-                    target.append({"pid": process.pid, "returncode": process.returncode,
-                                   "stdinClosed": process.stdin.closed, "stdoutClosed": process.stdout.closed})
+                    record = {"pid": process.pid, "returncode": process.returncode,
+                              "stdinClosed": process.stdin.closed, "stdoutClosed": process.stdout.closed}
+                    target.append(record)
+                    if code is retire_code:
+                        print("AGAT_EMBEDDING_WORKER_RETIRED " + json.dumps(record), flush=True)
             elif code is error_code and event == "call" and thread_id in active_requests:
                 active_requests[thread_id]["status"] = frame.f_locals["status"]
 

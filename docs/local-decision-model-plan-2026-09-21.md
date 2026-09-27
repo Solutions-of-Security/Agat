@@ -124,6 +124,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Модельный burst после idle](./qualification/local-decisions/performance/embedding-idle-model.md) завершил 258 точных ответов и reap всех 62 helpers. Idle retirement освобождает 29 MiB на слот (117–120 MiB при четырёх), но первые запросы второго burst имеют наблюдаемую p50 на 54–83 мс выше; тёплые вызовы разобраны отдельно. Lifecycle 14/14 на macOS/Linux, независимый replay и 11 mutation-тестов прошли. Следующий gate — явная настройка idle timeout обычного session worker с default disabled и проверкой настоящего lease/recovery-пути.
 
+[Idle opt-in обычного worker](./qualification/local-decisions/performance/embedding-worker-idle-opt-in.md) добавляет строго проверяемый срок хранения helper, выключенный по умолчанию. 20 целевых lifecycle/config проверок и пять настоящих PostgreSQL-сценариев подтверждают reap между lease, SIGTERM drain, отмену после renewal 404 и сохранение 34 векторов при потерянном COMMIT reply. Следующий gate — настоящий model burst через этот production opt-in; выбор производственного timeout остаётся у оператора.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
