@@ -1073,6 +1073,93 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  for (const scenario of ["different dimensions", "matching dimensions", "separate collections"] as const) {
+    it(`serializes embedding dimensions across jobs with ${scenario}`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = await embeddingLeaseFixture(2);
+        let extraCollection: string | undefined;
+        try {
+          const collection = scenario === "separate collections"
+            ? (extraCollection = String(f.first.createKnowledgeCollection({ name: "Independent", embeddingModel: f.project }, f.project).id))
+            : f.collection;
+          const document = String(f.first.ingestKnowledgeDocument(collection, { name: "Concurrent source", content: "Second synthetic source." }, f.project).id);
+          const lease = f.first.leaseKnowledgeEmbedding(f.other.id)!;
+          assert.ok(lease); assert.equal(lease.document.id, document);
+          const vector = scenario === "matching dimensions" ? [0, 1] : [0, 0, 1];
+          const embeddings = lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: vector }));
+          const doc = () => f.first.db.prepare("SELECT status, embedded_count FROM knowledge_documents WHERE id = ?").get(document)!;
+          const job = () => f.first.db.prepare("SELECT status, lease_id FROM knowledge_embedding_jobs WHERE document_id = ?").get(document)!;
+          const events = () => f.first.db.prepare("SELECT id FROM events WHERE type = 'knowledge.document.ready' AND data_json LIKE ?").all(`%${document}%`).length;
+          const indexed = () => Number(f.first.db.prepare("SELECT count(*) AS count FROM knowledge_chunks WHERE document_id = ? AND embedding_json IS NOT NULL").get(document)!.count);
+          const dimensions = () => f.first.db.prepare("SELECT DISTINCT embedding_dimensions AS dimensions FROM knowledge_chunks WHERE collection_id = ? AND embedding_dimensions IS NOT NULL ORDER BY dimensions")
+            .all(f.collection).map(row => row.dimensions);
+          const beforeJob = job(), beforeDoc = doc();
+          await f.writer.query("BEGIN"); await f.writer.query("LOCK TABLE events IN SHARE MODE");
+          const firstRequest = f.post("complete");
+          await f.waitForLock(/INSERT INTO events/);
+          const secondRequest = fetch(`http://127.0.0.1:${f.children[1]!.port}/api/v1/workers/knowledge/leases/${lease.leaseId}/complete`, {
+            method: "POST", headers: { authorization: `Bearer ${f.other.token}`, "content-type": "application/json" },
+            body: JSON.stringify({ embeddings }), signal: AbortSignal.timeout(15_000),
+          }).then(async response => ({ status: response.status, body: await response.text() }))
+            .then(value => ({ value }), error => ({ error }));
+          f.pending.push(secondRequest);
+          await f.waitForLock(scenario === "separate collections" ? /INSERT INTO events/ : /INSERT INTO events|FOR NO KEY UPDATE OF c/, 1);
+          await f.writer.query("ROLLBACK");
+          const first = await within(firstRequest, 5_000, "First embedding completion did not finish");
+          const second = await within(secondRequest, 5_000, "Second embedding completion did not finish");
+          assert.ok("value" in first); assert.ok("value" in second);
+          context.diagnostic(`Concurrent dimensions/${scenario}: HTTP ${first.value.status}/${second.value.status}, first collection=${dimensions()}`);
+          assert.equal(first.value.status, 200); f.assertReady();
+          assert.equal(second.value.status, scenario === "different dimensions" ? 400 : 200);
+          assert.deepEqual(dimensions(), [2]);
+          if (scenario === "different dimensions") {
+            assert.match(second.value.body, /Размерность embeddings/);
+            assert.deepEqual(job(), beforeJob); assert.deepEqual(doc(), beforeDoc);
+            assert.equal(indexed(), 0); assert.equal(events(), 0);
+            // The rejected batch is retryable with compatible output, without
+            // a hidden replay, new lease or cleanup of a partially saved index.
+            f.first.completeKnowledgeEmbedding(f.other.id, lease.leaseId,
+              lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [0, 1] })));
+          }
+          assert.equal(doc().status, "ready"); assert.equal(job().status, "completed");
+          assert.equal(indexed(), lease.chunks.length); assert.equal(events(), 1);
+          const actual = f.first.db.prepare("SELECT embedding_dimensions FROM knowledge_chunks WHERE document_id = ?").get(document)!;
+          assert.equal(actual.embedding_dimensions, scenario === "separate collections" ? 3 : 2);
+        } finally {
+          await f.writer.query("ROLLBACK").catch(() => {});
+          await Promise.all(f.children.map(child => child.stop())); await Promise.allSettled(f.pending);
+          if (extraCollection) f.first.deleteKnowledgeCollection(extraCollection, f.project);
+          await f.close();
+        }
+      });
+    });
+  }
+
+
+  it("embedding completion rechecks lease expiry after waiting for its collection", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture();
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE id = ?")
+          .run(new Date(expires).toISOString(), f.jobId);
+        await f.writer.query("BEGIN");
+        await f.writer.query("SELECT id FROM knowledge_collections WHERE id = $1 FOR NO KEY UPDATE", [f.collection]);
+        const request = f.post("complete");
+        await f.waitForLock(/FOR NO KEY UPDATE OF c/);
+        assert.ok(Date.now() < expires, "Completion must wait for the collection while its lease is still live");
+        await delay(Math.max(0, expires - Date.now() + 50)); await f.writer.query("ROLLBACK");
+        const result = await within(request, 5_000, "Completion did not finish after releasing the collection");
+        assert.ok("value" in result);
+        context.diagnostic(`Completion after collection wait: HTTP ${result.value.status}, indexed=${f.indexed()}, events=${f.events()}`);
+        assert.equal(result.value.status, 400); assert.match(result.value.body, /Активная embedding-аренда не найдена/);
+        assert.equal(f.indexed(), 0); assert.equal(f.events(), 0);
+        await f.recover();
+      } finally { await f.close(); }
+    });
+  });
+
+
   for (const race of ["expiry", "reassignment", "renewal"] as const) {
     it(`stage renewal checks current ownership after ${race} during its SQL lock wait`, async context => {
       await runWithPostgresSystemScope(async () => {

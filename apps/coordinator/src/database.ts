@@ -8993,6 +8993,19 @@ export class AgatStore {
       throw new Error(`Нужно вернуть от 1 до ${KNOWLEDGE_EMBEDDING_BATCH_SIZE} embeddings`);
     }
     return this.transaction(() => {
+      if (this.stateStoreDriver === "postgresql") {
+        // Dimension belongs to the collection, not an individual document job.
+        // Lock the parent first (also the order used by cascading deletion).
+        // NO KEY UPDATE allows unrelated FK inserts to keep using the parent.
+        const collection = this.db.prepare(`
+          SELECT c.id FROM knowledge_collections c
+          JOIN knowledge_embedding_jobs j ON j.collection_id = c.id
+          WHERE j.node_id = ? AND j.lease_id = ? AND j.status = 'running'
+          FOR NO KEY UPDATE OF c
+        `).get(nodeId, leaseId);
+        if (!collection) throw new Error("Активная embedding-аренда не найдена");
+      }
+
       const job = this.db.prepare(`
         SELECT j.*, c.embedding_model, d.name AS document_name
         FROM knowledge_embedding_jobs j

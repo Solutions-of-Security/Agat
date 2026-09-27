@@ -113,3 +113,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Lifecycle embedding lease](./embedding-lease-lifecycle.md): просроченные и переназначенные попытки не продлевают аренду и не меняют индекс; поздняя запись откатывается, maintenance сохраняет согласованность job/document.
 
 [Продление аренды после ожидания SQL](./lease-renewal-deadlines.md) закрывает устаревший cutoff stage renewal и поздний UPDATE stage/embedding; SQL-only продление откатывается при истечении прежнего срока.
+
+[Размерность при конкуренции jobs](./embedding-dimension-concurrency.md) защищает общий embedding-индекс блокировкой коллекции перед job; смешанный индекс [2, 3] воспроизведён и устранён на двух coordinator с положительными контролями.
