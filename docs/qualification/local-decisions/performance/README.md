@@ -129,3 +129,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Общий срок и отмена embedding HTTP](./embedding-http-deadline.md): bounded ожидание DNS/connect/redirect/body, сохранение urllib proxy/TLS и гарантированное ожидание выхода собственного transport subprocess перед повторным использованием слота.
 
 [Цена изолированного embedding HTTP](./embedding-transport-profile.md): 312 loopback-запросов, 180 очищенных subprocess, batch/concurrency-профиль и серия отмен; независимый replay сохраняет наблюдаемый overhead и пределы измерения.
+
+[Транспорт на настоящей embeddinggemma](./embedding-model-transport.md): 68 парных вызовов, точное совпадение полных vectors, закреплённые модель/входы и измеренная доля расходов subprocess для batch 1/32.
