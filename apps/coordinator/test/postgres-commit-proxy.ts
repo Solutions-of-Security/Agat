@@ -18,6 +18,9 @@ export async function interceptRetrievalCommit(connectionString: string, applica
   const server = net.createServer(client => {
     const upstream = net.connect({ host: "127.0.0.1", port: Number(destination.port) });
     for (const socket of [client, upstream]) {
+      // Match pg's transport: individual protocol messages must not acquire
+      // Nagle/delayed-ACK latency before the intended COMMIT fault.
+      socket.setNoDelay(true);
       sockets.add(socket); socket.on("close", () => sockets.delete(socket));
       socket.on("error", error => { errors.push(error); client.destroy(); upstream.destroy(); });
     }

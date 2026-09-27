@@ -673,8 +673,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
             .then(async response => ({ status: response.status, body: await response.json() }));
           pending.push(result); return result;
         };
+        const started = performance.now();
         const active = search();
-        await within(proxy.committed, 5_000, "Fault fixture did not observe a real successful COMMIT");
+        await within(Promise.race([proxy.committed, active.then(result => {
+          throw new Error(`Search returned HTTP ${result.status} before the COMMIT fault was established`);
+        })]), 5_000, "Fault fixture did not observe a real successful COMMIT");
+        context.diagnostic(`Successful COMMIT observed after ${Math.round(performance.now() - started)} ms`);
         assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1, "Independent connection must see committed K1 before its acknowledgement is lost");
         const queued = search();
         await eventually(async () => {

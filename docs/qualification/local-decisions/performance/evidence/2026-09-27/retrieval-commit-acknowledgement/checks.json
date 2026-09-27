@@ -58,7 +58,29 @@
     "proxy-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "targeted-final.log": "26afd573ec50cf48488e6d09d720f9d6de9c3d47ec916d507ab40931bd0fb210",
     "targeted-initial.log": "1395ce52c9abd6b4efb397337d5878d7d6b62a4cc251f917a04e550da719e790",
-    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593"
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "ci-before-nodelay.log": "73fa9b8623fac6b592883384ae066a234e4823cd06d1850f4600bd0b2a353d35",
+    "nodelay-targeted.log": "bfb3337fef1d0c2c748f5e2a245fd4c79b0db0d066ad08ee27af3e77580fc0b0",
+    "nodelay-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
-  "logNormalization": "Removed trailing whitespace and blank lines; diagnostic contents preserved."
+  "logNormalization": "Removed trailing whitespace and blank lines; diagnostic contents preserved.",
+  "ciFixtureFollowup": {
+    "firstRun": "https://github.com/Solutions-of-Security/Agat/actions/runs/36286720831",
+    "failedTests": 1,
+    "reason": "withhold did not reach the real COMMIT before its existing 1000 ms search deadline; the test-only proxy retained Nagle unlike pg",
+    "change": "setNoDelay(true) on both proxy sockets and report premature HTTP completion",
+    "deadlineChanged": false,
+    "productionChanged": false,
+    "targetedPassed": 3,
+    "observedCommitMs": [
+      75,
+      63
+    ],
+    "proxyStrictTypecheckExitCode": 0,
+    "ciRetest": "Pending at this evidence commit; required before merge",
+    "sourceSha256": {
+      "apps/coordinator/test/postgres-commit-proxy.ts": "56ec25f9bfc821f28cff55a65cb39fba0e3b1a62d8c683c9db8c753d68826c05",
+      "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "23028137dce5c9d115b2b29f46063713b24ea5eb52491d31758dfc113c0e14d5"
+    }
+  }
 }
