@@ -157,3 +157,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Idle opt-in обычного worker](./embedding-worker-idle-opt-in.md): отдельный срок хранения session helpers, default disabled, воспроизведённые idle/restart, graceful drain и неизвестный COMMIT через PostgreSQL.
 
 [Production idle opt-in на настоящей модели](./embedding-worker-idle-model.md): 528 точных сохранённых векторов, 32 lease/completion, 12 reaped helpers, отдельный холодный запрос и общий lifecycle обычного worker.
+
+[Настройки deployment](./embedding-deployment-settings.md): три параметра доставляются через Compose, общий Kubernetes ConfigMap и `k8s:up`; 50 проверок с production parser, сохранённые defaults и инструкции отката.
