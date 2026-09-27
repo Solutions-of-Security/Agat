@@ -16,7 +16,7 @@ import threading
 import time
 from typing import BinaryIO
 
-from embedding_http import _fetch, validate_timeout
+from embedding_http import _fetch, parent_watch_arguments, validate_timeout, watch_parent
 
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -165,7 +165,7 @@ class EmbeddingSession:
                 self._retire(force=True)
             if self._process is None:
                 self._process = subprocess.Popen(
-                    [sys.executable, '-u', str(Path(__file__).resolve()), '--serve'],
+                    [sys.executable, '-u', str(Path(__file__).resolve()), '--serve', *parent_watch_arguments()],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL, bufsize=0)
                 self.starts += 1
@@ -320,6 +320,7 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] != ['--serve']:
+    if sys.argv[1:2] != ['--serve']:
         raise SystemExit('This transport module is not a worker entry point')
+    watch_parent(sys.argv[2:])
     main()

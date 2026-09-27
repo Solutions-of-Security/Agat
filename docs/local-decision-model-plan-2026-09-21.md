@@ -114,6 +114,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Остановка worker во время embedding](./qualification/local-decisions/performance/embedding-worker-drain.md) подтверждена четырьмя реальными PostgreSQL-сценариями в обоих режимах: SIGTERM закрывает admission, сохраняет активный renewal через 45 с и завершает текущий result/failure. После restart обрабатываются только pending leases, без повторной записи готового вектора; helper и renewer закрыты. Production изменений не потребовалось. Следующий gate — принудительное завершение родителя и проверка helper/lease recovery.
 
+[Выход helper после SIGKILL worker](./qualification/local-decisions/performance/embedding-parent-exit.md) исправляет подтверждённое сохранение model HTTP без живого владельца в обоих transport. Unix helper проверяет переданный до spawn PID и самостоятельно завершает свои I/O после смены родителя; четыре исходных PostgreSQL-сценария проходят, lease восстанавливается через maintenance без stale terminal POST. Host worker 100 pass + 1 skip, собранный Linux image 101/101. Следующий gate — расходы guard и независимость соседних владельцев; default isolated сохранён.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
