@@ -974,6 +974,10 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           { id: "b", source: "agent", target: "end", branch: "default" }] };
         const process = first.createProcess({ name: "Shadow PostgreSQL", graph }, projectId);
         first.publishProcess(String(process.id), projectId);
+        const preflight = second.preflightProcess(String(process.id), { version: 1 }, projectId)!;
+        assert.equal(preflight.runnableNow, true);
+        assert.match(preflight.notices.join("\n"), /Совместимый профиль локальной проверки заявлен/);
+        assert.equal(second.preflightProcess(String(process.id), { version: 1 }, foreignProjectId), null);
         const instance = first.startProcess(String(process.id), { input: "Private fixture state", priority: 100 }, projectId)!;
         const lease = second.leaseNext(worker.id)!;
         assert.ok(lease?.decisionShadow);
@@ -993,6 +997,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         const runId = String(instance.runId);
         const trace = first.getRunTrace(runId, projectId)!;
         assert.equal(first.getRun(runId, projectId)!.status, "completed");
+        assert.deepEqual(first.preflightProcess(String(process.id), { version: 1 }, projectId)!.notices, preflight.notices);
         assert.equal((first.getRun(runId, projectId)!.stages as Array<Record<string, unknown>>)[0]!.output, "PRIMARY OUTPUT");
         assert.equal((trace.decisionObservations as unknown[]).length, 1);
         assert.equal((trace.events as Array<Record<string, unknown>>).filter((e) => e.type === "decision.shadow").length, 1);

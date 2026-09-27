@@ -1,0 +1,164 @@
+(node:34973) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ disabled shadow is a read-only notice and cannot block or qualify the primary scenario (49.712125ms)
+✖ readiness uses the same Choice/Boolean/Score capability contract as actual leases (31.508791ms)
+✖ partial capability is explicit; shadow does not steer dispatch away from the primary worker (33.622042ms)
+✖ ineligible and stale capable workers cannot make shadow readiness look available (31.805708ms)
+✖ model-router selection controls which capability is relevant without changing the primary route (47.776875ms)
+✖ no free worker remains queueable; shadow adds advice, never a new blocker (35.419208ms)
+✖ notices follow the published pin, include nested steps and do not leak across projects (31.732792ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 0
+ℹ fail 7
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 819.498792
+
+✖ failing tests:
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:2228
+✖ disabled shadow is a read-only notice and cannot block or qualify the primary scenario (49.712125ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /локальная проверка выключена на сервере/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:46:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /локальная проверка выключена на сервере/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:3478
+✖ readiness uses the same Choice/Boolean/Score capability contract as actual leases (31.508791ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Ни один из 1 подходящих workers не заявил/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:67:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /Ни один из 1 подходящих workers не заявил/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:4304
+✖ partial capability is explicit; shadow does not steer dispatch away from the primary worker (33.622042ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /заявлен у 1 из 2/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:79:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /заявлен у 1 из 2/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:5061
+✖ ineligible and stale capable workers cannot make shadow readiness look available (31.805708ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Ни один из 1 подходящих workers не заявил/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:102:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /Ни один из 1 подходящих workers не заявил/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:6025
+✖ model-router selection controls which capability is relevant without changing the primary route (47.776875ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Ни один из 1 подходящих workers не заявил/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:113:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /Ни один из 1 подходящих workers не заявил/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:6738
+✖ no free worker remains queueable; shadow adds advice, never a new blocker (35.419208ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Сейчас нет подходящих свободных workers/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:127:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /Сейчас нет подходящих свободных workers/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/decision-shadow-preflight.test.ts:1:7535
+✖ notices follow the published pin, include nested steps and do not leak across projects (31.732792ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Ни один из 1 подходящих workers не заявил/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/decision-shadow-preflight.test.ts:142:10)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /Ни один из 1 подходящих workers не заявил/,
+    operator: 'match',
+    diff: 'simple'
+  }
