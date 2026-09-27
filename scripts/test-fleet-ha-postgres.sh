@@ -15,6 +15,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Exercise the same entry point and worker files shipped in the coordinator image.
+npm run build --workspace @agat/coordinator
+
 docker run --detach \
   --name "${postgres_container}" \
   --publish 127.0.0.1::5432 \

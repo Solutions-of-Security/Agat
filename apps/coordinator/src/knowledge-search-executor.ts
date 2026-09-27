@@ -9,6 +9,7 @@ import type { KnowledgeSearchHit, KnowledgeSearchRequest } from "./types.js";
 export type KnowledgeSearchResult = { hits: KnowledgeSearchHit[] };
 export interface KnowledgeSearchService {
   search(token: string, nodeId: string, leaseId: string, request: KnowledgeSearchRequest): Promise<KnowledgeSearchResult>;
+  snapshot(): { active: number; queued: number; maxPending: number; accepting: boolean };
 }
 export class KnowledgeSearchExecutorError extends Error {
   constructor(readonly status: 400 | 401 | 429 | 503 | 504, message: string) { super(message); }
@@ -31,8 +32,8 @@ interface Pending {
 }
 
 /** One persistent owner of the entire synchronous retrieval transaction.
- * Opt-in dependency for qualification; the coordinator entry point does not
- * enable it. SQLite's writer lock can still block other store connections.
+ * The coordinator enables this only for an explicit PostgreSQL opt-in.
+ * SQLite remains available to qualification tests of writer-lock contention.
  */
 export class KnowledgeSearchExecutor implements KnowledgeSearchService {
   private readonly worker: Worker;

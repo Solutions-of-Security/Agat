@@ -9,6 +9,7 @@ import { getInternalReportPack, type ProcessPackInput } from "./process-packs.js
 
 import {
   loadConfig,
+  knowledgeSearchPoolAllocation,
   validateTemporalCoordinatorConfig,
   type CoordinatorConfig,
 } from "./config.js";
@@ -26,7 +27,7 @@ import {
   type AgatRole,
   type AuthContext,
 } from "./auth.js";
-import { AgatStore } from "./database.js";
+import { AgatStore, type StoreOptions } from "./database.js";
 import { validateProcessFormData } from "./process-forms.js";
 import type { ProcessApprovalForm } from "./types.js";
 import { enterPostgresTenantScope, runWithPostgresSystemScope } from "./postgres-database.js";
@@ -42,7 +43,7 @@ import {
   type ProcessRuntime,
 } from "./process-runtime.js";
 import { bearerToken, tokensEqual } from "./security.js";
-import { KnowledgeSearchExecutorError, type KnowledgeSearchService } from "./knowledge-search-executor.js";
+import { KnowledgeSearchExecutor, KnowledgeSearchExecutorError, type KnowledgeSearchService } from "./knowledge-search-executor.js";
 import { CoordinatorTelemetry } from "./telemetry.js";
 import { McpGateway } from "./mcp.js";
 import { createSandboxExecutor } from "./sandbox.js";
@@ -661,8 +662,11 @@ export function createCoordinatorServer(
 
     try {
       if (request.method === "GET" && pathname === "/api/v1/health") {
-        json(response, 200, {
-          status: "ok",
+        const retrieval = knowledgeSearch?.snapshot();
+        const ready = retrieval?.accepting !== false;
+        json(response, ready ? 200 : 503, {
+          status: ready ? "ok" : "degraded",
+          knowledgeSearch: retrieval ? { execution: "isolated", ...retrieval } : { execution: "sync" },
           time: new Date().toISOString(),
           version: "1.7.0",
           stateStore: runWithPostgresSystemScope(() => store.stateStoreSnapshot()),
@@ -2754,7 +2758,8 @@ async function main(): Promise<void> {
     serviceName: config.otelServiceName,
     exporterEndpoint: config.otelExporterEndpoint,
   });
-  const store = new AgatStore(config.dbPath, {
+  const poolAllocation = knowledgeSearchPoolAllocation(config.knowledgeSearchExecution, config.postgresPoolMax);
+  const storeOptions: StoreOptions = {
     seedDemo: config.seedDemo,
     leaseTtlSeconds: config.leaseTtlSeconds,
     decisionShadowEnabled: config.decisionShadowEnabled,
@@ -2812,7 +2817,7 @@ async function main(): Promise<void> {
         tenantUrl: config.postgresTenantUrl,
         roleMode: "runtime" as const,
         applicationName: `agat-${config.coordinatorInstanceId}`,
-        poolMax: config.postgresPoolMax,
+        poolMax: poolAllocation.coordinator,
         connectTimeoutMs: config.postgresConnectTimeoutMs,
         idleTimeoutMs: config.postgresIdleTimeoutMs,
         statementTimeoutMs: config.postgresStatementTimeoutMs,
@@ -2822,7 +2827,17 @@ async function main(): Promise<void> {
         sslKey: config.postgresClientKeyPath ? fs.readFileSync(config.postgresClientKeyPath, "utf8") : "",
       },
     } : {}),
-  });
+  };
+  const store = new AgatStore(config.dbPath, storeOptions);
+  let knowledgeSearch: KnowledgeSearchExecutor | undefined;
+  if (config.knowledgeSearchExecution === "isolated") {
+    const { telemetry: _telemetry, ...workerOptions } = storeOptions;
+    knowledgeSearch = await KnowledgeSearchExecutor.create(config.dbPath, {
+      ...workerOptions,
+      postgres: { ...workerOptions.postgres!, poolMax: poolAllocation.retrieval,
+        applicationName: `agat-retrieval-${config.coordinatorInstanceId}` },
+    }, { maxPending: config.knowledgeSearchMaxPending, timeoutMs: config.knowledgeSearchTimeoutMs });
+  }
   const processRuntime = await createProcessRuntime(config);
   for (const process of store.listActiveDurableProcesses()) {
     await processRuntime.startProcess(process);
@@ -2834,7 +2849,7 @@ async function main(): Promise<void> {
     maxResponseBytes: config.mcpMaxResponseBytes,
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
   }, undefined, createSandboxExecutor(config));
-  const server = createCoordinatorServer(config, store, localWorkerLauncher, processRuntime, mcpGateway);
+  const server = createCoordinatorServer(config, store, localWorkerLauncher, processRuntime, mcpGateway, undefined, knowledgeSearch);
 
   void localWorkerLauncher.snapshot().then((snapshot) => {
     if (!snapshot.available) return;
@@ -2845,7 +2860,9 @@ async function main(): Promise<void> {
   });
 
   server.listen(config.port, config.host, () => {
-    console.log(`АГАТ слушает http://${config.host}:${config.port}`);
+    const address = server.address();
+    const port = address && typeof address === "object" ? address.port : config.port;
+    console.log(`АГАТ слушает http://${config.host}:${port}`);
     console.log(`State store: ${config.stateStoreDriver}`);
     console.log(`HA-cell: ${config.region}/${config.residencyDomain} · ${config.coordinatorInstanceId}`);
     console.log(`Artifact store: ${config.artifactStoreDriver}${config.artifactStoreDriver === "s3" ? ` · bucket ${config.artifactS3Bucket}` : ` · cache ${config.artifactsDir}`}`);
@@ -2972,6 +2989,7 @@ async function main(): Promise<void> {
     clearInterval(siemTimer);
     clearInterval(siemRetentionTimer);
     server.close(() => void (async () => {
+      await knowledgeSearch?.close();
       store.close();
       await processRuntime.close();
       await telemetry.shutdown();

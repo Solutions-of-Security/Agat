@@ -174,7 +174,7 @@ HTTP redirect запрещён. В базовом 1.7 timeout или non-2xx в�
 | `AGAT_STATE_STORE_DRIVER=postgresql` | включает PostgreSQL authority |
 | `AGAT_POSTGRES_URL` | system role URL; scheduler/admin/migrations |
 | `AGAT_POSTGRES_TENANT_URL` | отдельная non-BYPASSRLS tenant role URL |
-| `AGAT_POSTGRES_POOL_MAX` | connections на pool одной replica |
+| `AGAT_POSTGRES_POOL_MAX` | общий предел connections на роль одной replica; [isolated retrieval](./local-rag-and-memory.md) резервирует внутри него одно соединение на роль |
 | `AGAT_POSTGRES_*_TIMEOUT_MS` | connect/idle/statement bounds |
 | `AGAT_POSTGRES_SSL_MODE` | `disable` только local; remote — `require/verify-full` |
 | `AGAT_REGION`, `AGAT_RESIDENCY_DOMAIN` | identity HA-cell |

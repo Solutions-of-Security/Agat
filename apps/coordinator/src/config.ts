@@ -22,6 +22,29 @@ function knowledgeSearchMaxCandidatesFromEnv(value: string | undefined): number 
   return normalizeKnowledgeSearchMaxCandidates(parsed, "AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES");
 }
 
+function strictSearchInteger(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
+  const parsed = value === undefined ? fallback : /^\d+$/.test(value.trim()) ? Number(value) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${name} должен быть целым числом ${minimum}..${maximum}`);
+  return parsed;
+}
+
+export type KnowledgeSearchExecution = "sync" | "isolated";
+
+function knowledgeSearchExecutionFromEnv(value: string | undefined): KnowledgeSearchExecution {
+  const mode = (value ?? "sync").trim().toLowerCase();
+  if (mode === "sync" || mode === "isolated") return mode;
+  throw new Error("AGAT_KNOWLEDGE_SEARCH_EXECUTION должен быть sync или isolated");
+}
+
+/** Split the already admitted per-replica, per-role budget; never add a pool on top. */
+export function knowledgeSearchPoolAllocation(execution: KnowledgeSearchExecution, poolMax: number): { coordinator: number; retrieval: number } {
+  const retrieval = execution === "isolated" ? 1 : 0;
+  if (!Number.isInteger(poolMax) || poolMax < 1 + retrieval || poolMax > 32) {
+    throw new Error(`AGAT_POSTGRES_POOL_MAX должен быть ${1 + retrieval}..32 для ${execution} retrieval`);
+  }
+  return { coordinator: poolMax - retrieval, retrieval };
+}
+
 export type TemporalTarget = "local" | "cloud" | "self-hosted";
 export type StateStoreDriver = "sqlite" | "postgresql";
 export type ArtifactStoreDriver = "filesystem" | "postgresql" | "s3";
@@ -197,6 +220,9 @@ export interface CoordinatorConfig {
   leaseTtlSeconds: number;
   decisionShadowEnabled: boolean;
   knowledgeSearchMaxCandidates: number;
+  knowledgeSearchExecution: KnowledgeSearchExecution;
+  knowledgeSearchMaxPending: number;
+  knowledgeSearchTimeoutMs: number;
   allowedOrigins: string[];
   localWorkerLauncherEnabled: boolean;
   localWorkerNamespace: string;
@@ -247,6 +273,12 @@ export function loadConfig(): CoordinatorConfig {
   const port = integerFromEnv(process.env.AGAT_PORT, 8787);
   const temporalTarget = temporalTargetFromEnv(process.env.AGAT_TEMPORAL_TARGET);
   const stateStoreDriver = stateStoreDriverFromEnv(process.env.AGAT_STATE_STORE_DRIVER);
+  const postgresPoolMax = Math.max(1, Math.min(32, integerFromEnv(process.env.AGAT_POSTGRES_POOL_MAX, 4)));
+  const knowledgeSearchExecution = knowledgeSearchExecutionFromEnv(process.env.AGAT_KNOWLEDGE_SEARCH_EXECUTION);
+  if (knowledgeSearchExecution === "isolated" && stateStoreDriver !== "postgresql") {
+    throw new Error("AGAT_KNOWLEDGE_SEARCH_EXECUTION=isolated требует PostgreSQL state store");
+  }
+  knowledgeSearchPoolAllocation(knowledgeSearchExecution, postgresPoolMax);
   const artifactStoreDriver = artifactStoreDriverFromEnv(process.env.AGAT_ARTIFACT_STORE_DRIVER, stateStoreDriver);
   const region = optionalSafeText(process.env.AGAT_REGION ?? "local", "AGAT_REGION", 63).toLowerCase();
   return {
@@ -307,7 +339,7 @@ export function loadConfig(): CoordinatorConfig {
     stateStoreDriver,
     postgresUrl: optionalSafeText(process.env.AGAT_POSTGRES_URL, "AGAT_POSTGRES_URL", 8_192),
     postgresTenantUrl: optionalSafeText(process.env.AGAT_POSTGRES_TENANT_URL, "AGAT_POSTGRES_TENANT_URL", 8_192),
-    postgresPoolMax: Math.max(1, Math.min(32, integerFromEnv(process.env.AGAT_POSTGRES_POOL_MAX, 4))),
+    postgresPoolMax,
     postgresConnectTimeoutMs: Math.max(500, Math.min(60_000, integerFromEnv(process.env.AGAT_POSTGRES_CONNECT_TIMEOUT_MS, 5_000))),
     postgresIdleTimeoutMs: Math.max(1_000, Math.min(600_000, integerFromEnv(process.env.AGAT_POSTGRES_IDLE_TIMEOUT_MS, 30_000))),
     postgresStatementTimeoutMs: Math.max(1_000, Math.min(600_000, integerFromEnv(process.env.AGAT_POSTGRES_STATEMENT_TIMEOUT_MS, 30_000))),
@@ -400,6 +432,9 @@ export function loadConfig(): CoordinatorConfig {
     leaseTtlSeconds: integerFromEnv(process.env.AGAT_LEASE_TTL_SECONDS, 180),
     decisionShadowEnabled: booleanFromEnv(process.env.AGAT_DECISION_SHADOW_ENABLED, false),
     knowledgeSearchMaxCandidates: knowledgeSearchMaxCandidatesFromEnv(process.env.AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES),
+    knowledgeSearchExecution,
+    knowledgeSearchMaxPending: strictSearchInteger(process.env.AGAT_KNOWLEDGE_SEARCH_MAX_PENDING, 4, 1, 64, "AGAT_KNOWLEDGE_SEARCH_MAX_PENDING"),
+    knowledgeSearchTimeoutMs: strictSearchInteger(process.env.AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS, 30_000, 100, 60_000, "AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS"),
     allowedOrigins: (process.env.AGAT_ALLOWED_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173")
       .split(",")
       .map((origin) => origin.trim())

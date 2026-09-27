@@ -50,6 +50,24 @@ Collection IDs фиксируются в run при создании. Повто
 
 В PostgreSQL точный scorer выполняется внутри SQL-worker: между потоками передаются только выбранные metadata и score. SQLite использует тот же scorer с native iterator. [Повторный корпусный опыт](./qualification/local-decisions/performance/retrieval-worker-ranking.md) сохранил все hits и снизил наблюдаемый PostgreSQL RSS с 540 до 338 МиБ; модель доступа и лимит кандидатов сохраняются.
 
+## Изолированное выполнение PostgreSQL retrieval
+
+По умолчанию `AGAT_KNOWLEDGE_SEARCH_EXECUTION=sync`. Для PostgreSQL оператор может выбрать `isolated`: постоянный worker владеет всей транзакцией поиска, HTTP-сервер ожидает результат асинхронно. Для SQLite это значение отклоняется при запуске: single-writer lock всё ещё задерживает синхронное обслуживание. [Парные измерения и ограничения](./qualification/local-decisions/performance/retrieval-isolated-executor.md).
+
+| Переменная | Default | Ограничение |
+|---|---:|---|
+| `AGAT_KNOWLEDGE_SEARCH_EXECUTION` | `sync` | `sync` или `isolated`; второй вариант только с `AGAT_STATE_STORE_DRIVER=postgresql` |
+| `AGAT_KNOWLEDGE_SEARCH_MAX_PENDING` | `4` | целое 1–64; активный запрос входит в число принятых |
+| `AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS` | `30000` | целое 100–60000 мс, включая время очереди и доставку ответа |
+
+Ограничения очереди и deadline действуют в режиме `isolated`. Неверные значения конфигурации останавливают запуск. Для него требуется `AGAT_POSTGRES_POOL_MAX >= 2`: main получает `poolMax - 1`, retrieval — `1` для каждой из system/tenant roles. Общий бюджет остаётся `expectedReplicas × poolMax` на роль. Migration/admission Job получает полный `poolMax`; уменьшать его до main-доли не нужно. Например, при двух replica и `poolMax=4` планируется 8 system + 8 tenant connections. При подсчёте replica учитываются rollout и другие клиенты, как в [connection admission](./postgresql-migration-job-runtime-role.md).
+
+Очередь заполнена — HTTP 429; принимающий исполнитель продолжает показывать health 200. При deadline активного поиска ответ 504, новые запросы получают 503, health возвращает `status=degraded` и `knowledgeSearch.accepting=false`. Очередь очищается без автоматического replay. Срок ожидания отдельного запроса в очереди также даёт 504, но сам по себе не закрывает исполнителя. HTTP 504/503 при прерывании активной операции не доказывает rollback: commit мог завершиться до потери ответа. Перед ручным повтором нужно проверить сохранённые sources/trace запуска.
+
+Health включает режим, active/queued, maxPending и accepting. После остановки исполнителя нужен перезапуск coordinator. В текущем Kubernetes manifest этот endpoint используют readiness и liveness: после порогов неуспеха pod снимается с обслуживания и перезапускается. Заполненная очередь сама по себе не вызывает restart. Docker Compose healthcheck отмечает unhealthy; одного этого недостаточно для автоматического restart. Откат режима — вернуть `sync` и перезапустить coordinator; схема и данные совместимы.
+
+Проверены собранный entry point, реальные PostgreSQL pools, поиск, отказ и освобождение соединений: [протокол операторского opt-in](./qualification/local-decisions/performance/retrieval-postgres-opt-in.md). Нагрузочные показатели предыдущего прототипа не являются SLO полного coordinator. Значения по умолчанию в Compose и Kubernetes сохранены как `sync`; изменение репозитория само не меняет работающий deployment.
+
 ## Подготовка embedding-модели
 
 Для Ollama:

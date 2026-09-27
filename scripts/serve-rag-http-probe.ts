@@ -61,7 +61,7 @@ const config = { ...loadConfig(), host: "127.0.0.1", port: 0, serveWeb: false,
 let executor: KnowledgeSearchExecutor | undefined;
 let maintenanceTimer: NodeJS.Timeout | undefined;
 const server = createCoordinatorServer(config, store, undefined, undefined, undefined, undefined,
-  executionMode === "isolated" ? { search: (...args) => executor!.search(...args) } : undefined);
+  executionMode === "isolated" ? { search: (...args) => executor!.search(...args), snapshot: () => executor!.snapshot() } : undefined);
 const lines = createInterface({ input: process.stdin });
 const lag = monitorEventLoopDelay({ resolution: 10 });
 const reply = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
