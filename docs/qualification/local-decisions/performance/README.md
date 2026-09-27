@@ -92,4 +92,6 @@ python3 -m unittest scripts.test.test_decision_performance -v
 
 [Shutdown с заполненной очередью](./retrieval-shutdown-drain.md): воспроизведение и исправление позднего закрытия admission; heartbeat, lease renewal, main maintenance и restart без replay на настоящем coordinator/PostgreSQL.
 
+[Shutdown с UI/A2A-подписками](./coordinator-stream-shutdown.md): завершение долгоживущих HTTP-ответов без отмены сохранённых tasks, возобновление UI event IDs после restart и отсутствие поздних чтений закрытого store.
+
 [Повторная проверка lease перед сохранением](./retrieval-lease-locking.md): поиск отклоняет истечение и отмену во время ожидания; PostgreSQL row locks удерживаются после ranking, чтобы чтение индекса не задерживало продление.

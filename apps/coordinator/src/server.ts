@@ -439,16 +439,26 @@ function a2aTaskState(task: Record<string, unknown>): A2ATaskState {
   return String(status.state ?? "TASK_STATE_UNSPECIFIED") as A2ATaskState;
 }
 
+function a2aShutdownError(taskId?: string): A2AProtocolError {
+  return new A2AProtocolError(503, "UNAVAILABLE", "COORDINATOR_SHUTDOWN",
+    taskId ? "Coordinator останавливается; сохранённую task можно запросить после восстановления" : "Coordinator останавливается",
+    taskId ? { taskId } : {});
+}
+
 async function waitForA2ATask(
   store: AgatStore,
   endpointId: string,
   taskId: string,
   historyLength: number,
   response: ServerResponse,
+  shutdownSignal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
+  if (shutdownSignal?.aborted) throw a2aShutdownError(taskId);
   let task = store.getA2ATask(endpointId, taskId, historyLength, true);
-  while (task && !isA2ASettledState(a2aTaskState(task)) && !response.destroyed) {
+  while (task && !isA2ASettledState(a2aTaskState(task)) && !response.destroyed && !response.writableEnded) {
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    if (shutdownSignal?.aborted) throw a2aShutdownError(taskId);
+    if (response.destroyed || response.writableEnded) break;
     task = store.getA2ATask(endpointId, taskId, historyLength, true);
   }
   if (!task) {
@@ -485,8 +495,10 @@ async function streamA2ATask(
     return;
   }
   let lastHeartbeat = Date.now();
-  while (!closed && !response.destroyed) {
+  while (!closed && !response.destroyed && !response.writableEnded) {
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    // Shutdown can end the stream while this polling delay is pending.
+    if (closed || response.destroyed || response.writableEnded) return;
     const task = store.getA2ATask(endpointId, taskId, 0, true);
     if (!task) break;
     const state = a2aTaskState(task);
@@ -624,7 +636,23 @@ export function createCoordinatorServer(
   }, undefined, createSandboxExecutor(config)),
   edgeAttestation: EdgeAttestationVerifier = createEdgeAttestationVerifier(config),
   knowledgeSearch?: KnowledgeSearchService,
+  shutdownSignal?: AbortSignal,
 ): http.Server {
+  const eventStreams = new Set<ServerResponse>();
+  const trackEventStream = (response: ServerResponse, a2aTaskId?: string): void => {
+    // Authentication/body parsing may have completed after shutdown began.
+    if (shutdownSignal?.aborted) {
+      if (a2aTaskId) throw a2aShutdownError(a2aTaskId);
+      throw new HttpError(503, "Coordinator останавливается");
+    }
+    eventStreams.add(response);
+    response.once("close", () => eventStreams.delete(response));
+  };
+  const closeEventStreams = (): void => {
+    for (const response of eventStreams) response.end();
+    eventStreams.clear();
+  };
+  shutdownSignal?.addEventListener("abort", closeEventStreams, { once: true });
   const scenarioContext = (): ScenarioPreflightContext => ({
     runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
   });
@@ -661,6 +689,10 @@ export function createCoordinatorServer(
     const { pathname } = url;
 
     try {
+      if (shutdownSignal?.aborted) {
+        if (pathname.startsWith("/a2a/")) throw a2aShutdownError();
+        throw new HttpError(503, "Coordinator останавливается");
+      }
       if (request.method === "GET" && pathname === "/api/v1/health") {
         const retrieval = knowledgeSearch?.snapshot();
         const ready = retrieval?.accepting !== false;
@@ -789,7 +821,7 @@ export function createCoordinatorServer(
             }
           }
           if (!normalized.returnImmediately) {
-            task = await waitForA2ATask(store, endpoint.id, String(task.id), normalized.historyLength, response);
+            task = await waitForA2ATask(store, endpoint.id, String(task.id), normalized.historyLength, response, shutdownSignal);
           }
           if (!response.destroyed) a2aJson(response, 200, { task });
           return;
@@ -814,6 +846,7 @@ export function createCoordinatorServer(
           } catch (error) {
             throw a2aStoreError(error);
           }
+          trackEventStream(response, String(task.id));
           await streamA2ATask(request, response, store, endpoint.id, String(task.id), task);
           return;
         }
@@ -830,6 +863,7 @@ export function createCoordinatorServer(
           if (isA2ASettledState(a2aTaskState(task))) {
             throw new A2AProtocolError(400, "FAILED_PRECONDITION", "UNSUPPORTED_OPERATION", "Terminal или interrupted task нельзя подписать повторно");
           }
+          trackEventStream(response, taskId);
           await streamA2ATask(request, response, store, endpoint.id, taskId, task);
           return;
         }
@@ -2136,6 +2170,7 @@ export function createCoordinatorServer(
 
       if (request.method === "GET" && pathname === "/api/v1/events") {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        trackEventStream(response);
         const afterFromQuery = Number.parseInt(url.searchParams.get("after") ?? "0", 10) || 0;
         const lastEventHeader = request.headers["last-event-id"];
         const lastEventId = Array.isArray(lastEventHeader) ? lastEventHeader[0] : lastEventHeader;
@@ -2149,6 +2184,7 @@ export function createCoordinatorServer(
         response.write(": connected\n\n");
 
         const flush = (): void => {
+          if (response.destroyed || response.writableEnded) return;
           for (const event of store.listEvents(cursor, 200, auth.projectId)) {
             cursor = event.id;
             response.write(`id: ${event.id}\n`);
@@ -2159,7 +2195,7 @@ export function createCoordinatorServer(
         flush();
         const interval = setInterval(flush, 1_000);
         const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), 15_000);
-        request.on("close", () => {
+        response.once("close", () => {
           clearInterval(interval);
           clearInterval(heartbeat);
         });
@@ -2726,7 +2762,7 @@ export function createCoordinatorServer(
   });
   let pushPumpRunning = false;
   const pushTimer = setInterval(() => {
-    if (!config.a2aEnabled || pushPumpRunning) return;
+    if (shutdownSignal?.aborted || !config.a2aEnabled || pushPumpRunning) return;
     pushPumpRunning = true;
     let deliveries: ReturnType<AgatStore["claimA2APushDeliveries"]>;
     try {
@@ -2746,7 +2782,10 @@ export function createCoordinatorServer(
     })).finally(() => { pushPumpRunning = false; });
   }, 500);
   pushTimer.unref();
-  server.once("close", () => clearInterval(pushTimer));
+  server.once("close", () => {
+    clearInterval(pushTimer);
+    shutdownSignal?.removeEventListener("abort", closeEventStreams);
+  });
   return server;
 }
 
@@ -2849,7 +2888,8 @@ async function main(): Promise<void> {
     maxResponseBytes: config.mcpMaxResponseBytes,
     approvalTtlSeconds: config.mcpApprovalTtlSeconds,
   }, undefined, createSandboxExecutor(config));
-  const server = createCoordinatorServer(config, store, localWorkerLauncher, processRuntime, mcpGateway, undefined, knowledgeSearch);
+  const httpShutdown = new AbortController();
+  const server = createCoordinatorServer(config, store, localWorkerLauncher, processRuntime, mcpGateway, undefined, knowledgeSearch, httpShutdown.signal);
 
   void localWorkerLauncher.snapshot().then((snapshot) => {
     if (!snapshot.available) return;
@@ -2991,6 +3031,7 @@ async function main(): Promise<void> {
     clearInterval(mcpRefreshTimer);
     clearInterval(siemTimer);
     clearInterval(siemRetentionTimer);
+    httpShutdown.abort();
     // Close admission and reject queued work before waiting for HTTP responses.
     // The active transaction retains its deadline and may finish normally.
     const retrievalClosed = knowledgeSearch?.close();
