@@ -141,7 +141,7 @@ async function retrievalLeaseRaceFixture() {
     executor = await KnowledgeSearchExecutor.create(":postgresql:", storeOptions(application, artifacts));
     await writer.connect();
     const request = { queries: [{ embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 }] };
-    return { first, writer, project, run, node, lease, request, artifacts,
+    return { first, writer, project, run, node, lease, request, artifacts, agentId: String(agent.id),
       search: (leaseId = lease.leaseId) => executor!.search(node.token, node.id, leaseId, request),
       waitForLock: async (queryPattern = /FOR UPDATE/, applicationName = `${application}-system`) => {
         const deadline = performance.now() + 5_000;
@@ -598,6 +598,104 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(await child.stop(), { code: 0, signal: null });
       } finally {
         await f.writer.query("ROLLBACK"); await child?.stop(); await Promise.allSettled(pending); await f.close();
+      }
+    });
+  });
+
+  it("closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      const instance = `stream-stop-${randomUUID().slice(0, 8)}`;
+      const endpoint = f.first.createA2AEndpoint({ agentId: f.agentId }, f.project);
+      const endpointId = String(endpoint.endpoint.id);
+      const env = coordinatorProcessEnvironment(instance, f.artifacts, {
+        AGAT_A2A_ENABLED: "true", AGAT_A2A_PUBLIC_BASE_URL: "http://127.0.0.1:8787" });
+      const client = new AbortController();
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const pending: Promise<unknown>[] = [];
+      const a2aHeaders = { authorization: `Bearer ${endpoint.accessToken}`, "a2a-version": "1.0", "content-type": "application/a2a+json" };
+      const message = (id: string, returnImmediately: boolean) => JSON.stringify({
+        message: { messageId: id, role: "ROLE_USER", parts: [{ text: "Shutdown fixture", mediaType: "text/plain" }] },
+        configuration: { returnImmediately } });
+      try {
+        child = await startCoordinatorProcess(env);
+        let origin = `http://127.0.0.1:${child.port}`;
+        const ui = await fetch(`${origin}/api/v1/events`, { headers: { "x-agat-project-id": f.project }, signal: client.signal });
+        assert.equal(ui.status, 200);
+        const uiReader = ui.body!.getReader();
+        let firstEvents = "";
+        while (!/^id: \d+\n/m.test(firstEvents)) {
+          const part = await within(uiReader.read(), 2_000, "UI event cursor was not delivered");
+          assert.equal(part.done, false); firstEvents += Buffer.from(part.value!).toString("utf8");
+        }
+        const cursor = Math.max(...[...firstEvents.matchAll(/^id: (\d+)\n/gm)].map(match => Number(match[1])));
+        const streamed = await fetch(`${origin}/a2a/v1/endpoints/${endpointId}/message:stream`, {
+          method: "POST", headers: a2aHeaders, body: message("stream-shutdown", true), signal: client.signal });
+        assert.equal(streamed.status, 200);
+        const a2aReader = streamed.body!.getReader();
+        const firstTask = await within(a2aReader.read(), 2_000, "A2A initial task was not delivered");
+        assert.equal(firstTask.done, false); assert.match(Buffer.from(firstTask.value!).toString("utf8"), /"task"/);
+        const blocked = fetch(`${origin}/a2a/v1/endpoints/${endpointId}/message:send`, {
+          method: "POST", headers: a2aHeaders, body: message("blocking-shutdown", false), signal: client.signal })
+          .then(async response => ({ status: response.status, body: await response.json() as {
+            error: { status: string; details: Array<{ reason: string; metadata: { taskId: string } }> } } }));
+        pending.push(blocked);
+        await eventually(async () => Number(f.first.db.prepare("SELECT COUNT(*) AS count FROM a2a_tasks WHERE endpoint_id = ?").get(endpointId)!.count) === 2,
+          "The blocking request did not create its durable task before shutdown");
+        const taskIds = f.first.db.prepare("SELECT id FROM a2a_tasks WHERE endpoint_id = ? ORDER BY id").all(endpointId).map(row => String(row.id));
+        const endings = [uiReader, a2aReader].map(async reader => {
+          let text = "";
+          const decoder = new TextDecoder();
+          for (;;) {
+            const part = await reader.read();
+            if (part.done) return text + decoder.decode();
+            text += decoder.decode(part.value, { stream: true });
+          }
+        });
+        pending.push(...endings);
+        child.signal();
+        const [uiEnd, a2aEnd, interrupted, exit] = await within(Promise.all([endings[0]!, endings[1]!, blocked, child.closed]),
+          5_000, "SSE/A2A requests prevented coordinator shutdown");
+        assert.equal(typeof uiEnd, "string");
+        assert.doesNotMatch(a2aEnd, /TASK_STATE_(?:COMPLETED|FAILED|CANCELED)/, "Disconnect must not fabricate a terminal task event");
+        assert.equal(interrupted.status, 503); assert.equal(interrupted.body.error.status, "UNAVAILABLE");
+        assert.equal(interrupted.body.error.details[0]!.reason, "COORDINATOR_SHUTDOWN");
+        assert.ok(taskIds.includes(interrupted.body.error.details[0]!.metadata.taskId));
+        assert.deepEqual(exit, { code: 0, signal: null });
+        for (const id of taskIds) {
+          const task = f.first.getA2ATask(endpointId, id, 0, true) as { status: { state: string } };
+          assert.equal(task.status.state, "TASK_STATE_SUBMITTED");
+        }
+
+        child = await startCoordinatorProcess(env);
+        origin = `http://127.0.0.1:${child.port}`;
+        for (const id of taskIds) {
+          const response = await fetch(`${origin}/a2a/v1/endpoints/${endpointId}/tasks/${id}`, { headers: a2aHeaders });
+          assert.equal(response.status, 200);
+          assert.equal((await response.json() as { status: { state: string } }).status.state, "TASK_STATE_SUBMITTED");
+        }
+        assert.equal(Number(f.first.db.prepare("SELECT COUNT(*) AS count FROM a2a_tasks WHERE endpoint_id = ?").get(endpointId)!.count), 2);
+        const expectedIds = f.first.listEvents(cursor, 200, f.project).map(event => event.id);
+        assert.ok(expectedIds.length > 0, "Restart must exercise events beyond the saved client cursor");
+        const resumed = await fetch(`${origin}/api/v1/events`, {
+          headers: { "x-agat-project-id": f.project, "last-event-id": String(cursor) }, signal: client.signal });
+        assert.equal(resumed.status, 200);
+        const reader = resumed.body!.getReader();
+        let later = "";
+        const receivedIds = () => [...later.matchAll(/^id: (\d+)\n/gm)].map(match => Number(match[1]));
+        while (receivedIds().length < expectedIds.length) {
+          const part = await within(reader.read(), 2_000, "Events after the previous cursor were not resumed");
+          assert.equal(part.done, false); later += Buffer.from(part.value!).toString("utf8");
+        }
+        assert.deepEqual(receivedIds(), expectedIds, "Resume must deliver every stored event after the cursor exactly once in order");
+        await reader.cancel();
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } finally {
+        client.abort(); await child?.stop(); await Promise.allSettled(pending);
+        for (const row of f.first.db.prepare("SELECT id FROM a2a_tasks WHERE endpoint_id = ?").all(endpointId)) {
+          f.first.cancelA2ATask(endpointId, String(row.id));
+        }
+        await f.close();
       }
     });
   });

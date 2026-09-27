@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, it } from "node:test";
 
 import {
@@ -62,6 +63,51 @@ function sendRequest(
 }
 
 describe("A2A adapter", () => {
+  it("ends event streams before store closure and stops their delayed reads", async (context) => {
+    const store = createStore();
+    const { endpoint, accessToken } = createEndpoint(store);
+    const shutdown = new AbortController();
+    const taskRead = store.getA2ATask.bind(store), eventRead = store.listEvents.bind(store);
+    let taskReads = 0, eventReads = 0;
+    context.mock.method(store, "getA2ATask", (...args: Parameters<AgatStore["getA2ATask"]>) => { taskReads++; return taskRead(...args); });
+    context.mock.method(store, "listEvents", (...args: Parameters<AgatStore["listEvents"]>) => { eventReads++; return eventRead(...args); });
+    const server = createCoordinatorServer({ ...loadConfig(), host: "127.0.0.1", port: 0, serveWeb: false,
+      a2aEnabled: true, a2aPublicBaseUrl: "https://agents.example.test", mcpEnabled: false }, store,
+    undefined, undefined, undefined, undefined, undefined, shutdown.signal);
+    servers.push(server);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const client = new AbortController();
+    const pending: Promise<unknown>[] = [];
+    try {
+      const events = await fetch(`${origin}/api/v1/events`, { signal: client.signal });
+      const stream = await fetch(`${origin}/a2a/v1/endpoints/${endpoint.id}/message:stream`, {
+        method: "POST", headers: { authorization: `Bearer ${accessToken}`, "a2a-version": "1.0", "content-type": "application/a2a+json" },
+        body: JSON.stringify(sendRequest("shutdown-stream")), signal: client.signal });
+      assert.equal(events.status, 200); assert.equal(stream.status, 200);
+      const readers = [events.body!.getReader(), stream.body!.getReader()];
+      for (const reader of readers) assert.equal((await reader.read()).done, false);
+      const endings = readers.map(async reader => { while (!(await reader.read()).done) { /* Drain already buffered frames. */ } });
+      pending.push(...endings);
+      shutdown.abort();
+      await Promise.all(endings);
+      const refused = await fetch(`${origin}/a2a/v1/endpoints/${endpoint.id}/tasks/missing`);
+      assert.equal(refused.status, 503);
+      const error = await refused.json() as { error: { status: string; message: string; details: Array<{ metadata: Record<string, string> }> } };
+      assert.equal(error.error.status, "UNAVAILABLE");
+      assert.equal(Object.hasOwn(error.error.details[0]!.metadata, "taskId"), false);
+      assert.doesNotMatch(error.error.message, /сохранённую/);
+      const unavailable = await fetch(`${origin}/api/v1/events`); assert.equal(unavailable.status, 503); await unavailable.json();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      servers.splice(servers.indexOf(server), 1);
+      store.close(); stores.splice(stores.indexOf(store), 1);
+      const readsAtClose = { taskReads, eventReads };
+      await delay(1_100); // Cross both the 250 ms A2A poll and 1 s UI flush.
+      assert.deepEqual({ taskReads, eventReads }, readsAtClose, "Closed responses must not access a closed store");
+    } finally { shutdown.abort(); client.abort(); await Promise.allSettled(pending); }
+  });
+
   it("publishes a minimal 1.0 Agent Card without internal prompts, tools or memory", () => {
     const store = createStore();
     const { endpoint } = createEndpoint(store, {

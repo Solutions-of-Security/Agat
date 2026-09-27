@@ -83,6 +83,8 @@ Inbound task создаёт обычный одноагентный run:
 
 `message:stream` и `tasks/:id:subscribe` сначала отправляют полный текущий `Task`, затем изменения состояния. При completion artifacts отправляются как `artifactUpdate`, после них — terminal `statusUpdate`; SSE закрывается на terminal/interrupted state. Сервер посылает heartbeat comment каждые 15 секунд и не связывает lifecycle task с жизнью одного HTTP stream.
 
+При штатном shutdown coordinator завершает SSE без выдуманного terminal event. Ожидающий `message:send` с `returnImmediately=false` получает HTTP 503 / `UNAVAILABLE`, reason `COORDINATOR_SHUTDOWN`, с `details[].metadata.taskId` для уже созданной task. Task продолжает храниться; после восстановления клиент читает её через GET по ID. Новые запросы после shutdown signal получают 503 без taskId. [Проверки настоящего процесса, restart и прекращения delayed reads](./qualification/local-decisions/performance/coordinator-stream-shutdown.md).
+
 Capabilities включаются отдельно на каждом endpoint. При выключенном `streamingEnabled` обе операции fail closed с `UNSUPPORTED_OPERATION`.
 
 ## Push notifications
