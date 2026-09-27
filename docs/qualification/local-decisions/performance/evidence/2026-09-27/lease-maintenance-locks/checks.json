@@ -1,0 +1,92 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "69b66246e3a69d90f29ef2a7e72c0d78da94fa18",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforeSqlite": {
+      "expectedFail": 2
+    },
+    "beforePostgres": {
+      "expectedFail": 3,
+      "renewalState": "queued",
+      "admittedCompletionRunState": "queued",
+      "duplicateExpirationEvents": 2
+    },
+    "targeted": {
+      "pass": 38,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 3,
+      "fail": 0,
+      "renewalState": "running",
+      "admittedCompletionRunState": "completed",
+      "admittedArtifacts": 3,
+      "expirationEvents": [
+        0,
+        0,
+        1
+      ],
+      "healthDuringStageLock": [
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "coordinator": {
+      "pass": 266,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 40,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1512,
+      "markdownFiles": 178,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "boundary": "Stage maintenance claims expired unlocked rows and commits SQL transitions with their events atomically. Row-lock health checks are not production SLOs or a guarantee against table-lock waits; external telemetry is not made transactional.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "c0fffabb52c9c7993d1d98ea2f07fb1c23b155a1c6636852eaf95c613d20eb74",
+    "apps/coordinator/test/stage-lease-admission.test.ts": "e39deebe8fc982019994d006789be0b078d526cdaf101ea4cd0507145a5b6b56",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "85e2ee3b70990ec2754ebc215eac3df5572d6987ca057f6ab1cd207815602cba"
+  },
+  "logSha256": {
+    "before-sqlite.log": "39f70fbe66861d98fcd268db6ad956faac51e1ef7e4a85ab3bc4e14f6773d641",
+    "before-postgres.log": "8139a8c48401bf5f1000f3e3e255138af53523ac3d278cd972f049b8efc4dec3",
+    "targeted.log": "996ee9f1227c2327a647fc53ce3becac89d2ad2edcae462f2068b672b235d054",
+    "postgres-targeted.log": "9bbb5eebda0433f1f71321e65455f6bda312151cc7bbb984b84da6a2d09404ed",
+    "coordinator.log": "f9187db683acb9236bf5bff6c0c13c943308c50cce21f231ffea20d2f8e00c36",
+    "postgres.log": "5a8af0f72f1e0d9cb03fffd9da578fbe42d5aed5b959f15efe1c4a6b80028ece",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "22f12a116737ff5629954dcd49a33273303d0cb89e0646112945ae5ce7114a5a",
+    "postgres-barrier-failure.log": "385b45709fb21d5758c4b8c6ca3e67333719703c364f38a3510f965d8f15678d",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-sqlite.log": "88b3c9df5d6596b10afc5abce8af27aa6aac5287ba77bc81d496f0cb0ec032aa",
+    "before-postgres.log": "881218dca66eb47f03d29c7227a0b26179a98b451cb9e05c86c4154e6e3ef93e",
+    "targeted.log": "996ee9f1227c2327a647fc53ce3becac89d2ad2edcae462f2068b672b235d054",
+    "postgres-targeted.log": "9bbb5eebda0433f1f71321e65455f6bda312151cc7bbb984b84da6a2d09404ed",
+    "coordinator.log": "f9187db683acb9236bf5bff6c0c13c943308c50cce21f231ffea20d2f8e00c36",
+    "postgres.log": "5a8af0f72f1e0d9cb03fffd9da578fbe42d5aed5b959f15efe1c4a6b80028ece",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "22f12a116737ff5629954dcd49a33273303d0cb89e0646112945ae5ce7114a5a",
+    "postgres-barrier-failure.log": "33fbcbee8b42409d48905d67f3d567655d03b875bd5becd392bed8aab632da2c"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostic text preserved. The initial heartbeat-barrier fixture failure is retained and is not counted as full baseline reproduction."
+}

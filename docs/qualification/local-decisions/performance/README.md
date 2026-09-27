@@ -107,3 +107,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Срок lease во время записи](./retrieval-lease-write-fence.md): воспроизведено сохранение после expiry при блокировке INSERT retrieval или события. Повторная проверка перед выходом из транзакции откатывает обе записи; проверяется восстановление по новому lease с `K1`.
 
 [Допуск terminal-ответов](./terminal-lease-admission.md) проверен независимо от retrieval и shadow: свежий срок после stage lock, сохранение нового владельца при позднем `/fail`, отказ до записи артефактов и успешный retry.
+
+[Конкурирующий maintenance](./lease-maintenance-locks.md) сохраняет своевременное renewal и принятое завершение, освобождает lease одной из реплик и откатывает SQL-переходы при отказе события.

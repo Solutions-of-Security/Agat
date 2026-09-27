@@ -14126,79 +14126,84 @@ export class AgatStore {
   }
 
   private cleanupExpiredLeases(): void {
-    const expired = this.db
-      .prepare(`
-        SELECT id, run_id, node_id, lease_id, attempt, max_attempts, stage_kind
-        FROM stages WHERE status = 'running' AND lease_expires_at < ?
-      `)
-      .all(nowIso()) as Row[];
-    if (expired.length === 0) return;
+    // Claim only currently expired, unlocked rows. Keep state transitions and
+    // their events atomic, including maintenance outside a dispatch transaction.
+    this.transaction(() => {
+      const expired = this.db
+        .prepare(`
+          SELECT id, run_id, node_id, lease_id, attempt, max_attempts, stage_kind
+          FROM stages WHERE status = 'running' AND lease_expires_at < ?
+          ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE SKIP LOCKED" : ""}
+        `)
+        .all(nowIso()) as Row[];
+      if (expired.length === 0) return;
 
-    const timestamp = nowIso();
-    for (const stage of expired) {
-      const sideEffectGuard = typeof stage.lease_id === "string"
-        ? this.leaseHasUncertainMcpSideEffects(stage.lease_id)
-        : false;
-      const retrying = Number(stage.attempt) < Number(stage.max_attempts) && !sideEffectGuard;
-      const processInstance = this.db.prepare("SELECT id FROM process_instances WHERE run_id = ?")
-        .get(String(stage.run_id)) as Row | undefined;
-      if (typeof stage.lease_id === "string") {
-        this.telemetry.endStage(stage.lease_id, { status: "failed", errorType: "LeaseExpired" });
-      }
-      if (retrying) {
-        this.db.prepare(`
-          UPDATE stages
-          SET status = 'queued', node_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ?
-          WHERE id = ?
-        `).run(timestamp, String(stage.id));
-        const retryStatus = stage.stage_kind === "compensation" ? "compensating" : "queued";
-        this.db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?")
-          .run(retryStatus, timestamp, String(stage.run_id));
-        this.db.prepare("UPDATE process_instances SET status = ?, updated_at = ? WHERE run_id = ?")
-          .run(retryStatus, timestamp, String(stage.run_id));
-      } else {
-        this.db.prepare(`
-          UPDATE stages
-          SET status = 'failed', node_id = NULL, lease_id = NULL, lease_expires_at = NULL,
-              completed_at = ?, updated_at = ?
-          WHERE id = ?
-        `).run(timestamp, timestamp, String(stage.id));
-        if (stage.stage_kind === "compensation" && processInstance) {
-          this.db.prepare(`
-            UPDATE process_compensations
-            SET status = 'failed', error = 'LeaseExpired', completed_at = ?
-            WHERE compensation_stage_id = ?
-          `).run(timestamp, String(stage.id));
-          this.db.prepare(`
-            UPDATE process_instances
-            SET compensation_error = 'LeaseExpired', status = 'compensating', updated_at = ?
-            WHERE id = ?
-          `).run(timestamp, String(processInstance.id));
-          this.db.prepare("UPDATE runs SET status = 'compensating', updated_at = ? WHERE id = ?")
-            .run(timestamp, String(stage.run_id));
-          this.queueNextCompensation(String(processInstance.id), String(stage.run_id));
-        } else if (processInstance) {
-          this.triggerProcessFailure(String(processInstance.id), String(stage.run_id), "LeaseExpired", "failed");
-        } else {
-          this.db.prepare("UPDATE runs SET status = 'failed', completed_at = ?, updated_at = ? WHERE id = ?")
-            .run(timestamp, timestamp, String(stage.run_id));
-          this.telemetry.endRun(String(stage.run_id), { status: "failed", errorType: "LeaseExpired" });
+      const timestamp = nowIso();
+      for (const stage of expired) {
+        const sideEffectGuard = typeof stage.lease_id === "string"
+          ? this.leaseHasUncertainMcpSideEffects(stage.lease_id)
+          : false;
+        const retrying = Number(stage.attempt) < Number(stage.max_attempts) && !sideEffectGuard;
+        const processInstance = this.db.prepare("SELECT id FROM process_instances WHERE run_id = ?")
+          .get(String(stage.run_id)) as Row | undefined;
+        if (typeof stage.lease_id === "string") {
+          this.telemetry.endStage(stage.lease_id, { status: "failed", errorType: "LeaseExpired" });
         }
+        if (retrying) {
+          this.db.prepare(`
+            UPDATE stages
+            SET status = 'queued', node_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ?
+            WHERE id = ?
+          `).run(timestamp, String(stage.id));
+          const retryStatus = stage.stage_kind === "compensation" ? "compensating" : "queued";
+          this.db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?")
+            .run(retryStatus, timestamp, String(stage.run_id));
+          this.db.prepare("UPDATE process_instances SET status = ?, updated_at = ? WHERE run_id = ?")
+            .run(retryStatus, timestamp, String(stage.run_id));
+        } else {
+          this.db.prepare(`
+            UPDATE stages
+            SET status = 'failed', node_id = NULL, lease_id = NULL, lease_expires_at = NULL,
+                completed_at = ?, updated_at = ?
+            WHERE id = ?
+          `).run(timestamp, timestamp, String(stage.id));
+          if (stage.stage_kind === "compensation" && processInstance) {
+            this.db.prepare(`
+              UPDATE process_compensations
+              SET status = 'failed', error = 'LeaseExpired', completed_at = ?
+              WHERE compensation_stage_id = ?
+            `).run(timestamp, String(stage.id));
+            this.db.prepare(`
+              UPDATE process_instances
+              SET compensation_error = 'LeaseExpired', status = 'compensating', updated_at = ?
+              WHERE id = ?
+            `).run(timestamp, String(processInstance.id));
+            this.db.prepare("UPDATE runs SET status = 'compensating', updated_at = ? WHERE id = ?")
+              .run(timestamp, String(stage.run_id));
+            this.queueNextCompensation(String(processInstance.id), String(stage.run_id));
+          } else if (processInstance) {
+            this.triggerProcessFailure(String(processInstance.id), String(stage.run_id), "LeaseExpired", "failed");
+          } else {
+            this.db.prepare("UPDATE runs SET status = 'failed', completed_at = ?, updated_at = ? WHERE id = ?")
+              .run(timestamp, timestamp, String(stage.run_id));
+            this.telemetry.endRun(String(stage.run_id), { status: "failed", errorType: "LeaseExpired" });
+          }
+        }
+        this.addEvent(
+          String(stage.run_id),
+          String(stage.id),
+          typeof stage.node_id === "string" ? stage.node_id : null,
+          "warn",
+          retrying ? "lease.expired" : "stage.failed",
+          retrying
+            ? "Аренда истекла, этап возвращён в очередь"
+            : sideEffectGuard
+              ? "Аренда истекла после рискованного MCP-вызова; повтор заблокирован"
+              : "Аренда истекла, попытки этапа исчерпаны",
+          { attempt: Number(stage.attempt), maxAttempts: Number(stage.max_attempts), retrying, sideEffectGuard },
+        );
       }
-      this.addEvent(
-        String(stage.run_id),
-        String(stage.id),
-        typeof stage.node_id === "string" ? stage.node_id : null,
-        "warn",
-        retrying ? "lease.expired" : "stage.failed",
-        retrying
-          ? "Аренда истекла, этап возвращён в очередь"
-          : sideEffectGuard
-            ? "Аренда истекла после рискованного MCP-вызова; повтор заблокирован"
-            : "Аренда истекла, попытки этапа исчерпаны",
-        { attempt: Number(stage.attempt), maxAttempts: Number(stage.max_attempts), retrying, sideEffectGuard },
-      );
-    }
+    });
   }
 
   private leaseHasUncertainMcpSideEffects(leaseId: string): boolean {

@@ -1,0 +1,87 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:65465) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ maintenance preserves a timely renewal while its stage row is locked (4306.576167ms)
+  ℹ Renewal after maintenance: health=timeout, stage=queued, expiryEvents=1
+  ✖ maintenance preserves an admitted completion held past expiry by an event lock (7915.095458ms)
+  ℹ Completion after maintenance: health=timeout, run=queued, expiryEvents=1
+  ✖ maintenance reclaims an expired lease once across two coordinators (6550.956125ms)
+  ℹ Two maintainers: healthy=0, expiryEvents=2
+✖ PostgreSQL Fleet/HA integration (20162.546375ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20584.086667
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20633
+✖ maintenance preserves a timely renewal while its stage row is locked (4306.576167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'queued'
+  - 'running'
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1010:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:994:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 21)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'queued',
+    expected: 'running',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:20:1119
+✖ maintenance preserves an admitted completion held past expiry by an event lock (7915.095458ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'queued'
+  - 'completed'
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1048:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1020:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'queued',
+    expected: 'completed',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:20:3330
+✖ maintenance reclaims an expired lease once across two coordinators (6550.956125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  2 !== 1
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1070:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1058:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
