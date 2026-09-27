@@ -1,0 +1,99 @@
+(node:47336) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ real Python worker carries a pinned decision through lease, loopback inference and coordinator HTTP (603.192125ms)
+(node:47337) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Python and TypeScript agree on Unicode request identity and Boolean false (49.100959ms)
+✔ coordinator recomputes abstention and rejects identity, probability, candidate and policy tampering (146.912292ms)
+✔ isolated inference timeout and unavailable errors stay bound to the lease and preserve primary fallback (48.221166ms)
+✔ process publication rejects invalid contracts and routing mode (1.47175ms)
+✔ Score uses the same binary64 fingerprint across Python and JavaScript numeric encodings (276.911666ms)
+✔ Score validates the weighted mean, numeric zero, abstention and fingerprint version (189.108833ms)
+✔ legacy runtime profiles and Choice/Boolean input fingerprints remain accepted (44.439834ms)
+✔ Score requires pinned runtime support, finite unique numeric levels and v2 worker capability (122.814625ms)
+✔ opt-in shadow stores once, survives retry and preserves primary output, ACL and process replay guard (90.912ms)
+✔ feature flag, old workers, malformed responses and missing observations always retain the primary path (161.634083ms)
+✔ cancelled and expired leases cannot append a shadow result or revive ownership (77.37575ms)
+✖ shadow rejects lease expiry during stage read and preserves only previously committed observations (44.7895ms)
+ℹ After expiry at stage read: observation=false, events=0
+✖ shadow rejects lease expiry during event insert and preserves only previously committed observations (40.372166ms)
+ℹ After expiry at event insert: observation=false, events=0
+✖ shadow rejects lease expiry during idempotent retry and preserves only previously committed observations (34.076208ms)
+ℹ After expiry at idempotent retry: observation=true, events=1
+✔ shadow never bypasses stage approval (30.924208ms)
+✔ safe replay reuses the recorded shadow with provenance; live replay starts a new observation (81.02525ms)
+✔ safe replay does not substitute a recorded observation for a changed upstream output (129.4825ms)
+✔ a recorded decision survives coordinator restart without recomputation (115.25575ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 16
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2199.442916
+
+✖ failing tests:
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during stage read and preserves only previously committed observations (44.7895ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(replacement)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:322:60)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during event insert and preserves only previously committed observations (40.372166ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(replacement)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:322:60)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/local-decisions.test.ts:14:14758
+✖ shadow rejects lease expiry during idempotent retry and preserves only previously committed observations (34.076208ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(replacement)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/local-decisions.test.ts:322:60)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

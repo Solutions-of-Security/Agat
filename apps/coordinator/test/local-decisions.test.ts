@@ -280,6 +280,60 @@ test("cancelled and expired leases cannot append a shadow result or revive owner
   } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+for (const boundary of ["stage read", "event insert", "idempotent retry"] as const) {
+  test(`shadow rejects lease expiry during ${boundary} and preserves only previously committed observations`, context => {
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store); const instance = start(store); const runId = String(instance.runId);
+      const lease = store.leaseNext(worker)!;
+      const payload = { status: "unavailable", reason: "timeout" };
+      const previous = boundary === "idempotent retry" ? store.recordDecisionShadow(worker, lease.leaseId, payload) : undefined;
+      const prepare = store.db.prepare.bind(store.db);
+      let reachedBoundary = false;
+      store.db.prepare = sql => {
+        const statement = prepare(sql);
+        const matches = boundary === "event insert" ? /INSERT INTO events\s*\(/.test(sql)
+          : /FROM stages s JOIN runs r/.test(sql) && /s\.activity_json/.test(sql);
+        if (matches) {
+          const get = statement.get.bind(statement);
+          statement.get = (...params) => {
+            const result = get(...params);
+            reachedBoundary = true;
+            context.mock.timers.tick(Date.parse(lease.expiresAt) - Date.now());
+            return result;
+          };
+        }
+        return statement;
+      };
+      let error: unknown;
+      try { store.recordDecisionShadow(worker, lease.leaseId, payload); }
+      catch (caught) { error = caught; }
+      finally { store.db.prepare = prepare; }
+      const events = () => (store.getRunTrace(runId)!.events as Array<{ type: string }>).filter(e => e.type === "decision.shadow");
+      context.diagnostic(`After expiry at ${boundary}: observation=${Boolean(observation(store, runId))}, events=${events().length}`);
+      assert.ok(reachedBoundary, "The actual SQL statement must finish before advancing the clock");
+      assert.ok(error instanceof Error, "An expired owner must be rejected even on an idempotent retry");
+      assert.match(error.message, /Активная аренда не найдена/);
+      assert.deepEqual(observation(store, runId), previous);
+      assert.equal(events().length, previous ? 1 : 0);
+      assert.equal(store.renewLease(worker, lease.leaseId), false);
+      context.mock.timers.tick(1); // Maintenance reclaims leases strictly older than now.
+      store.maintenanceTick(); store.heartbeatNode(worker, {});
+      const replacement = store.leaseNext(worker)!; assert.ok(replacement);
+      assert.notEqual(replacement.leaseId, lease.leaseId);
+      assert.throws(() => store.recordDecisionShadow(worker, lease.leaseId, payload), /аренда/);
+      const saved = store.recordDecisionShadow(worker, replacement.leaseId, payload);
+      assert.deepEqual(store.recordDecisionShadow(worker, replacement.leaseId, { result: {} }), saved);
+      if (previous) assert.deepEqual(saved, previous);
+      store.completeLease(worker, replacement.leaseId, "PRIMARY AFTER EXPIRY");
+      assert.equal(store.getRun(runId)!.status, "completed");
+      assert.equal((store.getRun(runId)!.stages as any[])[0].output, "PRIMARY AFTER EXPIRY");
+      assert.equal(events().length, 1);
+    } finally { store.close(); }
+  });
+}
+
 test("shadow never bypasses stage approval", () => {
   const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
   try { const worker = node(store); start(store, true); assert.equal(store.leaseNext(worker), null); }

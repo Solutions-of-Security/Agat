@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { before, describe, it } from "node:test";
 
 import pg from "pg";
+import { decisionProfileJson } from "../../../tests/fixtures/decision-shadow-profile.mjs";
 
 import { AgatStore } from "../src/database.js";
 import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
@@ -937,6 +938,98 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       }
     });
   });
+
+  for (const boundary of ["stage lock", "event insert", "idempotent retry"] as const) {
+    it(`rejects shadow results when the lease expires during ${boundary} over HTTP`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const suffix = randomUUID().slice(0, 8);
+        const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-shadow-expiry-"));
+        const first = store(`shadow-expiry-${suffix}`, artifacts);
+        const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+        const instance = `shadow-expiry-http-${suffix}`;
+        let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+        const pending: Promise<unknown>[] = [];
+        try {
+          await writer.connect();
+          first.updateScheduler("parallel", 10);
+          const project = `shadow-expiry-${suffix}`, model = project;
+          first.createProject({ id: project, name: project, homeRegion: cellRegion,
+            allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+          const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model }, project);
+          const worker = first.registerNode({ enrollmentToken: "test", name: model, platform: "test", models: [model],
+            maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
+            labels: { decisionShadow: "local_decision_shadow_v2" } });
+          const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
+            kind: "boolean", question: "Confirmed?", options: [
+              { id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] });
+          const graph: ProcessGraph = { nodes: [
+            { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+            { id: "agent", name: "Agent", type: "agent", position: { x: 200, y: 0 }, config: {
+              agentId: String(agent.id), decisionShadow: shadow } },
+            { id: "end", name: "End", type: "end", position: { x: 400, y: 0 }, config: {} },
+          ], edges: [{ id: "a", source: "start", target: "agent", branch: "default" },
+            { id: "b", source: "agent", target: "end", branch: "default" }] };
+          const process = first.createProcess({ name: `Shadow expiry ${suffix}`, graph }, project);
+          first.publishProcess(String(process.id), project);
+          const run = first.startProcess(String(process.id), { input: "Synthetic source", priority: 100 }, project)!;
+          const runId = String(run.runId);
+          const lease = first.leaseNext(worker.id)!; assert.ok(lease?.decisionShadow);
+          assert.equal(lease.run.id, runId);
+          const payload = { status: "unavailable", reason: "timeout" };
+          const previous = boundary === "idempotent retry" ? first.recordDecisionShadow(worker.id, lease.leaseId, payload) : undefined;
+          const readObservation = () => JSON.parse(String(first.db.prepare("SELECT activity_json FROM stages WHERE id = ?")
+            .get(lease.stage.id)!.activity_json)).decisionShadowObservation;
+          const events = () => first.db.prepare("SELECT id FROM events WHERE run_id = ? AND type = 'decision.shadow'").all(runId);
+          child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts, {
+            AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync", AGAT_DECISION_SHADOW_ENABLED: "true" }));
+          const expires = Date.now() + 5_000;
+          first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), lease.leaseId);
+          await writer.query("BEGIN");
+          if (boundary === "event insert") await writer.query("LOCK TABLE events IN SHARE MODE");
+          else await writer.query("SELECT id FROM stages WHERE id = $1 FOR UPDATE", [lease.stage.id]);
+          const responsePromise = fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${lease.leaseId}/decision-shadow`, {
+            method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+            body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000),
+          }).then(async response => ({ status: response.status, body: await response.json() as { error?: string } }))
+            .then(value => ({ value }), error => ({ error }));
+          pending.push(responsePromise);
+          await eventually(async () => {
+            await writer.query("SELECT pg_stat_clear_snapshot()");
+            const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+              [`agat-${instance}-system`]);
+            if (!waiting.rows.length) return false;
+            assert.match(waiting.rows[0].query, boundary === "event insert" ? /INSERT INTO events/ : /FOR UPDATE OF s/);
+            return true;
+          }, "The shadow HTTP request did not reach the intended PostgreSQL lock");
+          assert.ok(Date.now() < expires, "The intended wait started after lease expiry");
+          await delay(Math.max(0, expires - Date.now() + 50));
+          await writer.query("ROLLBACK");
+          const result = await within(responsePromise, 5_000, "Shadow request did not finish after releasing its SQL lock");
+          assert.ok("value" in result, "The real HTTP request must return a response");
+          const saved = readObservation(), eventCount = events().length;
+          context.diagnostic(`After expiry at ${boundary}: HTTP ${result.value.status}, observation=${Boolean(saved)}, events=${eventCount}`);
+          assert.equal(result.value.status, 400, "An expired lease must not acknowledge a shadow observation");
+          assert.match(result.value.body.error ?? "", /Активная аренда не найдена/);
+          assert.deepEqual(saved, previous); assert.equal(eventCount, previous ? 1 : 0);
+          assert.equal(first.renewLease(worker.id, lease.leaseId), false);
+          first.maintenanceTick(); first.heartbeatNode(worker.id, {});
+          const replacement = first.leaseNext(worker.id)!; assert.ok(replacement);
+          assert.notEqual(replacement.leaseId, lease.leaseId);
+          assert.throws(() => first.recordDecisionShadow(worker.id, lease.leaseId, payload), /аренда/);
+          const recovered = first.recordDecisionShadow(worker.id, replacement.leaseId, payload);
+          assert.deepEqual(first.recordDecisionShadow(worker.id, replacement.leaseId, {}), recovered);
+          if (previous) assert.deepEqual(recovered, previous);
+          first.completeLease(worker.id, replacement.leaseId, "PRIMARY AFTER EXPIRY");
+          assert.equal(first.getRun(runId, project)!.status, "completed");
+          assert.equal((first.getRun(runId, project)!.stages as Array<{ output: string }>)[0]!.output, "PRIMARY AFTER EXPIRY");
+          assert.equal(events().length, 1);
+        } finally {
+          await writer.query("ROLLBACK").catch(() => {}); await child?.stop(); await Promise.allSettled(pending);
+          await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+        }
+      });
+    });
+  }
 
   it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
     runWithPostgresSystemScope(() => {

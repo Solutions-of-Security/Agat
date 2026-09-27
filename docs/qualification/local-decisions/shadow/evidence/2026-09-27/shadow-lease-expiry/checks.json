@@ -1,0 +1,101 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "f7597b7095e25086b734004419168cebd1940f7c",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforeSqlite": {
+      "expectedFail": 3
+    },
+    "beforePostgres": {
+      "expectedFail": 3,
+      "httpStatuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "targeted": {
+      "pass": 19,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 4,
+      "fail": 0,
+      "newFaultStatuses": [
+        400,
+        400,
+        400
+      ],
+      "durableObservationsAfterFault": [
+        0,
+        0,
+        1
+      ],
+      "durableEventsAfterFault": [
+        0,
+        0,
+        1
+      ]
+    },
+    "coordinator": {
+      "pass": 258,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 31,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1504,
+      "markdownFiles": 176,
+      "templates": 13,
+      "exitCode": 0
+    }
+  },
+  "boundary": "Fresh wall time after stage row lock, including idempotent retry, and after the final event write, before requesting COMMIT. No physical COMMIT/response deadline or clock-jump guarantee.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "aaf99996837c609f180d063bd480fad7add6a5c6b514a6b7f3a3b0031034317e",
+    "apps/coordinator/test/local-decisions.test.ts": "9e77101a3b7865cdcdddb24e0e69cae3a8b4b0602d6a491be880df5c9e58da49",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "75e23abcd0cbd2af6934ff957ce2a9cd9c8a051ef2aacbf71676de71b4e96e05",
+    "tests/fixtures/decision-shadow-profile.mjs": "31d17d3516afe499db12522e5673308f9c82d5c2888e905acf24c45ebf7334d3"
+  },
+  "logSha256": {
+    "before-sqlite.log": "adb8573ce67cfe58819a5ae794ac26602d355f71e7b1151cb0a71310ca32f5ca",
+    "before-postgres.log": "cf404e1b38380509c918e4d2af6d2357bc65ff2cb901059799566261279798f7",
+    "targeted.log": "7b4d26197e0ad62eb66c1efb0bb9aaf091a83d3c5971936cc34fde49a6b3c078",
+    "postgres-targeted.log": "7b5ad8379fb944a79b27f64f12662f493d7df31873f6ba0338d016d63f9b06f7",
+    "coordinator.log": "91fcd8c34403e7950db5eae288a7fb3429e979a88bb8d90fbd75d720190543a7",
+    "postgres.log": "846632ecc4f194443f301d24b37047d263b1270df756907d71adff4cf846e21d",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "postgres-fixture-failure.log": "1b1221b44675a6ea38832e196b3788104fb21476f27424817fe81dfb2adbf153",
+    "sqlite-recovery-fixture-failure.log": "a0e4a744965bb5b7f8864b1997bcd131905fd1d3fb231d46c190609bb58e263a",
+    "docs-evidence-assembly-failure.log": "492982f0d12573d44860c02f6b5988becf6144615baba8623b7f7579f7da6863",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "docs.log": "0534e6f7847061dc1a8c8d02df820e597b23a8dc4479f928e0c6c4f3bcbd79d9"
+  },
+  "rawLogSha256": {
+    "before-sqlite.log": "adb8573ce67cfe58819a5ae794ac26602d355f71e7b1151cb0a71310ca32f5ca",
+    "before-postgres.log": "927b7d4d231e20764443b57cbc6a4807e8269c777c909bebee72d12e22e12b60",
+    "targeted.log": "7b4d26197e0ad62eb66c1efb0bb9aaf091a83d3c5971936cc34fde49a6b3c078",
+    "postgres-targeted.log": "7b5ad8379fb944a79b27f64f12662f493d7df31873f6ba0338d016d63f9b06f7",
+    "coordinator.log": "91fcd8c34403e7950db5eae288a7fb3429e979a88bb8d90fbd75d720190543a7",
+    "postgres.log": "846632ecc4f194443f301d24b37047d263b1270df756907d71adff4cf846e21d",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "postgres-fixture-failure.log": "7efd132eeb02d034c88fb5bd45200cf09fa17b218efb4f2cf39f3c2ef8843238",
+    "sqlite-recovery-fixture-failure.log": "33d85767e8739835098a5a5eb588626d562a0e6a2392615dd27e08f227027f2c",
+    "docs-evidence-assembly-failure.log": "492982f0d12573d44860c02f6b5988becf6144615baba8623b7f7579f7da6863",
+    "docs.log": "0534e6f7847061dc1a8c8d02df820e597b23a8dc4479f928e0c6c4f3bcbd79d9"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostic text preserved. Failed fixture and initial docs assembly attempts retained and not counted as passing."
+}

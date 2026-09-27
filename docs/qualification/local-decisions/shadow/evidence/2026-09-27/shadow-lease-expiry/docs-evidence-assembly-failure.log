@@ -1,0 +1,34 @@
+
+> agat-platform@1.7.0 docs:check
+> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p "test_*.py" && npm run docs:links:check && npm run docs:processes:check
+
+✔ checks Markdown reference links, images, escaped spaces and fragments (6.966791ms)
+✔ ignores fenced code, inline code and external links (1.332083ms)
+✔ reports missing files and case differences on all platforms (1.32775ms)
+✔ rejects links outside the checkout while allowing repository-root links (1.105666ms)
+✔ does not accept a generated local file absent from the repository (2.401875ms)
+✔ qualification accepts only explicit loopback addresses, without credentials or redirects (1.200958ms)
+✔ model identity requires installed digest, Qwen3 architecture and local capability (1.025ms)
+✔ ingestion fails for changed content, missing or incompatible embeddings (1.202ms)
+✔ citations must resolve to both ingested sources on each real model stage (1.696959ms)
+✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.690084ms)
+✔ history evidence excludes payloads, secrets, failures and host identities (1.20475ms)
+✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (5480.121083ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5602.840417
+........................................................................................................................................................
+----------------------------------------------------------------------
+Ran 152 tests in 10.152s
+
+OK
+
+> agat-platform@1.7.0 docs:links:check
+> node scripts/check-doc-links.mjs
+
+docs/qualification/local-decisions/shadow/lease-expiry.md:40: missing repository file or incorrect case: ./evidence/2026-09-27/shadow-lease-expiry/checks.json
