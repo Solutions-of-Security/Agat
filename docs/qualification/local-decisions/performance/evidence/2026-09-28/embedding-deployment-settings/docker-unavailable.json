@@ -1,0 +1,31 @@
+{
+  "status": "incomplete-runtime-check",
+  "renderPassed": true,
+  "failure": {
+    "command": "docker image inspect agat-worker:embedding-idle-opt-in-20260928 --format {{.Id}}",
+    "timeoutSeconds": 60
+  },
+  "subsequentChecks": [
+    {
+      "command": "docker context show",
+      "result": "desktop-linux"
+    },
+    {
+      "command": "docker desktop status",
+      "timeoutSeconds": 12
+    },
+    {
+      "command": "docker image inspect",
+      "timeoutSeconds": 12
+    }
+  ],
+  "dockerRestarted": false,
+  "dockerBackendLogEvidence": {
+    "time": "2026-09-27T21:33:15.158468000Z",
+    "message": "engine linux/virtualization-framework shutdown requested: write <HOME>/Library/Containers/com.docker.docker/Data/log/vm/init.log: no space left on device"
+  },
+  "socketPing": {
+    "timeoutSeconds": 4,
+    "exitCode": 28
+  }
+}

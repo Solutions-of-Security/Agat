@@ -185,6 +185,30 @@ python3 workers/agat_worker.py
 
 То же относится к `AGAT_EMBEDDING_MODELS`. `k8s:up` по умолчанию передаёт `embeddinggemma` базовому worker и управляемым пулам; модель должна быть установлена в Ollama. Переопределить или отключить можно через `AGAT_EMBEDDING_MODELS=...` и `AGAT_LOCAL_WORKER_EMBEDDING_MODELS=...`. Статус индексации и наличие подходящего worker видны в разделе **Knowledge**.
 
+## Embedding transport и idle timeout
+
+`k8s:up` передаёт `AGAT_EMBEDDING_TRANSPORT`, `AGAT_EMBEDDING_TIMEOUT` и `AGAT_EMBEDDING_IDLE_TIMEOUT` в общий `agat-worker-config`. Его используют базовый worker и новые управляемые worker-пулы через `envFrom`. Скрипт получает эти значения из environment команды; `.env` Compose автоматически не читается:
+
+```bash
+AGAT_EMBEDDING_TRANSPORT=session \
+AGAT_EMBEDDING_TIMEOUT=45 \
+AGAT_EMBEDDING_IDLE_TIMEOUT=30 \
+npm run k8s:up
+```
+
+Значения 45/30 секунд — пример opt-in. Без них сохраняются `isolated` / `900` / `0`. Deadline — конечное число в `(0, 900]`, idle timeout — в `[0, 3600]`; положительный idle timeout требует `session`. Неверные значения отвергает worker при старте. Размер пула по-прежнему задаётся concurrency, а освобождение helper не выгружает модель из Ollama.
+
+ConfigMap environment не обновляется в работающем pod. После изменения настроек перезапустите нужные worker Deployments, включая существующие управляемые пулы; при `AGAT_K8S_SKIP_BUILD=true` перезапуск базового worker тоже может потребоваться. Например, для базового worker:
+
+```bash
+kubectl rollout restart deployment/agat-worker --namespace agat
+kubectl rollout status deployment/agat-worker --namespace agat --timeout=180s
+```
+
+Для управляемого пула используйте точное имя `agat-local-*` Deployment из раздела **Узлы** вместо `agat-worker`; остановленные пулы получат новые значения при следующем старте. Учитывайте активные lease и настроенный grace period перед перезапуском. Явные `env` overrides в собственных overlays имеют приоритет над ConfigMap.
+
+Откат выполняется тем же способом с `AGAT_EMBEDDING_IDLE_TIMEOUT=0`; для возврата к исходному transport дополнительно задайте `AGAT_EMBEDDING_TRANSPORT=isolated`. При следующем `k8s:up` снова передайте выбранные значения: отсутствие переменных возвращает defaults. [Протокол проверки поставки](./qualification/local-decisions/performance/embedding-deployment-settings.md) и [правила обновления ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/).
+
 ## Web-доступ модели
 
 В Kubernetes-контуре `AGAT_WEB_ENABLED=true` по умолчанию. Worker передаёт модели инструменты `web_search` и `web_fetch`, обращается к SearXNG по `http://agat-search:8080/search` и читает только публичные HTTP(S)-страницы через ограниченный reader. В карточке узла UI эти tools появляются после heartbeat.

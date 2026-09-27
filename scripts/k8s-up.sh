@@ -510,18 +510,23 @@ coordinator_otel_patch="$(node --input-type=module -e '
     },
   }));
 ' "${otel_enabled}" "${otel_exporter_endpoint}" "${AGAT_OTEL_COORDINATOR_SERVICE_NAME:-agat-coordinator}")"
-worker_otel_patch="$(node --input-type=module -e '
-  const [enabled, endpoint, serviceName] = process.argv.slice(1);
+worker_config_patch="$(node --input-type=module -e '
+  const [enabled, endpoint, serviceName, transport, timeout, idleTimeout] = process.argv.slice(1);
   process.stdout.write(JSON.stringify({
     data: {
       AGAT_OTEL_ENABLED: enabled,
       OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
       OTEL_SERVICE_NAME: serviceName,
+      AGAT_EMBEDDING_TRANSPORT: transport,
+      AGAT_EMBEDDING_TIMEOUT: timeout,
+      AGAT_EMBEDDING_IDLE_TIMEOUT: idleTimeout,
     },
   }));
-' "${otel_enabled}" "${otel_exporter_endpoint}" "${AGAT_OTEL_WORKER_SERVICE_NAME:-agat-worker}")"
-[[ -n "${coordinator_otel_patch}" && -n "${worker_otel_patch}" ]] || die \
-  "не удалось сформировать конфигурацию OpenTelemetry"
+' "${otel_enabled}" "${otel_exporter_endpoint}" "${AGAT_OTEL_WORKER_SERVICE_NAME:-agat-worker}" \
+  "${AGAT_EMBEDDING_TRANSPORT:-isolated}" "${AGAT_EMBEDDING_TIMEOUT:-900}" \
+  "${AGAT_EMBEDDING_IDLE_TIMEOUT:-0}")"
+[[ -n "${coordinator_otel_patch}" && -n "${worker_config_patch}" ]] || die \
+  "не удалось сформировать конфигурацию coordinator/worker"
 kubectl patch configmap/agat-coordinator-config \
   --namespace "${namespace}" \
   --type=merge \
@@ -529,8 +534,8 @@ kubectl patch configmap/agat-coordinator-config \
 kubectl patch configmap/agat-worker-config \
   --namespace "${namespace}" \
   --type=merge \
-  --patch "${worker_otel_patch}" >/dev/null
-unset coordinator_otel_patch worker_otel_patch
+  --patch "${worker_config_patch}" >/dev/null
+unset coordinator_otel_patch worker_config_patch
 kubectl set image deployment/agat-coordinator \
   --namespace "${namespace}" \
   "coordinator=${coordinator_image}" >/dev/null

@@ -1,0 +1,704 @@
+{
+  "status": "pass",
+  "baseCommit": "a8bc0a1155aa0a7b40f33e8f0532b00b0d4a2ea1",
+  "sourceSha256": {
+    ".env.example": "bc105612f422f126ec47cadf542c56d018c1ebf254a7919cb44d52721c7f6ac0",
+    "docker-compose.yml": "26f02ea1256a99e96e130a5e14a8f8764dd11c793bcd991868079669b9b4b217",
+    "scripts/k8s-up.sh": "987777f00d88ebd925d58a5fc0e4a8afccfafa7152d043e2bc31eb6f8784a344",
+    "scripts/qualify-embedding-deployment.py": "9f23c6b7efb77666da1934dd7a7b570e24816eb35126f3b855b35240a462e369",
+    "deploy/k8s/docker-desktop/worker-configmap.yaml": "c205915d96bd83c16f46b1769222d3faf088c188b2dd2bcee020e4f3808214b1",
+    "deploy/k8s/docker-desktop/worker-deployment.yaml": "880f0d221789de3c3d64ef0111bbd6187cc984c5de396b4894f03544778940dd",
+    "apps/coordinator/src/local-workers.ts": "494187f19523dc4caadf54905b7bad9ae5a7ea816f2880e4e2bba127cf2edf93",
+    "workers/agat_worker.py": "d2e12e0e01dc555e88a20d4a3df939127fb619d4dc303e9b0816c035e441182e",
+    "workers/web_tools.py": "811bcd3871e8c64f1dceb66360035dc0d224a0775142a2e073b59cf56e8bec4e",
+    "workers/telemetry.py": "25d34e1f5bc0d2db4e33188a173e2fc8d4e1a721d6f4cf4eecf5af76ce87439f",
+    "workers/local_decisions.py": "1666e8897a0f17cef52446209cfb67a6c193f82ec065ac3964fe0955ae21d8f3",
+    "workers/embedding_http.py": "7c2c62973b530bd5392fd901a16630db7a23a196a254236a3af40b87627ee3fc",
+    "workers/embedding_transport.py": "dd795245b0f2da130a6b4f730be5368fab2492ca5d21154d29fa7ea1928d7e88"
+  },
+  "runtime": "host-source",
+  "imageId": null,
+  "composeVersion": "5.5.1",
+  "kubectlClient": {
+    "clientVersion": {
+      "major": "1",
+      "minor": "36",
+      "gitVersion": "v1.36.1",
+      "gitCommit": "756939600b9a7180fc2df6550a4585b638875e67",
+      "gitTreeState": "clean",
+      "buildDate": "2026-05-12T09:54:35Z",
+      "goVersion": "go1.26.2",
+      "compiler": "gc",
+      "platform": "darwin/arm64"
+    },
+    "kustomizeVersion": "v5.8.1"
+  },
+  "cases": 16,
+  "roundTrips": 50,
+  "liveClusterAccess": false,
+  "createdServices": false,
+  "python": "3.14.3",
+  "modulePath": "workers/agat_worker.py",
+  "rows": [
+    {
+      "id": "kustomize-base",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "kustomize-managed",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "compose-defaults",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-base-defaults",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-managed-defaults",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "compose-session-idle",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        30.0
+      ]
+    },
+    {
+      "id": "k8s-up-base-session-idle",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        30.0
+      ]
+    },
+    {
+      "id": "k8s-up-managed-session-idle",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        30.0
+      ]
+    },
+    {
+      "id": "compose-session-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-base-session-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-managed-session-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "45",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        45.0,
+        0.0
+      ]
+    },
+    {
+      "id": "compose-isolated-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-base-isolated-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-managed-isolated-rollback",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "compose-fractional",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "10.5",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0.125"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        10.5,
+        0.125
+      ]
+    },
+    {
+      "id": "k8s-up-base-fractional",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "10.5",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0.125"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        10.5,
+        0.125
+      ]
+    },
+    {
+      "id": "k8s-up-managed-fractional",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "10.5",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0.125"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "session",
+        10.5,
+        0.125
+      ]
+    },
+    {
+      "id": "compose-empty-interpolation",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-base-empty-interpolation",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "k8s-up-managed-empty-interpolation",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": true,
+      "status": "accepted",
+      "parsed": [
+        "isolated",
+        900.0,
+        0.0
+      ]
+    },
+    {
+      "id": "compose-bad-transport",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "pooled",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding transport must be isolated or session"
+    },
+    {
+      "id": "k8s-up-base-bad-transport",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "pooled",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding transport must be isolated or session"
+    },
+    {
+      "id": "k8s-up-managed-bad-transport",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "pooled",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding transport must be isolated or session"
+    },
+    {
+      "id": "compose-timeout-zero",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "0",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-base-timeout-zero",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "0",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-managed-timeout-zero",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "0",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "compose-timeout-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "901",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-base-timeout-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "901",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-managed-timeout-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "901",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "compose-timeout-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "nan",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-base-timeout-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "nan",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-managed-timeout-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "nan",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "compose-timeout-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "inf",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-base-timeout-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "inf",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "k8s-up-managed-timeout-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "inf",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "0"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding timeout must be finite, positive and at most 900 seconds"
+    },
+    {
+      "id": "compose-idle-negative",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "-1"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-base-idle-negative",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "-1"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-managed-idle-negative",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "-1"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "compose-idle-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "3601"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-base-idle-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "3601"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-managed-idle-high",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "3601"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "compose-idle-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "nan"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-base-idle-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "nan"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-managed-idle-nan",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "nan"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "compose-idle-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "inf"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-base-idle-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "inf"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "k8s-up-managed-idle-inf",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "session",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "inf"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout must be finite and between 0 and 3600 seconds"
+    },
+    {
+      "id": "compose-idle-isolated",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout requires session transport"
+    },
+    {
+      "id": "k8s-up-base-idle-isolated",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout requires session transport"
+    },
+    {
+      "id": "k8s-up-managed-idle-isolated",
+      "env": {
+        "AGAT_EMBEDDING_TRANSPORT": "isolated",
+        "AGAT_EMBEDDING_TIMEOUT": "900",
+        "AGAT_EMBEDDING_IDLE_TIMEOUT": "30"
+      },
+      "valid": false,
+      "status": "rejected",
+      "exitCode": 2,
+      "error": "agat_worker.py: error: Embedding idle timeout requires session transport"
+    }
+  ]
+}

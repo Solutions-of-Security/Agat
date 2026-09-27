@@ -128,6 +128,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Production idle opt-in на настоящей модели](./qualification/local-decisions/performance/embedding-worker-idle-model.md) завершил 32 worker-вызова, сохранил 528 точных vectors через SQLite/coordinator и закрыл восемь worker/12 helpers. После простоя helper RSS падает до нуля; первый одиночный вызов наблюдался в диапазоне 203–231 мс вместо 42–71 мс у keep. Выборка мала, SLO не заявлен. Следующий gate — передача трёх transport/deadline/idle настроек через Compose и общий Kubernetes ConfigMap без изменения defaults.
 
+[Настройки deployment](./qualification/local-decisions/performance/embedding-deployment-settings.md) теперь проходят из `.env` Compose и environment `k8s:up` в обычные/управляемые worker. Defaults сохранены; 50 round trips через production parser и 3 launcher tests прошли. Повторный запуск в Linux image недоступен из-за остановки Docker при ENOSPC, ограничение сохранено отдельно. Документированы перезапуск pod/container и откат. Следующий инженерный gate исходного плана — сквозной RAG через Temporal с retry/replay; бизнес-разметка и qualification не считаются выполненными.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

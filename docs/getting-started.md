@@ -107,6 +107,24 @@ AGAT_EMBEDDING_MODELS=embeddinggemma \
 docker compose --profile worker up -d --build
 ```
 
+Настройки embedding-транспорта передаются контейнеру через `.env` или environment команды Compose:
+
+```dotenv
+AGAT_EMBEDDING_TRANSPORT=session
+AGAT_EMBEDDING_TIMEOUT=45
+AGAT_EMBEDDING_IDLE_TIMEOUT=30
+```
+
+Это пример opt-in, не рекомендуемый SLO. Defaults — `isolated`, `900`, `0`: отдельный helper на вызов, общий deadline 900 секунд, idle retirement выключен. В режиме `session` положительный idle timeout освобождает простаивающие helper; размер пула ограничен `AGAT_WORKER_CONCURRENCY`. Deadline должен быть конечным числом `0 < value <= 900`, idle timeout — `0…3600` секунд. Положительный idle timeout с `isolated` отклоняется при старте.
+
+После изменения примените конфигурацию к worker:
+
+```bash
+docker compose --profile worker up -d --no-deps worker
+```
+
+`docker compose restart` не обновляет environment контейнера. Для отключения idle retirement задайте `AGAT_EMBEDDING_IDLE_TIMEOUT=0`; для возврата исходного поведения также задайте `AGAT_EMBEDDING_TRANSPORT=isolated`. Для systemd те же переменные задаются в `/etc/agat/worker.env` и применяются перезапуском сервиса. [Проверка передачи параметров и ограничения](./qualification/local-decisions/performance/embedding-deployment-settings.md).
+
 ## Ollama
 
 АГАТ использует OpenAI-compatible endpoint Ollama, описанный в [официальной документации](https://docs.ollama.com/api/openai-compatibility).
