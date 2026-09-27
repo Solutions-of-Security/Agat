@@ -98,6 +98,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Общий срок embedding HTTP](./qualification/local-decisions/performance/embedding-http-deadline.md) охватывает DNS/connect/redirect/body через disposable urllib subprocess. При deadline и окончательной потере lease helper завершается и reaped до освобождения слота, proxy/TLS сохраняются. Реальные worker/PostgreSQL — 8/8; потеря renewal освобождает слот до возврата model response. Следующий gate — измерить цену нового транспорта и ресурсы серии отмен при batch/concurrency 1/32 и 1/4.
 
+[Профиль изолированного embedding-транспорта](./qualification/local-decisions/performance/embedding-transport-profile.md) завершил 312 loopback-запросов с batch 1/32, dimensions 768/4096 и concurrency 1/4. Независимо проверены все данные и 180 reaped helpers; 48 отмен/таймаутов не оставили FD или процессов. Прибавка p50 — 63,588–78,447 мс; это измеренная цена изоляции, без заявления ускорения или production SLO. Следующий gate — доля overhead на настоящей установленной локальной embedding-модели.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
