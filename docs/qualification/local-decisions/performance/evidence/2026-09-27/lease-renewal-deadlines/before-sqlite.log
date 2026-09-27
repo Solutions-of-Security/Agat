@@ -1,0 +1,125 @@
+(node:86191) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ stage renewal rolls back its UPDATE on expiry (44.3335ms)
+✖ stage renewal rolls back its UPDATE on storage error (33.466584ms)
+✖ embedding renewal rolls back its UPDATE on expiry (32.3855ms)
+✔ embedding renewal rolls back its UPDATE on storage error (30.038ms)
+(node:86192) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ stage renewal rejects exact boundary without reviving the old owner (46.580333ms)
+ℹ Stage renewal/exact boundary: renewed=false
+✖ stage renewal rejects invalid date without reviving the old owner (31.9595ms)
+ℹ Stage renewal/invalid date: renewed=true
+ℹ tests 6
+ℹ suites 0
+ℹ pass 2
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 563.572666
+
+✖ failing tests:
+
+test at apps/coordinator/test/lease-renewal-deadlines.test.ts:1:310
+✖ stage renewal rolls back its UPDATE on expiry (44.3335ms)
+  AssertionError [ERR_ASSERTION]: A renewal persisted after the old deadline must be rolled back
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/lease-renewal-deadlines.test.ts:40:42)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/lease-renewal-deadlines.test.ts:1:310
+✖ stage renewal rolls back its UPDATE on storage error (33.466584ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    [Object: null prototype] {
+      activity_json: null,
+      agent_id: 'collector',
+      agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"cd254080-b221-4599-82f4-af537830738c","registryPromptVersion":1,"capturedAt":"2026-09-27T14:31:49.676Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"faf57b4bbd026907ca2111d565442ecd59b35df7c245d0b6013d3716bd30fd2f"}',
+      attempt: 1,
+  ...
+      idempotency_key: null,
+  +   lease_expires_at: '2026-09-27T14:34:50.676Z',
+  -   lease_expires_at: '2026-09-27T14:34:49.676Z',
+      lease_id: '32ba8a6c-1bea-4e41-9c14-5875de11f395',
+      lease_traceparent: '00-04a4cbd168339d78e428ef7e37833639-681e5f57a126c8ad-01',
+      max_attempts: 3,
+      metrics_json: '{}',
+      node_id: '8e8d1f19-a5df-497e-a446-45b2b544deb5',
+  ...
+      status: 'running',
+  +   updated_at: '2026-09-27T14:31:50.676Z',
+  -   updated_at: '2026-09-27T14:31:49.676Z',
+      worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T14:31:49.676Z","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":["embeddinggemma"],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T14:31:49.676Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}'
+    }
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/lease-renewal-deadlines.test.ts:44:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { id: '05541e05-cad0-45c5-89cb-9b008e606ea6', run_id: '66cca2f9-5c4f-40b9-b00f-181e53381109', agent_id: 'collector', position: 0, status: 'running', node_id: '8e8d1f19-a5df-497e-a446-45b2b544deb5', lease_id: '32ba8a6c-1bea-4e41-9c14-5875de11f395', lease_expires_at: '2026-09-27T14:34:50.676Z', attempt: 1, max_attempts: 3, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"cd254080-b221-4599-82f4-af537830738c","registryPromptVersion":1,"capturedAt":"2026-09-27T14:31:49.676Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"faf57b4bbd026907ca2111d565442ecd59b35df7c245d0b6013d3716bd30fd2f"}', lease_traceparent: '00-04a4cbd168339d78e428ef7e37833639-681e5f57a126c8ad-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T14:31:49.676Z","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":["embeddinggemma"],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T14:31:49.676Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T14:31:49.676Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T14:31:49.676Z', updated_at: '2026-09-27T14:31:50.676Z', started_at: '2026-09-27T14:31:49.676Z', completed_at: null },
+    expected: { id: '05541e05-cad0-45c5-89cb-9b008e606ea6', run_id: '66cca2f9-5c4f-40b9-b00f-181e53381109', agent_id: 'collector', position: 0, status: 'running', node_id: '8e8d1f19-a5df-497e-a446-45b2b544deb5', lease_id: '32ba8a6c-1bea-4e41-9c14-5875de11f395', lease_expires_at: '2026-09-27T14:34:49.676Z', attempt: 1, max_attempts: 3, output: null, requires_approval: 0, process_node_id: null, process_token_id: null, stage_kind: 'agent', stage_input: null, activity_json: null, idempotency_key: null, available_at: null, agent_snapshot_json: '{"schemaVersion":3,"id":"collector","name":"Сборщик","role":"Собирает факты и формирует проверяемый набор исходных данных","systemPrompt":"Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.","model":null,"runtime":"single","runtimeConfig":{"profile":"tool_loop_v1","maxIterations":6},"specialists":[],"registryPromptId":"cd254080-b221-4599-82f4-af537830738c","registryPromptVersion":1,"capturedAt":"2026-09-27T14:31:49.676Z","source":"run_creation","promptVersion":"b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f","definitionVersion":"faf57b4bbd026907ca2111d565442ecd59b35df7c245d0b6013d3716bd30fd2f"}', lease_traceparent: '00-04a4cbd168339d78e428ef7e37833639-681e5f57a126c8ad-01', worker_snapshot_json: '{"schemaVersion":2,"capturedAt":"2026-09-27T14:31:49.676Z","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","workerVersion":"unknown","models":["test-model"],"agentRuntimes":["single"],"agentRuntimeProfiles":["tool_loop_v1"],"embeddingModels":["embeddinggemma"],"labels":{},"memoryMb":0,"vramMb":0,"modelProfiles":[],"routing":{"schemaVersion":1,"selectedAt":"2026-09-27T14:31:49.676Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}}', routing_json: '{"schemaVersion":1,"selectedAt":"2026-09-27T14:31:49.676Z","strategy":"balanced","requestedModel":null,"selectedModel":"test-model","nodeId":"8e8d1f19-a5df-497e-a446-45b2b544deb5","nodeName":"Renewal write","alternativesConsidered":1,"fallbackFrom":null,"reasons":["Выбрана минимальная модель, прошедшая ограничения policy","На узле свободно 1 из 1 слотов","Пассивный benchmark ещё не накоплен","Часть capabilities неизвестна; разрешён compatibility fallback"],"signals":{"freeSlots":1,"cpuPercent":null,"memoryPercent":null,"temperatureC":null,"batteryPercent":null,"onBattery":false,"contextWindow":null,"qualityScore":null,"sizeBytes":null,"parameterCount":null,"tokensPerSecond":null,"joulesPer1kTokens":null,"benchmarkSamples":0,"profileKnown":false}}', metrics_json: '{}', created_at: '2026-09-27T14:31:49.676Z', updated_at: '2026-09-27T14:31:49.676Z', started_at: '2026-09-27T14:31:49.676Z', completed_at: null },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/lease-renewal-deadlines.test.ts:1:310
+✖ embedding renewal rolls back its UPDATE on expiry (32.3855ms)
+  AssertionError [ERR_ASSERTION]: A renewal persisted after the old deadline must be rolled back
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/lease-renewal-deadlines.test.ts:40:42)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:5905
+✖ stage renewal rejects invalid date without reviving the old owner (31.9595ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:133:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,65 @@
+(node:86790) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ embedding renew rejects an invalid lease (before request) without changing the index (48.667583ms)
+ℹ renew/before request: accepted=false, job=running, document=indexing
+✔ embedding renew rejects an invalid lease (invalid expiry) without changing the index (31.386167ms)
+ℹ renew/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (before request) without changing the index (32.427125ms)
+ℹ complete/before request: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (invalid expiry) without changing the index (32.003209ms)
+ℹ complete/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (during job read) without changing the index (32.800667ms)
+ℹ complete/during job read: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (before request) without changing the index (32.331125ms)
+ℹ fail/before request: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (invalid expiry) without changing the index (31.573791ms)
+ℹ fail/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (during job read) without changing the index (32.73975ms)
+ℹ fail/during job read: accepted=false, job=running, document=indexing
+✔ embedding complete rolls back its index and event if persistence outlasts the lease (33.192208ms)
+✔ embedding fail rolls back its index and event if persistence outlasts the lease (32.32475ms)
+✔ embedding maintenance rolls back retry if the document update fails (31.63925ms)
+✔ embedding maintenance rolls back terminal failure if the document update fails (30.779666ms)
+(node:86791) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ expired retrieval leases fail before maintenance and stay invalid after reassignment (54.346041ms)
+✔ SQLite rechecks lease expiry after consuming candidates and rolls back before storing sources (35.5645ms)
+✔ SQLite rolls back retrieval and its event when the lease expires during event persistence (38.145208ms)
+✔ wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds (34.127875ms)
+✔ every selected collection is validated and one incompatible query rolls the whole retrieval back (36.128ms)
+✔ a selected empty optional collection remains a valid empty search, but not for the wrong model (32.023833ms)
+✔ damaged stored vectors are reported as an index error instead of discarded as missing evidence (34.929875ms)
+(node:86792) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ stage renewal rolls back its UPDATE on expiry (45.326708ms)
+✔ stage renewal rolls back its UPDATE on storage error (31.102791ms)
+✔ embedding renewal rolls back its UPDATE on expiry (31.677583ms)
+✔ embedding renewal rolls back its UPDATE on storage error (30.498125ms)
+(node:86793) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ complete rejects an invalid lease at admission (before request) before state or artifact writes (56.473875ms)
+ℹ After complete (before request): stage=running, artifacts=0
+✔ complete rejects an invalid lease at admission (during stage read) before state or artifact writes (38.250334ms)
+ℹ After complete (during stage read): stage=running, artifacts=0
+✔ complete rejects an invalid lease at admission (invalid expiry) before state or artifact writes (38.007125ms)
+ℹ After complete (invalid expiry): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (before request) before state or artifact writes (39.682042ms)
+ℹ After fail (before request): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (during stage read) before state or artifact writes (38.668084ms)
+ℹ After fail (during stage read): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (invalid expiry) before state or artifact writes (37.338958ms)
+ℹ After fail (invalid expiry): stage=running, artifacts=0
+✔ maintenance rolls back stage and run changes if its retry event cannot persist (37.037917ms)
+✔ maintenance rolls back stage and run changes if its failure event cannot persist (32.766167ms)
+✔ stage renewal rejects exact boundary without reviving the old owner (33.387292ms)
+ℹ Stage renewal/exact boundary: renewed=false
+✔ stage renewal rejects invalid date without reviving the old owner (33.786625ms)
+ℹ Stage renewal/invalid date: renewed=false
+ℹ tests 33
+ℹ suites 0
+ℹ pass 33
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 977.483

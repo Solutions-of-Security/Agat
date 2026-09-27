@@ -112,3 +112,37 @@ for (const terminal of [false, true]) {
     } finally { store.close(); }
   });
 }
+
+for (const expiry of ["exact boundary", "invalid date"] as const) {
+  test(`stage renewal rejects ${expiry} without reviving the old owner`, context => {
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const store = new AgatStore(":memory:", { seedDemo: false });
+    try {
+      const worker = store.registerNode({ enrollmentToken: "test", name: "Renewal", platform: "test",
+        models: ["test-model"], maxConcurrency: 1 }).id;
+      const run = store.createRun({ name: "Renewal", input: "Fixture", agentIds: ["collector"], approvalRequired: false });
+      const lease = store.leaseNext(worker)!; assert.ok(lease);
+      store.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?")
+        .run(expiry === "invalid date" ? "not-a-date" : new Date().toISOString(), lease.leaseId);
+      const state = () => ({ stage: store.db.prepare("SELECT * FROM stages WHERE id = ?").get(lease.stage.id),
+        run: store.db.prepare("SELECT * FROM runs WHERE id = ?").get(run.id),
+        events: store.db.prepare("SELECT * FROM events WHERE run_id = ? ORDER BY id").all(run.id) });
+      const before = state();
+      const renewed = store.renewLease(worker, lease.leaseId);
+      context.diagnostic(`Stage renewal/${expiry}: renewed=${renewed}`);
+      assert.equal(renewed, false); assert.deepEqual(state(), before);
+      // Malformed stored timestamps need repair before normal expiry cleanup.
+      if (expiry === "invalid date") store.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?")
+        .run(new Date().toISOString(), lease.leaseId);
+      context.mock.timers.tick(1); store.maintenanceTick(); store.heartbeatNode(worker, {});
+      const replacement = store.leaseNext(worker)!; assert.ok(replacement);
+      assert.notEqual(replacement.leaseId, lease.leaseId);
+      assert.equal(store.renewLease(worker, lease.leaseId), false);
+      context.mock.timers.tick(1_000);
+      assert.equal(store.renewLease(worker, replacement.leaseId), true);
+      assert.ok(Date.parse(String(state().stage!.lease_expires_at)) > Date.parse(replacement.expiresAt));
+      store.completeLease(worker, replacement.leaseId, "CURRENT OUTPUT");
+      assert.equal(store.getRun(run.id)!.status, "completed");
+    } finally { store.close(); }
+  });
+}

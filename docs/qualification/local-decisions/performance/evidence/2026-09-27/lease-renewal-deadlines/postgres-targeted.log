@@ -1,0 +1,36 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:87191) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ stage renewal checks current ownership after expiry during its SQL lock wait (6157.230375ms)
+  ℹ Stage renewal/expiry: HTTP 404
+  ✔ stage renewal checks current ownership after reassignment during its SQL lock wait (1089.17675ms)
+  ℹ Stage renewal/reassignment: HTTP 404
+  ✔ stage renewal checks current ownership after renewal during its SQL lock wait (5929.594ms)
+  ℹ Stage renewal/renewal: HTTP 204
+  ✔ stage renewal rolls back when its UPDATE waits past the admitted deadline (6058.707958ms)
+  ℹ stage renewal/UPDATE wait: HTTP 404
+  ✔ embedding renewal rolls back when its UPDATE waits past the admitted deadline (5818.681167ms)
+  ℹ embedding renewal/UPDATE wait: HTTP 404
+  ✔ embedding renew respects expiry while waiting for job ownership over HTTP (5799.634333ms)
+  ℹ Embedding renew/expiry: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects reassignment while waiting for job ownership over HTTP (780.358125ms)
+  ℹ Embedding renew/reassignment: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects renewal while waiting for job ownership over HTTP (6068.581666ms)
+  ℹ Embedding renew/renewal: HTTP 204, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding maintenance preserves a renewal that holds its job row past the old expiry (4354.270666ms)
+  ℹ Embedding maintenance/renewal: health=200, job=running, document=indexing, failures=0
+  ✔ maintenance preserves a timely renewal while its stage row is locked (5067.955291ms)
+  ℹ Renewal after maintenance: health=200, stage=running, expiryEvents=0
+✔ PostgreSQL Fleet/HA integration (48828.554708ms)
+ℹ tests 10
+ℹ suites 1
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49325.402542

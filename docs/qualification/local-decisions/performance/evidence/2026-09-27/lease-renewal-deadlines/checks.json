@@ -1,0 +1,90 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "e92b5449f3e35a9a3d5631d84e73aadf2f59501c",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforeSqlite": {
+      "expectedFail": 4,
+      "controlPass": 2
+    },
+    "beforePostgres": {
+      "expectedFail": 3,
+      "controlPass": 2
+    },
+    "targeted": {
+      "pass": 33,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 10,
+      "fail": 0
+    },
+    "coordinator": {
+      "pass": 284,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 58,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1520,
+      "markdownFiles": 180,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    },
+    "fixtureTargeted": {
+      "pass": 5,
+      "fail": 0
+    },
+    "discardedFullRun": {
+      "pass": 55,
+      "fail": 3,
+      "cause": "Old renewal SQL barrier; single-poll shadow recovery and missing cleanup after failure"
+    }
+  },
+  "boundary": "Fresh ownership admission after row wait and rollback when renewal UPDATE outlasts the previous deadline. Fence is before COMMIT; physical commit delay, acknowledgement loss and clock jumps are not qualified.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "9a027d1cb9f82e3dcf135eca27f12d7d91be0e22fb805d24db3081bf416bb087",
+    "apps/coordinator/test/lease-renewal-deadlines.test.ts": "a3c0685d39c3578d1f8610eee24120ecd7c9c5b90d08323e24cb2036d153f4fb",
+    "apps/coordinator/test/stage-lease-admission.test.ts": "fd974ebfbc6fbfd8309b75ecb0b22a04dca23ca27103be6f08352e6d85d05d45",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "493b3ba788e1aceb8790b91e0cbfdd3787e7472d353818b9839f2c0c9e421866"
+  },
+  "logSha256": {
+    "before-sqlite.log": "6632498ce2dfa180a14865f65ac6fe72ba6a2fa5f70960d360d80c2fddbdf0f5",
+    "before-postgres.log": "5c8b17ccbf4a5c8e17d01c2d4a9179af204301242bfdb558d4b24b91ac427137",
+    "targeted.log": "ce52132ea726837c34ad88e95fe8b95f4260edcd0449ab1603ade4b94cc140ba",
+    "postgres-targeted.log": "a2aba5ea507f73c1716c4cbfafda128adcc427947e6bf5d1cc6b1baaf20c2b8f",
+    "coordinator.log": "728cf1d33dd52518117ea1b3560ba228b75dc217a51bbb4a73a42d73310f2305",
+    "postgres.log": "a33c5d17c6963604b262c03786b25cda5db2c0ac0fdadf6b9c2c8b5cd326775d",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "80146b410ecfe4b5d60db12dc9e6777790e6a260585749c0fe58bdb4d5e7cbf5",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "postgres-fixture-failure.log": "faf4040c1cdeaec95f47e804b21c54f1ede0b6635a462a37c5e47961e8641352",
+    "postgres-fixture-targeted.log": "e3c8e84acb48bc54d9796aab073afec7442d2ae244e988cf525f0c642d4d4993"
+  },
+  "rawLogSha256": {
+    "before-sqlite.log": "7c3596c49164a88074d54d71110081e304a4c4ffa8b1b453510acc2c4d8ba711",
+    "before-postgres.log": "d4d67e099663bed05e211c8fe3a79c5ff9f85fb617b8b59ef6dfcd624ec023e0",
+    "targeted.log": "ce52132ea726837c34ad88e95fe8b95f4260edcd0449ab1603ade4b94cc140ba",
+    "postgres-targeted.log": "a2aba5ea507f73c1716c4cbfafda128adcc427947e6bf5d1cc6b1baaf20c2b8f",
+    "coordinator.log": "728cf1d33dd52518117ea1b3560ba228b75dc217a51bbb4a73a42d73310f2305",
+    "postgres.log": "a33c5d17c6963604b262c03786b25cda5db2c0ac0fdadf6b9c2c8b5cd326775d",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "80146b410ecfe4b5d60db12dc9e6777790e6a260585749c0fe58bdb4d5e7cbf5",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "postgres-fixture-failure.log": "bc34ce5b4456bb157193a79b9e5d5e45294df3c8d5b44fcff91ff8a8ece6bed0",
+    "postgres-fixture-targeted.log": "e3c8e84acb48bc54d9796aab073afec7442d2ae244e988cf525f0c642d4d4993"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostics preserved. Baseline failures and the failed first full-suite attempt are retained separately and are not counted as passing regression."
+}

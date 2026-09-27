@@ -111,3 +111,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Конкурирующий maintenance](./lease-maintenance-locks.md) сохраняет своевременное renewal и принятое завершение, освобождает lease одной из реплик и откатывает SQL-переходы при отказе события.
 
 [Lifecycle embedding lease](./embedding-lease-lifecycle.md): просроченные и переназначенные попытки не продлевают аренду и не меняют индекс; поздняя запись откатывается, maintenance сохраняет согласованность job/document.
+
+[Продление аренды после ожидания SQL](./lease-renewal-deadlines.md) закрывает устаревший cutoff stage renewal и поздний UPDATE stage/embedding; SQL-only продление откатывается при истечении прежнего срока.
