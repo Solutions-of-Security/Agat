@@ -13,7 +13,10 @@
     "workers/Dockerfile": "b5b36b61f61b609545f7613aee8e1fb34c0939a7f257732bb846372551dacbbd",
     "apps/coordinator/test/embedding-worker-probe.py": "ecae27edf3e24336fde4f1e578be8c16e1836909aae6b053e55f0f0c5086c37e",
     "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "ab50b24b7b2fce1042002067cb22c6cb95bce4ecd467336462fbf9cc58fa4283",
-    "scripts/test-fleet-ha-postgres.sh": "38ec32ab6d4b848cc2ca29d60aef56c00f52dc3408497ca56e7dcc5f4832606d"
+    "scripts/test-fleet-ha-postgres.sh": "38ec32ab6d4b848cc2ca29d60aef56c00f52dc3408497ca56e7dcc5f4832606d",
+    "scripts/profile-embedding-transport.py": "656f041baacc405447428e02c6cab3853f3181f1bd1f2024a5bd92bb3927cbe9",
+    "scripts/profile-embedding-model-transport.py": "93da72f6bd92b3ff5ba79e03501bd2b817507f2f9fd8bc4239476ba58afa854e",
+    "scripts/test/test_embedding_profile_process_tracking.py": "bc4982d384f20da8ff42aae13a1ad94cc53e07c5da6baa5a33db0c30bbd02eb8"
   },
   "image": "sha256:927050befe221bf4b1b3c47ddffb494cc540b313acf3452dac24de5b0b7fc619",
   "checks": {
@@ -40,12 +43,16 @@
     },
     "configuredTypecheck": "pass",
     "docsNode": 12,
-    "docsPython": 245,
+    "docsPython": 247,
     "links": 1632,
     "markdownFiles": 196,
     "templates": 13,
     "architectureErrors": 0,
-    "architectureWarnings": 0
+    "architectureWarnings": 0,
+    "profileTracking": {
+      "baselineFailures": 2,
+      "finalPass": 2
+    }
   },
   "evidenceSha256": {
     "all-worker-postgres.log": "fd34a50a9b433e7901cffc978c2b3c7e0873a5a56177d32ae7b25a3ec56090a8",
@@ -53,9 +60,11 @@
     "baseline.fixture.patch": "90ca519060c579b728428870cfcf03187d92412a78329a17f2ac3213ecd74cef",
     "baseline.log": "b0776946d3c69f35edcfed3e3c72e0a6179828054ee44c39b901429246c2425d",
     "build.log": "9c526851f68e38f3bb4a08bb942daaae7dae09d8f8538df9a075de1876c0730e",
-    "docs.log": "dace51c1385200ee9f2b0fa6a52fe3f5a4f67797b5e37a0cc94e7daf2f050422",
+    "docs.log": "c5f27812a2404d0828d60a6f0faaaabf1745f1bd1831292076a6d4d913d162ed",
     "linux.log": "7e01bdbcacfdf4a56fa24ca12bfac6aecb3744944a072da8d4febcb892bfb905",
     "postgres.log": "23bded7dec5c2d82770a372ccdff5c19647630b8098d8cf2cbee6e31bc984217",
+    "profile-tracking-baseline.log": "c0fd1687fd4a38852b827de38c748911279369b82f11baa826eb0180bcc1fc5b",
+    "profile-tracking.log": "1ada78231c5f0961baffa785bd37482513f6a9c18adc788cf97f2a106a451fe7",
     "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
     "unit.log": "a4263c2c1b877ad1e9cc2bdf763fbe0be2ae9eb62a648846b8566b3d2024a160",
     "worker.log": "621e3359eab0b658bff6cac786f71beec02f1eb0b5be09ccc4c6d3d9b5926f7f"

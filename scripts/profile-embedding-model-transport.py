@@ -65,7 +65,7 @@ def run_phase(item, direct):
 
     def spawn(*args, **kwargs):
         child = create(*args, **kwargs)
-        if isinstance(args[0], list) and args[0][-1] == helper:
+        if isinstance(args[0], list) and helper in args[0]:
             with lock:
                 children.append((context.identity, child))
         return child

@@ -209,7 +209,7 @@ def phase(item, fixture, client_class):
 
     def spawn(*args, **kwargs):
         child = process_create(*args, **kwargs)
-        if isinstance(args[0], list) and args[0][-1] == helper_path:
+        if isinstance(args[0], list) and helper_path in args[0]:
             with lock:
                 children.append((context.identity, child))
         return child
