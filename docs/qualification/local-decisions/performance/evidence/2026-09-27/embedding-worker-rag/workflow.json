@@ -1,0 +1,4496 @@
+{
+  "schema": "agat.embedding.rag-workflow.v1",
+  "planSha256": "8a88caf7152e342e665eb7506064690a02f865777af900303354f8eba3bddb08",
+  "createdAt": "2026-09-27T18:26:51.665Z",
+  "status": "observed",
+  "failure": null,
+  "failureStep": null,
+  "elapsedMs": 148382.72008300002,
+  "primary": {
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "version": "0.34.2",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen3",
+      "families": [
+        "qwen3"
+      ],
+      "parameter_size": "8.2B",
+      "quantization_level": "Q4_K_M"
+    },
+    "descriptionSha256": "ce4c35c1fef1b7a4e8a0912b1160282e2a540b90aa8cb04fc2555f575c783654",
+    "generation": {
+      "think": false,
+      "options": {
+        "temperature": 0.2,
+        "seed": 0,
+        "num_ctx": 8192,
+        "num_predict": 384
+      }
+    }
+  },
+  "embedding": {
+    "name": "embeddinggemma:latest",
+    "digest": "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+    "version": "0.34.2",
+    "details": {
+      "parent_model": "embeddinggemma:300m-bf16",
+      "format": "gguf",
+      "family": "gemma3",
+      "families": [
+        "gemma3"
+      ],
+      "parameter_size": "307.58M",
+      "quantization_level": "BF16"
+    },
+    "descriptionSha256": "60228104656b1f8fe1d6d886924d53e256b5b62e9912383d5903cdeff264d2f0",
+    "generation": {
+      "truncate": false,
+      "keep_alive": "5m",
+      "options": {
+        "num_ctx": 2048
+      }
+    }
+  },
+  "warmup": {
+    "primaryWallMs": 7582.228666000001,
+    "outputSha256": "93535a08b6254427f8da8073f15fde7c173bd43defee5beaab2ea256bcafa59c",
+    "inputTokens": 25,
+    "outputTokens": 2,
+    "embedding": {
+      "model": "embeddinggemma:latest",
+      "items": 2,
+      "dimensions": 768,
+      "inputSha256": [
+        "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+        "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+      ],
+      "vectorSha256": [
+        "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb",
+        "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+      ],
+      "inputTokens": 174,
+      "nativeTotalMs": 22827.384333,
+      "nativeLoadMs": 22758.72875
+    },
+    "totalMs": 30415.607916
+  },
+  "blocks": [
+    {
+      "transport": "isolated",
+      "workflow": {
+        "phase": {
+          "id": "0_isolated",
+          "concurrency": 2,
+          "runs": 3,
+          "shadow": false
+        },
+        "status": "observed",
+        "failure": null,
+        "elapsedMs": 34122.783,
+        "primaryCalls": [
+          {
+            "startedMs": 1611.291,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 4484.340833,
+            "finishedMs": 6097.122,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1624.044,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 7303.551708,
+            "finishedMs": 8928.865,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6516.62,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 6952.32775,
+            "finishedMs": 13470.149,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9368.383,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 6857.285416,
+            "finishedMs": 16227.082,
+            "status": "completed"
+          },
+          {
+            "startedMs": 13926.188,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 7491.332375,
+            "finishedMs": 21418.745,
+            "status": "completed"
+          },
+          {
+            "startedMs": 16566.028,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 7939.372583,
+            "finishedMs": 24506.859,
+            "status": "completed"
+          },
+          {
+            "startedMs": 21677.7,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5793.857458,
+            "finishedMs": 27472.952,
+            "status": "completed"
+          },
+          {
+            "startedMs": 27789.255,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2895.970084,
+            "finishedMs": 30686.385,
+            "status": "completed"
+          },
+          {
+            "startedMs": 30927.525,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 3128.193792,
+            "finishedMs": 34056.835,
+            "status": "completed"
+          }
+        ],
+        "decisionCalls": [],
+        "workflows": [
+          {
+            "runId": "bd080052-b9fe-41e1-ae55-62edbe32a5b5",
+            "startedMs": 1434.619,
+            "finishedMs": 24540.908,
+            "wallMs": 23106.289,
+            "stages": [
+              {
+                "id": "28f65104-de99-40ec-9670-0c33ab3a2ed9",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 7437,
+                  "modelDurationMs": 7306,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "794ef8df-6a3d-4135-86ab-466ab657dd06",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 7103,
+                  "modelDurationMs": 6860,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "efde14c5-bd86-4cf1-a6dd-56406ec7a9e5",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 8190,
+                  "modelDurationMs": 7942,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "5f9128f2-247b-4259-b7a8-07ac87692462",
+            "startedMs": 1440.45,
+            "finishedMs": 21437.009,
+            "wallMs": 19996.559,
+            "stages": [
+              {
+                "id": "1c675468-dbcd-4c6e-a1ef-5312301b7468",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 4598,
+                  "modelDurationMs": 4487,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "7d06290e-19db-4c56-bb09-72a9be94b3bd",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 7225,
+                  "modelDurationMs": 6955,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "ab00e783-8744-406f-b726-b496b9fb1c9c",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 7766,
+                  "modelDurationMs": 7494,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "d560264a-fe54-40d9-a01a-9c2739c74e93",
+            "startedMs": 1444.233,
+            "finishedMs": 34097.24,
+            "wallMs": 32653.007,
+            "stages": [
+              {
+                "id": "806889b1-87f7-41b0-8970-15e48b977d6d",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5973,
+                  "modelDurationMs": 5796,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "bb02c8cc-35d6-49aa-8ddc-2923c0f8b8ef",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 3152,
+                  "modelDurationMs": 2898,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "8fa49b5c-b5c3-48ea-ac4c-edd43c180db1",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 3299,
+                  "modelDurationMs": 3130,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          }
+        ],
+        "rag": {
+          "collectionId": "59c7681d-dfcd-48e3-b34e-a93f7cf2b3d5",
+          "embeddingModel": "embeddinggemma:latest",
+          "dimensions": 768,
+          "sources": [
+            {
+              "id": "july",
+              "sourceUri": "agat://decision-rag/july-2026",
+              "documentSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "chunkId": "8b0128b3fd48319ca984bae843477d81952a3cf6430e15f124f7d9dccef6b91e",
+              "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "dimensions": 768
+            },
+            {
+              "id": "august",
+              "sourceUri": "agat://decision-rag/august-2026",
+              "documentSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "chunkId": "5b304c6c48165fdad1e0176e4186a4b51a2263a7a6576c6f0f9741e4142be92f",
+              "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "dimensions": 768
+            }
+          ],
+          "ingestionMs": 1418.185
+        },
+        "embeddingCalls": [
+          {
+            "startedMs": 1347.855,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7"
+            ],
+            "vectorSha256": [
+              "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 33.902667,
+            "nativeLoadMs": 1.965417,
+            "finishedMs": 1383.471,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1351.332,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+            ],
+            "vectorSha256": [
+              "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 48.430167,
+            "nativeLoadMs": 10.423417,
+            "finishedMs": 1400.842,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1569.35,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 22.312375,
+            "nativeLoadMs": 2.160083,
+            "finishedMs": 1593.133,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1569.988,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 37.374333,
+            "nativeLoadMs": 2.179792,
+            "finishedMs": 1609.252,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6361.933,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 133.419292,
+            "nativeLoadMs": 2.429042,
+            "finishedMs": 6497.107,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9205.426,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 143.245916,
+            "nativeLoadMs": 2.297083,
+            "finishedMs": 9350.057,
+            "status": "completed"
+          },
+          {
+            "startedMs": 13753.462,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 148.572875,
+            "nativeLoadMs": 2.047,
+            "finishedMs": 13903.399,
+            "status": "completed"
+          },
+          {
+            "startedMs": 16399.495,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 150.325792,
+            "nativeLoadMs": 2.990125,
+            "finishedMs": 16551.257,
+            "status": "completed"
+          },
+          {
+            "startedMs": 21613.952,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 43.941917,
+            "nativeLoadMs": 1.994084,
+            "finishedMs": 21659.573,
+            "status": "completed"
+          },
+          {
+            "startedMs": 27614.124,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 156.0985,
+            "nativeLoadMs": 2.086041,
+            "finishedMs": 27771.693,
+            "status": "completed"
+          },
+          {
+            "startedMs": 30853.436,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 57.462708,
+            "nativeLoadMs": 7.625541,
+            "finishedMs": 30912.976,
+            "status": "completed"
+          }
+        ],
+        "maxEmbeddingRequestsInFlight": 2,
+        "maxPrimaryRequestsInFlight": 2,
+        "shadowCallsOverlappingPrimaryHttp": 0,
+        "scheduler": {
+          "mode": "sequential",
+          "globalMaxConcurrency": 2
+        },
+        "checks": {
+          "allWorkflowsCompleted": true,
+          "everyStageExecutedOnce": true,
+          "allPrimaryOutputsPreserved": true,
+          "expectedShadowObservationCount": true,
+          "configuredConcurrencyObserved": true
+        },
+        "limitations": [
+          "Overlap counts HTTP intervals including Ollama queue time, not measured GPU kernels.",
+          "One authored task fixture repeated for throughput; no independent quality or production SLO claim."
+        ]
+      },
+      "probeSha256": "a2fecdc2eeb5bf52aa69fccd45b662a279cfb0d04662a5ea0b2b7b6b738cdff2"
+    },
+    {
+      "transport": "session",
+      "workflow": {
+        "phase": {
+          "id": "1_session",
+          "concurrency": 2,
+          "runs": 3,
+          "shadow": false
+        },
+        "status": "observed",
+        "failure": null,
+        "elapsedMs": 27541.881,
+        "primaryCalls": [
+          {
+            "startedMs": 500.423,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2758.494041,
+            "finishedMs": 3260.078,
+            "status": "completed"
+          },
+          {
+            "startedMs": 511.585,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5647.07175,
+            "finishedMs": 6159.912,
+            "status": "completed"
+          },
+          {
+            "startedMs": 3426.014,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5570.171625,
+            "finishedMs": 8997.654,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6337.476,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5534.416125,
+            "finishedMs": 11874.021,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9208.767,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 5896.422083,
+            "finishedMs": 15106.951,
+            "status": "completed"
+          },
+          {
+            "startedMs": 12144.81,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 6102.7535,
+            "finishedMs": 18249.661,
+            "status": "completed"
+          },
+          {
+            "startedMs": 15382.891,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5683.855958,
+            "finishedMs": 21068.165,
+            "status": "completed"
+          },
+          {
+            "startedMs": 21243.475,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2727.076333,
+            "finishedMs": 23972.222,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24253.922,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 3202.934334,
+            "finishedMs": 27458.446,
+            "status": "completed"
+          }
+        ],
+        "decisionCalls": [],
+        "workflows": [
+          {
+            "runId": "4fa4185f-5a4b-4d56-8d93-686a0bb84371",
+            "startedMs": 425.62,
+            "finishedMs": 15144.421,
+            "wallMs": 14718.801,
+            "stages": [
+              {
+                "id": "9c5482ee-6465-40e9-890a-3f757b19f808",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 2828,
+                  "modelDurationMs": 2761,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "8fd053d1-f43c-4a62-ae10-5a9d657b0ee2",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5657,
+                  "modelDurationMs": 5573,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "a0b66154-8c86-495f-9ef9-2aae0520be7a",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 5986,
+                  "modelDurationMs": 5900,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "d5b19c8a-8218-4d0e-8329-e4a3ba67324c",
+            "startedMs": 430.203,
+            "finishedMs": 18298.804,
+            "wallMs": 17868.601,
+            "stages": [
+              {
+                "id": "463a0d94-9fdd-45b6-9f17-af5cd0cae6ed",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5719,
+                  "modelDurationMs": 5650,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "028fa3d9-a3cb-4f7e-98c7-ca876075bf43",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5648,
+                  "modelDurationMs": 5539,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "abfafeb2-e384-4d7a-b2a8-8113c897687f",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 6241,
+                  "modelDurationMs": 6106,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "c146a0a4-b9e6-429b-8ab7-c0347547506a",
+            "startedMs": 433.78,
+            "finishedMs": 27467.409,
+            "wallMs": 27033.629,
+            "stages": [
+              {
+                "id": "68bc9f2b-1df2-4fe1-9de7-c18338dad95f",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5762,
+                  "modelDurationMs": 5687,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "fa91fd30-1ee3-4fde-947e-96396b27889e",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 2815,
+                  "modelDurationMs": 2730,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "6a4e6151-9827-4ed5-9e16-1bf9c2a30bc9",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 3295,
+                  "modelDurationMs": 3206,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          }
+        ],
+        "rag": {
+          "collectionId": "b6f1709a-7967-41ff-8f86-17b8dc31a633",
+          "embeddingModel": "embeddinggemma:latest",
+          "dimensions": 768,
+          "sources": [
+            {
+              "id": "july",
+              "sourceUri": "agat://decision-rag/july-2026",
+              "documentSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "chunkId": "1ff63224ddd2f6a5d48bf9efa2b38054342f32990bc4ffb4ffbc53a65695e801",
+              "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "dimensions": 768
+            },
+            {
+              "id": "august",
+              "sourceUri": "agat://decision-rag/august-2026",
+              "documentSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "chunkId": "7ec557e8e9ca5bff465e54798122c732ddd002f9fc56887a5f0b08dcebe3a7bd",
+              "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "dimensions": 768
+            }
+          ],
+          "ingestionMs": 417.827
+        },
+        "embeddingCalls": [
+          {
+            "startedMs": 298.752,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7"
+            ],
+            "vectorSha256": [
+              "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 50.978709,
+            "nativeLoadMs": 2.543667,
+            "finishedMs": 350.987,
+            "status": "completed"
+          },
+          {
+            "startedMs": 304.142,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+            ],
+            "vectorSha256": [
+              "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 62.498875,
+            "nativeLoadMs": 2.306208,
+            "finishedMs": 367.66,
+            "status": "completed"
+          },
+          {
+            "startedMs": 447.386,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 31.55825,
+            "nativeLoadMs": 1.753958,
+            "finishedMs": 480.066,
+            "status": "completed"
+          },
+          {
+            "startedMs": 448.299,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 54.219209,
+            "nativeLoadMs": 1.9825,
+            "finishedMs": 503.283,
+            "status": "completed"
+          },
+          {
+            "startedMs": 3351.497,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 54.978709,
+            "nativeLoadMs": 2.113334,
+            "finishedMs": 3408.597,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6234.209,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 81.02,
+            "nativeLoadMs": 3.245125,
+            "finishedMs": 6317.131,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9130.435,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 63.850625,
+            "nativeLoadMs": 2.188375,
+            "finishedMs": 9196.484,
+            "status": "completed"
+          },
+          {
+            "startedMs": 12017.388,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 85.289667,
+            "nativeLoadMs": 2.852667,
+            "finishedMs": 12107.531,
+            "status": "completed"
+          },
+          {
+            "startedMs": 15315.162,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 52.212917,
+            "nativeLoadMs": 2.224667,
+            "finishedMs": 15369.034,
+            "status": "completed"
+          },
+          {
+            "startedMs": 21164.636,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 64.465958,
+            "nativeLoadMs": 1.822292,
+            "finishedMs": 21230.687,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24173.401,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 70.214833,
+            "nativeLoadMs": 2.121292,
+            "finishedMs": 24245.097,
+            "status": "completed"
+          }
+        ],
+        "maxEmbeddingRequestsInFlight": 2,
+        "maxPrimaryRequestsInFlight": 2,
+        "shadowCallsOverlappingPrimaryHttp": 0,
+        "scheduler": {
+          "mode": "sequential",
+          "globalMaxConcurrency": 2
+        },
+        "checks": {
+          "allWorkflowsCompleted": true,
+          "everyStageExecutedOnce": true,
+          "allPrimaryOutputsPreserved": true,
+          "expectedShadowObservationCount": true,
+          "configuredConcurrencyObserved": true
+        },
+        "limitations": [
+          "Overlap counts HTTP intervals including Ollama queue time, not measured GPU kernels.",
+          "One authored task fixture repeated for throughput; no independent quality or production SLO claim."
+        ]
+      },
+      "probeSha256": "67423d24828f25380055e0565ce6051eee147ab89cbfe597532d0d1fe4c4e78c"
+    },
+    {
+      "transport": "session",
+      "workflow": {
+        "phase": {
+          "id": "2_session",
+          "concurrency": 2,
+          "runs": 3,
+          "shadow": false
+        },
+        "status": "observed",
+        "failure": null,
+        "elapsedMs": 28177.837,
+        "primaryCalls": [
+          {
+            "startedMs": 1329.102,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 3078.355375,
+            "finishedMs": 4418.355,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1367.69,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5839.20125,
+            "finishedMs": 7208.557,
+            "status": "completed"
+          },
+          {
+            "startedMs": 4769.722,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5265.058334,
+            "finishedMs": 10038.673,
+            "status": "completed"
+          },
+          {
+            "startedMs": 7301.45,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5513.224959,
+            "finishedMs": 12815.905,
+            "status": "completed"
+          },
+          {
+            "startedMs": 10212.014,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 5678.027916,
+            "finishedMs": 15891.266,
+            "status": "completed"
+          },
+          {
+            "startedMs": 13100.662,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 6048.919625,
+            "finishedMs": 19151.028,
+            "status": "completed"
+          },
+          {
+            "startedMs": 16155.993,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5814.903459,
+            "finishedMs": 21971.964,
+            "status": "completed"
+          },
+          {
+            "startedMs": 22213.856,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2690.040167,
+            "finishedMs": 24904.996,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24973.831,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 3098.616792,
+            "finishedMs": 28073.862,
+            "status": "completed"
+          }
+        ],
+        "decisionCalls": [],
+        "workflows": [
+          {
+            "runId": "3e577aee-f734-482e-ab25-371e95476e73",
+            "startedMs": 1049.85,
+            "finishedMs": 15935.625,
+            "wallMs": 14885.775,
+            "stages": [
+              {
+                "id": "75210823-7599-4df7-a909-be912e558daf",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 3195,
+                  "modelDurationMs": 3092,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "d8cd44c3-4ba2-43eb-a6fe-d21422ca972c",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5494,
+                  "modelDurationMs": 5270,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "a87e8863-76af-4410-987b-039da940f570",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 5759,
+                  "modelDurationMs": 5680,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "9e490637-a493-4b0f-95e6-e99c458d3c55",
+            "startedMs": 1054.758,
+            "finishedMs": 19162.465,
+            "wallMs": 18107.707,
+            "stages": [
+              {
+                "id": "8ac77c3e-d1b3-45d6-9825-e141d701c614",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5969,
+                  "modelDurationMs": 5843,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "a16747d9-e1c4-4164-ac4c-0909eed73d9e",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5583,
+                  "modelDurationMs": 5516,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "2be78155-d367-4b2f-84ef-563667497fb2",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 6140,
+                  "modelDurationMs": 6052,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "f3ac8e7f-ecd1-4da4-b2af-91106a961577",
+            "startedMs": 1063.842,
+            "finishedMs": 28111.071,
+            "wallMs": 27047.229,
+            "stages": [
+              {
+                "id": "9b2cb254-23f9-435e-9a05-8842684f91ec",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5861,
+                  "modelDurationMs": 5817,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "5ca833e3-408b-4f70-b257-ffa7f763c0eb",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 2756,
+                  "modelDurationMs": 2692,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "61767f8c-dbb7-4889-a129-6deba0524e83",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 3155,
+                  "modelDurationMs": 3101,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          }
+        ],
+        "rag": {
+          "collectionId": "9e5c0d86-8831-4a13-bb37-49db1b608316",
+          "embeddingModel": "embeddinggemma:latest",
+          "dimensions": 768,
+          "sources": [
+            {
+              "id": "july",
+              "sourceUri": "agat://decision-rag/july-2026",
+              "documentSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "chunkId": "7cef74750e0477f98cf9d347b42f781c5dd8262137c3501412bf11bd130922b9",
+              "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "dimensions": 768
+            },
+            {
+              "id": "august",
+              "sourceUri": "agat://decision-rag/august-2026",
+              "documentSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "chunkId": "3a10f5fe6de41ba7f0ee782c49be63f162cd2f84cec64c37494abdf27e56419b",
+              "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "dimensions": 768
+            }
+          ],
+          "ingestionMs": 1026.755
+        },
+        "embeddingCalls": [
+          {
+            "startedMs": 587.337,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7"
+            ],
+            "vectorSha256": [
+              "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 348.598,
+            "nativeLoadMs": 23.429125,
+            "finishedMs": 943.187,
+            "status": "completed"
+          },
+          {
+            "startedMs": 589.798,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+            ],
+            "vectorSha256": [
+              "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 393.660917,
+            "nativeLoadMs": 11.971792,
+            "finishedMs": 987.849,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1257.976,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 34.058625,
+            "nativeLoadMs": 4.634625,
+            "finishedMs": 1294.727,
+            "status": "completed"
+          },
+          {
+            "startedMs": 1265.475,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 73.333916,
+            "nativeLoadMs": 1.692833,
+            "finishedMs": 1343.115,
+            "status": "completed"
+          },
+          {
+            "startedMs": 4555.839,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 166.198416,
+            "nativeLoadMs": 1.944541,
+            "finishedMs": 4727.615,
+            "status": "completed"
+          },
+          {
+            "startedMs": 7238.163,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 52.875292,
+            "nativeLoadMs": 2.872667,
+            "finishedMs": 7292.491,
+            "status": "completed"
+          },
+          {
+            "startedMs": 10137.492,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 65.47625,
+            "nativeLoadMs": 1.937625,
+            "finishedMs": 10204.212,
+            "status": "completed"
+          },
+          {
+            "startedMs": 13026.171,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 65.421417,
+            "nativeLoadMs": 2.141084,
+            "finishedMs": 13093.12,
+            "status": "completed"
+          },
+          {
+            "startedMs": 16117.079,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 30.679417,
+            "nativeLoadMs": 1.63725,
+            "finishedMs": 16148.965,
+            "status": "completed"
+          },
+          {
+            "startedMs": 22156.857,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 49.40425,
+            "nativeLoadMs": 2.080125,
+            "finishedMs": 22207.428,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24925.219,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 41.157166,
+            "nativeLoadMs": 1.621708,
+            "finishedMs": 24967.499,
+            "status": "completed"
+          }
+        ],
+        "maxEmbeddingRequestsInFlight": 2,
+        "maxPrimaryRequestsInFlight": 2,
+        "shadowCallsOverlappingPrimaryHttp": 0,
+        "scheduler": {
+          "mode": "sequential",
+          "globalMaxConcurrency": 2
+        },
+        "checks": {
+          "allWorkflowsCompleted": true,
+          "everyStageExecutedOnce": true,
+          "allPrimaryOutputsPreserved": true,
+          "expectedShadowObservationCount": true,
+          "configuredConcurrencyObserved": true
+        },
+        "limitations": [
+          "Overlap counts HTTP intervals including Ollama queue time, not measured GPU kernels.",
+          "One authored task fixture repeated for throughput; no independent quality or production SLO claim."
+        ]
+      },
+      "probeSha256": "de41c7482d46aad4b179629f8086230556261f1ede23ce06ea2ff4148eba08e6"
+    },
+    {
+      "transport": "isolated",
+      "workflow": {
+        "phase": {
+          "id": "3_isolated",
+          "concurrency": 2,
+          "runs": 3,
+          "shadow": false
+        },
+        "status": "observed",
+        "failure": null,
+        "elapsedMs": 27275.885,
+        "primaryCalls": [
+          {
+            "startedMs": 559.342,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2761.537084,
+            "finishedMs": 3321.955,
+            "status": "completed"
+          },
+          {
+            "startedMs": 575.759,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5495.8865,
+            "finishedMs": 6072.683,
+            "status": "completed"
+          },
+          {
+            "startedMs": 3682.61,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5095.208292,
+            "finishedMs": 8779.912,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6386.062,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5159.423125,
+            "finishedMs": 11546.722,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9104.861,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 5624.927542,
+            "finishedMs": 14732.064,
+            "status": "completed"
+          },
+          {
+            "startedMs": 11762.54,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 6133.334416,
+            "finishedMs": 17898.905,
+            "status": "completed"
+          },
+          {
+            "startedMs": 15064.397,
+            "messagesSha256": "f59bd3502b10d18fd999c34880371a33143099d82253e04085d83c01fa8d5c8f",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 693,
+            "outputTokens": 112,
+            "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+            "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 5632.406125,
+            "finishedMs": 20698.509,
+            "status": "completed"
+          },
+          {
+            "startedMs": 20966.873,
+            "messagesSha256": "a5867c6fed207e4d2dc8702e33ed1f4cfff846eb0c3bc1552427bd8b02aacbcf",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 856,
+            "outputTokens": 109,
+            "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+            "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+            "nativeTotalMs": 2765.849125,
+            "finishedMs": 23734.26,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24110.883,
+            "messagesSha256": "3ead3f0ac15a01f0681e6fa90f26228d4e32b52e9f8b82c91e773cadbc91edc9",
+            "retrievedSourceIds": [
+              "july",
+              "august"
+            ],
+            "doneReason": "stop",
+            "inputTokens": 985,
+            "outputTokens": 123,
+            "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+            "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+            "nativeTotalMs": 3120.562,
+            "finishedMs": 27232.433,
+            "status": "completed"
+          }
+        ],
+        "decisionCalls": [],
+        "workflows": [
+          {
+            "runId": "360fae07-081b-476e-b124-2c375c23c85c",
+            "startedMs": 423.034,
+            "finishedMs": 17930.254,
+            "wallMs": 17507.22,
+            "stages": [
+              {
+                "id": "0acaea3f-2e9d-418e-8024-83414fd9fb44",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5637,
+                  "modelDurationMs": 5498,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "e5a35fc5-e97d-4d99-b06d-649720220df5",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5353,
+                  "modelDurationMs": 5162,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "e6d45c17-4ce5-4202-9399-17c9ab7bf4c9",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 6335,
+                  "modelDurationMs": 6141,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "859a5c4d-d9cf-4453-b640-bc786df0fcb6",
+            "startedMs": 426.748,
+            "finishedMs": 14782.44,
+            "wallMs": 14355.692,
+            "stages": [
+              {
+                "id": "591ac7a1-3784-4ea1-b41d-f8f6fce884c9",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 2883,
+                  "modelDurationMs": 2764,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "e926f79a-bd89-4be9-ba89-ef47b73dba55",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5273,
+                  "modelDurationMs": 5103,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "e827be4f-7494-4a76-988a-a2d10910de10",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 5845,
+                  "modelDurationMs": 5629,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          },
+          {
+            "runId": "f5b745ac-f027-4cae-af85-e155885daafd",
+            "startedMs": 430.23,
+            "finishedMs": 27254.639,
+            "wallMs": 26824.409,
+            "stages": [
+              {
+                "id": "0590531b-bf32-4e93-85df-b7ea40c53d1d",
+                "nodeId": "extract",
+                "position": 0,
+                "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+                "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 5841,
+                  "modelDurationMs": 5645,
+                  "modelCalls": 1,
+                  "inputTokens": 693,
+                  "outputTokens": 112,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "351c5f73-704a-4064-933e-6d4c023d973a",
+                "nodeId": "analyze",
+                "position": 1,
+                "outputSha256": "3433d0e331dfcbe781bec49f1fafb6d13ef89a2f8dfdd5d79a68196322441fd2",
+                "output": "**Июль → Август:**  \nЗаявки: +20% ([K2], [K1]).  \nСреднее время: 4 ч/заявку → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоля отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.",
+                "metrics": {
+                  "durationMs": 2968,
+                  "modelDurationMs": 2768,
+                  "modelCalls": 1,
+                  "inputTokens": 856,
+                  "outputTokens": 109,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              },
+              {
+                "id": "7047e09f-18ea-4bdf-967b-eef1fc1f9260",
+                "nodeId": "review",
+                "position": 2,
+                "outputSha256": "59b0b6a370a6c692d5748c88f33c8517c10fc07d762f6eb9f6a8ad55d5ee0cdd",
+                "output": "**Отчёт:**  \nЗаявки: +20% (100 → 120) ([K2], [K1]).  \nСреднее время: 4 → 3 ч/заявку (−25%) ([K2], [K1]).  \nДоли отклонений: 8% → 5% (−3 п.п.) ([K2], [K1]).  \nДанные учебные, причины изменений неизвестны.  \nИсточники: [K1], [K2].",
+                "metrics": {
+                  "durationMs": 3293,
+                  "modelDurationMs": 3124,
+                  "modelCalls": 1,
+                  "inputTokens": 985,
+                  "outputTokens": 123,
+                  "toolCalls": 0,
+                  "model": "qwen3:8b",
+                  "provider": "openai-compatible",
+                  "toolSchemaVersion": "none"
+                },
+                "retrieval": {
+                  "queries": [
+                    {
+                      "vectorSha256": "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27",
+                      "dimensions": 768
+                    }
+                  ],
+                  "hits": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "knownCitations": [
+                    {
+                      "sourceId": "august",
+                      "marker": "K1",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.548914
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K2",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.514255
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K3",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.692145
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K4",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.685731
+                    },
+                    {
+                      "sourceId": "august",
+                      "marker": "K5",
+                      "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+                      "score": 0.670623
+                    },
+                    {
+                      "sourceId": "july",
+                      "marker": "K6",
+                      "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+                      "score": 0.66
+                    }
+                  ],
+                  "outputMarkers": [
+                    "K2",
+                    "K1"
+                  ],
+                  "unknownMarkers": [],
+                  "citedSourceIds": [
+                    "july",
+                    "august"
+                  ],
+                  "bothSourcesCited": true
+                }
+              }
+            ]
+          }
+        ],
+        "rag": {
+          "collectionId": "4c7d4546-f6a0-496e-8252-61069ff1da57",
+          "embeddingModel": "embeddinggemma:latest",
+          "dimensions": 768,
+          "sources": [
+            {
+              "id": "july",
+              "sourceUri": "agat://decision-rag/july-2026",
+              "documentSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "chunkId": "61ea61c227535be44785c7a2a67e8ebb97882abf0632ea4947d63b520072fdc6",
+              "chunkSha256": "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7",
+              "dimensions": 768
+            },
+            {
+              "id": "august",
+              "sourceUri": "agat://decision-rag/august-2026",
+              "documentSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "chunkId": "1b4553bcfac51105b0cd1063ba771e21f53349ff8150843ff0ca962fb6931e50",
+              "chunkSha256": "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa",
+              "dimensions": 768
+            }
+          ],
+          "ingestionMs": 416.974
+        },
+        "embeddingCalls": [
+          {
+            "startedMs": 307.517,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7"
+            ],
+            "vectorSha256": [
+              "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 43.947708,
+            "nativeLoadMs": 2.049208,
+            "finishedMs": 352.85,
+            "status": "completed"
+          },
+          {
+            "startedMs": 309.629,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+            ],
+            "vectorSha256": [
+              "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+            ],
+            "inputTokens": 87,
+            "nativeTotalMs": 61.669625,
+            "nativeLoadMs": 1.571208,
+            "finishedMs": 372.367,
+            "status": "completed"
+          },
+          {
+            "startedMs": 515.917,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 27.063042,
+            "nativeLoadMs": 1.828542,
+            "finishedMs": 544.368,
+            "status": "completed"
+          },
+          {
+            "startedMs": 517.777,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 42.39025,
+            "nativeLoadMs": 1.468042,
+            "finishedMs": 560.954,
+            "status": "completed"
+          },
+          {
+            "startedMs": 3610.062,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 52.355375,
+            "nativeLoadMs": 2.113042,
+            "finishedMs": 3663.896,
+            "status": "completed"
+          },
+          {
+            "startedMs": 6294.293,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 65.648209,
+            "nativeLoadMs": 4.858375,
+            "finishedMs": 6363.39,
+            "status": "completed"
+          },
+          {
+            "startedMs": 9004.047,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 73.060208,
+            "nativeLoadMs": 13.963541,
+            "finishedMs": 9078.798,
+            "status": "completed"
+          },
+          {
+            "startedMs": 11667.714,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 70.958875,
+            "nativeLoadMs": 1.930708,
+            "finishedMs": 11740.025,
+            "status": "completed"
+          },
+          {
+            "startedMs": 14969.033,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+            ],
+            "vectorSha256": [
+              "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+            ],
+            "inputTokens": 86,
+            "nativeTotalMs": 49.286959,
+            "nativeLoadMs": 2.185584,
+            "finishedMs": 15031.959,
+            "status": "completed"
+          },
+          {
+            "startedMs": 20845.729,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "4f20584d938ac45f0a77de0d5615474f4a72c2e83d76bb74549188730df39e66"
+            ],
+            "vectorSha256": [
+              "563fb98e3a924d9dfd4036259ec1043cb1739e4be31f94b6b77c7aa296f0d9a6"
+            ],
+            "inputTokens": 211,
+            "nativeTotalMs": 94.399333,
+            "nativeLoadMs": 1.925625,
+            "finishedMs": 20942.575,
+            "status": "completed"
+          },
+          {
+            "startedMs": 24019.873,
+            "model": "embeddinggemma:latest",
+            "items": 1,
+            "dimensions": 768,
+            "inputSha256": [
+              "afe4f6df85ce53e58bc8e14a90145a3e7ae524a5d28c3ea6c6c3c041202531d9"
+            ],
+            "vectorSha256": [
+              "2f9d6c3a1e9e096ff39ac33ae09b706305f3b7d942b03725ce09a9263635ed27"
+            ],
+            "inputTokens": 308,
+            "nativeTotalMs": 74.447667,
+            "nativeLoadMs": 2.763334,
+            "finishedMs": 24095.624,
+            "status": "completed"
+          }
+        ],
+        "maxEmbeddingRequestsInFlight": 2,
+        "maxPrimaryRequestsInFlight": 2,
+        "shadowCallsOverlappingPrimaryHttp": 0,
+        "scheduler": {
+          "mode": "sequential",
+          "globalMaxConcurrency": 2
+        },
+        "checks": {
+          "allWorkflowsCompleted": true,
+          "everyStageExecutedOnce": true,
+          "allPrimaryOutputsPreserved": true,
+          "expectedShadowObservationCount": true,
+          "configuredConcurrencyObserved": true
+        },
+        "limitations": [
+          "Overlap counts HTTP intervals including Ollama queue time, not measured GPU kernels.",
+          "One authored task fixture repeated for throughput; no independent quality or production SLO claim."
+        ]
+      },
+      "probeSha256": "097d38ead19ad786ca96112067307cdc9f40cac6e69f30aa5884ea1a7e339c19"
+    }
+  ],
+  "qualification": "not_assessed",
+  "routingEnabled": false
+}
