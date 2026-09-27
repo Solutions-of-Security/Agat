@@ -1,0 +1,40 @@
+
+> agat-platform@1.7.0 docs:check
+> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p "test_*.py" && npm run docs:links:check && npm run docs:processes:check
+
+✔ checks Markdown reference links, images, escaped spaces and fragments (18.082541ms)
+✔ ignores fenced code, inline code and external links (1.764666ms)
+✔ reports missing files and case differences on all platforms (1.746166ms)
+✔ rejects links outside the checkout while allowing repository-root links (1.319042ms)
+✔ does not accept a generated local file absent from the repository (2.845792ms)
+✔ qualification accepts only explicit loopback addresses, without credentials or redirects (2.054167ms)
+✔ model identity requires installed digest, Qwen3 architecture and local capability (1.478959ms)
+✔ ingestion fails for changed content, missing or incompatible embeddings (0.918708ms)
+✔ citations must resolve to both ingested sources on each real model stage (1.556417ms)
+✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.778625ms)
+✔ history evidence excludes payloads, secrets, failures and host identities (1.307375ms)
+✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (6286.618709ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6583.795375
+...............................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 303 tests in 71.288s
+
+OK
+
+> agat-platform@1.7.0 docs:links:check
+> node scripts/check-doc-links.mjs
+
+Checked 1671 local link targets in 201 Markdown files (including filename case).
+External URLs, fragment anchors and raw HTML are outside this check.
+
+> agat-platform@1.7.0 docs:processes:check
+> node --import tsx scripts/export-process-catalog.ts --check
+
+Проверено: 7 категорий, 13 шаблонов; catalog.md, catalog.json.
