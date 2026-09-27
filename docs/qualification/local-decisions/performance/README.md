@@ -116,4 +116,4 @@ python3 -m unittest scripts.test.test_decision_performance -v
 
 [Размерность при конкуренции jobs](./embedding-dimension-concurrency.md) защищает общий embedding-индекс блокировкой коллекции перед job; смешанный индекс [2, 3] воспроизведён и устранён на двух coordinator с положительными контролями.
 
-[План HTTP-профиля embedding/renewal](./embedding-http.md) фиксирует нагрузку двух coordinator, контроль состояния индекса и независимые служебные запросы до измерений.
+[HTTP-профиль embedding/renewal](./embedding-http.md): два coordinator, 420 completion + 4 warmup, 13568 проверенных векторов; все health/renewal успешны без пропусков probes. Схемы shared/independent сравнены по фиксированному протоколу без вывода о производственном SLO.

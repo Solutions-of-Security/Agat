@@ -86,7 +86,7 @@ Development-сравнение не закрывает qualification: decider п
 
 [Конкурирующая размерность embedding](./qualification/local-decisions/performance/embedding-dimension-concurrency.md) воспроизведена двумя coordinator: baseline сохранял [2, 3] в одной коллекции при двух ответах 200. Completion теперь блокирует коллекцию перед job и читает размерность после ожидания; несовместимый batch получает 400 без частичных записей, независимые коллекции продолжают параллельно. PostgreSQL 9/9, полный coordinator 284/284 и PostgreSQL 62/62 — pass. Следующий gate — HTTP-профиль completion/renewal и служебных запросов после изменений SQL.
 
-[HTTP-профиль embedding и renewal](./qualification/local-decisions/performance/embedding-http.md): до измерения фиксируются две реплики, shared/independent коллекции, 32 × 768 на batch, конкурентность 1/2/4, независимые health/renewal и проверка durable-состояния. Результат пока не получен; qualification модели и производственные SLO остаются открытыми.
+[HTTP-профиль embedding и renewal](./qualification/local-decisions/performance/embedding-http.md) выполнен на закреплённом commit через два обычных coordinator: replay подтвердил 420 completion + 4 warmup и 13568 векторов; все отправленные health/renewal успешны, пропусков probes нет. При конкурентности 4 completion p50 shared/independent — 140/92 мс, health max — 199/124 мс. Следующий gate — неизвестный исход embedding COMMIT и восстановление после потери подтверждения; qualification модели и производственные SLO остаются открытыми.
 
 ## Вывод: что именно можно воспроизвести
 

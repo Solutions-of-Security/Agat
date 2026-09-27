@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Replay the pinned embedding profile, including durable index and control traffic."""
 import argparse
+from datetime import datetime
 import hashlib
 import importlib.util
 import json
@@ -14,6 +15,11 @@ spec = importlib.util.spec_from_file_location('rag_verifier_support', ROOT / 'sc
 support = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(support)
 sha, summary, intervals, timing = (getattr(support, name) for name in ('sha', 'summary', 'intervals', 'timing'))
+
+
+def deadline(value):
+    assert isinstance(value, str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z', value)
+    return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
 
 
 def verify(directory):
@@ -115,7 +121,7 @@ def verify(directory):
             for renewal in actual['renewals']:
                 expected_lease = lease_map[renewal['lease']]
                 assert renewal['kind'] == expected_lease['kind'] and renewal['replica'] == expected_lease['replica']
-                assert renewal['status'] == 'running' and renewal['finalExpiry'] >= renewal['initialExpiry']
+                assert renewal['status'] == 'running' and deadline(renewal['finalExpiry']) >= deadline(renewal['initialExpiry'])
             for field, kind, interval in [('healthProbes', 'health', 100), ('renewalProbes', 'renewal', 250)]:
                 rows = observed[field]
                 if label == 'warmup':
