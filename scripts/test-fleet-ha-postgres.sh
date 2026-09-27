@@ -49,4 +49,4 @@ AGAT_POSTGRES_ADMISSION_CONCURRENCY=2 \
 AGAT_POSTGRES_ADMISSION_DURATION_MS=500 \
 AGAT_POSTGRES_ADMISSION_MIN_OPERATIONS=10 \
 AGAT_POSTGRES_ADMISSION_P99_MS=1000 \
-node --import tsx --test apps/coordinator/test/fleet-ha-postgres.integration.test.ts
+node --import tsx --test "$@" apps/coordinator/test/fleet-ha-postgres.integration.test.ts

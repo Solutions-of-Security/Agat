@@ -1,0 +1,52 @@
+{
+  "baselineCommit": "e84ef0bc503407df853cb184080eaad99d3222c9",
+  "baseMergeCommit": "0e58d68cc5c6bcbfcb81cc8627a3ffcf8c81c538",
+  "node": "v24.14.0",
+  "before": {
+    "exitCode": 1,
+    "failedAssertions": 2,
+    "reasons": [
+      "Expired lease accepted after run lock wait",
+      "Cancelled stage snapshot accepted after lock wait"
+    ]
+  },
+  "targetedPostgresPassed": 4,
+  "coordinatorPassed": 243,
+  "postgresPassed": 17,
+  "fixtureCorrections": [
+    "Clear PostgreSQL statistics snapshot before observing current lock query",
+    "Refresh node heartbeat after advancing SQLite test clock beyond lease and node TTL",
+    "Cancel owned fixture run during cleanup so a later scheduler test cannot lease it"
+  ],
+  "typecheckExitCode": 0,
+  "buildExitCode": 0,
+  "docs": {
+    "nodePassed": 12,
+    "pythonPassed": 143,
+    "linkTargets": 1429,
+    "exitCode": 0
+  },
+  "architecture": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 0
+  },
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "12b360ac566f223067ce543b656ed08acd14ec0d79d98583399eb9b3befeb3db",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "f29f0ef7596b6c7c8d55f0cd299a33951d684110ab3a2d22bad09811bbc3e026",
+    "apps/coordinator/test/knowledge-retrieval-validation.test.ts": "2522bf6520c33fed5f986e0be6c8dda0992525c4618bba36aa0f33736dec1ab1",
+    "scripts/test-fleet-ha-postgres.sh": "38bd56d47f9bba8f1abe5b9c99981d9e8339d3c4271eca744e699998676abbef"
+  },
+  "logSha256": {
+    "before.log": "fe9a05fd873d40fb114f3f6a503f8a3958ed3cd38b82028a098e33cc5276b697",
+    "targeted-postgres.log": "13c1a155d8955562fea88defecb402ecbba0482990bd9c91fb11016ac04e6278",
+    "postgres-fixture-failure.log": "87ac2f8b8471ae373ace4d8fe923b1fddc3db8021d665ef1fbc700f253abd70e",
+    "postgres.log": "3f889c1912ef2519f0ff2110f5c647099d4ca2eb2867c666dccb1e74f94c464f",
+    "sqlite-fixture-failure.log": "d6261790373b33dc13e7692bdad787e2727b6656eb4294e150258c503c08d65e",
+    "coordinator.log": "d5933d6da81ce5f5cf55eb9aefe1bb1e10722a634d251d500e5523e5a04ad9d1",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "build.log": "ff64be48ff3fa7dae9c8ad2d24aa75773644378510dee506f9b043935b023e36",
+    "docs.log": "744140db409415b81f72371811de4c5e27427af50bbf6a88678efeeab318e069",
+    "architecture.json": "5486d7977f3225db8a0a9e40b17807e2b1640deb0a0b5608cb1ffafc4b313a42"
+  }
+}

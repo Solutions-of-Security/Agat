@@ -1,0 +1,142 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (448.108875ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (18510.504167ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (308.831833ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (15211.389209ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (614.42ms)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1324.407292ms)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (5938.645416ms)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (1064.657834ms)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (6135.792833ms)
+(node:50012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (1057.104333ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1122.987375ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (5128.309125ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (120.954917ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (314.322667ms)
+  ✔ rejects a schema Job while a coordinator replica is active (241.630459ms)
+  ✔ rejects runtime startup after out-of-band schema drift (197.143833ms)
+  ✖ shares state between replicas, serializes project quota and enforces RLS (751.569083ms)
+✖ PostgreSQL Fleet/HA integration (61851.562792ms)
+ℹ tests 17
+ℹ suites 1
+ℹ pass 16
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62653.062459
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:1371
+✖ shares state between replicas, serializes project quota and enforces RLS (751.569083ms)
+  AssertionError [ERR_ASSERTION]: project maxRunningTasks must hold across replicas
+  + actual - expected
+  
+  + {
+  +   agent: {
+  +     definitionVersion: '5a0a48701bd8f5fc427c618f736510498380aa3b05ee31f2f03c6270476c3618',
+  +     id: 'collector',
+  +     model: null,
+  +     name: 'Сборщик',
+  +     promptVersion: 'b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f',
+  +     role: 'Собирает факты и формирует проверяемый набор исходных данных',
+  +     runtime: 'single',
+  +     runtimeConfig: {
+  +       maxIterations: 6,
+  +       profile: 'tool_loop_v1'
+  +     },
+  +     specialists: [],
+  +     systemPrompt: 'Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.'
+  +   },
+  +   context: [],
+  +   expiresAt: '2026-09-27T00:00:00.919Z',
+  +   knowledge: {
+  +     groups: [],
+  +     memory: []
+  +   },
+  +   leaseId: '9be76e92-63e1-43a8-bdbd-1ff82303d744',
+  +   mcpTools: [],
+  +   routing: {
+  +     alternativesConsidered: 9,
+  +     fallbackFrom: null,
+  +     nodeId: 'ebb1edf1-aa31-4bb3-8cc5-1f5dcdb0994c',
+  +     nodeName: 'node-b-1ac9b2ec',
+  +     reasons: [
+  +       'Выбрана минимальная модель, прошедшая ограничения policy',
+  +       'На узле свободно 1 из 1 слотов',
+  +       'Пассивный benchmark ещё не накоплен',
+  +       'Часть capabilities неизвестна; разрешён compatibility fallback'
+  +     ],
+  +     requestedModel: null,
+  +     schemaVersion: 1,
+  +     selectedAt: '2026-09-26T23:57:00.913Z',
+  +     selectedModel: null,
+  +     signals: {
+  +       batteryPercent: null,
+  +       benchmarkSamples: 0,
+  +       contextWindow: null,
+  +       cpuPercent: null,
+  +       freeSlots: 1,
+  +       joulesPer1kTokens: null,
+  +       memoryPercent: null,
+  +       onBattery: false,
+  +       parameterCount: null,
+  +       profileKnown: false,
+  +       qualityScore: null,
+  +       sizeBytes: null,
+  +       temperatureC: null,
+  +       tokensPerSecond: null
+  +     },
+  +     strategy: 'balanced'
+  +   },
+  +   run: {
+  +     artifactPath: null,
+  +     id: 'eaff6829-834a-492a-bd01-85f9a3411056',
+  +     input: 'one',
+  +     name: 'replica-visible-a',
+  +     resultDestination: 'artifacts'
+  +   },
+  +   stage: {
+  +     attempt: 1,
+  +     id: '5a4b4922-bfe9-4986-a99d-b5c8345c2edb',
+  +     position: 0,
+  +     processNodeId: null
+  +   },
+  +   traceContext: {
+  +     traceId: '3872a20d4530a162a8e172c1215e9fd8',
+  +     traceparent: '00-3872a20d4530a162a8e172c1215e9fd8-b9b593236ab62163-01'
+  +   }
+  + }
+  - null
+  
+      at TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:780:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { leaseId: '9be76e92-63e1-43a8-bdbd-1ff82303d744', expiresAt: '2026-09-27T00:00:00.919Z', traceContext: { traceId: '3872a20d4530a162a8e172c1215e9fd8', traceparent: '00-3872a20d4530a162a8e172c1215e9fd8-b9b593236ab62163-01' }, run: { id: 'eaff6829-834a-492a-bd01-85f9a3411056', name: 'replica-visible-a', input: 'one', resultDestination: 'artifacts', artifactPath: null }, stage: { id: '5a4b4922-bfe9-4986-a99d-b5c8345c2edb', position: 0, attempt: 1, processNodeId: null }, agent: { id: 'collector', name: 'Сборщик', role: 'Собирает факты и формирует проверяемый набор исходных данных', systemPrompt: 'Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.', model: null, runtime: 'single', runtimeConfig: [Object], specialists: [], promptVersion: 'b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f', definitionVersion: '5a0a48701bd8f5fc427c618f736510498380aa3b05ee31f2f03c6270476c3618' }, context: [], routing: { schemaVersion: 1, selectedAt: '2026-09-26T23:57:00.913Z', strategy: 'balanced', requestedModel: null, selectedModel: null, nodeId: 'ebb1edf1-aa31-4bb3-8cc5-1f5dcdb0994c', nodeName: 'node-b-1ac9b2ec', alternativesConsidered: 9, fallbackFrom: null, reasons: [Array], signals: [Object] }, mcpTools: [], knowledge: { groups: [], memory: [] } },
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -9104,9 +9104,6 @@ export class AgatStore {
         AND s.lease_expires_at > ?
     `).get(nodeId, leaseId, nowIso()) as Row | undefined;
     if (!stage) throw new Error("Активная stage-аренда не найдена");
-    if (this.stateStoreDriver === "postgresql") {
-      this.db.prepare("SELECT id FROM runs WHERE id = ? FOR UPDATE").get(String(stage.run_id));
-    }
     if (!Array.isArray(request.queries) || request.queries.length < 1 || request.queries.length > 8) {
       throw new Error("Retrieval должен содержать от 1 до 8 embedding queries");
     }
@@ -9200,6 +9197,26 @@ export class AgatStore {
         vectorSha256: sha256Text(JSON.stringify(vector)),
       });
     }
+    // Rank without PostgreSQL row locks so renewal/cancellation can proceed.
+    // Fence the writes with a fresh lease, then lock run for marker allocation.
+    // Stage-before-run matches lease completion and ordinary run cancellation.
+    const currentStage = this.db.prepare(`
+      SELECT id, run_id, agent_id, lease_expires_at FROM stages
+      WHERE node_id = ? AND lease_id = ? AND status = 'running' AND lease_expires_at > ?
+      ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE" : ""}
+    `).get(nodeId, leaseId, nowIso()) as Row | undefined;
+    if (!currentStage || currentStage.id !== stage.id || currentStage.run_id !== stage.run_id || currentStage.agent_id !== stage.agent_id) {
+      throw new Error("Активная stage-аренда не найдена");
+    }
+    if (this.stateStoreDriver === "postgresql") {
+      const currentRun = this.db.prepare("SELECT project_id, knowledge_collection_ids_json FROM runs WHERE id = ? FOR UPDATE")
+        .get(String(stage.run_id)) as Row | undefined;
+      if (!currentRun || currentRun.project_id !== stage.project_id || currentRun.knowledge_collection_ids_json !== stage.knowledge_collection_ids_json) {
+        throw new Error("Контекст knowledge retrieval изменился во время поиска");
+      }
+    }
+    const leaseExpiresAt = Date.parse(String(currentStage.lease_expires_at));
+    if (!Number.isFinite(leaseExpiresAt) || leaseExpiresAt <= Date.now()) throw new Error("Активная stage-аренда не найдена");
     const previousSources = this.getRunKnowledgeSources(String(stage.run_id), project) ?? [];
     const lastMarker = previousSources.reduce((max, source) => Math.max(max, /^K\d+$/.test(source.marker) ? Number(source.marker.slice(1)) : 0), 0);
     const hits = [...bestByChunk.values()]
