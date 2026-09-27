@@ -8981,19 +8981,7 @@ export class AgatStore {
   }
 
   renewKnowledgeEmbeddingLease(nodeId: string, leaseId: string): boolean {
-    return this.transaction(() => {
-      const job = this.db.prepare(`
-        SELECT id, lease_expires_at FROM knowledge_embedding_jobs
-        WHERE node_id = ? AND lease_id = ? AND status = 'running'
-        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE" : ""}
-      `).get(nodeId, leaseId) as Row | undefined;
-      if (unexpiredLeaseDeadline(job) === null) return false;
-      const result = this.db.prepare(`
-        UPDATE knowledge_embedding_jobs SET lease_expires_at = ?, updated_at = ?
-        WHERE node_id = ? AND lease_id = ? AND status = 'running'
-      `).run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId);
-      return result.changes === 1;
-    });
+    return this.renewWorkerLease("knowledge_embedding_jobs", nodeId, leaseId);
   }
 
   completeKnowledgeEmbedding(
@@ -12173,13 +12161,34 @@ export class AgatStore {
   }
 
   renewLease(nodeId: string, leaseId: string): boolean {
-    const result = this.db
-      .prepare(`
-        UPDATE stages SET lease_expires_at = ?, updated_at = ?
-        WHERE node_id = ? AND lease_id = ? AND status = 'running' AND lease_expires_at > ?
-      `)
-      .run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId, nowIso());
-    return result.changes === 1;
+    return this.renewWorkerLease("stages", nodeId, leaseId);
+  }
+
+  private renewWorkerLease(table: "stages" | "knowledge_embedding_jobs", nodeId: string, leaseId: string): boolean {
+    const expiredDuringWrite = new Error("Аренда истекла во время продления");
+    try {
+      return this.transaction(() => {
+        const lease = this.db.prepare(`
+          SELECT id, lease_expires_at FROM ${table}
+          WHERE node_id = ? AND lease_id = ? AND status = 'running'
+          ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE" : ""}
+        `).get(nodeId, leaseId) as Row | undefined;
+        const expiresAt = unexpiredLeaseDeadline(lease);
+        if (expiresAt === null) return false;
+        const result = this.db.prepare(`
+          UPDATE ${table} SET lease_expires_at = ?, updated_at = ?
+          WHERE node_id = ? AND lease_id = ? AND status = 'running'
+        `).run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId);
+        // A table lock can delay UPDATE after the ownership row was acquired.
+        // Rejecting must roll the written deadline back before returning false.
+        if (expiresAt <= Date.now()) throw expiredDuringWrite;
+        return result.changes === 1;
+      });
+    } catch (error) {
+      // Nested callers must propagate to the transaction that owns rollback.
+      if (error === expiredDuringWrite && this.transactionDepth === 0) return false;
+      throw error;
+    }
   }
 
   appendLeaseEvent(

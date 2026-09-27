@@ -785,7 +785,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           return status.knowledgeSearch.queued === 1;
         }, "The second retrieval was not queued before main's lock wait");
         const renewal = post(`/leases/${f.lease.leaseId}/renew`, {});
-        await f.waitForLock(/UPDATE stages SET lease_expires_at/, `agat-${instance}-system`);
+        await f.waitForLock(/SELECT id, lease_expires_at FROM stages[\s\S]*FOR UPDATE/, `agat-${instance}-system`);
         const health = fetch(`${base}/health`, { signal: AbortSignal.timeout(10_000) }).then(async response => ({ status: response.status, body: await response.json() }));
         pending.push(health);
         // Parent is independent of main's blocked event loop. Keep the run lock
@@ -1072,6 +1072,113 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       }
     });
   });
+
+  for (const race of ["expiry", "reassignment", "renewal"] as const) {
+    it(`stage renewal checks current ownership after ${race} during its SQL lock wait`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = await stageMaintenanceFixture(1);
+        try {
+          const other = race === "reassignment" ? f.first.registerNode({ enrollmentToken: "test", name: `${f.project}-replacement`,
+            platform: "test", models: [f.project], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain }) : null;
+          const expires = Date.now() + 5_000, replacementId = randomUUID();
+          f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+          await f.writer.query("BEGIN");
+          await f.writer.query("SELECT id FROM stages WHERE id = $1 FOR UPDATE", [f.lease.stage.id]);
+          if (other) await f.writer.query("UPDATE stages SET node_id = $1, lease_id = $2, lease_expires_at = $3 WHERE id = $4",
+            [other.id, replacementId, new Date(Date.now() + 60_000).toISOString(), f.lease.stage.id]);
+          if (race === "renewal") await f.writer.query("UPDATE stages SET lease_expires_at = $1 WHERE id = $2",
+            [new Date(Date.now() + 60_000).toISOString(), f.lease.stage.id]);
+          const pending = fetch(`http://127.0.0.1:${f.children[0]!.port}/api/v1/leases/${f.lease.leaseId}/renew`, {
+            method: "POST", headers: { authorization: `Bearer ${f.worker.token}`, "content-type": "application/json" },
+            body: "{}", signal: AbortSignal.timeout(15_000),
+          }).then(async response => ({ status: response.status, body: await response.text() }))
+            .then(value => ({ value }), error => ({ error }));
+          f.pending.push(pending);
+          await eventually(async () => {
+            await f.writer.query("SELECT pg_stat_clear_snapshot()");
+            const waiting = await f.writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+              [`agat-${f.children[0]!.instance}-system`]);
+            if (!waiting.rows.length) return false;
+            assert.match(waiting.rows[0].query, /FOR UPDATE|UPDATE stages SET lease_expires_at/); return true;
+          }, "Stage renewal did not reach the ownership lock");
+          assert.ok(Date.now() < expires);
+          if (race !== "reassignment") await delay(Math.max(0, expires - Date.now() + 50));
+          await f.writer.query(race === "expiry" ? "ROLLBACK" : "COMMIT");
+          const result = await within(pending, 5_000, "Stage renewal did not finish after releasing ownership");
+          assert.ok("value" in result);
+          context.diagnostic(`Stage renewal/${race}: HTTP ${result.value.status}`);
+          assert.equal(result.value.status, race === "renewal" ? 204 : 404);
+          if (other) {
+            const stage = f.first.db.prepare("SELECT node_id, lease_id FROM stages WHERE id = ?").get(f.lease.stage.id)!;
+            assert.equal(stage.node_id, other.id); assert.equal(stage.lease_id, replacementId);
+            f.first.completeLease(other.id, replacementId, "CURRENT OWNER");
+          } else if (race === "renewal") {
+            f.first.completeLease(f.worker.id, f.lease.leaseId, "RENEWED OWNER");
+          } else {
+            f.first.maintenanceTick(); f.first.heartbeatNode(f.worker.id, {});
+            let replacement: ReturnType<typeof f.first.leaseNext> = null;
+            await eventually(async () => { replacement = f.first.leaseNext(f.worker.id); return replacement !== null; },
+              "Replacement stage lease remained unavailable after expiry");
+            assert.ok(replacement); assert.notEqual(replacement.leaseId, f.lease.leaseId);
+            assert.equal(f.first.renewLease(f.worker.id, f.lease.leaseId), false);
+            f.first.completeLease(f.worker.id, replacement.leaseId, "REASSIGNED OWNER");
+          }
+          assert.equal(f.first.getRun(f.run.id, f.project)!.status, "completed");
+        } finally { await f.close(); }
+      });
+    });
+  }
+
+  for (const kind of ["stage", "embedding"] as const) {
+    it(`${kind} renewal rolls back when its UPDATE waits past the admitted deadline`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = kind === "stage" ? await stageMaintenanceFixture(1) : await embeddingLeaseFixture();
+        try {
+          const table = kind === "stage" ? "stages" : "knowledge_embedding_jobs";
+          const expires = Date.now() + 5_000;
+          f.first.db.prepare(`UPDATE ${table} SET lease_expires_at = ? WHERE lease_id = ?`)
+            .run(new Date(expires).toISOString(), f.lease.leaseId);
+          await f.writer.query("BEGIN");
+          // SHARE permits the ownership SELECT FOR UPDATE (ROW SHARE), but
+          // blocks the later UPDATE (ROW EXCLUSIVE). Exercise both intervals.
+          await f.writer.query(`LOCK TABLE ${table} IN SHARE MODE`);
+          const route = kind === "stage" ? "leases" : "workers/knowledge/leases";
+          const pending = fetch(`http://127.0.0.1:${f.children[0]!.port}/api/v1/${route}/${f.lease.leaseId}/renew`, {
+            method: "POST", headers: { authorization: `Bearer ${f.worker.token}`, "content-type": "application/json" },
+            body: "{}", signal: AbortSignal.timeout(15_000),
+          }).then(async response => ({ status: response.status, body: await response.text() }))
+            .then(value => ({ value }), error => ({ error }));
+          f.pending.push(pending);
+          await eventually(async () => {
+            await f.writer.query("SELECT pg_stat_clear_snapshot()");
+            const waiting = await f.writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+              [`agat-${f.children[0]!.instance}-system`]);
+            if (!waiting.rows.length) return false;
+            assert.match(waiting.rows[0].query, new RegExp(`UPDATE ${table} SET lease_expires_at`)); return true;
+          }, "Renewal did not reach the UPDATE lock");
+          assert.ok(Date.now() < expires);
+          await delay(Math.max(0, expires - Date.now() + 50)); await f.writer.query("ROLLBACK");
+          const result = await within(pending, 5_000, "Renewal did not finish after releasing the UPDATE lock");
+          assert.ok("value" in result);
+          context.diagnostic(`${kind} renewal/UPDATE wait: HTTP ${result.value.status}`);
+          assert.equal(result.value.status, 404);
+          const old = f.first.db.prepare(`SELECT lease_expires_at FROM ${table} WHERE lease_id = ?`).get(f.lease.leaseId);
+          if (old) assert.equal(old.lease_expires_at, new Date(expires).toISOString(), "Expired ownership must not be extended");
+          if ("recover" in f) await f.recover();
+          else {
+            f.first.maintenanceTick(); f.first.heartbeatNode(f.worker.id, {});
+            let replacement: ReturnType<typeof f.first.leaseNext> = null;
+            await eventually(async () => { replacement = f.first.leaseNext(f.worker.id); return replacement !== null; },
+              "Replacement lease remained unavailable after rejected renewal");
+            assert.ok(replacement); assert.notEqual(replacement.leaseId, f.lease.leaseId);
+            assert.equal(f.first.renewLease(f.worker.id, f.lease.leaseId), false);
+            f.first.completeLease(f.worker.id, replacement.leaseId, "CURRENT OUTPUT");
+            assert.equal(f.first.getRun(f.run.id, f.project)!.status, "completed");
+          }
+        } finally { await f.close(); }
+      });
+    });
+  }
 
   for (const action of ["renew", "complete", "fail"] as const) {
     for (const race of ["expiry", "reassignment", "renewal"] as const) {
@@ -1388,16 +1495,17 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         const instance = `shadow-expiry-http-${suffix}`;
         let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
         const pending: Promise<unknown>[] = [];
+        const project = `shadow-expiry-${suffix}`, model = project;
+        let runId: string | undefined;
         try {
           await writer.connect();
           first.updateScheduler("parallel", 10);
-          const project = `shadow-expiry-${suffix}`, model = project;
           first.createProject({ id: project, name: project, homeRegion: cellRegion,
             allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
           const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model }, project);
           const worker = first.registerNode({ enrollmentToken: "test", name: model, platform: "test", models: [model],
             maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
-            labels: { decisionShadow: "local_decision_shadow_v2" } });
+            labels: { decisionShadow: "local_decision_shadow_v2", pool: project } });
           const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
             kind: "boolean", question: "Confirmed?", options: [
               { id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] });
@@ -1411,7 +1519,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           const process = first.createProcess({ name: `Shadow expiry ${suffix}`, graph }, project);
           first.publishProcess(String(process.id), project);
           const run = first.startProcess(String(process.id), { input: "Synthetic source", priority: 100 }, project)!;
-          const runId = String(run.runId);
+          runId = String(run.runId);
           const lease = first.leaseNext(worker.id)!; assert.ok(lease?.decisionShadow);
           assert.equal(lease.run.id, runId);
           const payload = { status: "unavailable", reason: "timeout" };
@@ -1452,7 +1560,10 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           assert.deepEqual(saved, previous); assert.equal(eventCount, previous ? 1 : 0);
           assert.equal(first.renewLease(worker.id, lease.leaseId), false);
           first.maintenanceTick(); first.heartbeatNode(worker.id, {});
-          const replacement = first.leaseNext(worker.id)!; assert.ok(replacement);
+          let replacement: ReturnType<typeof first.leaseNext> = null;
+          await eventually(async () => { replacement = first.leaseNext(worker.id); return replacement !== null; },
+            "Replacement shadow lease remained unavailable after maintenance");
+          assert.ok(replacement);
           assert.notEqual(replacement.leaseId, lease.leaseId);
           assert.throws(() => first.recordDecisionShadow(worker.id, lease.leaseId, payload), /аренда/);
           const recovered = first.recordDecisionShadow(worker.id, replacement.leaseId, payload);
@@ -1464,7 +1575,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           assert.equal(events().length, 1);
         } finally {
           await writer.query("ROLLBACK").catch(() => {}); await child?.stop(); await Promise.allSettled(pending);
-          await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+          if (runId) first.cancelRun(runId, project);
+          first.markWorkerPoolOffline(project); await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
         }
       });
     });

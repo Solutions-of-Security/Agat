@@ -1,0 +1,87 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:85907) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ stage renewal checks current ownership after expiry during its SQL lock wait (5860.046083ms)
+  ℹ Stage renewal/expiry: HTTP 204
+  ✔ stage renewal checks current ownership after reassignment during its SQL lock wait (767.776083ms)
+  ℹ Stage renewal/reassignment: HTTP 404
+  ✔ stage renewal checks current ownership after renewal during its SQL lock wait (5789.820583ms)
+  ℹ Stage renewal/renewal: HTTP 204
+  ✖ stage renewal rolls back when its UPDATE waits past the admitted deadline (5780.677042ms)
+  ℹ stage renewal/UPDATE wait: HTTP 204
+  ✖ embedding renewal rolls back when its UPDATE waits past the admitted deadline (5789.298875ms)
+  ℹ embedding renewal/UPDATE wait: HTTP 204
+✖ PostgreSQL Fleet/HA integration (25390.434875ms)
+ℹ tests 5
+ℹ suites 1
+ℹ pass 2
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 25897.172917
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20687
+✖ stage renewal checks current ownership after expiry during its SQL lock wait (5860.046083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  204 !== 404
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1110:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1078:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 21)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 204,
+    expected: 404,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:23954
+✖ stage renewal rolls back when its UPDATE waits past the admitted deadline (5780.677042ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  204 !== 404
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1164:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1134:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 204,
+    expected: 404,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:23954
+✖ embedding renewal rolls back when its UPDATE waits past the admitted deadline (5789.298875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  204 !== 404
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1164:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1134:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 204,
+    expected: 404,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
