@@ -1,0 +1,45 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:96402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ serializes embedding dimensions across jobs with different dimensions (1198.812ms)
+  ℹ Concurrent dimensions/different dimensions: HTTP 200/200, first collection=2,3
+  ✔ serializes embedding dimensions across jobs with matching dimensions (1185.849792ms)
+  ℹ Concurrent dimensions/matching dimensions: HTTP 200/200, first collection=2
+  ✔ serializes embedding dimensions across jobs with separate collections (1176.840875ms)
+  ℹ Concurrent dimensions/separate collections: HTTP 200/200, first collection=2
+✖ PostgreSQL Fleet/HA integration (5014.124958ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5426.811583
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20747
+✖ serializes embedding dimensions across jobs with different dimensions (1198.812ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  200 !== 400
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1113:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1078:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 21)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,47 @@
+(node:97461) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ embedding renew rejects an invalid lease (before request) without changing the index (43.546959ms)
+ℹ renew/before request: accepted=false, job=running, document=indexing
+✔ embedding renew rejects an invalid lease (invalid expiry) without changing the index (32.896042ms)
+ℹ renew/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (before request) without changing the index (33.175209ms)
+ℹ complete/before request: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (invalid expiry) without changing the index (32.083708ms)
+ℹ complete/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (during job read) without changing the index (31.672625ms)
+ℹ complete/during job read: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (before request) without changing the index (30.653ms)
+ℹ fail/before request: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (invalid expiry) without changing the index (31.053791ms)
+ℹ fail/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (during job read) without changing the index (31.421917ms)
+ℹ fail/during job read: accepted=false, job=running, document=indexing
+✔ embedding complete rolls back its index and event if persistence outlasts the lease (31.755209ms)
+✔ embedding fail rolls back its index and event if persistence outlasts the lease (32.011291ms)
+✔ embedding maintenance rolls back retry if the document update fails (33.012833ms)
+✔ embedding maintenance rolls back terminal failure if the document update fails (31.24425ms)
+(node:97462) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ expired retrieval leases fail before maintenance and stay invalid after reassignment (49.233ms)
+✔ SQLite rechecks lease expiry after consuming candidates and rolls back before storing sources (35.8595ms)
+✔ SQLite rolls back retrieval and its event when the lease expires during event persistence (35.409167ms)
+✔ wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds (33.318042ms)
+✔ every selected collection is validated and one incompatible query rolls the whole retrieval back (35.605458ms)
+✔ a selected empty optional collection remains a valid empty search, but not for the wrong model (31.441ms)
+✔ damaged stored vectors are reported as an index error instead of discarded as missing evidence (33.16175ms)
+(node:97463) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ local knowledge and memory
+  ✔ indexes locally, retrieves with provenance and records an auditable trace (47.542833ms)
+  ✔ enforces project snapshots and embedding dimensions (35.658292ms)
+  ✔ accounts embedding work in the same global scheduler budget (32.839959ms)
+  ✔ chunks at readable boundaries and rejects unsafe vectors (0.265167ms)
+✔ local knowledge and memory (117.125ms)
+ℹ tests 23
+ℹ suites 1
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 797.531791

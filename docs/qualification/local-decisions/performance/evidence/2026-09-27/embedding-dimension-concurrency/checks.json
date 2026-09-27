@@ -1,0 +1,82 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "4a761c0125eb576ecbf9eb6b8d4cf69a3daa109e",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforePostgres": {
+      "expectedFail": 1,
+      "controlPass": 2,
+      "mixedCollectionDimensions": [
+        2,
+        3
+      ]
+    },
+    "initialPostgres": {
+      "pass": 3,
+      "fail": 0,
+      "preservedCollectionDimensions": [
+        2
+      ]
+    },
+    "targeted": {
+      "pass": 23,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 9,
+      "fail": 0
+    },
+    "coordinator": {
+      "pass": 284,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 62,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1524,
+      "markdownFiles": 181,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "boundary": "New completions serialize dimension selection per collection; independent collections can progress concurrently. Does not repair existing mixed vectors, qualify model quality or guarantee absence of every deadlock. Lease time fence remains before COMMIT.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "4837c0df0d9157441443f4e14780c5299f0fef677aff6528b7931a27598db411",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "a9c6f99ff341aba3fea99c393046b3a1697ab7e9a6e6b090ef910d3a69a58db6"
+  },
+  "logSha256": {
+    "before-postgres.log": "eba101b4623d4d6858e9a636f978717ac14b2d17e3d53843941d3ff0848cfeb5",
+    "postgres-initial.log": "f60ffba37ef3bf50ce314b46162b5cf52504bbc1a4a0b3657ce3fdb330ec12fb",
+    "targeted.log": "84fd7b8abf805250ffb18a3b8c9834ded3564fdf457fb4e2dd5c705a51b3cf51",
+    "postgres-targeted.log": "dc1e67bc47009ca99c0e99cadb80b885d70ad71fdb44940cebb2a93473fb0450",
+    "coordinator.log": "c6498fca4b92fc21c3e08d2446485d071a61bccd1ddcadc036daecaaa4ee42e8",
+    "postgres.log": "b07c48083313d36148db9e89557976352186667f361e911cea76a7b999853108",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "ad2ae4113050254d064d197efd40124f652f39090916560d11c9256df55133b2",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-postgres.log": "10b65d5c279ba89f2bfa40e0d509e31e97976ab6746315a8097f1ee61a7b2e25",
+    "postgres-initial.log": "f60ffba37ef3bf50ce314b46162b5cf52504bbc1a4a0b3657ce3fdb330ec12fb",
+    "targeted.log": "84fd7b8abf805250ffb18a3b8c9834ded3564fdf457fb4e2dd5c705a51b3cf51",
+    "postgres-targeted.log": "dc1e67bc47009ca99c0e99cadb80b885d70ad71fdb44940cebb2a93473fb0450",
+    "coordinator.log": "c6498fca4b92fc21c3e08d2446485d071a61bccd1ddcadc036daecaaa4ee42e8",
+    "postgres.log": "b07c48083313d36148db9e89557976352186667f361e911cea76a7b999853108",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "ad2ae4113050254d064d197efd40124f652f39090916560d11c9256df55133b2",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostics preserved. Baseline failed race retained separately from passing controls and regression."
+}

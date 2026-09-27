@@ -1,0 +1,34 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:98468) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ serializes embedding dimensions across jobs with different dimensions (1267.889584ms)
+  ℹ Concurrent dimensions/different dimensions: HTTP 200/400, first collection=2
+  ✔ serializes embedding dimensions across jobs with matching dimensions (1518.050291ms)
+  ℹ Concurrent dimensions/matching dimensions: HTTP 200/200, first collection=2
+  ✔ serializes embedding dimensions across jobs with separate collections (1297.165625ms)
+  ℹ Concurrent dimensions/separate collections: HTTP 200/200, first collection=2
+  ✔ embedding completion rechecks lease expiry after waiting for its collection (6041.687791ms)
+  ℹ Completion after collection wait: HTTP 400, indexed=0, events=0
+  ✔ embedding complete respects expiry while waiting for job ownership over HTTP (6347.713292ms)
+  ℹ Embedding complete/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects reassignment while waiting for job ownership over HTTP (840.234625ms)
+  ℹ Embedding complete/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects renewal while waiting for job ownership over HTTP (6437.602166ms)
+  ℹ Embedding complete/renewal: HTTP 200, job=completed, document=ready, indexed=1, events=1
+  ✔ embedding complete rolls back when an event lock outlasts its lease over HTTP (6668.847083ms)
+  ℹ Embedding complete/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding maintenance stays responsive while a late completion rolls back across coordinators (7471.098209ms)
+  ℹ Embedding maintenance/completion: HTTP 400, health=200, job=running, document=indexing, indexed=0, events=0
+✔ PostgreSQL Fleet/HA integration (40195.036042ms)
+ℹ tests 9
+ℹ suites 1
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 40842.189292
