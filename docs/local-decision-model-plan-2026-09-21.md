@@ -96,6 +96,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Ограничение model HTTP-ответов embedding](./qualification/local-decisions/performance/embedding-http-response-limits.md) закрывает неограниченное чтение успешного JSON и ненужного хвоста HTTPError: 8 МиБ / 4096 байт, корректный 32×4096 batch сохраняется. Целевые HTTP 7/7 и реальные worker/PostgreSQL 5/5 подтверждают отказ, новую аренду и единственный вектор успешной попытки. Следующий gate — полный срок model HTTP и отмена во время медленного ответа.
 
+[Общий срок embedding HTTP](./qualification/local-decisions/performance/embedding-http-deadline.md) охватывает DNS/connect/redirect/body через disposable urllib subprocess. При deadline и окончательной потере lease helper завершается и reaped до освобождения слота, proxy/TLS сохраняются. Реальные worker/PostgreSQL — 8/8; потеря renewal освобождает слот до возврата model response. Следующий gate — измерить цену нового транспорта и ресурсы серии отмен при batch/concurrency 1/32 и 1/4.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
+from embedding_http import request_embedding_response, validate_timeout as validate_embedding_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
 from telemetry import (
@@ -148,6 +149,7 @@ class WorkerConfig:
     dry_run: bool
     once: bool
     decision_url: str = ""
+    embedding_timeout: float = 900
 
 
 class CoordinatorClient:
@@ -511,6 +513,7 @@ class LocalModelClient:
         coordinator_client: CoordinatorClient | None = None,
         mcp_approval_timeout: float = 300,
         decision_client: LocalDecisionClient | None = None,
+        embedding_timeout: float = 900,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -521,8 +524,10 @@ class LocalModelClient:
         self.mcp_approval_timeout = max(30.0, min(86_400.0, mcp_approval_timeout))
         self._tool_context = threading.local()
         self.decision_client = decision_client
+        validate_embedding_timeout(embedding_timeout)
+        self.embedding_timeout = embedding_timeout
 
-    def embed(self, model: str, inputs: list[str]) -> list[list[float]]:
+    def embed(self, model: str, inputs: list[str], *, cancelled: threading.Event | None = None) -> list[list[float]]:
         if not model.strip():
             raise RuntimeError("Embedding model is required")
         if not inputs or len(inputs) > 32 or any(not isinstance(item, str) or not item for item in inputs):
@@ -533,26 +538,10 @@ class LocalModelClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         with self.telemetry.model_span(model, self.base_url):
             self.telemetry.inject(headers)
-            request = urllib.request.Request(
-                f"{self.base_url}/embeddings",
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=900) as response:
-                    raw = response.read(MAX_EMBEDDING_RESPONSE_BYTES + 1)
-                if len(raw) > MAX_EMBEDDING_RESPONSE_BYTES:
-                    raise RuntimeError(f"Embedding endpoint response exceeds {MAX_EMBEDDING_RESPONSE_BYTES} bytes")
-                result = json.loads(raw.decode("utf-8"))
-            except urllib.error.HTTPError as error:
-                with error:
-                    detail = error.read(MAX_EMBEDDING_ERROR_BYTES).decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"Embedding endpoint returned HTTP {error.code}: {detail[:1000]}"
-                ) from error
-            except urllib.error.URLError as error:
-                raise RuntimeError(f"Embedding endpoint unavailable: {error.reason}") from error
+            raw = request_embedding_response(f"{self.base_url}/embeddings", payload, headers,
+                timeout=self.embedding_timeout, cancelled=cancelled,
+                max_response_bytes=MAX_EMBEDDING_RESPONSE_BYTES, max_error_bytes=MAX_EMBEDDING_ERROR_BYTES)
+            result = json.loads(raw.decode("utf-8"))
 
         raw_data = result.get("data") if isinstance(result, dict) else None
         if not isinstance(raw_data, list) or len(raw_data) != len(inputs):
@@ -2610,7 +2599,7 @@ def execute_knowledge_lease(
         vectors = (
             [model_client.dry_run_embedding(content) for content in contents]
             if dry_run
-            else model_client.embed(embedding_model, contents)
+            else model_client.embed(embedding_model, contents, cancelled=cancelled)
         )
         # A definitive renewal rejection makes both completion and failure
         # obsolete. The coordinator still fences races after this local check.
@@ -2941,6 +2930,7 @@ def _worker_loop_with_telemetry(
         coordinator_client=client,
         mcp_approval_timeout=config.mcp_approval_timeout,
         decision_client=LocalDecisionClient(config.decision_url) if config.decision_url else None,
+        embedding_timeout=config.embedding_timeout,
     )
     stop = threading.Event()
 
@@ -3064,6 +3054,10 @@ def parse_args() -> WorkerConfig:
     )
     parser.add_argument(
         "--model-api-key", default=os.getenv("AGAT_MODEL_API_KEY", "ollama")
+    )
+    parser.add_argument(
+        "--embedding-timeout", type=float, default=os.getenv("AGAT_EMBEDDING_TIMEOUT", "900"),
+        help="Total seconds for one embedding HTTP call, including DNS, connection and body (0 < value <= 900)",
     )
     parser.add_argument(
         "--model-discovery",
@@ -3282,6 +3276,11 @@ def parse_args() -> WorkerConfig:
     except ValueError as error:
         parser.error(str(error))
 
+    try:
+        validate_embedding_timeout(args.embedding_timeout)
+    except ValueError as error:
+        parser.error(str(error))
+
     return WorkerConfig(
         coordinator_url=args.coordinator,
         enrollment_token=args.enrollment_token,
@@ -3289,6 +3288,7 @@ def parse_args() -> WorkerConfig:
         models=models,
         embedding_models=embedding_models,
         model_base_url=args.model_url,
+        embedding_timeout=args.embedding_timeout,
         model_api_key=args.model_api_key,
         model_discovery=args.model_discovery,
         model_profiles=explicit_profiles,

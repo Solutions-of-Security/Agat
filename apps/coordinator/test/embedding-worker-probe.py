@@ -29,20 +29,24 @@ def main() -> int:
                 "--model-discovery", "off", "--concurrency", "1", "--poll-interval", "0.2",
                 "--region", supplied["region"], "--residency-domain", supplied["residencyDomain"],
                 "--no-web"]
+    if "embeddingTimeout" in supplied:
+        sys.argv.extend(["--embedding-timeout", str(supplied["embeddingTimeout"])])
     if supplied.get("dryRun", True):
         sys.argv.append("--dry-run")
     events: list[dict] = []
     requests: list[dict] = []
+    transports: list[dict] = []
     active_requests: dict[int, dict] = {}
     lock = threading.Lock()
     execute_code = agat_worker.execute_knowledge_lease.__code__
     renew_code = agat_worker.knowledge_lease_renewer.__code__
     request_code = agat_worker.CoordinatorClient.request.__code__
     error_code = agat_worker.ApiError.__init__.__code__
+    transport_code = agat_worker.request_embedding_response.__code__
 
     def observe(frame, event, result):
         code = frame.f_code
-        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code}:
+        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code, transport_code}:
             return
         thread_id = threading.get_native_id()
         with lock:
@@ -74,7 +78,12 @@ def main() -> int:
                         record["documentId"] = result["document"]["id"]
                         record["chunkIds"] = [item["id"] for item in result["chunks"]]
                     print("AGAT_EMBEDDING_WORKER_REQUEST " + json.dumps(record), flush=True)
-            elif event == "call" and thread_id in active_requests:
+            elif code is transport_code and event == "return":
+                process = frame.f_locals.get("process")
+                if process is not None:
+                    transports.append({"pid": process.pid, "returncode": process.returncode,
+                                       "stdinClosed": process.stdin.closed, "stdoutClosed": process.stdout.closed})
+            elif code is error_code and event == "call" and thread_id in active_requests:
                 active_requests[thread_id]["status"] = frame.f_locals["status"]
 
     config = agat_worker.parse_args()
@@ -87,7 +96,7 @@ def main() -> int:
         threading.setprofile(None)
         credentials.unlink(missing_ok=True)
     print("AGAT_EMBEDDING_WORKER_PROBE " + json.dumps({
-        "exitCode": code, "python": sys.version.split()[0], "events": events, "requests": requests,
+        "exitCode": code, "python": sys.version.split()[0], "events": events, "requests": requests, "transports": transports,
         "activeRequests": len(active_requests),
         "liveThreads": [thread.name for thread in threading.enumerate() if thread is not threading.main_thread()],
     }), flush=True)

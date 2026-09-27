@@ -92,13 +92,15 @@ AGAT_MODEL_BASE_URL=http://127.0.0.1:11434/v1 \
 python3 workers/agat_worker.py
 ```
 
+`AGAT_EMBEDDING_TIMEOUT` (или `--embedding-timeout`) задаёт общий срок одного embedding HTTP-вызова в секундах: конечное число больше 0 и не больше 900, по умолчанию 900. Срок охватывает DNS, подключение, redirects и чтение тела; ожидание реализовано отдельным процессом, который завершается и дожидается очистки при deadline или окончательной потере embedding-аренды. Это освобождает слот worker, но не обещает остановку вычислений на model server. Тот же предел применяется к query embeddings.
+
 Несколько имён задаются через запятую. Worker сообщает их при регистрации и heartbeat; coordinator выдаёт embedding job только узлу, который объявил точную модель collection. Пустой `AGAT_EMBEDDING_MODELS` безопасно отключает индексацию на этом worker.
 
 Docker Compose передаёт `AGAT_EMBEDDING_MODELS`, а Kubernetes — это же значение базовому worker и `AGAT_LOCAL_WORKER_EMBEDDING_MODELS` управляемым worker-пулам. Модель должна быть установлена до загрузки документа.
 
 ## Реальный Ollama E2E
 
-Unit-тесты не обращаются к model endpoint. Для воспроизводимой проверки настоящего локального контура используется отдельный opt-in тест:
+Unit-тесты используют контролируемые loopback HTTP/HTTPS endpoints; настоящая модель в них не запускается. Для воспроизводимой проверки настоящего локального контура используется отдельный opt-in тест:
 
 ```bash
 ollama pull nomic-embed-text

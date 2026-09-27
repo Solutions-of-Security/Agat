@@ -4,7 +4,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import threading
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from agat_worker import (
     ApiError, CoordinatorClient, LocalModelClient, execute_knowledge_lease,
@@ -83,7 +83,7 @@ class EmbeddingCancellationTests(unittest.TestCase):
             finally:
                 renewal_finished.set()
 
-        def embed(_model, _contents):
+        def embed(_model, _contents, *, cancelled):
             model_entered.set()
             if not renewal_finished.wait(2):
                 raise RuntimeError("Controlled renewal did not finish during the model call")
@@ -97,7 +97,7 @@ class EmbeddingCancellationTests(unittest.TestCase):
         with patch("agat_worker.knowledge_lease_renewer", side_effect=renew), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             execute_knowledge_lease(client, model, lease, dry_run=False)
         self.assertEqual(background_errors, [])
-        model.embed.assert_called_once_with("local", ["Synthetic input"])
+        model.embed.assert_called_once_with("local", ["Synthetic input"], cancelled=ANY)
         client.knowledge_renew.assert_called_once_with("lease")
         self.assertEqual(len(renewal_threads), 1)
         self.assertFalse(renewal_threads[0].is_alive())

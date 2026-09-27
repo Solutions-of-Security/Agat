@@ -125,3 +125,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Отмена после окончательного отказа embedding renewal](./embedding-worker-lease-cancellation.md): HTTP 404 во время model HTTP прекращает renewer и отправку устаревших complete/fail; временные ошибки связи сохраняют нормальное продолжение.
 
 [Ограничение чтения embedding model HTTP](./embedding-http-response-limits.md): успешный JSON до 8 МиБ, error prefix до 4096 байт; два real-worker сценария подтверждают recovery с новой арендой и сохранением только успешного результата.
+
+[Общий срок и отмена embedding HTTP](./embedding-http-deadline.md): bounded ожидание DNS/connect/redirect/body, сохранение urllib proxy/TLS и гарантированное ожидание выхода собственного transport subprocess перед повторным использованием слота.
