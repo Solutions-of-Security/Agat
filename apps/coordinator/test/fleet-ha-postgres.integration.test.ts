@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { before, describe, it } from "node:test";
 
 import pg from "pg";
@@ -54,6 +56,37 @@ function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandi
   return new AgatStore(":postgresql:", storeOptions(instanceId, artifactsDir, knowledgeSearchMaxCandidates));
 }
 
+async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
+  const child = spawn(process.execPath, [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
+    { env, stdio: ["ignore", "pipe", "pipe"] });
+  let diagnostic = "";
+  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+  const closed = new Promise<{ code: number | null; signal: string | null }>(resolve => child.once("close", (code, signal) => resolve({ code, signal })));
+  const stop = async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    let timer: NodeJS.Timeout | undefined;
+    const finished = await Promise.race([closed.then(() => true), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), 5_000); })]);
+    clearTimeout(timer);
+    if (!finished) child.kill("SIGKILL");
+    return closed;
+  };
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Coordinator startup exceeded 30 seconds")), 30_000);
+      const fail = () => { clearTimeout(timer); reject(new Error(`Coordinator startup failed: ${diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>").slice(-1000)}`)); };
+      child.once("error", fail); child.once("close", fail);
+      child.stderr.on("data", (chunk: string) => { diagnostic = (diagnostic + chunk).slice(-8192); });
+      child.stdout.on("data", (chunk: string) => {
+        diagnostic = (diagnostic + chunk).slice(-8192);
+        const match = /АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/.exec(diagnostic);
+        if (match) { clearTimeout(timer); resolve(Number(match[1])); }
+      });
+    });
+    assert.ok(port > 0);
+    return { port, stop };
+  } catch (error) { await stop(); throw error; }
+}
+
 async function retrievalLeaseRaceFixture() {
   const suffix = randomUUID().slice(0, 8);
   const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-lock-"));
@@ -79,7 +112,7 @@ async function retrievalLeaseRaceFixture() {
     executor = await KnowledgeSearchExecutor.create(":postgresql:", storeOptions(application, artifacts));
     await writer.connect();
     const request = { queries: [{ embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 }] };
-    return { first, writer, project, run, node, lease,
+    return { first, writer, project, run, node, lease, request, artifacts,
       search: (leaseId = lease.leaseId) => executor!.search(node.token, node.id, leaseId, request),
       waitForLock: async (queryPattern = /FOR UPDATE/) => {
         const deadline = performance.now() + 5_000;
@@ -434,6 +467,52 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(f.first.db.prepare("SELECT lease_expires_at FROM stages WHERE lease_id = ?").get(f.lease.leaseId)!.lease_expires_at, expires);
         f.first.completeLease(f.node.id, f.lease.leaseId, "completed", []);
       } finally { await f.close(); }
+    });
+  });
+
+  it("starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const instance = `rag-main-${randomUUID().slice(0, 8)}`;
+      const names = [`agat-${instance}-system`, `agat-${instance}-tenant`, `agat-retrieval-${instance}-system`, `agat-retrieval-${instance}-tenant`];
+      try {
+        const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_")));
+        child = await startCoordinatorProcess({ ...env, AGAT_HOST: "127.0.0.1", AGAT_PORT: "0",
+          AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql", AGAT_ARTIFACTS_DIR: f.artifacts,
+          AGAT_POSTGRES_URL: systemUrl, AGAT_POSTGRES_TENANT_URL: tenantUrl, AGAT_POSTGRES_SSL_MODE: "disable",
+          AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: cellRegion, AGAT_RESIDENCY_DOMAIN: cellResidencyDomain,
+          AGAT_COORDINATOR_INSTANCE_ID: instance, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
+          AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000",
+          AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false",
+          AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_SERVE_WEB: "false", AGAT_SEED_DEMO: "false",
+          AGAT_MCP_ENABLED: "false", AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false",
+          AGAT_SIEM_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false", AGAT_TEMPORAL_ENABLED: "false" });
+        const base = `http://127.0.0.1:${child.port}/api/v1`;
+        const health = await fetch(`${base}/health`); assert.equal(health.status, 200);
+        const body = await health.json() as { knowledgeSearch: Record<string, unknown> };
+        assert.deepEqual(body.knowledgeSearch, { execution: "isolated", active: 0, queued: 0, maxPending: 4, accepting: true });
+        const connections = await f.writer.query("SELECT application_name FROM pg_stat_activity WHERE application_name = ANY($1::text[]) ORDER BY application_name", [names]);
+        assert.deepEqual(connections.rows.map(row => row.application_name).sort(), names.sort(), "Each role has one main and one retrieval connection within poolMax=2");
+        const search = () => fetch(`${base}/leases/${f.lease.leaseId}/knowledge/search`, { method: "POST",
+          headers: { authorization: `Bearer ${f.node.token}`, "content-type": "application/json" }, body: JSON.stringify(f.request) });
+        const successful = await search(); assert.equal(successful.status, 200);
+        assert.equal((await successful.json() as { hits: Array<{ marker: string }> }).hits[0]!.marker, "K1");
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 1);
+        await f.writer.query("BEGIN");
+        await f.writer.query("SELECT id FROM runs WHERE id = $1 FOR UPDATE", [f.run.id]);
+        const timedOut = await search(); assert.equal(timedOut.status, 504); await timedOut.json();
+        await f.writer.query("ROLLBACK");
+        const unavailable = await fetch(`${base}/health`); assert.equal(unavailable.status, 503);
+        const status = await unavailable.json() as { status: string; knowledgeSearch: { accepting: boolean } };
+        assert.equal(status.status, "degraded"); assert.equal(status.knowledgeSearch.accepting, false);
+        const refused = await search(); assert.equal(refused.status, 503); await refused.json();
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        const remaining = await f.writer.query("SELECT count(*)::integer AS count FROM pg_stat_activity WHERE application_name = ANY($1::text[])", [names]);
+        assert.equal(remaining.rows[0].count, 0, "Shutdown releases both coordinator and retrieval pools");
+      } finally {
+        await f.writer.query("ROLLBACK"); await child?.stop(); await f.close();
+      }
     });
   });
 

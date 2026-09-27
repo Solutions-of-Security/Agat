@@ -76,7 +76,7 @@ Gate требует `planned <= available`, а каждый role `CONNECTION LIM
 | Environment | Default | Contract |
 |---|---:|---|
 | `AGAT_POSTGRES_EXPECTED_REPLICAS` | `2` | planned coordinator replicas |
-| `AGAT_POSTGRES_POOL_MAX` | `4` | max connections каждого из двух pools на replica |
+| `AGAT_POSTGRES_POOL_MAX` | `4` | общий max connections на роль одной replica; при [isolated retrieval](./local-rag-and-memory.md) делится между main и retrieval pools |
 | `AGAT_POSTGRES_CONNECTION_BUDGET_PERCENT` | `80` | доля non-reserved slots, допустимая для gate |
 | `AGAT_POSTGRES_EXTERNAL_CONNECTION_RESERVE` | `5` | дополнительный operational headroom |
 | `AGAT_POSTGRES_ADMISSION_CONCURRENCY` | planned, max 128 | фактический read-only probe |

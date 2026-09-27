@@ -88,4 +88,6 @@ python3 -m unittest scripts.test.test_decision_performance -v
 
 [Изолированный исполнитель retrieval](./retrieval-isolated-executor.md): полный поиск в постоянном worker, ограниченная очередь и проверки credentials/lease после ожидания. Парный HTTP-опыт с настоящим maintenance подтвердил 84/84 поиска и меньшие наблюдаемые задержки health. SQLite сохраняет задержки фоновых записей; операторский opt-in PostgreSQL требует учёта pool budget, readiness и конфликтующих изменений.
 
+[Операторский PostgreSQL opt-in](./retrieval-postgres-opt-in.md): подключение в main, разделение прежнего pool budget между main и retrieval, health после остановки, проверка настоящего entry point. Default sync сохранён; нагрузка и восстановление полного coordinator продолжаются отдельно.
+
 [Повторная проверка lease перед сохранением](./retrieval-lease-locking.md): поиск отклоняет истечение и отмену во время ожидания; PostgreSQL row locks удерживаются после ranking, чтобы чтение индекса не задерживало продление.

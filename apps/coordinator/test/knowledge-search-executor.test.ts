@@ -47,6 +47,9 @@ test("isolated HTTP retrieval returns committed provenance and distinct markers 
   try {
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const address = server.address(); assert.ok(address && typeof address === "object");
+    const healthUrl = `http://127.0.0.1:${address.port}/api/v1/health`;
+    const health = await fetch(healthUrl); assert.equal(health.status, 200);
+    assert.equal((await health.json() as { knowledgeSearch: { execution: string } }).knowledgeSearch.execution, "isolated");
     const route = `http://127.0.0.1:${address.port}/api/v1/leases/${f.leases[0]!.leaseId}/knowledge/search`;
     const search = (token: string) => fetch(route, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(f.request) });
     assert.equal((await search("invalid")).status, 401);
@@ -57,6 +60,8 @@ test("isolated HTTP retrieval returns committed provenance and distinct markers 
     assert.ok(hits.every(hit => hit.provenance.documentId === f.document.id));
     assert.equal(f.store.getRunKnowledgeSources(f.leases[0]!.run.id)!.length, 2);
     await f.executor.close();
+    const unavailable = await fetch(healthUrl); assert.equal(unavailable.status, 503);
+    assert.equal((await unavailable.json() as { status: string }).status, "degraded");
     assert.equal((await search(f.nodes[0]!.token)).status, 503);
   } finally {
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await f.close();

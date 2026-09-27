@@ -1,0 +1,49 @@
+
+> agat-platform@1.7.0 docs:check
+> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p "test_*.py" && npm run docs:links:check && npm run docs:processes:check
+
+✔ checks Markdown reference links, images, escaped spaces and fragments (8.107208ms)
+✔ ignores fenced code, inline code and external links (1.817334ms)
+✔ reports missing files and case differences on all platforms (1.6855ms)
+✔ rejects links outside the checkout while allowing repository-root links (1.268334ms)
+✔ does not accept a generated local file absent from the repository (1.881084ms)
+✔ qualification accepts only explicit loopback addresses, without credentials or redirects (1.247417ms)
+✔ model identity requires installed digest, Qwen3 architecture and local capability (1.073667ms)
+✔ ingestion fails for changed content, missing or incompatible embeddings (0.880709ms)
+✔ citations must resolve to both ingested sources on each real model stage (1.397583ms)
+✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.646125ms)
+✔ history evidence excludes payloads, secrets, failures and host identities (1.157792ms)
+✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (5493.750375ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5616.351375
+........................................E......................................................................................................
+======================================================================
+ERROR: test_probe_sends_utf8_and_validates_full_bound_response (test_decision_recovery.RecoveryTransportTest.test_probe_sends_utf8_and_validates_full_bound_response)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-search-budget-20260927/scripts/test/test_decision_recovery.py", line 17, in test_probe_sends_utf8_and_validates_full_bound_response
+    with make_server(engine,0) as server:
+         ~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/agat-search-budget-20260927/decision_runtime/server.py", line 172, in make_server
+    server = DecisionHTTPServer(("127.0.0.1", port), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+----------------------------------------------------------------------
+Ran 143 tests in 3.434s
+
+FAILED (errors=1)
