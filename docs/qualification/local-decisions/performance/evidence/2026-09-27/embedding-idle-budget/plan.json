@@ -1,0 +1,112 @@
+{
+  "schema": "agat.embedding.idle-budget.v1",
+  "implementationCommit": "b2b2447c0ed736cecdb7ded830f2e6e063c291fd",
+  "sourceSha256": {
+    "scripts/profile-embedding-idle-budget.py": "c52a558498fbaf2f6af9e32adbca0118a2c03e039979fbdb257907eece20ba8b",
+    "scripts/profile-embedding-model-transport.py": "93da72f6bd92b3ff5ba79e03501bd2b817507f2f9fd8bc4239476ba58afa854e",
+    "scripts/profile-embedding-parent-guard.py": "900a80fa40f0da840c275c3eeefcbadd19a061847ac35ab3044ed45259d4317e",
+    "scripts/profile-embedding-rag.py": "91b8a0b5a52af9f787dc4fe0eb55207f7cf77b6f885ecb5f7a12f96ec0b69f64",
+    "scripts/profile-embedding-transport.py": "656f041baacc405447428e02c6cab3853f3181f1bd1f2024a5bd92bb3927cbe9",
+    "scripts/verify-embedding-idle-budget.py": "8e1a07c51244d6f7836fd4755f3dccd2c4d8fc500681c3576ad9a5a2592c90f2",
+    "scripts/verify-embedding-parent-guard.py": "23a448a326624bed0f4aed2a5cd068be4ea1ede8020d310af29073f64a221bc9",
+    "workers/agat_worker.py": "d82cdd2fc6f9888be09cb9bd6cdf3b5a3dbc0f3bdef87b3e43ecf9071288f5a7",
+    "workers/embedding_http.py": "7c2c62973b530bd5392fd901a16630db7a23a196a254236a3af40b87627ee3fc",
+    "workers/embedding_transport.py": "a8cb7b2750237809e340abd15c9316d0e5bbe94c10d5bfbde2db71f242f73075",
+    "workers/local_decisions.py": "1666e8897a0f17cef52446209cfb67a6c193f82ec065ac3964fe0955ae21d8f3",
+    "workers/telemetry.py": "25d34e1f5bc0d2db4e33188a173e2fc8d4e1a721d6f4cf4eecf5af76ce87439f",
+    "workers/web_tools.py": "811bcd3871e8c64f1dceb66360035dc0d224a0775142a2e073b59cf56e8bec4e"
+  },
+  "baselineCommit": "218ecb5f6b70289df0c89ebbc7275de57a202684",
+  "baselineSha256": {
+    "workers/embedding_http.py": "be676a9efa4fe323ddaeb6eae472b875e8ae63f45b301b60f5189ef738211f05",
+    "workers/embedding_transport.py": "378e37e889e25be23af882e122e205beb8a177a61738c3cf1de1ce951ab42c92"
+  },
+  "phases": [
+    {
+      "id": "c1-0",
+      "capacity": 1,
+      "guard": false,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c1-1",
+      "capacity": 1,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c1-2",
+      "capacity": 1,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c1-3",
+      "capacity": 1,
+      "guard": false,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c4-0",
+      "capacity": 4,
+      "guard": false,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c4-1",
+      "capacity": 4,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c4-2",
+      "capacity": 4,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c4-3",
+      "capacity": 4,
+      "guard": false,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c32-0",
+      "capacity": 32,
+      "guard": false,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c32-1",
+      "capacity": 32,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c32-2",
+      "capacity": 32,
+      "guard": true,
+      "idleSeconds": 10
+    },
+    {
+      "id": "c32-3",
+      "capacity": 32,
+      "guard": false,
+      "idleSeconds": 10
+    }
+  ],
+  "timebase": {
+    "numer": 125,
+    "denom": 3
+  },
+  "platform": "Darwin",
+  "release": "25.6.0",
+  "machine": "arm64",
+  "python": "3.14.3",
+  "cpu": "Apple M1 Max",
+  "memoryBytes": 34359738368,
+  "budgetSeconds": 180,
+  "counter": "proc_pid_rusage/RUSAGE_INFO_V0",
+  "abiBytes": 96,
+  "model": "synthetic-no-inference"
+}

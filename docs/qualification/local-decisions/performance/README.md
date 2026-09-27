@@ -147,3 +147,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Принудительное завершение родителя](./embedding-parent-exit.md): воспроизведено и исправлено сохранение helper HTTP после SIGKILL worker; Unix parent guard закрывает собственные ресурсы, durable lease восстанавливается через maintenance.
 
 [Стоимость parent guard](./embedding-parent-guard.md): 264 одинаковых model-ответа, 176 reaped helpers, ABBA до/после и независимость соседнего владельца после SIGKILL.
+
+[Idle budget session helpers](./embedding-idle-budget.md): native CPU/RSS/footprint при 1/4/32 слотах, проверенное преобразование Mach ticks, 148 закрытых helpers и 296 точных HTTP-ответов.
