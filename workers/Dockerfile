@@ -10,6 +10,7 @@ COPY --chown=agat:agat workers/web_tools.py /opt/agat/web_tools.py
 COPY --chown=agat:agat workers/telemetry.py /opt/agat/telemetry.py
 COPY --chown=agat:agat workers/local_decisions.py /opt/agat/local_decisions.py
 COPY --chown=agat:agat workers/embedding_http.py /opt/agat/embedding_http.py
+COPY --chown=agat:agat workers/embedding_transport.py /opt/agat/embedding_transport.py
 
 USER agat
 ENTRYPOINT ["python", "/opt/agat/agat_worker.py"]

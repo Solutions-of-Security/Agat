@@ -21,6 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -150,6 +151,7 @@ class WorkerConfig:
     once: bool
     decision_url: str = ""
     embedding_timeout: float = 900
+    embedding_transport: str = "isolated"
 
 
 class CoordinatorClient:
@@ -514,6 +516,7 @@ class LocalModelClient:
         mcp_approval_timeout: float = 300,
         decision_client: LocalDecisionClient | None = None,
         embedding_timeout: float = 900,
+        embedding_request: Callable[..., bytes] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -526,6 +529,7 @@ class LocalModelClient:
         self.decision_client = decision_client
         validate_embedding_timeout(embedding_timeout)
         self.embedding_timeout = embedding_timeout
+        self.embedding_request = embedding_request
 
     def embed(self, model: str, inputs: list[str], *, cancelled: threading.Event | None = None) -> list[list[float]]:
         if not model.strip():
@@ -538,7 +542,7 @@ class LocalModelClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         with self.telemetry.model_span(model, self.base_url):
             self.telemetry.inject(headers)
-            raw = request_embedding_response(f"{self.base_url}/embeddings", payload, headers,
+            raw = (self.embedding_request or request_embedding_response)(f"{self.base_url}/embeddings", payload, headers,
                 timeout=self.embedding_timeout, cancelled=cancelled,
                 max_response_bytes=MAX_EMBEDDING_RESPONSE_BYTES, max_error_bytes=MAX_EMBEDDING_ERROR_BYTES)
             result = json.loads(raw.decode("utf-8"))
@@ -2897,13 +2901,22 @@ def _execute_lease_body(
 def worker_loop(config: WorkerConfig) -> int:
     telemetry = WorkerTelemetry()
     try:
-        return _worker_loop_with_telemetry(config, telemetry)
+        with ExitStack() as resources:
+            embedding_request = None
+            if config.embedding_transport == "session":
+                from embedding_transport import EmbeddingSessionPool
+                transport = resources.enter_context(EmbeddingSessionPool(config.concurrency))
+                embedding_request = transport.request
+            elif config.embedding_transport != "isolated":
+                raise ValueError("Unknown embedding transport")
+            return _worker_loop_with_telemetry(config, telemetry, embedding_request)
     finally:
         telemetry.shutdown()
 
 
 def _worker_loop_with_telemetry(
-    config: WorkerConfig, telemetry: WorkerTelemetry
+    config: WorkerConfig, telemetry: WorkerTelemetry,
+    embedding_request: Callable[..., bytes] | None = None,
 ) -> int:
     discovered_profiles = discover_model_profiles(config)
     if discovered_profiles != config.model_profiles:
@@ -2931,6 +2944,7 @@ def _worker_loop_with_telemetry(
         mcp_approval_timeout=config.mcp_approval_timeout,
         decision_client=LocalDecisionClient(config.decision_url) if config.decision_url else None,
         embedding_timeout=config.embedding_timeout,
+        embedding_request=embedding_request,
     )
     stop = threading.Event()
 
@@ -3054,6 +3068,11 @@ def parse_args() -> WorkerConfig:
     )
     parser.add_argument(
         "--model-api-key", default=os.getenv("AGAT_MODEL_API_KEY", "ollama")
+    )
+    parser.add_argument(
+        "--embedding-transport", choices=("isolated", "session"),
+        default=os.getenv("AGAT_EMBEDDING_TRANSPORT", "isolated").strip().lower(),
+        help="Embedding HTTP isolation: one process per call (default), or a bounded reusable session pool",
     )
     parser.add_argument(
         "--embedding-timeout", type=float, default=os.getenv("AGAT_EMBEDDING_TIMEOUT", "900"),
@@ -3278,6 +3297,8 @@ def parse_args() -> WorkerConfig:
 
     try:
         validate_embedding_timeout(args.embedding_timeout)
+        if args.embedding_transport not in {"isolated", "session"}:
+            raise ValueError("Embedding transport must be isolated or session")
     except ValueError as error:
         parser.error(str(error))
 
@@ -3289,6 +3310,7 @@ def parse_args() -> WorkerConfig:
         embedding_models=embedding_models,
         model_base_url=args.model_url,
         embedding_timeout=args.embedding_timeout,
+        embedding_transport=args.embedding_transport,
         model_api_key=args.model_api_key,
         model_discovery=args.model_discovery,
         model_profiles=explicit_profiles,

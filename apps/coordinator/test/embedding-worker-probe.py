@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "workers"))
 import agat_worker  # noqa: E402
+import embedding_transport  # noqa: E402
 
 
 def main() -> int:
@@ -29,6 +30,8 @@ def main() -> int:
                 "--model-discovery", "off", "--concurrency", "1", "--poll-interval", "0.2",
                 "--region", supplied["region"], "--residency-domain", supplied["residencyDomain"],
                 "--no-web"]
+    if "embeddingTransport" in supplied:
+        sys.argv.extend(["--embedding-transport", supplied["embeddingTransport"]])
     if "embeddingTimeout" in supplied:
         sys.argv.extend(["--embedding-timeout", str(supplied["embeddingTimeout"])])
     if supplied.get("dryRun", True):
@@ -36,6 +39,8 @@ def main() -> int:
     events: list[dict] = []
     requests: list[dict] = []
     transports: list[dict] = []
+    session_requests: list[dict] = []
+    session_retired: list[dict] = []
     active_requests: dict[int, dict] = {}
     lock = threading.Lock()
     execute_code = agat_worker.execute_knowledge_lease.__code__
@@ -43,10 +48,12 @@ def main() -> int:
     request_code = agat_worker.CoordinatorClient.request.__code__
     error_code = agat_worker.ApiError.__init__.__code__
     transport_code = agat_worker.request_embedding_response.__code__
+    session_code = embedding_transport.EmbeddingSession._exchange.__code__
+    retire_code = embedding_transport.EmbeddingSession._retire.__code__
 
     def observe(frame, event, result):
         code = frame.f_code
-        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code, transport_code}:
+        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code, transport_code, session_code, retire_code}:
             return
         thread_id = threading.get_native_id()
         with lock:
@@ -83,6 +90,12 @@ def main() -> int:
                 if process is not None:
                     transports.append({"pid": process.pid, "returncode": process.returncode,
                                        "stdinClosed": process.stdin.closed, "stdoutClosed": process.stdout.closed})
+            elif code in {session_code, retire_code} and event == "return":
+                process = frame.f_locals.get("process")
+                if process is not None:
+                    target = session_requests if code is session_code else session_retired
+                    target.append({"pid": process.pid, "returncode": process.returncode,
+                                   "stdinClosed": process.stdin.closed, "stdoutClosed": process.stdout.closed})
             elif code is error_code and event == "call" and thread_id in active_requests:
                 active_requests[thread_id]["status"] = frame.f_locals["status"]
 
@@ -97,6 +110,7 @@ def main() -> int:
         credentials.unlink(missing_ok=True)
     print("AGAT_EMBEDDING_WORKER_PROBE " + json.dumps({
         "exitCode": code, "python": sys.version.split()[0], "events": events, "requests": requests, "transports": transports,
+        "sessionRequests": session_requests, "sessionRetired": session_retired,
         "activeRequests": len(active_requests),
         "liveThreads": [thread.name for thread in threading.enumerate() if thread is not threading.main_thread()],
     }), flush=True)
