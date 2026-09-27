@@ -137,3 +137,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Постоянный helper на embeddinggemma](./embedding-session-model.md): 132 реальных model calls с точным совпадением vectors; отдельно readiness, hot latency и idle RSS, включая ухудшившийся batch-tail.
 
 [Длительная работа embedding-сессий](./embedding-session-endurance.md): 480 success + 10 controlled faults за две минуты, контрольный PID, все recovery, серии idle RSS/FD и фактическая задержка отмены под нагрузкой.
+
+[Session opt-in обычного worker](./embedding-worker-session-opt-in.md): ограниченный lazy pool, общий timeout очереди/HTTP, input budget и закрытие после drain; отдельные PostgreSQL-проверки реального worker в обоих режимах.
