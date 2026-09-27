@@ -27,4 +27,20 @@ python3 scripts/run-rag-http-probe.py --coordinator-entry main --execution-mode 
 python3 scripts/verify-rag-http-probe.py --evidence-dir docs/qualification/local-decisions/performance/evidence/2026-09-27/retrieval-main-isolated --compare-control docs/qualification/local-decisions/performance/evidence/2026-09-27/retrieval-main-sync
 ```
 
-Результаты будут оценены после обоих запусков. Порядок не рандомизирован, хост общий; разница будет описательной, без причинного вывода или нового SLO. Числа предыдущего handler-only опыта относятся к его собственному commit и инструментированию.
+## Результат закреплённого запуска
+
+Оба запуска выполнены на `ded9b044503b7715e9c48e4bf17f8e34a052438a`, Node **24.14.0**, с одинаковыми исходниками и JS artifacts. [Независимый replay сравнения](./evidence/2026-09-27/retrieval-main-comparison.json) подтвердил **42/42 измеряемых поиска + 2/2 warmup**, PostgreSQL candidate count, hashes, provenance и реальные maintenance calls. Обе пары «fixture + main» завершились, их четыре PID отсутствовали после опытов; оба контейнера удалены.
+
+| Конкурентность | Health max, sync → isolated, мс | Невыпущенные health probes, sync → isolated | Search max, sync → isolated, мс |
+|---:|---:|---:|---:|
+| 1 | 2695,770 → 86,849 | 46 → 0 | 2783,642 → 2890,679 |
+| 2 | 4483,145 → 151,833 | 107 → 0 | 4573,319 → 4660,910 |
+| 4 | 8562,726 → 77,661 | 232 → 0 | 8646,834 → 7775,738 |
+
+Максимальный измеренный event-loop delay main: **3057,648 → 205,259 мс**. Максимальная длительность отдельного maintenance: **20,712 → 202,818 мс**. Изолированный ranking улучшил наблюдаемую отзывчивость health в этом опыте, но собственные синхронные операции main всё ещё задерживают event loop. Lifetime peak RSS main составил **316899328 → 338165760 bytes**. Fixture-память в эти числа не входит.
+
+Начальная load average за минуту: **35,58** для sync и **43,12** для isolated; конечная — **47,66** и **50,10**. Порядок не рандомизирован, хост общий; разница описательная, без причинного вывода или нового SLO. Скорость поиска не улучшилась одинаково на всех уровнях. Числа предыдущего handler-only опыта относятся к его собственному commit и инструментированию.
+
+Девять тестов replay проверяют обе опубликованные пары и отрицательные случаи: подмену режима/процесса, неготовый executor, отсутствие maintenance, разные сборки/pool budget, смешение main и handler, а также запуск Python с `-O`. Изменённые копии согласованно перехэшируются, чтобы проверялась семантика, а не только контрольные суммы. CI test-job получает [полную Git history](https://github.com/actions/checkout/blob/main/README.md), поскольку replay сверяет исходники с commit измерения. [Проверки и хэши](./evidence/2026-09-27/retrieval-main-checks/checks.json).
+
+Следующая проверка — конкурентные SQL-блокировки и служебные HTTP-запросы: этот опыт нагружал чтение/ranking, а не длительные изменения run. Перенос ranking не делает остальные синхронные операции main асинхронными. Изменять timeout или lock policy следует после воспроизведения конкретного сценария, сохраняя commit/rollback и запрет скрытого replay.
