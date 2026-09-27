@@ -504,3 +504,26 @@ dialog::backdrop { background: rgb(24 43 44 / 32%); backdrop-filter: blur(3px); 
   .knowledge-document > button.button { grid-column: 1; grid-row: auto; justify-self: start; }
   .knowledge-document > button.icon-button { grid-column: 2; grid-row: 1 / 3; }
 }
+
+.process-shadow-editor { padding-top: 12px; border-top: 1px solid var(--line); }
+.process-shadow-summary { font-size: 13px; overflow-wrap: anywhere; }
+.process-shadow-summary p { margin: 6px 0; white-space: pre-wrap; }
+.process-shadow-summary small { color: var(--muted); }
+.run-dialog.decision-shadow-dialog { width: min(700px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); margin: auto; border: 1px solid var(--line); border-radius: 10px; }
+.decision-shadow-dialog .field, .decision-shadow-dialog .dialog-head > div { min-width: 0; }
+.decision-shadow-dialog .dialog-head { gap: 12px; }
+.decision-shadow-dialog .field { flex: none; margin: 0; gap: 6px; }
+.decision-shadow-dialog .field > span { font-size: 13px; }
+.decision-shadow-dialog .field small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.decision-shadow-dialog .field :is(input, select, textarea) { font-family: inherit; font-size: 14px; }
+.decision-shadow-dialog .field :is(input, select) { min-height: 44px; }
+.decision-shadow-dialog .field textarea { min-height: 64px; }
+.decision-shadow-dialog textarea.decision-shadow-profile { min-height: 112px; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.decision-shadow-dialog .process-form-builder__actions button { min-height: 44px; }
+.decision-shadow-dialog .process-form-builder__field { display: grid; gap: 12px; }
+.decision-shadow-dialog .form-error ul { margin: 0; padding-left: 20px; }
+@media (max-width: 600px) {
+  .decision-shadow-dialog form { padding: 16px; }
+  .decision-shadow-dialog .dialog-head h2 { font-size: 19px; }
+  .decision-shadow-dialog .dialog-actions { flex-wrap: wrap; }
+}

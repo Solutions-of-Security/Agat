@@ -1,0 +1,191 @@
+[WebServer] (node:26230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26231) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26231) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+
+Running 4 tests using 1 worker
+
+(node:26253) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled (20.6s)
+(node:26522) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts (16.5s)
+(node:26772) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled (19.2s)
+(node:26961) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts (16.2s)
+
+
+  1) [chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true })
+    Expected: "false"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true })
+
+
+      94 |   await f.inspector.getByRole("button", { name: "Изменить проверку", exact: true }).click();
+      95 |   await expect(f.dialog.getByLabel("Профиль модели (profileJson)", { exact: false })).toHaveValue(decisionProfileJson);
+    > 96 |   await expect(f.dialog.getByLabel("Значение варианта 1", { exact: true })).toHaveValue("false");
+         |                                                                             ^
+      97 |   await f.dialog.getByLabel("Вопрос проверки", { exact: true }).fill("Этот черновик отменён");
+      98 |   await f.dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+      99 |   expect((await f.readConfig()).decisionShadow).toEqual(config.decisionShadow);
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:96:77
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true })
+    Expected: "Полные данные"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true })
+
+
+      135 |   await f.dialog.getByLabel("Значение варианта 2", { exact: true }).fill("1.5");
+      136 |   await f.dialog.getByRole("button", { name: "Переместить вариант 2 вверх", exact: true }).click();
+    > 137 |   await expect(f.dialog.getByLabel("Описание варианта 1", { exact: true })).toHaveValue("Полные данные");
+          |                                                                             ^
+      138 |   await f.dialog.getByLabel("Описание варианта 1", { exact: true }).scrollIntoViewIfNeeded();
+      139 |   await screenshot(page, f.dialog, testInfo, "score-options.png");
+      140 |   await f.dialog.getByRole("button", { name: "Применить к шагу", exact: true }).click();
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:137:77
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true })
+    Expected: "false"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Значение варианта 1', { exact: true })
+
+
+      94 |   await f.inspector.getByRole("button", { name: "Изменить проверку", exact: true }).click();
+      95 |   await expect(f.dialog.getByLabel("Профиль модели (profileJson)", { exact: false })).toHaveValue(decisionProfileJson);
+    > 96 |   await expect(f.dialog.getByLabel("Значение варианта 1", { exact: true })).toHaveValue("false");
+         |                                                                             ^
+      97 |   await f.dialog.getByLabel("Вопрос проверки", { exact: true }).fill("Этот черновик отменён");
+      98 |   await f.dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+      99 |   expect((await f.readConfig()).decisionShadow).toEqual(config.decisionShadow);
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:96:77
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true })
+    Expected: "Полные данные"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Локальная проверка шага', exact: true }).getByLabel('Описание варианта 1', { exact: true })
+
+
+      135 |   await f.dialog.getByLabel("Значение варианта 2", { exact: true }).fill("1.5");
+      136 |   await f.dialog.getByRole("button", { name: "Переместить вариант 2 вверх", exact: true }).click();
+    > 137 |   await expect(f.dialog.getByLabel("Описание варианта 1", { exact: true })).toHaveValue("Полные данные");
+          |                                                                             ^
+      138 |   await f.dialog.getByLabel("Описание варианта 1", { exact: true }).scrollIntoViewIfNeeded();
+      139 |   await screenshot(page, f.dialog, testInfo, "score-options.png");
+      140 |   await f.dialog.getByRole("button", { name: "Применить к шагу", exact: true }).click();
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:137:77
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-mobile-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-mobile-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-mobile-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-mobile-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-edi-61f7b-revent-invalid-local-drafts-mobile-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4 failed
+    [chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+    [chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts
+    [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:59:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+    [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:122:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts
