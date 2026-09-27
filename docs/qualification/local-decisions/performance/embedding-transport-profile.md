@@ -44,4 +44,6 @@ npm run docs:check
 
 Проверки документации: **12 Node + 176 Python PASS**, 1561 локальная ссылка, 188 Markdown-файлов и 13 шаблонов; architecture audit — **PASS**, 0 ошибок / 0 предупреждений. Фактическая максимальная конкурентность достигла заданных 1/4 во всех фазах.
 
+CI выявил зависимость старого RAG smoke от 100-мс задержки fake primary endpoint. Контрпример с валидными embedding replies каждые 250 мс сохранил все 6 primary, 6 shadow и 8 embedding-вызовов, но дал `maxPrimaryRequestsInFlight=1` и отказ проверки. Тестовый сервер теперь удерживает первый primary response до прихода второго реального запроса; runtime и критерий `concurrency=2` сохранены. После исправления — **3/3 целевых, 284/284 coordinator, typecheck PASS**; исходный CI failure и paced baseline сохранены в evidence.
+
 Runtime и concurrency defaults этим этапом не меняются. Отказ от изоляции вернул бы уже воспроизведённые бесконечные ожидания; reusable subprocess потребует отдельного протокола и проверок разделения запросов/отмен. Следующий gate — парное измерение direct/isolated на установленной локальной embedding-модели с теми же synthetic inputs и batch 1/32, чтобы определить долю транспортной задержки в реальном model HTTP.
