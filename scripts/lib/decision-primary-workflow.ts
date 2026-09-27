@@ -105,8 +105,12 @@ export async function workflowPhase(options: { phase: Phase; fixture: Fixture; m
   const primaryCalls: Array<Record<string, any>> = [], decisionCalls: Array<Record<string, any>> = [], embeddingCalls: Array<Record<string, any>> = [];
   const cancelled = new AbortController();
   let active = 0, maxActive = 0, embeddingActive = 0, maxEmbeddingActive = 0, failure: string | undefined;
+  const fail = (reason: string) => { failure ??= reason;cancelled.abort(); };
   let ragEvidence: (ReturnType<typeof verifyIngestion> & { ingestionMs: number }) | undefined;
   const proxy = http.createServer(async (req, res) => {
+    // Worker retry can beat the monitoring loop after an adapter failure.
+    // Close admission immediately, preserving the first failure and its calls.
+    if (failure) { req.resume();res.writeHead(503).end();return; }
     if (fixture.rag && req.method === "POST" && req.url === "/v1/embeddings") {
       const row: Record<string, any> = { startedMs: clock() };embeddingCalls.push(row);
       embeddingActive++;maxEmbeddingActive = Math.max(maxEmbeddingActive, embeddingActive);
@@ -115,7 +119,7 @@ export async function workflowPhase(options: { phase: Phase; fixture: Fixture; m
         const result = await forwardEmbedding(JSON.parse(await body(req)), fixture.rag.embeddingModel, primaryUrl, json, cancelled.signal);
         Object.assign(row, result.evidence, { finishedMs: clock(), status: "completed" });
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result.body));
-      } catch { failure = "embedding_adapter_failed";Object.assign(row, { finishedMs: clock(), status: "failed" });res.writeHead(502).end(); }
+      } catch { fail("embedding_adapter_failed");Object.assign(row, { finishedMs: clock(), status: "failed" });res.writeHead(502).end(); }
       finally { embeddingActive--; }
       return;
     }
@@ -143,10 +147,11 @@ export async function workflowPhase(options: { phase: Phase; fixture: Fixture; m
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
         usage: { prompt_tokens: result.prompt_eval_count, completion_tokens: result.eval_count } }));
-    } catch { failure = "primary_adapter_failed";row.status = "failed";row.finishedMs = clock();res.writeHead(502).end(); }
+    } catch { fail("primary_adapter_failed");row.status = "failed";row.finishedMs = clock();res.writeHead(502).end(); }
     finally { active--; }
   });
   const shadowProxy = http.createServer(async (req, res) => {
+    if (failure) { req.resume();res.writeHead(503).end();return; }
     if (!((req.method === "GET" && req.url === "/health") || (req.method === "POST" && req.url === "/v1/decisions"))) {
       res.writeHead(404).end();return;
     }
@@ -158,7 +163,7 @@ export async function workflowPhase(options: { phase: Phase; fixture: Fixture; m
       Object.assign(row, { httpStatus: upstream.httpStatus, finishedMs: clock(), result: JSON.parse(upstream.text) });
       res.writeHead(upstream.httpStatus, { "content-type": "application/json" });res.end(upstream.text);
     } catch (error) {
-      failure = error instanceof DecisionProxyCancelled ? "decision_client_disconnected" : "decision_transport_failed";
+      fail(error instanceof DecisionProxyCancelled ? "decision_client_disconnected" : "decision_transport_failed");
       Object.assign(row, { finishedMs: clock(), failure });
       if (!res.destroyed) res.writeHead(502).end();
     }
