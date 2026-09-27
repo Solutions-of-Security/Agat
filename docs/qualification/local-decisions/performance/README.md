@@ -135,3 +135,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Прототип постоянного embedding helper](./embedding-session-prototype.md): 256 парных loopback-вызовов, проверка владения и отмены, явная стоимость readiness/idle RSS; обычный worker сохраняет прежний transport.
 
 [Постоянный helper на embeddinggemma](./embedding-session-model.md): 132 реальных model calls с точным совпадением vectors; отдельно readiness, hot latency и idle RSS, включая ухудшившийся batch-tail.
+
+[Длительная работа embedding-сессий](./embedding-session-endurance.md): 480 success + 10 controlled faults за две минуты, контрольный PID, все recovery, серии idle RSS/FD и фактическая задержка отмены под нагрузкой.
