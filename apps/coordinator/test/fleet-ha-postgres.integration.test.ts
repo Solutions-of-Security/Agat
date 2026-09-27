@@ -217,6 +217,86 @@ async function stageMaintenanceFixture(replicas: number) {
   }
 }
 
+async function embeddingLeaseFixture(replicas = 1) {
+  const suffix = randomUUID().slice(0, 8), project = `embedding-lease-${suffix}`;
+  const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-embedding-lease-"));
+  const first = store(`embedding-store-${suffix}`, artifacts);
+  const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+  const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>> & { instance: string }> = [];
+  const pending: Promise<unknown>[] = [];
+  try {
+    await writer.connect(); first.updateScheduler("parallel", 10);
+    first.createProject({ id: project, name: project, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const register = (name: string) => first.registerNode({ enrollmentToken: "test", name, platform: "test",
+      models: [], embeddingModels: [project], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
+      labels: { pool: project } });
+    const worker = register(`${project}-a`), other = register(`${project}-b`);
+    const collection = String(first.createKnowledgeCollection({ name: project, embeddingModel: project }, project).id);
+    const document = String(first.ingestKnowledgeDocument(collection, { name: "Source", content: "Synthetic index source." }, project).id);
+    const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document);
+    const jobId = String(first.db.prepare("SELECT id FROM knowledge_embedding_jobs WHERE document_id = ?").get(document)!.id);
+    for (let index = 0; index < replicas; index++) {
+      const instance = `embedding-lease-${suffix}-${index}`;
+      children.push({ instance, ...await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts,
+        { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" })) });
+    }
+    const results = lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] }));
+    const post = (action: "complete" | "fail" | "renew", index = 0) => {
+      const request = fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/workers/knowledge/leases/${lease.leaseId}/${action}`, {
+        method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+        body: JSON.stringify(action === "complete" ? { embeddings: results } : action === "fail" ? { error: "Fixture failure" } : {}),
+        signal: AbortSignal.timeout(15_000),
+      }).then(async response => ({ status: response.status, body: await response.text() })).then(value => ({ value }), error => ({ error }));
+      pending.push(request); return request;
+    };
+    const waitForLock = (pattern: RegExp, index = 0) => eventually(async () => {
+      await writer.query("SELECT pg_stat_clear_snapshot()");
+      const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        [`agat-${children[index]!.instance}-system`]);
+      if (!waiting.rows.length) return false;
+      assert.match(waiting.rows[0].query, pattern); return true;
+    }, "Embedding request did not reach its intended SQL lock");
+    const job = () => first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures FROM knowledge_embedding_jobs WHERE id = ?").get(jobId)!;
+    const doc = () => first.db.prepare("SELECT status, embedded_count, error FROM knowledge_documents WHERE id = ?").get(document)!;
+    const indexed = () => Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_chunks WHERE document_id = ? AND embedding_json IS NOT NULL").get(document)!.count);
+    const events = () => first.db.prepare("SELECT id FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.batch.completed', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ?")
+      .all(`%${document}%`).length;
+    const assertReady = () => { assert.equal(job().status, "completed"); assert.equal(doc().status, "ready"); assert.equal(indexed(), results.length); };
+    const recover = async () => {
+      first.heartbeatNode(worker.id, {}); first.maintenanceTick();
+      let replacement: ReturnType<typeof first.leaseKnowledgeEmbedding> = null;
+      await eventually(async () => { replacement = first.leaseKnowledgeEmbedding(worker.id); return replacement !== null; },
+        "Embedding replacement was not available after maintenance");
+      assert.ok(replacement); assert.notEqual(replacement.leaseId, lease.leaseId);
+      assert.equal(first.renewKnowledgeEmbeddingLease(worker.id, lease.leaseId), false);
+      first.completeKnowledgeEmbedding(worker.id, replacement.leaseId, results); assertReady();
+    };
+    const health = (index: number) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/health`,
+      { signal: AbortSignal.timeout(1_500) }).then(async response => { await response.text(); return { status: response.status }; }, error => ({ error }));
+    const maintenanceAfter = async (index: number, timestamp: number) => {
+      await delay(Math.max(0, timestamp - Date.now()));
+      await eventually(async () => {
+        const replica = await writer.query("SELECT last_seen FROM coordinator_replicas WHERE instance_id = $1", [children[index]!.instance]);
+        if (Date.parse(String(replica.rows[0]?.last_seen)) >= timestamp) return true;
+        await writer.query("SELECT pg_stat_clear_snapshot()");
+        const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [`agat-${children[index]!.instance}-system`]);
+        return waiting.rows.some(row => /UPDATE knowledge_embedding_jobs/.test(String(row.query)));
+      }, "Embedding maintenance did not reach the required timestamp");
+    };
+    return { first, writer, children, pending, project, worker, other, collection, document, lease, jobId, results,
+      post, waitForLock, job, doc, indexed, events, assertReady, recover, health, maintenanceAfter,
+      close: async () => {
+        await writer.query("ROLLBACK").catch(() => {}); await Promise.all(children.map(child => child.stop())); await Promise.allSettled(pending);
+        first.markWorkerPoolOffline(project); first.deleteKnowledgeCollection(collection, project); await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      } };
+  } catch (error) {
+    await writer.query("ROLLBACK").catch(() => {}); await Promise.all(children.map(child => child.stop()));
+    first.markWorkerPoolOffline(project); await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error;
+  }
+}
+
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
@@ -377,8 +457,9 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-budget-"));
       const configured = store(`rag-budget-${suffix}`, artifacts, 6001);
       const standard = store(`rag-default-${suffix}`, artifacts);
+      const projectId = `rag-budget-${suffix}`;
+      let runId: string | undefined;
       try {
-        const projectId = `rag-budget-${suffix}`;
         configured.createProject({ id: projectId, name: projectId, homeRegion: cellRegion,
           allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
         const model = `rag-budget-${suffix}`;
@@ -401,6 +482,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         configured.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(String(target.id));
         const run = configured.createRun({ name: "Budget", input: "Synthetic query", agentIds: [String(agent.id)],
           approvalRequired: false, knowledgeCollectionIds: [main, extra] }, projectId);
+        runId = run.id;
         const lease = configured.leaseNext(node)!;
         const query = (ids: string[]) => ({ embeddingModel: model, collectionIds: ids, vector: [1, 0], topK: 1, maxCandidates: 10000 });
         assert.throws(() => standard.searchKnowledge(node, lease.leaseId, { queries: [query([main])] }), /retrieval.*5000/);
@@ -416,6 +498,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(configured.searchKnowledge(node, lease.leaseId, { queries: [query([main])] }).hits[0]!.marker, "K2");
         assert.equal(configured.getRunKnowledgeSources(run.id, projectId)!.length, 2);
       } finally {
+        if (runId) configured.cancelRun(runId, projectId);
         configured.close(); standard.close();
         fs.rmSync(artifacts, { recursive: true, force: true });
       }
@@ -987,6 +1070,119 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         }
         await f.close();
       }
+    });
+  });
+
+  for (const action of ["renew", "complete", "fail"] as const) {
+    for (const race of ["expiry", "reassignment", "renewal"] as const) {
+      it(`embedding ${action} respects ${race} while waiting for job ownership over HTTP`, async context => {
+        await runWithPostgresSystemScope(async () => {
+          const f = await embeddingLeaseFixture();
+          try {
+            const expires = Date.now() + 5_000, replacementId = randomUUID();
+            f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE id = ?")
+              .run(new Date(expires).toISOString(), f.jobId);
+            await f.writer.query("BEGIN");
+            await f.writer.query("SELECT id FROM knowledge_embedding_jobs WHERE id = $1 FOR UPDATE", [f.jobId]);
+            if (race === "reassignment") await f.writer.query(`UPDATE knowledge_embedding_jobs
+              SET node_id = $1, lease_id = $2, lease_expires_at = $3 WHERE id = $4`,
+            [f.other.id, replacementId, new Date(Date.now() + 60_000).toISOString(), f.jobId]);
+            if (race === "renewal") await f.writer.query("UPDATE knowledge_embedding_jobs SET lease_expires_at = $1 WHERE id = $2",
+              [new Date(Date.now() + 60_000).toISOString(), f.jobId]);
+            const pending = f.post(action);
+            await f.waitForLock(/FOR UPDATE|UPDATE knowledge_embedding_jobs/);
+            assert.ok(Date.now() < expires, "Request must reach the lock before the original expiry");
+            if (race !== "reassignment") await delay(Math.max(0, expires - Date.now() + 50));
+            await f.writer.query(race === "expiry" ? "ROLLBACK" : "COMMIT");
+            const result = await within(pending, 5_000, "Embedding request did not finish after releasing ownership");
+            assert.ok("value" in result);
+            context.diagnostic(`Embedding ${action}/${race}: HTTP ${result.value.status}, job=${f.job().status}, document=${f.doc().status}, indexed=${f.indexed()}, events=${f.events()}`);
+            assert.equal(result.value.status, race === "renewal" ? action === "renew" ? 204 : 200 : action === "renew" ? 404 : 400);
+            if (race === "renewal") {
+              if (action === "complete") { f.assertReady(); return; }
+              if (action === "renew") {
+                assert.equal(f.job().lease_id, f.lease.leaseId); assert.ok(Date.parse(String(f.job().lease_expires_at)) > Date.now());
+                f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results); f.assertReady(); return;
+              }
+              assert.equal(JSON.parse(result.value.body).retrying, true);
+            } else {
+              assert.match(result.value.body, /аренда/); assert.equal(f.indexed(), 0); assert.equal(f.events(), 0);
+            }
+            if (race === "reassignment") {
+              assert.equal(f.job().status, "running"); assert.equal(f.job().node_id, f.other.id); assert.equal(f.job().lease_id, replacementId);
+              f.first.completeKnowledgeEmbedding(f.other.id, replacementId, f.results); f.assertReady();
+            } else await f.recover();
+          } finally { await f.close(); }
+        });
+      });
+    }
+  }
+
+  for (const action of ["complete", "fail"] as const) {
+    it(`embedding ${action} rolls back when an event lock outlasts its lease over HTTP`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = await embeddingLeaseFixture();
+        try {
+          const expires = Date.now() + 5_000;
+          f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE id = ?")
+            .run(new Date(expires).toISOString(), f.jobId);
+          await f.writer.query("BEGIN"); await f.writer.query("LOCK TABLE events IN SHARE MODE");
+          const pending = f.post(action); await f.waitForLock(/INSERT INTO events/);
+          assert.ok(Date.now() < expires);
+          await delay(Math.max(0, expires - Date.now() + 50)); await f.writer.query("ROLLBACK");
+          const result = await within(pending, 5_000, "Embedding write did not finish after releasing the event lock");
+          assert.ok("value" in result);
+          context.diagnostic(`Embedding ${action}/event lock: HTTP ${result.value.status}, indexed=${f.indexed()}, events=${f.events()}`);
+          assert.equal(result.value.status, 400); assert.match(result.value.body, /Активная embedding-аренда не найдена/);
+          assert.equal(f.indexed(), 0); assert.equal(f.events(), 0);
+          await f.recover();
+        } finally { await f.close(); }
+      });
+    });
+  }
+
+  it("embedding maintenance preserves a renewal that holds its job row past the old expiry", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture();
+      try {
+        const expires = Date.now() + 2_000, renewed = new Date(Date.now() + 60_000).toISOString();
+        f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE id = ?").run(new Date(expires).toISOString(), f.jobId);
+        await f.writer.query("BEGIN");
+        const changed = await f.writer.query(`UPDATE knowledge_embedding_jobs SET lease_expires_at = $1
+          WHERE node_id = $2 AND lease_id = $3 AND status = 'running' AND lease_expires_at > $4`,
+        [renewed, f.worker.id, f.lease.leaseId, new Date().toISOString()]);
+        assert.equal(changed.rowCount, 1);
+        await f.maintenanceAfter(0, expires); const health = await f.health(0);
+        await f.writer.query("COMMIT"); assert.ok("status" in await f.health(0));
+        context.diagnostic(`Embedding maintenance/renewal: health=${"status" in health ? health.status : "timeout"}, job=${f.job().status}, document=${f.doc().status}, failures=${f.job().failures}`);
+        assert.equal(f.job().status, "running"); assert.equal(f.job().lease_id, f.lease.leaseId);
+        assert.equal(f.job().lease_expires_at, renewed); assert.equal(f.job().failures, 0); assert.equal(f.doc().status, "indexing");
+        assert.ok("status" in health); assert.equal(health.status, 200);
+        f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results); f.assertReady();
+      } finally { await f.close(); }
+    });
+  });
+
+  it("embedding maintenance stays responsive while a late completion rolls back across coordinators", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(2);
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE id = ?").run(new Date(expires).toISOString(), f.jobId);
+        await f.writer.query("BEGIN"); await f.writer.query("LOCK TABLE events IN SHARE MODE");
+        const pending = f.post("complete"); await f.waitForLock(/INSERT INTO events/);
+        assert.ok(Date.now() < expires);
+        await f.maintenanceAfter(1, expires); const health = await f.health(1);
+        await f.writer.query("ROLLBACK");
+        const result = await within(pending, 5_000, "Embedding completion did not finish after the event lock");
+        assert.ok("value" in result);
+        assert.ok("status" in await f.health(1));
+        context.diagnostic(`Embedding maintenance/completion: HTTP ${result.value.status}, health=${"status" in health ? health.status : "timeout"}, job=${f.job().status}, document=${f.doc().status}, indexed=${f.indexed()}, events=${f.events()}`);
+        // With a final lease fence this late SQL-only completion rolls back.
+        assert.equal(result.value.status, 400); assert.equal(f.indexed(), 0); assert.equal(f.events(), 0);
+        assert.ok("status" in health); assert.equal(health.status, 200);
+        await f.recover();
+      } finally { await f.close(); }
     });
   });
 
@@ -1620,6 +1816,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       });
       const lease = first.leaseNext(nodeA.id);
       assert.ok(lease);
+      assert.equal(lease.run.id, firstRun.id, `Quota fixture unexpectedly leased ${lease.run.name}`);
       assert.equal(second.leaseNext(nodeB.id), null, "project maxRunningTasks must hold across replicas");
       first.completeLease(nodeA.id, lease.leaseId, "replica artifact", [
         { name: "evidence.txt", mediaType: "text/plain", content: "persisted in PostgreSQL" },

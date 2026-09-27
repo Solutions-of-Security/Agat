@@ -1,0 +1,335 @@
+(node:72140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ embedding renew rejects an invalid lease (before request) without changing the index (47.668375ms)
+ℹ renew/before request: accepted=true, job=running, document=indexing
+✖ embedding renew rejects an invalid lease (invalid expiry) without changing the index (30.1885ms)
+ℹ renew/invalid expiry: accepted=true, job=running, document=indexing
+✖ embedding complete rejects an invalid lease (before request) without changing the index (30.714833ms)
+ℹ complete/before request: accepted=true, job=completed, document=ready
+✖ embedding complete rejects an invalid lease (invalid expiry) without changing the index (30.198417ms)
+ℹ complete/invalid expiry: accepted=true, job=completed, document=ready
+✖ embedding complete rejects an invalid lease (during job read) without changing the index (30.604ms)
+ℹ complete/during job read: accepted=true, job=completed, document=ready
+✖ embedding fail rejects an invalid lease (before request) without changing the index (30.3435ms)
+ℹ fail/before request: accepted=true, job=pending, document=pending
+✖ embedding fail rejects an invalid lease (invalid expiry) without changing the index (29.861875ms)
+ℹ fail/invalid expiry: accepted=true, job=pending, document=pending
+✖ embedding fail rejects an invalid lease (during job read) without changing the index (29.374ms)
+ℹ fail/during job read: accepted=true, job=pending, document=pending
+✖ embedding complete rolls back its index and event if persistence outlasts the lease (38.018583ms)
+✖ embedding fail rolls back its index and event if persistence outlasts the lease (30.041542ms)
+✖ embedding maintenance rolls back retry if the document update fails (31.689958ms)
+✖ embedding maintenance rolls back terminal failure if the document update fails (30.697208ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 0
+ℹ fail 12
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 933.246541
+
+✖ failing tests:
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding renew rejects an invalid lease (before request) without changing the index (47.668375ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding renew rejects an invalid lease (invalid expiry) without changing the index (30.1885ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding complete rejects an invalid lease (before request) without changing the index (30.714833ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding complete rejects an invalid lease (invalid expiry) without changing the index (30.198417ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding complete rejects an invalid lease (during job read) without changing the index (30.604ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding fail rejects an invalid lease (before request) without changing the index (30.3435ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding fail rejects an invalid lease (invalid expiry) without changing the index (29.861875ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:2357
+✖ embedding fail rejects an invalid lease (during job read) without changing the index (29.374ms)
+  AssertionError [ERR_ASSERTION]: An expired embedding lease must not renew, finish or fail the current job
+
+  true !== false
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:68:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:4337
+✖ embedding complete rolls back its index and event if persistence outlasts the lease (38.018583ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(error instanceof Error)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:104:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:4337
+✖ embedding fail rolls back its index and event if persistence outlasts the lease (30.041542ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(error instanceof Error)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:104:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:5476
+✖ embedding maintenance rolls back retry if the document update fails (31.689958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    {
+      chunks: [
+        [Object: null prototype] {
+          char_end: 17,
+          char_start: 0,
+  ...
+        document_id: '59794026-af6f-4de6-8269-b4924aeecbc0',
+  +     failures: 1,
+  -     failures: 0,
+        id: '256db1f5-f101-4058-aa9f-55e24493425c',
+  +     last_error: 'Embedding lease expired',
+  +     lease_expires_at: null,
+  +     lease_id: null,
+  -     last_error: null,
+  -     lease_expires_at: '2000-01-01T00:00:00.000Z',
+  -     lease_id: '032717a8-bb65-4f02-81d8-40b488a983a1',
+        max_failures: 3,
+  +     node_id: null,
+  -     node_id: '7a25b32c-93d5-47c0-9c67-dc982a299d94',
+        project_id: 'default',
+  +     status: 'pending',
+  +     updated_at: '2026-09-27T14:03:56.315Z'
+  -     status: 'running',
+  -     updated_at: '2026-09-27T14:03:56.314Z'
+      }
+    }
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:128:39)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { job: { id: '256db1f5-f101-4058-aa9f-55e24493425c', project_id: 'default', collection_id: 'bd25662b-58ce-4334-94b7-44b73e155c3e', document_id: '59794026-af6f-4de6-8269-b4924aeecbc0', status: 'pending', node_id: null, lease_id: null, lease_expires_at: null, failures: 1, max_failures: 3, last_error: 'Embedding lease expired', created_at: '2026-09-27T14:03:56.314Z', updated_at: '2026-09-27T14:03:56.315Z' }, document: { id: '59794026-af6f-4de6-8269-b4924aeecbc0', collection_id: 'bd25662b-58ce-4334-94b7-44b73e155c3e', name: 'Document', source_uri: '', media_type: 'text/plain', content_sha256: '043e71c9fd6621a93a8141ade39c265e7e6cc7bcfa0a3778a7d67826fe416586', content: 'Synthetic source.', status: 'indexing', error: null, chunk_count: 1, embedded_count: 0, created_at: '2026-09-27T14:03:56.314Z', updated_at: '2026-09-27T14:03:56.314Z', original_base64: null, original_sha256: null, pages_json: '[]', parse_error: null }, chunks: [ [Object] ], events: 4 },
+    expected: { job: { id: '256db1f5-f101-4058-aa9f-55e24493425c', project_id: 'default', collection_id: 'bd25662b-58ce-4334-94b7-44b73e155c3e', document_id: '59794026-af6f-4de6-8269-b4924aeecbc0', status: 'running', node_id: '7a25b32c-93d5-47c0-9c67-dc982a299d94', lease_id: '032717a8-bb65-4f02-81d8-40b488a983a1', lease_expires_at: '2000-01-01T00:00:00.000Z', failures: 0, max_failures: 3, last_error: null, created_at: '2026-09-27T14:03:56.314Z', updated_at: '2026-09-27T14:03:56.314Z' }, document: { id: '59794026-af6f-4de6-8269-b4924aeecbc0', collection_id: 'bd25662b-58ce-4334-94b7-44b73e155c3e', name: 'Document', source_uri: '', media_type: 'text/plain', content_sha256: '043e71c9fd6621a93a8141ade39c265e7e6cc7bcfa0a3778a7d67826fe416586', content: 'Synthetic source.', status: 'indexing', error: null, chunk_count: 1, embedded_count: 0, created_at: '2026-09-27T14:03:56.314Z', updated_at: '2026-09-27T14:03:56.314Z', original_base64: null, original_sha256: null, pages_json: '[]', parse_error: null }, chunks: [ [Object] ], events: 4 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/embedding-lease-lifecycle.test.ts:1:5476
+✖ embedding maintenance rolls back terminal failure if the document update fails (30.697208ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+
+    {
+      chunks: [
+        [Object: null prototype] {
+          char_end: 17,
+          char_start: 0,
+  ...
+        document_id: '09a9abc3-61e8-4805-8f5f-839e26065f69',
+  +     failures: 1,
+  -     failures: 0,
+        id: '7f6e7048-5873-49ec-871a-90a7441af712',
+  +     last_error: 'Embedding lease expired',
+  +     lease_expires_at: null,
+  +     lease_id: null,
+  -     last_error: null,
+  -     lease_expires_at: '2000-01-01T00:00:00.000Z',
+  -     lease_id: 'caa0a402-9365-40d9-9a64-ecbc7378468a',
+        max_failures: 1,
+  +     node_id: null,
+  -     node_id: 'dfce0453-3e07-45a5-97ff-8189f6568d49',
+        project_id: 'default',
+  +     status: 'failed',
+  -     status: 'running',
+        updated_at: '2026-09-27T14:03:56.347Z'
+      }
+    }
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/embedding-lease-lifecycle.test.ts:128:39)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { job: { id: '7f6e7048-5873-49ec-871a-90a7441af712', project_id: 'default', collection_id: '85e924e4-7e4f-40c2-b3f4-8a565963e9b1', document_id: '09a9abc3-61e8-4805-8f5f-839e26065f69', status: 'failed', node_id: null, lease_id: null, lease_expires_at: null, failures: 1, max_failures: 1, last_error: 'Embedding lease expired', created_at: '2026-09-27T14:03:56.347Z', updated_at: '2026-09-27T14:03:56.347Z' }, document: { id: '09a9abc3-61e8-4805-8f5f-839e26065f69', collection_id: '85e924e4-7e4f-40c2-b3f4-8a565963e9b1', name: 'Document', source_uri: '', media_type: 'text/plain', content_sha256: '043e71c9fd6621a93a8141ade39c265e7e6cc7bcfa0a3778a7d67826fe416586', content: 'Synthetic source.', status: 'indexing', error: null, chunk_count: 1, embedded_count: 0, created_at: '2026-09-27T14:03:56.347Z', updated_at: '2026-09-27T14:03:56.347Z', original_base64: null, original_sha256: null, pages_json: '[]', parse_error: null }, chunks: [ [Object] ], events: 4 },
+    expected: { job: { id: '7f6e7048-5873-49ec-871a-90a7441af712', project_id: 'default', collection_id: '85e924e4-7e4f-40c2-b3f4-8a565963e9b1', document_id: '09a9abc3-61e8-4805-8f5f-839e26065f69', status: 'running', node_id: 'dfce0453-3e07-45a5-97ff-8189f6568d49', lease_id: 'caa0a402-9365-40d9-9a64-ecbc7378468a', lease_expires_at: '2000-01-01T00:00:00.000Z', failures: 0, max_failures: 1, last_error: null, created_at: '2026-09-27T14:03:56.347Z', updated_at: '2026-09-27T14:03:56.347Z' }, document: { id: '09a9abc3-61e8-4805-8f5f-839e26065f69', collection_id: '85e924e4-7e4f-40c2-b3f4-8a565963e9b1', name: 'Document', source_uri: '', media_type: 'text/plain', content_sha256: '043e71c9fd6621a93a8141ade39c265e7e6cc7bcfa0a3778a7d67826fe416586', content: 'Synthetic source.', status: 'indexing', error: null, chunk_count: 1, embedded_count: 0, created_at: '2026-09-27T14:03:56.347Z', updated_at: '2026-09-27T14:03:56.347Z', original_base64: null, original_sha256: null, pages_json: '[]', parse_error: null }, chunks: [ [Object] ], events: 4 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
