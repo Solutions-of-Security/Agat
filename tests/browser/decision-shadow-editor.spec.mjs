@@ -99,6 +99,23 @@ test("configure and publish Boolean shadow, cancel safely and retain the primary
   await f.dialog.getByLabel("Вопрос проверки", { exact: true }).fill("Этот черновик отменён");
   await f.dialog.getByRole("button", { name: "Отмена", exact: true }).click();
   expect((await f.readConfig()).decisionShadow).toEqual(config.decisionShadow);
+  await f.inspector.getByRole("button", { name: "Закрыть настройки", exact: true }).click();
+  await page.getByRole("tab", { name: "Готовность", exact: true }).click();
+  const readiness = page.getByRole("region", { name: "Готовность сценария", exact: true });
+  await expect(readiness.getByText(/локальная проверка выключена на сервере/)).toBeVisible();
+  await expect(readiness.getByText(/Успешный основной сценарий не подтверждает качество локальных проверок/)).toBeVisible();
+  await expect(readiness.getByRole("listitem").filter({ hasText: "Можно выполнить сейчас" })).toHaveAttribute("data-ready", "true");
+  await readiness.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("shadow-readiness.png"), fullPage: false });
+  const notice = readiness.getByText(/Успешный основной сценарий не подтверждает качество локальных проверок/);
+  await notice.evaluate(element => element.scrollIntoView({ block: "center", behavior: "instant" }));
+  if (await page.locator(".bottom-nav").isVisible()) {
+    const noticeBox = await notice.boundingBox();
+    const navigationBox = await page.locator(".bottom-nav").boundingBox();
+    expect(noticeBox.y + noticeBox.height).toBeLessThanOrEqual(navigationBox.y);
+  }
+  await page.screenshot({ path: testInfo.outputPath("shadow-readiness-notices.png"), fullPage: false });
   const started = await request.post(`/api/v1/processes/${f.process.id}/start`, { data: {
     input: "Исходные данные для основного агента", version: 1, startMode: "now",
   } });
@@ -111,6 +128,8 @@ test("configure and publish Boolean shadow, cancel safely and retain the primary
   const trace = await (await request.get(`/api/v1/runs/${instance.runId}/trace`)).json();
   expect(trace.decisionObservations).toHaveLength(1);
   expect(trace.decisionObservations[0].observation).toMatchObject({ status: "unavailable", reason: "disabled", fallback: "primary" });
+  await page.getByRole("tab", { name: "Схема", exact: true }).click();
+  await page.getByRole("button", { name: "ИИ-агент: Проверка данных", exact: true }).click();
   await f.inspector.getByRole("button", { name: "Убрать проверку", exact: true }).click();
   await expect.poll(async () => Object.hasOwn(await f.readConfig(), "decisionShadow")).toBe(false);
   expect((await f.readConfig()).agentId).toBe(f.agent.id);

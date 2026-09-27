@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-27",
+  "baseCommit": "1f1f8a43e928355282c24a7e86da40bd6a92df58",
+  "baselineCommit": "0464fa9b97a13bda4f5e50025f1bb3c4ac36d469",
+  "node": "v24.14.0",
+  "status": "pass",
+  "browserPlugin": "Browser plugin not available",
+  "checks": {
+    "baseline": {
+      "pass": 0,
+      "expectedFail": 7,
+      "reason": "Missing notices before implementation"
+    },
+    "targeted": {
+      "pass": 22,
+      "newScenarios": 7,
+      "capabilityCases": 12
+    },
+    "coordinator": {
+      "pass": 255,
+      "fail": 0
+    },
+    "browser": {
+      "pass": 4,
+      "fail": 0,
+      "viewports": [
+        "1440x1000",
+        "412x839"
+      ],
+      "mockedResponses": false
+    },
+    "postgres": {
+      "pass": 1,
+      "fail": 0,
+      "version": "17.6",
+      "scope": "Two coordinator stores, restart, project scope and tenant RLS on one PostgreSQL instance"
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1499,
+      "markdownFiles": 175,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "scope": "Preflight notices only; unchanged primary admission/routing. Browser uses Python worker --dry-run and test-only model profile; PostgreSQL uses a fixture decision response. No real model health probe, inference or quality qualification.",
+  "rawLogSha256": {
+    "before.log": "d61915dcfaecfa747b5be8d80c0da08cd14764048256be49800e7a5380ee9dd4",
+    "targeted.log": "69e9dc0e14240775460dbe6c7e29c5a39107c518eaf3f545ac86ab071ecdb9fb",
+    "coordinator.log": "c162e12e38079694a4c7b8615adc642ae8b2304c405faa3651390c7e473d71c5",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "build.log": "a698a3e8548374809e6c07e06f2b647451f9ef85819c50128127bc813dbe69ce",
+    "browser.log": "e904f7f17cc74830cc37e73fb53e153696d4eb91028f49ae634119a33f99348e",
+    "browser-navigation-failure.log": "f0414c4809e71c5db21b924b0c253ea9ddcbdaf11a6578f86c598cfe184d7266",
+    "postgres.log": "567010e07619fc4d534ef86befdcb5ac0059c19a5796309a671a9325300dc9c7",
+    "docs.log": "61605e754db54815b3aa54bee361303a162237715386592498a829a1451543c6"
+  },
+  "logNormalization": "Trailing line whitespace and extra blank lines at EOF removed; substantive output unchanged.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "fd74f50d65f448f4ddd9f83900ae68e6f83d0fb8a35db39b1af62b627598976d",
+    "apps/coordinator/src/local-decisions.ts": "52e93cac505d98599d1327c300e960b3b581e935100a56be4cce71997dacb435",
+    "apps/coordinator/src/scenario-preflight.ts": "7215257f43711fd770a8533bc924957e96149ea8c1b86fb597d1464d82a713f6",
+    "apps/coordinator/test/decision-shadow-preflight.test.ts": "d544abd090921bc245888d33fe99eabdde2b30beaedb6b5128269bd5c455b98a",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "ad32025615d6581471b0e6401fd52ddc8615f044a4a6cf34cb628220f15419f9",
+    "tests/browser/decision-shadow-editor.spec.mjs": "ebebf9bb0917d0342587d260d3a1990c3474628453920d04cc50619242cecf4b"
+  },
+  "evidenceSha256": {
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "before.log": "b5d5581f3d12fc9d7553b98a7b9668f71c3c9d9c4b30d3940ba0ec16e1960a76",
+    "browser-navigation-failure.log": "6158f1197e4cfda2cdf40fc19cc5483ee9cc7bc867daba0905d3c0ee420e0a6f",
+    "browser.log": "e904f7f17cc74830cc37e73fb53e153696d4eb91028f49ae634119a33f99348e",
+    "build.log": "1987ba513a2d00436f37bba9aa9e2e6e72f7a1259a567973723dee5a8696a19b",
+    "coordinator.log": "c162e12e38079694a4c7b8615adc642ae8b2304c405faa3651390c7e473d71c5",
+    "desktop-readiness-notices.png": "3efd00fdb8a742f413f9b66d236d242a9a303315be70402dfe3c9055f430c7e6",
+    "desktop-readiness.png": "3efd00fdb8a742f413f9b66d236d242a9a303315be70402dfe3c9055f430c7e6",
+    "docs.log": "61605e754db54815b3aa54bee361303a162237715386592498a829a1451543c6",
+    "mobile-readiness-notices.png": "aaf513544f59c37ddaf54adc0e64c15be73981c5894e9a60fd228fe84ed1ac8e",
+    "mobile-readiness.png": "d5f21684e5caa63bf9a96bff71ea73c4b050e59c58ce32fd73ee5f03f7bb2800",
+    "postgres.log": "567010e07619fc4d534ef86befdcb5ac0059c19a5796309a671a9325300dc9c7",
+    "targeted.log": "69e9dc0e14240775460dbe6c7e29c5a39107c518eaf3f545ac86ab071ecdb9fb",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593"
+  }
+}

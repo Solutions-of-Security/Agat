@@ -10083,6 +10083,8 @@ export class AgatStore {
     }
     const tools = this.scenarioTools(graphs.flatMap((item) => item.graph.requiredTools ?? []), project, context.mcpEnabled, context.sandbox);
     blockers.push(...tools.blockers);
+    const notices = [...tools.notices];
+    let hasShadow = false;
     const snapshots: AgentExecutionSnapshot[] = [];
     const httpCredentials: unknown[] = [];
     const projectRow = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(project) as Row;
@@ -10107,6 +10109,11 @@ export class AgatStore {
         }
         if (node.type === "http" && !nodes.some((item) => item.row.trust_kind !== "hardware_attested")) add(`http_worker:${owner}:${node.id}`, "runtime", "run", `«${node.name}»: нет доступного worker для HTTP-запроса.`, "nodes", {}, "Подключить worker");
         if (node.type !== "agent") continue;
+        const shadowConfig = node.config.decisionShadow;
+        if (shadowConfig) {
+          hasShadow = true;
+          if (!this.decisionShadowEnabled) notices.push(`«${node.name}»: локальная проверка выключена на сервере. Основной шаг продолжит работу по обычным правилам.`);
+        }
         const previewAgent = previewAgents.find((agent) => agent.id === node.config.agentId);
         const agent = previewAgent ?? this.effectiveAgentRow(node.config.agentId ?? "", project);
         if (!agent) { add(`agent_missing:${owner}:${node.id}`, "team", "queue", `«${node.name}»: назначьте агента проекта.`, "processes", stepTarget, "Назначить агента этому шагу"); continue; }
@@ -10132,7 +10139,25 @@ export class AgatStore {
         const retrievalNodes = modelNodes.filter((item) => embeddingModels.every((model) => parseJson<string[]>(item.row.embedding_models_json, []).includes(model)));
         if (modelNodes.length && !retrievalNodes.length) add(`embedding_worker:${owner}:${node.id}`, "embeddings", "run", `«${node.name}»: worker должен поддерживать embeddings выбранных знаний: ${embeddingModels.join(", ")}.`, "nodes", { embeddingModel: embeddingModels[0] ?? "" }, "Подключить embeddings на worker агента");
         const usesTools = projectTools.some((tool) => candidate.mcpToolAllowlist === undefined || candidate.mcpToolAllowlist.includes(tool.publicName));
-        if (router.enabled && retrievalNodes.length && !retrievalNodes.some((item) => this.routeAgentStage({ attempt: 0 }, snapshot, String(item.row.id), router, retrievalNodes, usesTools))) add(`model_router:${owner}:${node.id}`, "model", "run", `«${node.name}»: model router не допускает доступные модели.`, "models", { section: "policy" }, "Проверить policy model router");
+        const routedNode = router.enabled
+          ? retrievalNodes.find((item) => this.routeAgentStage({ attempt: 0 }, snapshot, String(item.row.id), router, retrievalNodes, usesTools))
+          : undefined;
+        if (router.enabled && retrievalNodes.length && !routedNode) add(`model_router:${owner}:${node.id}`, "model", "run", `«${node.name}»: model router не допускает доступные модели.`, "models", { section: "policy" }, "Проверить policy model router");
+        if (shadowConfig && this.decisionShadowEnabled) {
+          // Observe the primary candidates (or current router selection); never
+          // filter dispatch or turn an optional shadow check into a blocker.
+          const shadowNodes = router.enabled ? (routedNode ? [routedNode] : []) : retrievalNodes;
+          const supported = shadowNodes.filter((item) => supportsDecisionShadow(
+            parseJson<Record<string, string>>(item.row.labels_json, {}).decisionShadow, shadowConfig)).length;
+          if (!shadowNodes.length) {
+            notices.push(`«${node.name}»: Сейчас нет подходящих свободных workers для локальной проверки. Основной шаг следует обычным правилам готовности.`);
+          } else if (!supported) {
+            notices.push(`«${node.name}»: Ни один из ${shadowNodes.length} подходящих workers не заявил совместимый профиль локальной проверки. Основной шаг может выполняться без неё.`);
+          } else {
+            notices.push(`«${node.name}»: Совместимый профиль локальной проверки заявлен у ${supported} из ${shadowNodes.length} подходящих workers.`
+              + (supported < shadowNodes.length ? " Шаг может попасть на worker без этой поддержки; основной маршрут сохраняется." : ""));
+          }
+        }
       }
     }
     try { this.assertProjectQueueCapacity(project); }
@@ -10158,9 +10183,10 @@ export class AgatStore {
       JOIN runs r ON r.id = pi.run_id WHERE e.type = 'process.scenario.started' AND r.project_id = ? AND pi.process_id = ? AND pi.process_version = ? AND pi.status = 'completed' ORDER BY pi.completed_at DESC`).all(project, processId, version) as Row[])
       .find((row) => parseJson<{ fingerprint?: string }>(row.data_json, {}).fingerprint === fingerprint) : undefined;
     const verification = evidence ? { instanceId: String(evidence.id), runId: String(evidence.run_id), completedAt: String(evidence.completed_at), href: `#runs/${encodeURIComponent(String(evidence.run_id))}` } : null;
+    if (hasShadow) notices.push("Доступность модели и точное совпадение профиля проверяются при вызове. Успешный основной сценарий не подтверждает качество локальных проверок.");
     const queueable = processId !== null && !blockers.some((item) => item.blocks === "queue");
     return { checkedAt: nowIso(), processId, version, saved: processId !== null, queueable, runnableNow: queueable && blockers.length === 0,
-      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: tools.notices };
+      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)] };
   }
 
   startProcess(processId: string, input: StartProcessInput, projectId = "default", context?: ScenarioPreflightContext): Record<string, unknown> | null {

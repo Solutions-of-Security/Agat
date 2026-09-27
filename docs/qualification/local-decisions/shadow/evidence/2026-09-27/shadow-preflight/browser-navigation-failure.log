@@ -1,0 +1,94 @@
+[WebServer] (node:36098) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:36099) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:36099) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+
+Running 4 tests using 1 worker
+
+(node:36127) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled (14.8s)
+(node:36169) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [chromium] › tests/browser/decision-shadow-editor.spec.mjs:134:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts (6.5s)
+(node:36240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled (15.0s)
+(node:37474) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:134:1 › edit Score and Choice candidates, preserve order and prevent invalid local drafts (6.9s)
+
+
+  1) [chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for locator('.process-inspector').getByRole('button', { name: 'Убрать проверку', exact: true })
+
+
+      122 |   expect(trace.decisionObservations[0].observation).toMatchObject({ status: "unavailable", reason: "disabled", fallback: "primary" });
+      123 |   await page.goto(`/#processes?processId=${f.process.id}&nodeId=agent`);
+    > 124 |   await f.inspector.getByRole("button", { name: "Убрать проверку", exact: true }).click();
+          |                                                                                   ^
+      125 |   await expect.poll(async () => Object.hasOwn(await f.readConfig(), "decisionShadow")).toBe(false);
+      126 |   expect((await f.readConfig()).agentId).toBe(f.agent.id);
+      127 |   expect((await f.readConfig()).approvalRequired).toBe(false);
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:124:83
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for locator('.process-inspector').getByRole('button', { name: 'Убрать проверку', exact: true })
+
+
+      122 |   expect(trace.decisionObservations[0].observation).toMatchObject({ status: "unavailable", reason: "disabled", fallback: "primary" });
+      123 |   await page.goto(`/#processes?processId=${f.process.id}&nodeId=agent`);
+    > 124 |   await f.inspector.getByRole("button", { name: "Убрать проверку", exact: true }).click();
+          |                                                                                   ^
+      125 |   await expect.poll(async () => Object.hasOwn(await f.readConfig(), "decisionShadow")).toBe(false);
+      126 |   expect((await f.readConfig()).agentId).toBe(f.agent.id);
+      127 |   expect((await f.readConfig()).approvalRequired).toBe(false);
+        at /Users/mdavliatshin/Developer/Agat-recovery-20260927/tests/browser/decision-shadow-editor.spec.mjs:124:83
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/decision-shadow-editor-con-64d80--primary-path-when-disabled-mobile-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+    [mobile-chromium] › tests/browser/decision-shadow-editor.spec.mjs:61:1 › configure and publish Boolean shadow, cancel safely and retain the primary path when disabled
+  2 passed (47.6s)
