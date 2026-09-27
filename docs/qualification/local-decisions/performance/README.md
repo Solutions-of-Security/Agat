@@ -119,3 +119,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [HTTP-профиль embedding/renewal](./embedding-http.md): два coordinator, 420 completion + 4 warmup, 13568 проверенных векторов; все health/renewal успешны без пропусков probes. Схемы shared/independent сравнены по фиксированному протоколу без вывода о производственном SLO.
 
 [Потерянное подтверждение embedding COMMIT](./embedding-commit-acknowledgement.md): независимая проверка записи до разрыва/timeout, отказ старому lease, restart без повторной записи и выдача только оставшегося chunk.
+
+[Восстановление настоящего Python worker](./embedding-worker-recovery.md): после потерянного COMMIT-ответа тот же worker завершает остаток и следующий документ; HTTP attempts, завершение renewal threads и точные сохранённые векторы проверяются независимо.
