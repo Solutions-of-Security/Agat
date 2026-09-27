@@ -1,0 +1,105 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:57217) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ checks current ownership before complete after a concurrent expiry over HTTP (5888.080625ms)
+  ℹ complete/expiry: wait=stage read, HTTP 200, stage=completed, artifacts=3
+  ✔ checks current ownership before complete after a concurrent reassignment over HTTP (807.833458ms)
+  ℹ complete/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent renewal over HTTP (5833.334208ms)
+  ℹ complete/renewal: wait=stage read, HTTP 200, stage=completed, artifacts=3
+  ✖ checks current ownership before fail after a concurrent expiry over HTTP (5772.237791ms)
+  ℹ fail/expiry: wait=stage update, HTTP 200, stage=queued, artifacts=0
+  ✖ checks current ownership before fail after a concurrent reassignment over HTTP (770.968541ms)
+  ℹ fail/reassignment: wait=stage update, HTTP 200, stage=queued, artifacts=0
+  ✖ checks current ownership before fail after a concurrent renewal over HTTP (10809.627833ms)
+  ℹ fail/renewal: wait=stage update, HTTP 200, stage=queued, artifacts=0
+✖ PostgreSQL Fleet/HA integration (31285.069625ms)
+ℹ tests 6
+ℹ suites 1
+ℹ pass 2
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31798.242709
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20727
+✖ checks current ownership before complete after a concurrent expiry over HTTP (5888.080625ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  200 !== 400
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1003:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:945:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 21)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20727
+✖ checks current ownership before fail after a concurrent expiry over HTTP (5772.237791ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  200 !== 400
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1003:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:945:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20727
+✖ checks current ownership before fail after a concurrent reassignment over HTTP (770.968541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  200 !== 400
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1003:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:945:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:19:20727
+✖ checks current ownership before fail after a concurrent renewal over HTTP (10809.627833ms)
+  AssertionError [ERR_ASSERTION]: Replacement lease remained unavailable after releasing the terminal request lock
+      at eventually (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:110:10)
+      at async <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1023:15)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:945:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }

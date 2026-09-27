@@ -1,0 +1,130 @@
+(node:56049) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ complete rejects an invalid lease at admission (before request) before state or artifact writes (57.689625ms)
+ℹ After complete (before request): stage=completed, artifacts=3
+✖ complete rejects an invalid lease at admission (during stage read) before state or artifact writes (37.251584ms)
+ℹ After complete (during stage read): stage=completed, artifacts=3
+✖ complete rejects an invalid lease at admission (invalid expiry) before state or artifact writes (35.432084ms)
+ℹ After complete (invalid expiry): stage=completed, artifacts=3
+✖ fail rejects an invalid lease at admission (before request) before state or artifact writes (31.428416ms)
+ℹ After fail (before request): stage=queued, artifacts=0
+✖ fail rejects an invalid lease at admission (during stage read) before state or artifact writes (32.145667ms)
+ℹ After fail (during stage read): stage=queued, artifacts=0
+✖ fail rejects an invalid lease at admission (invalid expiry) before state or artifact writes (30.906541ms)
+ℹ After fail (invalid expiry): stage=queued, artifacts=0
+ℹ tests 6
+ℹ suites 0
+ℹ pass 0
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 741.72775
+
+✖ failing tests:
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ complete rejects an invalid lease at admission (before request) before state or artifact writes (57.689625ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ complete rejects an invalid lease at admission (during stage read) before state or artifact writes (37.251584ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ complete rejects an invalid lease at admission (invalid expiry) before state or artifact writes (35.432084ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ fail rejects an invalid lease at admission (before request) before state or artifact writes (31.428416ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ fail rejects an invalid lease at admission (during stage read) before state or artifact writes (32.145667ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/stage-lease-admission.test.ts:1:418
+✖ fail rejects an invalid lease at admission (invalid expiry) before state or artifact writes (30.906541ms)
+  AssertionError [ERR_ASSERTION]: The expired or invalid lease must fail before any terminal transition
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/stage-lease-admission.test.ts:50:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

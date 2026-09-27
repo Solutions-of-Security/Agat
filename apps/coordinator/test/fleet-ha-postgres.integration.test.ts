@@ -939,6 +939,110 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  for (const action of ["complete", "fail"] as const) {
+    for (const race of ["expiry", "reassignment", "renewal"] as const) {
+      it(`checks current ownership before ${action} after a concurrent ${race} over HTTP`, async context => {
+        await runWithPostgresSystemScope(async () => {
+          const suffix = randomUUID().slice(0, 8);
+          const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-terminal-"));
+          const first = store(`terminal-${suffix}`, artifacts);
+          const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+          const instance = `terminal-http-${suffix}`;
+          let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+          const pending: Promise<unknown>[] = [];
+          try {
+            await writer.connect(); first.updateScheduler("parallel", 10);
+            const project = `terminal-${suffix}`, model = project;
+            first.createProject({ id: project, name: project, homeRegion: cellRegion,
+              allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+            const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model }, project);
+            const register = (name: string) => first.registerNode({ enrollmentToken: "test", name, platform: "test",
+              models: [model], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain });
+            const worker = register(`${model}-a`), other = register(`${model}-b`);
+            const run = first.createRun({ name: `Terminal ${suffix}`, input: "Synthetic source", agentIds: [String(agent.id)],
+              approvalRequired: false, resultDestination: "artifacts" }, project);
+            const lease = first.leaseNext(worker.id)!; assert.equal(lease.run.id, run.id);
+            child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts, { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+            const expires = Date.now() + 5_000;
+            first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), lease.leaseId);
+            await writer.query("BEGIN");
+            await writer.query("SELECT id FROM stages WHERE id = $1 FOR UPDATE", [lease.stage.id]);
+            const replacementId = randomUUID();
+            if (race === "reassignment") await writer.query(`UPDATE stages SET node_id = $1, lease_id = $2,
+              lease_expires_at = $3, attempt = attempt + 1 WHERE id = $4`,
+            [other.id, replacementId, new Date(Date.now() + 60_000).toISOString(), lease.stage.id]);
+            if (race === "renewal") await writer.query("UPDATE stages SET lease_expires_at = $1 WHERE id = $2",
+              [new Date(Date.now() + 60_000).toISOString(), lease.stage.id]);
+            const payload = action === "complete" ? { output: "CURRENT OUTPUT", artifacts: [{ name: "current.txt", content: "CURRENT ARTIFACT" }] }
+              : { error: "CURRENT FAILURE" };
+            const responsePromise = fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${lease.leaseId}/${action}`, {
+              method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+              body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000),
+            }).then(async response => ({ status: response.status, body: await response.json() as { error?: string; retrying?: boolean } }))
+              .then(value => ({ value }), error => ({ error }));
+            pending.push(responsePromise);
+            let blockedAt = "";
+            await eventually(async () => {
+              await writer.query("SELECT pg_stat_clear_snapshot()");
+              const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+                [`agat-${instance}-system`]);
+              if (!waiting.rows.length) return false;
+              const query = String(waiting.rows[0].query);
+              assert.match(query, /FOR UPDATE|UPDATE stages/);
+              blockedAt = /FOR UPDATE/.test(query) ? "stage read" : "stage update";
+              return true;
+            }, "The terminal HTTP request did not wait on the stage lock");
+            assert.ok(Date.now() < expires, "The intended wait started after the original expiry");
+            if (race !== "reassignment") await delay(Math.max(0, expires - Date.now() + 50));
+            await writer.query(race === "expiry" ? "ROLLBACK" : "COMMIT");
+            const result = await within(responsePromise, 5_000, "Terminal request did not finish after releasing the stage lock");
+            assert.ok("value" in result);
+            const stage = first.db.prepare("SELECT status, node_id, lease_id, output FROM stages WHERE id = ?").get(lease.stage.id)!;
+            const records = first.listRunArtifacts(run.id, project);
+            context.diagnostic(`${action}/${race}: wait=${blockedAt}, HTTP ${result.value.status}, stage=${String(stage.status)}, artifacts=${records.length}`);
+            assert.equal(result.value.status, race === "renewal" ? 200 : 400);
+            if (race === "renewal") {
+              if (action === "complete") {
+                assert.equal(stage.status, "completed"); assert.equal(stage.output, "CURRENT OUTPUT");
+                assert.equal(records.length, 3);
+                return;
+              }
+              assert.equal(result.value.body.retrying, true); assert.equal(stage.status, "queued");
+            } else {
+              assert.match(result.value.body.error ?? "", /Активная аренда не найдена/);
+              assert.equal(stage.output, null); assert.equal(records.length, 0);
+              assert.equal(first.db.prepare(`SELECT id FROM events WHERE run_id = ?
+                AND type IN ('stage.completed', 'stage.retrying', 'stage.failed')`).all(run.id).length, 0);
+            }
+            if (race === "reassignment") {
+              assert.equal(stage.status, "running"); assert.equal(stage.node_id, other.id); assert.equal(stage.lease_id, replacementId);
+              first.completeLease(other.id, replacementId, "CURRENT OUTPUT", [{ name: "current.txt", content: "CURRENT ARTIFACT" }]);
+            } else {
+              first.maintenanceTick(); first.heartbeatNode(worker.id, {}); first.heartbeatNode(other.id, {});
+              let replacement: ReturnType<typeof first.leaseNext> = null, replacementOwner = other.id;
+              await eventually(async () => {
+                // Retry routing can prefer the other eligible worker.
+                for (const candidate of [other, worker]) {
+                  replacement = first.leaseNext(candidate.id);
+                  if (replacement) { replacementOwner = candidate.id; return true; }
+                }
+                return false;
+              }, "Replacement lease remained unavailable after releasing the terminal request lock");
+              assert.ok(replacement); assert.equal(replacement.run.id, run.id);
+              assert.notEqual(replacement.leaseId, lease.leaseId);
+              first.completeLease(replacementOwner, replacement.leaseId, "CURRENT OUTPUT", [{ name: "current.txt", content: "CURRENT ARTIFACT" }]);
+            }
+            assert.equal(first.getRun(run.id, project)!.status, "completed");
+            assert.equal(first.listRunArtifacts(run.id, project).length, 3);
+          } finally {
+            await writer.query("ROLLBACK").catch(() => {}); await child?.stop(); await Promise.allSettled(pending);
+            await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+          }
+        });
+      });
+    }
+  }
+
   for (const boundary of ["stage lock", "event insert", "idempotent retry"] as const) {
     it(`rejects shadow results when the lease expires during ${boundary} over HTTP`, async context => {
       await runWithPostgresSystemScope(async () => {

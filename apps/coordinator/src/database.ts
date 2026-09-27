@@ -201,6 +201,11 @@ function futureIso(seconds: number): string {
   return new Date(Date.now() + seconds * 1_000).toISOString();
 }
 
+function assertUnexpiredStageLease(stage: Row | undefined): asserts stage is Row {
+  const expiresAt = Date.parse(String(stage?.lease_expires_at));
+  if (!stage || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+}
+
 function parseJson<T>(value: unknown, fallback: T): T {
   if (typeof value !== "string" || value.length === 0) return fallback;
   try {
@@ -12196,7 +12201,8 @@ export class AgatStore {
           ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
         `)
         .get(nodeId, leaseId) as Row | undefined;
-      if (!stage) throw new Error("Активная аренда не найдена");
+      // Admit the terminal transition under the row lock, before artifacts or state writes.
+      assertUnexpiredStageLease(stage);
       if (output.length > 900_000) throw new Error("Результат этапа превышает лимит 900000 символов");
       const shadowActivity = parseJson<Record<string, unknown>>(stage.activity_json, {});
       if (shadowActivity.decisionShadowLease && !shadowActivity.decisionShadowObservation) {
@@ -12368,9 +12374,13 @@ export class AgatStore {
     let failedRunId: string | null = null;
     const result = this.transaction(() => {
       const stage = this.db
-        .prepare("SELECT * FROM stages WHERE node_id = ? AND lease_id = ? AND status = 'running'")
+        .prepare(`
+          SELECT * FROM stages WHERE node_id = ? AND lease_id = ? AND status = 'running'
+          ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE" : ""}
+        `)
         .get(nodeId, leaseId) as Row | undefined;
-      if (!stage) throw new Error("Активная аренда не найдена");
+      // A prior owner must not clear a replacement lease while this request waits.
+      assertUnexpiredStageLease(stage);
       failedRunId = String(stage.run_id);
       const processInstance = this.db.prepare("SELECT id FROM process_instances WHERE run_id = ?")
         .get(String(stage.run_id)) as Row | undefined;

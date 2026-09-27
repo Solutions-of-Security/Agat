@@ -105,3 +105,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Повтор main HTTP после SQL deadline](./retrieval-deadline-http.md): ещё 42/42 поиска и 2 warmup прошли полный replay на одном commit. Isolated health max при конкурентности 4 — 34 мс против 6755 мс в sync, пропусков probes нет; медиана поиска выше во всех сериях. Зафиксированы реальные maintenance, память, штатный exit и удаление контейнеров.
 
 [Срок lease во время записи](./retrieval-lease-write-fence.md): воспроизведено сохранение после expiry при блокировке INSERT retrieval или события. Повторная проверка перед выходом из транзакции откатывает обе записи; проверяется восстановление по новому lease с `K1`.
+
+[Допуск terminal-ответов](./terminal-lease-admission.md) проверен независимо от retrieval и shadow: свежий срок после stage lock, сохранение нового владельца при позднем `/fail`, отказ до записи артефактов и успешный retry.
