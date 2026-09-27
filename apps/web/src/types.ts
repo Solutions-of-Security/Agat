@@ -102,6 +102,15 @@ export interface ProcessCompensationConfig {
   timeoutSeconds: number;
 }
 
+export interface DecisionShadowConfig {
+  mode: "shadow";
+  profileJson: string;
+  timeoutMs: number;
+  question: string;
+  kind: "choice" | "boolean" | "score";
+  options: Array<{ id: string; description: string; abstain: boolean; value?: boolean | number }>;
+}
+
 export interface ProcessGraphNode {
   id: string;
   type: ProcessNodeType;
@@ -109,6 +118,7 @@ export interface ProcessGraphNode {
   position: { x: number; y: number };
   config: {
     agentId?: string;
+    decisionShadow?: DecisionShadowConfig;
     approvalRequired?: boolean;
     condition?: ProcessCondition;
     maxIterations?: number;

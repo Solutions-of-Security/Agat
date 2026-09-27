@@ -15,6 +15,7 @@ import type {
 import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTabs";
 import { Icon } from "./Icon";
 import { ProcessFormBuilder } from "./ProcessFormBuilder";
+import { DecisionShadowEditor } from "./DecisionShadowEditor";
 
 const operatorLabels: Record<ProcessConditionOperator, string> = {
   always: "Всегда",
@@ -174,6 +175,8 @@ function ParametersTab({
             />
             <span><strong>Подтверждение оператора</strong><small>Шаг попадёт в очередь только после решения.</small></span>
           </label>
+          <DecisionShadowEditor key={`${currentProcessId}:${node.id}`}
+            value={node.config.decisionShadow} onChange={decisionShadow => updateConfig({ ...node.config, decisionShadow })} />
         </>
       ) : null}
 
