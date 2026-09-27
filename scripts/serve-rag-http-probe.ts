@@ -14,6 +14,7 @@ import { createCoordinatorServer } from "../apps/coordinator/src/server.js";
 import { runWithPostgresSystemScope } from "../apps/coordinator/src/postgres-database.js";
 import { migratePostgresSchemaAndAdmit } from "../apps/coordinator/src/postgres-schema-migrator.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../apps/coordinator/src/knowledge-search-executor.js";
+import { startMainCoordinator } from "./rag-main-coordinator.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 assert.equal(process.argv.length, 5);
@@ -32,8 +33,11 @@ assert.equal(plan.candidates, 9716); assert.equal(plan.dimensions, 768);
 assert.equal(plan.candidateLimit, 10000); assert.equal(plan.nodeVersion, process.version);
 const executionMode = plan.executionMode ?? "sync";
 const maintenanceIntervalMs = plan.maintenanceIntervalMs ?? 0;
+const coordinatorEntry = plan.coordinatorEntry ?? "handler";
 assert.ok(["sync", "isolated"].includes(executionMode));
 assert.ok([0, 1000].includes(maintenanceIntervalMs));
+assert.ok(["handler", "main"].includes(coordinatorEntry));
+if (coordinatorEntry === "main") { assert.equal(backend, "postgresql"); assert.equal(maintenanceIntervalMs, 1000); }
 if (backend === "postgresql") {
   assert.equal(process.env.AGAT_RAG_HTTP_DISPOSABLE, "1");
   for (const key of ["AGAT_POSTGRES_URL", "AGAT_POSTGRES_TENANT_URL", "AGAT_POSTGRES_MIGRATION_URL"]) {
@@ -59,9 +63,11 @@ const config = { ...loadConfig(), host: "127.0.0.1", port: 0, serveWeb: false,
   adminToken: "rag-http-disposable-admin", oidcEnabled: false, sandboxEnabled: false,
   a2aEnabled: false, mcpEnabled: false, siemEnabled: false, localWorkerLauncherEnabled: false };
 let executor: KnowledgeSearchExecutor | undefined;
+let main: Awaited<ReturnType<typeof startMainCoordinator>> | undefined;
+let mainExit: { code: number | null; signal: string | null } | undefined;
 let maintenanceTimer: NodeJS.Timeout | undefined;
-const server = createCoordinatorServer(config, store, undefined, undefined, undefined, undefined,
-  executionMode === "isolated" ? { search: (...args) => executor!.search(...args), snapshot: () => executor!.snapshot() } : undefined);
+const server = coordinatorEntry === "handler" ? createCoordinatorServer(config, store, undefined, undefined, undefined, undefined,
+  executionMode === "isolated" ? { search: (...args) => executor!.search(...args), snapshot: () => executor!.snapshot() } : undefined) : undefined;
 const lines = createInterface({ input: process.stdin });
 const lag = monitorEventLoopDelay({ resolution: 10 });
 const reply = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -105,17 +111,23 @@ try {
   assert.equal(databaseCandidates, plan.candidates);
   const nodes = Array.from({ length: 4 }, (_, index) => registerNode(`rag-http-${index}`));
   store.db.prepare("UPDATE knowledge_chunks SET embedded_at = '2020-01-01T00:00:00.000Z' WHERE document_id = ?").run(String(target.id));
-  if (executionMode === "isolated") executor = await KnowledgeSearchExecutor.create(dbPath, storeOptions, { maxPending: 4, timeoutMs: 30_000 });
-  if (maintenanceIntervalMs) maintenanceTimer = setInterval(() => {
+  if (server && executionMode === "isolated") executor = await KnowledgeSearchExecutor.create(dbPath, storeOptions, { maxPending: 4, timeoutMs: 30_000 });
+  if (server && maintenanceIntervalMs) maintenanceTimer = setInterval(() => {
     const started = performance.now();
     let error: string | null = null;
     try { runWithPostgresSystemScope(() => store.maintenanceTick()); }
     catch (failure) { error = failure instanceof Error ? failure.message : "Maintenance failed"; }
     phase?.maintenance.push({ durationMs: round(performance.now() - started), error });
   }, maintenanceIntervalMs);
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-  const address = server.address(); assert.ok(address && typeof address === "object");
-  reply({ type: "ready", port: address.port, indexed, databaseCandidates, target: target.id, nodeVersion: process.version,
+  let port: number;
+  if (server) {
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+    const address = server.address(); assert.ok(address && typeof address === "object"); port = address.port;
+  } else {
+    main = await startMainCoordinator(data, executionMode, plan.compiledSha256); port = main.port;
+  }
+  reply({ type: "ready", port, indexed, databaseCandidates, target: target.id, nodeVersion: process.version,
+    ...(main ? { runtimePid: main.pid } : {}),
     query: { queries: [{ embeddingModel: model, collectionIds: [collection], vector, topK: 1 }] } });
   for await (const line of lines) {
     assert.ok(line.length <= 2048);
@@ -134,13 +146,28 @@ try {
         return { node: node.id, token: node.token, lease: lease.leaseId, run: run.id };
       });
       phase = { id: command.id, leases, maintenance: [] };
-      lag.reset(); lag.enable(); await delay(20);
+      if (main) await main.begin(command.id);
+      else { lag.reset(); lag.enable(); }
+      await delay(20);
       // Disposable bearer credentials only cross this private pipe; evidence excludes them.
       reply({ type: "prepared", id: command.id, leases: leases.map(({ lease, token }) => ({ lease, token })) });
     } else if (command.type === "finish") {
       assert.ok(phase); assert.equal(command.id, phase.id);
       await delay(20); lag.disable();
-      const eventLoop = { maxMs: round(lag.max / 1e6), p99Ms: round(lag.percentile(99) / 1e6), samples: lag.count };
+      const measured = main ? await main.finish(phase.id) : {
+        eventLoop: { maxMs: round(lag.max / 1e6), p99Ms: round(lag.percentile(99) / 1e6), samples: lag.count },
+        maintenance: phase.maintenance, memory: process.memoryUsage(), processLifetimePeakRssBytes: process.resourceUsage().maxRSS * 1024 };
+      let executorSnapshot = executor?.snapshot() ?? null;
+      if (main) {
+        const response = await fetch(`http://127.0.0.1:${main.port}/api/v1/health`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(response.status, 200);
+        const health = await response.json() as { knowledgeSearch: { execution: string; active: number; queued: number; maxPending: number; accepting: boolean } };
+        assert.equal(health.knowledgeSearch.execution, executionMode);
+        if (executionMode === "isolated") {
+          const { execution: _execution, ...snapshot } = health.knowledgeSearch;
+          executorSnapshot = snapshot;
+        }
+      }
       const retrievals = [];
       for (const item of phase.leases) {
         const events = (store.getRunTrace(item.run, project)!.events as Array<{ type: string; data: any }>).filter(row => row.type === "knowledge.retrieved");
@@ -153,19 +180,27 @@ try {
           score: hit.score, marker: hit.marker, candidateLimit: events[0]!.data.queries[0].candidateLimit });
         store.completeLease(item.node, item.lease, "completed", []);
       }
-      const result = { type: "finished", id: phase.id, verifiedRetrievals: phase.leases.length, retrievals, eventLoop,
-        executionMode, maintenance: phase.maintenance, executor: executor?.snapshot() ?? null,
-        memory: process.memoryUsage(), processLifetimePeakRssBytes: process.resourceUsage().maxRSS * 1024 };
+      const result = { type: "finished", id: phase.id, verifiedRetrievals: phase.leases.length, retrievals,
+        executionMode, coordinatorEntry, executor: executorSnapshot,
+        eventLoop: measured.eventLoop, maintenance: measured.maintenance,
+        memory: measured.memory, processLifetimePeakRssBytes: measured.processLifetimePeakRssBytes };
       phases.push(result); phase = undefined; reply(result);
     } else { throw new Error("Unknown probe control command"); }
   }
   assert.equal(phase, undefined);
+  if (main) {
+    mainExit = await main.stop(); assert.deepEqual(mainExit, { code: 0, signal: null });
+  }
   fs.writeFileSync(path.join(evidence, `server-${backend}.json`), `${JSON.stringify({ planSha256: sha(planBytes),
-    backend, nodeVersion: process.version, indexed, databaseCandidates, target: target.id, phases }, null, 2)}\n`, { flag: "wx" });
+    backend, coordinatorEntry, nodeVersion: process.version, indexed, databaseCandidates, target: target.id, phases,
+    ...(main ? { mainRuntime: { pid: main.pid, ...mainExit, entry: "apps/coordinator/dist/server.js",
+      observer: "scripts/observe-rag-coordinator-main.mjs", configuredPoolAllocation: executionMode === "isolated"
+        ? { coordinator: 3, retrieval: 1 } : { coordinator: 4, retrieval: 0 } } } : {}) }, null, 2)}\n`, { flag: "wx" });
 } finally {
   clearInterval(maintenanceTimer);
-  lag.disable(); lines.close(); server.closeAllConnections();
-  if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  lag.disable(); lines.close(); server?.closeAllConnections();
+  if (server?.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  if (main && !mainExit) await main.stop();
   await executor?.close();
   runWithPostgresSystemScope(() => store.close());
 }

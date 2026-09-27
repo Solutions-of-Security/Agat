@@ -24,6 +24,7 @@ SOURCES = ['scripts/run-rag-http-probe.py', 'scripts/serve-rag-http-probe.ts', '
            'apps/coordinator/src/postgres-database.ts', 'apps/coordinator/src/postgres-worker.ts',
            'apps/coordinator/src/postgres-response-buffer.ts', 'apps/coordinator/src/sync-database.ts']
 SOURCES += ['apps/coordinator/src/knowledge-search-executor.ts', 'apps/coordinator/src/knowledge-search-worker.ts']
+SOURCES += ['scripts/rag-main-coordinator.ts', 'scripts/observe-rag-coordinator-main.mjs']
 
 
 def sha(data):
@@ -95,6 +96,7 @@ def request(port, route, begin, body=None, token=None, target=None, barrier=None
                             and hits[0]['marker'] == 'K1' and hits[0]['provenance']['documentId'] == target)
         else:
             row['healthStatus'] = value.get('status')
+            row['knowledgeSearch'] = value.get('knowledgeSearch')
             row['valid'] = response.status == 200 and value.get('status') == 'ok'
     except Exception as exc:
         row['error'] = type(exc).__name__
@@ -170,7 +172,10 @@ def main():
     parser.add_argument('--evidence-dir', type=Path, required=True)
     parser.add_argument('--execution-mode', choices=['sync', 'isolated'], default='sync')
     parser.add_argument('--maintenance-interval-ms', type=int, choices=[0, 1000], default=0)
+    parser.add_argument('--coordinator-entry', choices=['handler', 'main'], default='handler')
     args = parser.parse_args()
+    if args.coordinator_entry == 'main' and args.maintenance_interval_ms != 1000:
+        parser.error('The real main always runs its 1000 ms maintenance timer; use --maintenance-interval-ms 1000')
     evidence = args.evidence_dir.resolve()
     if evidence.exists() or not evidence.is_relative_to(ROOT / 'docs') or evidence == ROOT / 'docs':
         raise ValueError('Use a new evidence directory under docs')
@@ -179,22 +184,38 @@ def main():
         raise ValueError('Use the repository Node 24 runtime for this protocol')
     implementation = command(['git', 'rev-parse', 'HEAD'])
     sources = {}
-    for name in SOURCES:
+    source_names = set(SOURCES)
+    if args.coordinator_entry == 'main':
+        source_names.update(path.relative_to(ROOT).as_posix() for path in (ROOT / 'apps/coordinator/src').rglob('*.ts'))
+        source_names.update(['apps/coordinator/tsconfig.json', 'apps/coordinator/package.json'])
+    for name in sorted(source_names):
         data = (ROOT / name).read_bytes()
         committed = subprocess.check_output(['git', 'show', f'{implementation}:{name}'], cwd=ROOT, timeout=60)
         if data != committed:
             raise ValueError(f'Commit the implementation before measuring: {name}')
         sources[name] = sha(data)
+    compiled = None
+    if args.coordinator_entry == 'main':
+        command(['npm', 'run', 'build', '--workspace', '@agat/coordinator'])
+        compiled = {path.relative_to(ROOT).as_posix(): sha(path.read_bytes())
+                    for path in sorted((ROOT / 'apps/coordinator/dist').rglob('*.js'))}
+        if not compiled or 'apps/coordinator/dist/server.js' not in compiled:
+            raise ValueError('No compiled main output')
     evidence.mkdir(parents=True)
     plan = {'implementationCommit': implementation, 'sourceSha256': sources,
             'nodeVersion': node_version, 'candidates': 9716, 'dimensions': 768, 'candidateLimit': 10000,
             'verifyDatabaseCandidateCount': True,
             'executionMode': args.execution_mode, 'maintenanceIntervalMs': args.maintenance_interval_ms,
+            'coordinatorEntry': args.coordinator_entry,
             'phases': [{'id': 'warmup', 'concurrency': 1}, {'id': 'idle', 'concurrency': 0}]
                       + [{'id': f'c{c}-r{r}', 'concurrency': c} for c in (1, 2, 4) for r in (1, 2, 3)],
             'healthIntervalMs': 100, 'maxHealthInflight': 4, 'searchRequestTimeoutSeconds': 15,
             'fixture': 'One old exact vector, all others orthogonal; values +/-1/3; synthetic, no semantic quality claim',
-            'hostLoadAtStart': os.getloadavg(), 'backendOrder': ['sqlite', 'postgresql']}
+            'hostLoadAtStart': os.getloadavg(), 'backendOrder': ['postgresql'] if compiled else ['sqlite', 'postgresql']}
+    if compiled:
+        plan.update(compiledSha256=compiled,
+                    poolBudget={'admittedReplicas': 2, 'admittedPoolMaxPerRole': 4, 'mainPoolMaxPerRole': 4, 'fixturePoolMaxPerRole': 1},
+                    observer='Preload records actual main maintenance calls and process metrics; it does not start maintenance or serve requests.')
     write(evidence / 'plan.json', plan)
     env = {key: value for key, value in os.environ.items() if not key.startswith('AGAT_')}
     env['AGAT_KNOWLEDGE_SEARCH_MAX_CANDIDATES'] = '10000'
@@ -233,7 +254,8 @@ def main():
                     AGAT_POSTGRES_URL=f'postgresql://agat_system:http-system-test@{address}/agat_rag_http',
                     AGAT_POSTGRES_TENANT_URL=f'postgresql://agat_tenant:http-tenant-test@{address}/agat_rag_http',
                     AGAT_POSTGRES_SSL_MODE='disable', AGAT_REGION='eu-test-1', AGAT_RESIDENCY_DOMAIN='eu-test',
-                    AGAT_POSTGRES_EXPECTED_REPLICAS='1', AGAT_POSTGRES_POOL_MAX='1', AGAT_POSTGRES_ADMISSION_CONCURRENCY='2',
+                    AGAT_POSTGRES_EXPECTED_REPLICAS='2' if compiled else '1', AGAT_POSTGRES_POOL_MAX='4' if compiled else '1',
+                    AGAT_POSTGRES_ADMISSION_CONCURRENCY='2',
                     AGAT_POSTGRES_ADMISSION_DURATION_MS='500', AGAT_POSTGRES_ADMISSION_MIN_OPERATIONS='10', AGAT_POSTGRES_ADMISSION_P99_MS='1000')
                 write(evidence / 'postgres-image.json', {'image': image, 'imageId': command(['docker', 'inspect', '--format', '{{.Image}}', container])})
             phases, ready = [], None
@@ -247,6 +269,8 @@ def main():
                         ready = reply(process, timeout=300)
                         assert ready['type'] == 'ready' and ready['indexed'] == plan['candidates']
                         assert ready['databaseCandidates'] == plan['candidates']
+                        if compiled:
+                            assert isinstance(ready['runtimePid'], int) and ready['runtimePid'] != process.pid
                         for item in plan['phases']:
                             print(f"{backend}: {item['id']}", flush=True)
                             result = phase(process, ready, item['id'], item['concurrency'])
@@ -262,7 +286,8 @@ def main():
                         stop(process)
                         write(evidence / f'client-{backend}.json', {'planSha256': sha((evidence / 'plan.json').read_bytes()),
                             'backend': backend, 'target': ready['target'] if ready else None,
-                            'databaseCandidates': ready['databaseCandidates'] if ready else None, 'phases': phases})
+                            'databaseCandidates': ready['databaseCandidates'] if ready else None, 'phases': phases,
+                            **({'runtimePid': ready['runtimePid']} if compiled and ready else {})})
                         log.flush()
                         diagnostic = (Path(folder) / 'stderr.log').read_text(errors='replace')[-16384:]
                         diagnostic = re.sub(r'postgres(?:ql)?://[^\s\"\']+', '<disposable-postgres-url>', diagnostic)

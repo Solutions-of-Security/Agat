@@ -47,9 +47,20 @@ def verify(directory):
     def read(name):
         return json.loads((directory / name).read_text())
     launcher, plan = read('launcher-result.json'), read('plan.json')
+    coordinator_entry = plan.get('coordinatorEntry', 'handler')
+    assert coordinator_entry in ('handler', 'main')
+    backends = ['postgresql'] if coordinator_entry == 'main' else ['sqlite', 'postgresql']
+    assert plan['backendOrder'] == backends
+    if coordinator_entry == 'main':
+        assert plan['maintenanceIntervalMs'] == 1000
+        assert plan['poolBudget'] == {'admittedReplicas': 2, 'admittedPoolMaxPerRole': 4, 'mainPoolMaxPerRole': 4, 'fixturePoolMaxPerRole': 1}
+        assert 'apps/coordinator/dist/server.js' in plan['compiledSha256']
+        assert 'apps/coordinator/dist/knowledge-search-worker.js' in plan['compiledSha256']
+        assert all(name.startswith('apps/coordinator/dist/') and '..' not in name and re.fullmatch('[0-9a-f]{64}', value)
+                   for name, value in plan['compiledSha256'].items())
     assert launcher['status'] == 'observed' and launcher['failure'] is None
     assert launcher['containerRemoved'] and not launcher['cleanupErrors']
-    assert len(launcher['children']) == 2 and all(child['exitCode'] == 0 for child in launcher['children'])
+    assert len(launcher['children']) == len(backends) and all(child['exitCode'] == 0 for child in launcher['children'])
     for name, expected in launcher['files'].items():
         assert (directory / name).resolve().parent == directory
         assert sha((directory / name).read_bytes()) == expected, f'Changed evidence: {name}'
@@ -65,10 +76,20 @@ def verify(directory):
     plan_sha = sha((directory / 'plan.json').read_bytes())
     expected_text = sha(b'Synthetic exact-match fixture.')
     results = {}
-    for backend in ('sqlite', 'postgresql'):
+    for backend in backends:
         client, server = read(f'client-{backend}.json'), read(f'server-{backend}.json')
         assert client['planSha256'] == server['planSha256'] == plan_sha
         assert client['backend'] == server['backend'] == backend
+        assert server.get('coordinatorEntry', 'handler') == coordinator_entry
+        if coordinator_entry == 'main':
+            runtime = server['mainRuntime']
+            assert runtime['pid'] == client['runtimePid'] and isinstance(runtime['pid'], int)
+            assert runtime['pid'] not in [child['pid'] for child in launcher['children']]
+            assert runtime['code'] == 0 and runtime['signal'] is None
+            assert runtime['entry'] == 'apps/coordinator/dist/server.js' and runtime['observer'] == 'scripts/observe-rag-coordinator-main.mjs'
+            assert runtime['configuredPoolAllocation'] == ({'coordinator': 3, 'retrieval': 1} if plan['executionMode'] == 'isolated' else {'coordinator': 4, 'retrieval': 0})
+        else:
+            assert 'mainRuntime' not in server
         assert client['target'] == server['target'] and isinstance(client['target'], str)
         assert server['indexed'] == plan['candidates'] and server['nodeVersion'] == plan['nodeVersion']
         if plan.get('verifyDatabaseCandidateCount'):
@@ -80,6 +101,7 @@ def verify(directory):
         for expected, observed, actual in zip(expected_phases, client['phases'], server['phases'], strict=True):
             count, label = expected['concurrency'], expected['id']
             assert observed['id'] == actual['id'] == label
+            assert actual.get('coordinatorEntry', 'handler') == coordinator_entry
             assert observed['concurrency'] == actual['verifiedRetrievals'] == count
             if 'executionMode' in plan:
                 assert plan['executionMode'] in ('sync', 'isolated') and actual['executionMode'] == plan['executionMode']
@@ -114,6 +136,15 @@ def verify(directory):
                     assert entry['outcome'] == 'dispatched'
                     row = entry['response']; timing(row)
                     assert row['status'] == 200 and row['healthStatus'] == 'ok' and row['error'] is None and row['valid']
+                    if coordinator_entry == 'main':
+                        state = row['knowledgeSearch']
+                        assert state['execution'] == plan['executionMode']
+                        if plan['executionMode'] == 'isolated':
+                            assert state['accepting'] is True and state['maxPending'] == 4
+                            assert isinstance(state['active'], int) and 0 <= state['active'] <= 1
+                            assert isinstance(state['queued'], int) and 0 <= state['queued'] <= 4 - state['active']
+                        else:
+                            assert state == {'execution': 'sync'}
                     assert row['startedMs'] + .002 >= entry['scheduledMs'] + entry['dispatchLatenessMs']
                     dispatched.append(row)
             assert intervals(dispatched) <= 4
@@ -138,8 +169,9 @@ def verify(directory):
     return {'status': 'verified', 'implementationCommit': plan['implementationCommit'], 'planSha256': plan_sha,
             **({'databaseCandidatesVerifiedPerBackend': plan['candidates']} if plan.get('verifyDatabaseCandidateCount') else {}),
             **({'executionMode': plan['executionMode'], 'maintenanceIntervalMs': plan['maintenanceIntervalMs']} if 'executionMode' in plan else {}),
-            'launcherSha256': sha((directory / 'launcher-result.json').read_bytes()), 'measuredSearches': 42,
-            'warmupSearches': 2, 'summary': results,
+            **({'coordinatorEntry': coordinator_entry} if 'coordinatorEntry' in plan else {}),
+            'launcherSha256': sha((directory / 'launcher-result.json').read_bytes()), 'measuredSearches': 21 * len(backends),
+            'warmupSearches': len(backends), 'summary': results,
             'limitations': ['Health latency covers dispatched probes only; skipped arrivals remain separate.',
                             'Three closed-loop bursts per level, one coordinator per backend, shared host, no production SLO.',
                             'Synthetic vectors with an analytically known winner; no model or semantic qualification.']}
@@ -150,6 +182,9 @@ def compare(control, isolated):
     plans = [json.loads((directory / 'plan.json').read_text()) for directory in (control, isolated)]
     assert plans[0]['executionMode'] == 'sync' and plans[1]['executionMode'] == 'isolated'
     assert plans[0]['maintenanceIntervalMs'] == plans[1]['maintenanceIntervalMs'] == 1000
+    assert plans[0].get('coordinatorEntry', 'handler') == plans[1].get('coordinatorEntry', 'handler')
+    if plans[0].get('coordinatorEntry') == 'main':
+        assert plans[0]['compiledSha256'] == plans[1]['compiledSha256'] and plans[0]['poolBudget'] == plans[1]['poolBudget']
     for key in ('implementationCommit', 'sourceSha256', 'nodeVersion', 'candidates', 'dimensions', 'candidateLimit',
                 'phases', 'healthIntervalMs', 'maxHealthInflight', 'searchRequestTimeoutSeconds', 'fixture', 'backendOrder'):
         assert plans[0][key] == plans[1][key], f'Incompatible pair: {key}'
