@@ -9258,6 +9258,10 @@ export class AgatStore {
       queries: storedQueries,
       hits: storedHits,
     });
+    // Row locks keep the lease identity stable, but time can pass while either
+    // INSERT waits. Recheck after the final write so expiry rolls back both the
+    // retrieval and its event before this transaction can request COMMIT.
+    if (leaseExpiresAt <= Date.now()) throw new Error("Активная stage-аренда не найдена");
     return { hits };
   }
 

@@ -1,0 +1,77 @@
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (213.01775ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (9131.2395ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (832.273125ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (425.812333ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (309.4015ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (18656.897ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (723.787167ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1508.285916ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing knowledge_retrievals (6053.330708ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing events (6022.536ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (6141.912625ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (907.683917ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5957.103833ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (1000.936625ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2896.23125ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3921.745291ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (2786.454791ms)
+  ℹ Successful COMMIT observed after 55 ms
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (3704.905875ms)
+  ℹ Successful COMMIT observed after 53 ms
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1624.43075ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (7161.8575ms)
+(node:14504) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (10098.391375ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1036.44675ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4413.757625ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (99.244834ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (278.183209ms)
+  ✔ rejects a schema Job while a coordinator replica is active (259.615291ms)
+  ✔ rejects runtime startup after out-of-band schema drift (161.387333ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (890.951584ms)
+✔ PostgreSQL Fleet/HA integration (98734.518833ms)
+ℹ tests 28
+ℹ suites 1
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 99141.359417

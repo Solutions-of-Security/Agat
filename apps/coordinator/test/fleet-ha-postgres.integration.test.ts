@@ -464,6 +464,38 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  for (const table of ["knowledge_retrievals", "events"] as const) it(`rolls back retrieval when its lease expires while writing ${table}`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN");
+        // SHARE permits the source SELECT but holds the later INSERT. In the
+        // events case the retrieval INSERT has already completed in its tx.
+        await f.writer.query(`LOCK TABLE ${table} IN SHARE MODE`);
+        const pending = f.search().then(value => ({ value }), error => ({ error }));
+        await f.waitForLock(new RegExp(`^\\s*INSERT INTO ${table}\\s*\\(`));
+        assert.ok(Date.now() < expires, "The intended late-write wait started after lease expiry");
+        await delay(Math.max(0, expires - Date.now() + 50));
+        await f.writer.query("ROLLBACK");
+        const result = await within(pending, 5_000, "Retrieval did not finish after the late-write lock was released");
+        const rows = f.first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(f.run.id);
+        const events = (f.first.getRunTrace(f.run.id, f.project)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved");
+        context.diagnostic(`After the expired write: ${rows.length} durable retrievals, ${events.length} retrieval events`);
+        assert.ok("error" in result, "Retrieval accepted a lease that expired while its persistence was blocked");
+        assert.match(result.error.message, /Активная stage-аренда не найдена/);
+        assert.equal(rows.length, 0); assert.equal(events.length, 0);
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 0);
+        f.first.maintenanceTick();
+        const replacement = f.first.leaseNext(f.node.id)!; assert.ok(replacement);
+        assert.notEqual(replacement.leaseId, f.lease.leaseId);
+        assert.equal((await f.search(replacement.leaseId)).hits[0]!.marker, "K1");
+        f.first.completeLease(f.node.id, replacement.leaseId, "completed", []);
+      } finally { await f.close(); }
+    });
+  });
+
   it("rejects a lease that expires while retrieval waits for its run lock", async () => {
     await runWithPostgresSystemScope(async () => {
       const f = await retrievalLeaseRaceFixture();

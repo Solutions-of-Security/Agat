@@ -1,0 +1,29 @@
+(node:11609) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✖ SQLite rolls back retrieval and its event when the lease expires during event persistence (47.860791ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1810.780875
+
+✖ failing tests:
+
+test at apps/coordinator/test/knowledge-retrieval-validation.test.ts:1:3822
+✖ SQLite rolls back retrieval and its event when the lease expires during event persistence (47.860791ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/knowledge-retrieval-validation.test.ts:88:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /Активная stage-аренда не найдена/,
+    operator: 'throws',
+    diff: 'simple'
+  }

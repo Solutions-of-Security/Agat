@@ -1,0 +1,57 @@
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:11633) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11633) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ rolls back retrieval when its lease expires while writing knowledge_retrievals (5959.216333ms)
+  ℹ After the expired write: 1 durable retrievals, 1 retrieval events
+(node:11633) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✖ rolls back retrieval when its lease expires while writing events (6199.329375ms)
+  ℹ After the expired write: 1 durable retrievals, 1 retrieval events
+✖ PostgreSQL Fleet/HA integration (13631.957875ms)
+ℹ tests 2
+ℹ suites 1
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14099.532541
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:18:9925
+✖ rolls back retrieval when its lease expires while writing knowledge_retrievals (5959.216333ms)
+  AssertionError [ERR_ASSERTION]: Retrieval accepted a lease that expired while its persistence was blocked
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:486:16)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:468:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 8)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:18:9925
+✖ rolls back retrieval when its lease expires while writing events (6199.329375ms)
+  AssertionError [ERR_ASSERTION]: Retrieval accepted a lease that expired while its persistence was blocked
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:486:16)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:468:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
