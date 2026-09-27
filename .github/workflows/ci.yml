@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Evidence replay checks source SHA against the original measurement commits.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
