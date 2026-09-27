@@ -99,3 +99,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Повторная проверка lease перед сохранением](./retrieval-lease-locking.md): поиск отклоняет истечение и отмену во время ожидания; PostgreSQL row locks удерживаются после ranking, чтобы чтение индекса не задерживало продление.
 
 [Deadline при SQL-блокировке служебного HTTP](./retrieval-control-lock-deadline.md): воспроизведена задержка main timer при renew, ожидающем stage активного поиска. Остаток срока передаётся в PostgreSQL statement_timeout; проверены отказ без replay, rollback, cursor cleanup и restart.
+
+[Потеря подтверждения COMMIT](./retrieval-commit-acknowledgement.md): настоящий commit подтверждён отдельным соединением до fault; isolated отдаёт 503/504 и закрывает очередь, sync заменяет повреждённое соединение. Сохранённый `K1` не повторяется; только явный запрос создаёт `K2`.

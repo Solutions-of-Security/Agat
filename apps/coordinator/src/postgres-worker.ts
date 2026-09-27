@@ -69,6 +69,11 @@ function createPool(connectionString: string, options: PostgresWorkerOptions, su
     allowExitOnIdle: false,
     ssl: sslOptions(options),
   });
+  pool.on("connect", client => {
+    // Checked-out clients emit socket errors as well as rejecting their query.
+    // Without a listener the bridge thread exits before publishing its reply.
+    client.on("error", () => {});
+  });
   pool.on("error", () => {
     // The next checked-out query returns the actionable connection error.
   });
@@ -372,10 +377,18 @@ async function executeScoped(
     const client = transactionClient;
     transactionClient = null;
     transactionScope = null;
+    let failed = false;
     try {
       return await client.query(transactionControl);
+    } catch (error) {
+      failed = true;
+      if (transactionControl === "COMMIT") {
+        throw Object.assign(new Error("Исход PostgreSQL COMMIT неизвестен; проверьте сохранённый результат перед повтором"),
+          { code: "AGAT_COMMIT_UNKNOWN" });
+      }
+      throw error;
     } finally {
-      client.release(transactionControl === "ROLLBACK");
+      client.release(failed || transactionControl === "ROLLBACK");
     }
   }
   if (transactionClient) {

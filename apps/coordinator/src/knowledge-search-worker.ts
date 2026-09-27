@@ -36,7 +36,8 @@ port.on("message", (message: { type: string; id: number; deadline?: number; toke
       port.postMessage({ type: "result", id: message.id, ok: true, value });
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-      port.postMessage({ type: "result", id: message.id, ok: false, status: code === "AGAT_DEADLINE" || code === "57014" ? 504 : 400,
+      const status = code === "AGAT_COMMIT_UNKNOWN" ? 503 : code === "AGAT_DEADLINE" || code === "57014" ? 504 : 400;
+      port.postMessage({ type: "result", id: message.id, ok: false, status,
         error: error instanceof Error ? error.message : "Ошибка retrieval" });
     }
   }, message.deadline);

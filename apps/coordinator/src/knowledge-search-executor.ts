@@ -72,8 +72,8 @@ export class KnowledgeSearchExecutor implements KnowledgeSearchService {
         this.fail(new KnowledgeSearchExecutorError(504, "Ответ retrieval получен после deadline; результат может быть сохранён"));
         return;
       }
-      if (!message.ok && message.status === 504) {
-        this.fail(new KnowledgeSearchExecutorError(504, "Истёк срок PostgreSQL retrieval; результат активного запроса неизвестен"));
+      if (!message.ok && (message.status === 503 || message.status === 504)) {
+        this.fail(new KnowledgeSearchExecutorError(message.status, "PostgreSQL retrieval прерван; результат активного запроса неизвестен"));
         return;
       }
       this.active = undefined;
