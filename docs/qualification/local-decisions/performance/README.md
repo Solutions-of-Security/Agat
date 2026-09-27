@@ -151,3 +151,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Idle budget session helpers](./embedding-idle-budget.md): native CPU/RSS/footprint при 1/4/32 слотах, проверенное преобразование Mach ticks, 148 закрытых helpers и 296 точных HTTP-ответов.
 
 [Прототип idle retirement](./embedding-idle-prototype.md): освобождение незанятых helpers, безопасный admission/close и два burst по 32 слота; 13 HTTP/process проверок на macOS/Linux.
+
+[Модельный burst после idle](./embedding-idle-model.md): 258 точных model-ответов, 62 закрытых helper, освобождённая память и отдельная цена первого запроса после retirement; явный opt-in worker — следующий gate.
