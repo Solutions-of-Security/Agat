@@ -112,6 +112,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Полный RAG-профиль обычного worker](./qualification/local-decisions/performance/embedding-worker-rag.md) завершил 12 процессов, 36 primary-этапов и 44 embedding-запроса с одинаковыми prompts/outputs и сохранённым provenance. Все 26 helpers закрыты, FD 4 → 4. Session снизил embedding p50 примерно со 159 до 69 мс, но не показал устойчивого ускорения полной фазы; постоянные helpers занимали до 58,4 МиБ sampled RSS. Default isolated сохранён. Следующий gate — остановка worker во время активного embedding и проверка drain/lease/result.
 
+[Остановка worker во время embedding](./qualification/local-decisions/performance/embedding-worker-drain.md) подтверждена четырьмя реальными PostgreSQL-сценариями в обоих режимах: SIGTERM закрывает admission, сохраняет активный renewal через 45 с и завершает текущий result/failure. После restart обрабатываются только pending leases, без повторной записи готового вектора; helper и renewer закрыты. Production изменений не потребовалось. Следующий gate — принудительное завершение родителя и проверка helper/lease recovery.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

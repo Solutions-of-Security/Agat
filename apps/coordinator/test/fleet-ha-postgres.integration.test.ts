@@ -110,6 +110,7 @@ interface EmbeddingWorkerObservation {
   transports: Array<{ pid: number; returncode: number | null; stdinClosed: boolean; stdoutClosed: boolean }>;
   sessionRequests: EmbeddingWorkerObservation["transports"];
   sessionRetired: EmbeddingWorkerObservation["transports"];
+  signals: Array<{ number: number; atNs: number }>;
   events: Array<{ operation: string; event: string; leaseId: string; threadId: number; atNs: number }>;
   requests: Array<{ path: string; status: number; startedNs: number; finishedNs: number; leaseId?: string; documentId?: string; chunkIds?: string[] }>;
 }
@@ -131,7 +132,8 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
   child.stderr.on("data", (data: string) => { diagnostic = (diagnostic + data).slice(-8192); });
   child.stdin.end(JSON.stringify(input));
   const records = (prefix: string) => output.split("\n").slice(0, -1).filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
-  return { closed, diagnostic: () => `${diagnostic}\n${output}`,
+  return { closed, diagnostic: () => `${diagnostic}\n${output}`, signal: () => child.kill("SIGTERM"),
+    signals: () => records("AGAT_EMBEDDING_WORKER_SIGNAL ") as EmbeddingWorkerObservation["signals"],
     requests: () => records("AGAT_EMBEDDING_WORKER_REQUEST ") as EmbeddingWorkerObservation["requests"],
     events: () => records("AGAT_EMBEDDING_WORKER_EVENT ") as EmbeddingWorkerObservation["events"],
     result: () => { const results = records("AGAT_EMBEDDING_WORKER_PROBE "); assert.equal(results.length, 1); return results[0] as EmbeddingWorkerObservation; },
@@ -975,6 +977,162 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         for (const timer of trickles) clearInterval(timer);
         for (const response of heldResponses) { if (!response.destroyed) response.end("e".repeat(12 * 1024)); }
         await worker?.stop(); await child?.stop(); model.closeAllConnections();
+        await new Promise<void>(resolve => model.close(() => resolve()));
+        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+      }
+    });
+  });
+
+  for (const transport of ["isolated", "session"] as const) for (const outcome of ["renew-complete", "deadline"] as const) it(`real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (${outcome}, ${transport})`, async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0);
+      f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
+      const collection = String(f.first.createKnowledgeCollection({ name: "Worker drain", embeddingModel: f.project }, f.project).id);
+      const firstSource = "Active source must drain through its original embedding lease.";
+      const pendingSource = "Queued source must wait for the next worker process.";
+      const document = String(f.first.ingestKnowledgeDocument(collection, { name: "Active source", content: firstSource }, f.project).id);
+      let queuedDocument: string | undefined;
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let successor: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let releaseModel!: () => void, enteredModel!: () => void;
+      const released = new Promise<void>(resolve => { releaseModel = resolve; });
+      const entered = new Promise<void>(resolve => { enteredModel = resolve; });
+      const modelErrors: unknown[] = [], inputs: string[] = [];
+      let firstConnectionClosed = false;
+      const model = http.createServer((request, response) => {
+        void (async () => {
+          assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
+          const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { model: string; input: string[] };
+          assert.equal(body.model, f.project); assert.equal(body.input.length, 1);
+          assert.ok([firstSource, pendingSource].includes(body.input[0]!));
+          inputs.push(body.input[0]!); assert.ok(inputs.length <= (outcome === "deadline" ? 3 : 2));
+          if (inputs.length === 1) {
+            assert.equal(body.input[0], firstSource);
+            response.once("close", () => { firstConnectionClosed = true; });
+            enteredModel(); await released;
+          }
+          if (!response.destroyed) {
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end(JSON.stringify({ data: [{ index: 0, embedding: body.input[0] === firstSource ? [1, 0] : [0, 1] }] }));
+          }
+        })().catch(error => { modelErrors.push(error); if (!response.destroyed) response.writeHead(500).end(); });
+      });
+      const job = (id: string) => f.first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures FROM knowledge_embedding_jobs WHERE document_id = ?").get(id)!;
+      const vectors = (id: string) => f.first.db.prepare("SELECT embedding_json, embedding_dimensions, embedded_at FROM knowledge_chunks WHERE document_id = ?").all(id);
+      const terminalEvents = (id: string) => f.first.db.prepare("SELECT id, type, data_json FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${id}%`);
+      const assertClosed = (observed: EmbeddingWorkerObservation, failed: boolean) => {
+        assert.equal(observed.exitCode, 0); assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []);
+        const reaped = transport === "isolated" ? observed.transports : observed.sessionRetired;
+        assert.ok(reaped.length > 0 && reaped.every(item => item.pid > 0 && item.returncode !== null && item.stdinClosed && item.stdoutClosed));
+        assert.ok(reaped.every(item => failed ? item.returncode! < 0 : item.returncode === 0));
+        if (transport === "session") {
+          assert.deepEqual(observed.transports, []);
+          assert.ok(observed.sessionRequests.every(item => failed ? item.returncode! < 0 && item.stdinClosed && item.stdoutClosed
+            : item.returncode === null && !item.stdinClosed && !item.stdoutClosed));
+        } else { assert.deepEqual(observed.sessionRequests, []); assert.deepEqual(observed.sessionRetired, []); }
+        for (const lease of observed.requests.filter(request => request.path.endsWith("/lease") && request.status === 200)) {
+          const execution = observed.events.filter(event => event.operation === "execute" && event.leaseId === lease.leaseId);
+          const renewal = observed.events.filter(event => event.operation === "renew" && event.leaseId === lease.leaseId);
+          assert.deepEqual(execution.map(event => event.event), ["call", "return"]);
+          assert.deepEqual(renewal.map(event => event.event), ["call", "return"]);
+          assert.ok(renewal[1]!.atNs <= execution[1]!.atNs);
+        }
+      };
+      try {
+        await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+        const address = model.address(); assert.ok(address && typeof address === "object");
+        const environment = () => coordinatorProcessEnvironment(`embedding-drain-${randomUUID().slice(0, 8)}`, f.artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" });
+        child = await startCoordinatorProcess(environment());
+        const input = () => ({ coordinator: `http://127.0.0.1:${child!.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1`, embeddingTransport: transport,
+          embeddingTimeout: outcome === "deadline" ? 3 : 70 });
+        worker = startObservedEmbeddingWorker(input());
+        await within(Promise.race([entered, worker.closed.then(result => {
+          throw new Error(`Worker exited before model HTTP: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+        })]), 8_000, "Worker did not enter the held model HTTP request");
+        const owned = job(document), leaseId = String(owned.lease_id);
+        assert.equal(owned.status, "running"); assert.equal(owned.node_id, f.worker.id);
+        queuedDocument = String(f.first.ingestKnowledgeDocument(collection, { name: "Queued source", content: pendingSource }, f.project).id);
+        const queued = job(queuedDocument);
+        assert.equal(queued.status, "pending"); assert.equal(queued.lease_id, null);
+        assert.equal(worker.signal(), true);
+        await eventually(async () => worker!.signals().length === 1, "SIGTERM did not reach the ordinary worker handler");
+        const signal = worker.signals()[0]!; assert.equal(signal.number, 15);
+        assert.equal(firstConnectionClosed, false, "Graceful stop must not kill the active HTTP call");
+        assert.deepEqual(job(queuedDocument), queued, "Graceful stop must preserve unleased work");
+        if (outcome === "renew-complete") {
+          // Keep the real 45-second renewal interval. Stopping admission must
+          // not stop the separate renewal event for the active lease.
+          const deadline = performance.now() + 50_000;
+          const renewPath = `/api/v1/workers/knowledge/leases/${leaseId}/renew`;
+          while (performance.now() < deadline && !worker.requests().some(row => row.path === renewPath && row.status === 204)) await delay(50);
+          const renewals = worker.requests().filter(row => row.path === renewPath);
+          assert.equal(renewals.length, 1); assert.equal(renewals[0]!.status, 204);
+          assert.ok(renewals[0]!.startedNs > signal.atNs, "Renewal must execute after SIGTERM");
+          const renewed = job(document);
+          assert.equal(renewed.lease_id, leaseId); assert.equal(renewed.node_id, f.worker.id);
+          assert.ok(String(renewed.lease_expires_at) > String(owned.lease_expires_at));
+          assert.equal(firstConnectionClosed, false);
+          assert.deepEqual(job(queuedDocument), queued);
+          releaseModel();
+        }
+        assert.deepEqual(await within(worker.closed, 8_000, "Worker did not finish its active lease and close after SIGTERM"), { code: 0, signal: null });
+        const observed = worker.result(); assertClosed(observed, outcome === "deadline");
+        assert.equal(observed.signals.length, 1);
+        const leased = observed.requests.filter(row => row.path.endsWith("/lease") && row.status === 200);
+        assert.equal(leased.length, 1); assert.equal(leased[0]!.leaseId, leaseId);
+        assert.ok(observed.requests.filter(row => row.path.endsWith("/lease")).every(row => row.finishedNs < signal.atNs),
+          "No new lease HTTP may be sent after SIGTERM was handled");
+        const terminal = observed.requests.filter(row => row.path.endsWith("/complete") || row.path.endsWith("/fail"));
+        assert.equal(terminal.length, 1); assert.equal(terminal[0]!.status, 200);
+        assert.equal(terminal[0]!.path, `/api/v1/workers/knowledge/leases/${leaseId}/${outcome === "deadline" ? "fail" : "complete"}`);
+        assert.ok(terminal[0]!.startedNs > signal.atNs);
+        assert.equal(inputs.length, 1); assert.equal(firstConnectionClosed, true);
+        assert.deepEqual(job(queuedDocument), queued, "The stopped worker must not fetch the queued document");
+        const settled = job(document), settledVectors = vectors(document), settledEvents = terminalEvents(document);
+        assert.equal(settled.status, outcome === "deadline" ? "pending" : "completed");
+        assert.equal(settled.failures, outcome === "deadline" ? 1 : 0);
+        assert.equal(settled.node_id, null); assert.equal(settled.lease_id, null); assert.equal(settled.lease_expires_at, null);
+        assert.equal(settledVectors.length, 1);
+        assert.equal(settledVectors[0]!.embedding_json, outcome === "deadline" ? null : "[1,0]");
+        assert.deepEqual(settledEvents.map(event => event.type), [outcome === "deadline" ? "knowledge.embedding.retrying" : "knowledge.document.ready"]);
+        if (outcome === "deadline") assert.match(JSON.parse(String(settledEvents[0]!.data_json)).error, /deadline/);
+        releaseModel();
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        child = await startCoordinatorProcess(environment());
+        assert.deepEqual(job(document), settled); assert.deepEqual(vectors(document), settledVectors);
+        assert.deepEqual(terminalEvents(document), settledEvents);
+        successor = startObservedEmbeddingWorker(input());
+        await eventually(async () => job(document).status === "completed" && job(queuedDocument!).status === "completed",
+          "Restarted worker did not finish the remaining durable embedding work");
+        assert.deepEqual(await successor.stop(), { code: 0, signal: null });
+        const resumed = successor.result(); assertClosed(resumed, false);
+        const resumedLeases = resumed.requests.filter(row => row.path.endsWith("/lease") && row.status === 200);
+        assert.equal(resumedLeases.length, outcome === "deadline" ? 2 : 1);
+        assert.ok(resumedLeases.every(row => row.leaseId !== leaseId));
+        assert.deepEqual(resumedLeases.map(row => row.documentId).sort(), (outcome === "deadline" ? [document, queuedDocument] : [queuedDocument]).sort());
+        assert.ok(resumed.requests.filter(row => row.path.endsWith("/complete")).every(row => row.status === 200));
+        assert.equal(resumed.requests.filter(row => row.path.endsWith("/fail")).length, 0);
+        assert.equal(inputs.filter(value => value === firstSource).length, outcome === "deadline" ? 2 : 1);
+        assert.equal(inputs.filter(value => value === pendingSource).length, 1);
+        assert.equal(vectors(document)[0]!.embedding_json, "[1,0]"); assert.equal(vectors(queuedDocument)[0]!.embedding_json, "[0,1]");
+        assert.equal(job(document).failures, outcome === "deadline" ? 1 : 0);
+        assert.deepEqual(terminalEvents(queuedDocument).map(event => event.type), ["knowledge.document.ready"]);
+        if (outcome === "renew-complete") {
+          assert.deepEqual(vectors(document), settledVectors, "Restart must not rewrite the drained source vector or timestamp");
+          assert.deepEqual(terminalEvents(document), settledEvents, "Restart must not duplicate the drained ready event");
+        } else assert.deepEqual(terminalEvents(document).map(event => event.type), ["knowledge.embedding.retrying", "knowledge.document.ready"]);
+        assert.deepEqual(modelErrors, []);
+        assert.equal(fs.existsSync(path.join(f.artifacts, "embedding-worker-credentials.json")), false);
+        context.diagnostic(`${outcome}/${transport}: SIGTERM stopped admission; active terminal HTTP 200 after signal; ${outcome === "renew-complete" ? "real renewal HTTP 204 during drain" : "deadline killed and reaped helper"}; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed`);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}\n${successor?.diagnostic() ?? "Successor did not start"}`); throw error; }
+      finally {
+        releaseModel(); await worker?.stop(); await successor?.stop(); await child?.stop(); model.closeAllConnections();
         await new Promise<void>(resolve => model.close(() => resolve()));
         f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
       }

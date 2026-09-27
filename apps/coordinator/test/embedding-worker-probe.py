@@ -41,6 +41,7 @@ def main() -> int:
     transports: list[dict] = []
     session_requests: list[dict] = []
     session_retired: list[dict] = []
+    signals: list[dict] = []
     active_requests: dict[int, dict] = {}
     lock = threading.Lock()
     execute_code = agat_worker.execute_knowledge_lease.__code__
@@ -53,11 +54,16 @@ def main() -> int:
 
     def observe(frame, event, result):
         code = frame.f_code
-        if event not in {"call", "return"} or code not in {execute_code, renew_code, request_code, error_code, transport_code, session_code, retire_code}:
+        is_stop = code.co_name == "request_stop" and code.co_filename == agat_worker.__file__
+        if event not in {"call", "return"} or (not is_stop and code not in {execute_code, renew_code, request_code, error_code, transport_code, session_code, retire_code}):
             return
         thread_id = threading.get_native_id()
         with lock:
-            if code in {execute_code, renew_code}:
+            if is_stop and event == "return":
+                record = {"number": frame.f_locals["_signum"], "atNs": time.monotonic_ns()}
+                signals.append(record)
+                print("AGAT_EMBEDDING_WORKER_SIGNAL " + json.dumps(record), flush=True)
+            elif code in {execute_code, renew_code}:
                 lease_id = frame.f_locals["lease"]["leaseId"] if code is execute_code else frame.f_locals["lease_id"]
                 record = {"operation": "execute" if code is execute_code else "renew",
                           "event": event, "leaseId": lease_id, "threadId": thread_id,
@@ -110,7 +116,7 @@ def main() -> int:
         credentials.unlink(missing_ok=True)
     print("AGAT_EMBEDDING_WORKER_PROBE " + json.dumps({
         "exitCode": code, "python": sys.version.split()[0], "events": events, "requests": requests, "transports": transports,
-        "sessionRequests": session_requests, "sessionRetired": session_retired,
+        "sessionRequests": session_requests, "sessionRetired": session_retired, "signals": signals,
         "activeRequests": len(active_requests),
         "liveThreads": [thread.name for thread in threading.enumerate() if thread is not threading.main_thread()],
     }), flush=True)
