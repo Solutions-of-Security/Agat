@@ -29,6 +29,8 @@
 
 Полные проверки: coordinator **247/247**, PostgreSQL Fleet/HA **26/26**, typecheck workspaces и строгая отдельная проверка TypeScript для proxy. Исходные failures, финальные логи и SHA: [checks.json](./evidence/2026-09-27/retrieval-commit-acknowledgement/checks.json).
 
+Первая CI-проверка обнаружила отдельную ошибку fixture: сценарий `withhold` не успел достичь COMMIT за секундный deadline. Proxy отправлял каждый protocol message отдельным `write`, оставляя Nagle включённым на обоих sockets, тогда как `pg` вызывает `setNoDelay(true)`. Такой транспорт может добавлять задержку до целевого fault; [Node.js описывает этот обмен latency на throughput](https://github.com/nodejs/node/blob/main/doc/api/net.md#socketsetnodelaynodelay). Proxy теперь использует ту же настройку, что драйвер. Deadline 1000 мс и все проверки сохранены. Если поиск завершится раньше COMMIT, тест сразу сообщает HTTP status вместо ожидания сигнала fixture. Повторные три локальных сценария прошли; успешный COMMIT наблюдался через 75/63 мс в isolated. Исходный CI failure и новые логи сохранены отдельно, результат CI проверяется перед merge.
+
 ```sh
 bash scripts/test-fleet-ha-postgres.sh --test-name-pattern='COMMIT acknowledgement|uncertain sync COMMIT'
 npm run test:coordinator
