@@ -1,6 +1,7 @@
 """Real child lifetime when its transport owner disappears without cleanup."""
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import select
@@ -16,7 +17,7 @@ import embedding_http
 
 ROOT = Path(embedding_http.__file__).resolve().parent
 OWNER = '''
-import sys, subprocess
+import sys, subprocess, json
 sys.path.insert(0, sys.argv[1])
 from agat_worker import LocalModelClient
 from embedding_transport import EmbeddingSessionPool
@@ -28,7 +29,7 @@ sys.setprofile(observe)
 with EmbeddingSessionPool(1) as pool:
     client = LocalModelClient(sys.argv[2], '', embedding_timeout=30,
         embedding_request=pool.request if sys.argv[3] == 'session' else None)
-    client.embed('local', ['owned source'])
+    print(json.dumps(client.embed('local', ['owned source'])), flush=True)
 '''
 
 
@@ -65,11 +66,14 @@ def held_body():
             self.end_headers()
             entered.set()
             try:
-                self.wfile.write(b'1\r\n{\r\n')
+                body = b'{"data":[{"index":0,"embedding":[1,0]}]}'
+                self.wfile.write(f'{len(body):x}\r\n'.encode() + body + b'\r\n')
                 self.wfile.flush()
                 while not release.wait(.03):
                     self.wfile.write(b'1\r\n \r\n')
                     self.wfile.flush()
+                self.wfile.write(b'0\r\n\r\n')
+                self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 disconnected.set()
             finally:
@@ -79,7 +83,7 @@ def held_body():
     thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=.01))
     thread.start()
     try:
-        yield f'http://127.0.0.1:{server.server_port}/v1', entered, disconnected
+        yield f'http://127.0.0.1:{server.server_port}/v1', entered, disconnected, release
     finally:
         release.set()
         server.shutdown()
@@ -122,7 +126,7 @@ class ParentBindingTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'posix', 'Unix parent reparenting contract')
     def test_sigkill_owner_closes_body_and_exits_both_real_transports(self):
         for mode in ('isolated', 'session'):
-            with self.subTest(mode=mode), held_body() as (url, entered, disconnected):
+            with self.subTest(mode=mode), held_body() as (url, entered, disconnected, _release):
                 parent = subprocess.Popen([sys.executable, '-u', '-c', OWNER, str(ROOT), url, mode],
                                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                           env={**os.environ, 'NO_PROXY': '127.0.0.1', 'no_proxy': '127.0.0.1',
@@ -147,6 +151,50 @@ class ParentBindingTests(unittest.TestCase):
                     parent.stdout.close()
                     if helper is not None and executing(helper):
                         os.kill(helper, signal.SIGKILL)
+
+
+    @unittest.skipUnless(os.name == 'posix', 'Unix parent reparenting contract')
+    def test_killed_owner_does_not_interrupt_neighbor_response(self):
+        for killed_mode in ('isolated', 'session'):
+            for neighbor_mode in ('isolated', 'session'):
+                with self.subTest(killed=killed_mode, neighbor=neighbor_mode), held_body() as lost, held_body() as live:
+                    parents, helpers = [], []
+                    try:
+                        for mode, fixture in ((killed_mode, lost), (neighbor_mode, live)):
+                            parent = subprocess.Popen([sys.executable, '-u', '-c', OWNER, str(ROOT), fixture[0], mode],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env={**os.environ, 'NO_PROXY': '127.0.0.1', 'no_proxy': '127.0.0.1',
+                                     'AGAT_OTEL_ENABLED': 'false', 'OTEL_SDK_DISABLED': 'true'})
+                            parents.append(parent)
+                            self.assertTrue(select.select([parent.stdout], [], [], 5)[0], 'Missing owned helper')
+                            helpers.append(int(parent.stdout.readline(30)))
+                            self.assertTrue(fixture[1].wait(5), 'Model HTTP did not start')
+                        self.assertEqual(len(set(helpers + [parent.pid for parent in parents])), 4)
+                        parents[0].kill()
+                        self.assertEqual(parents[0].wait(3), -signal.SIGKILL)
+                        self.assertTrue(lost[2].wait(3), 'Killed owner retained HTTP')
+                        deadline = time.monotonic() + 3
+                        while executing(helpers[0]) and time.monotonic() < deadline:
+                            time.sleep(.02)
+                        self.assertFalse(executing(helpers[0]))
+                        self.assertIsNone(parents[1].poll(), 'Neighbor owner exited')
+                        self.assertTrue(executing(helpers[1]), 'Neighbor helper exited')
+                        self.assertFalse(live[2].is_set(), 'Neighbor HTTP was interrupted')
+                        live[3].set()
+                        output, error = parents[1].communicate(timeout=5)
+                        self.assertEqual(parents[1].returncode, 0, error.decode(errors='replace'))
+                        self.assertEqual(json.loads(output), [[1.0, 0.0]])
+                        self.assertFalse(executing(helpers[1]), 'Successful neighbor did not reap helper')
+                    finally:
+                        for parent in parents:
+                            if parent.poll() is None:
+                                parent.kill()
+                            parent.wait(3)
+                            parent.stdout.close()
+                            parent.stderr.close()
+                        for helper in helpers:
+                            if executing(helper):
+                                os.kill(helper, signal.SIGKILL)
 
 
 if __name__ == '__main__':
