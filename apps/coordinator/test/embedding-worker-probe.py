@@ -19,12 +19,18 @@ def main() -> int:
         raise ValueError("The embedding worker fixture requires a loopback coordinator")
     credentials = Path(supplied["artifacts"]) / "embedding-worker-credentials.json"
     agat_worker.save_credentials(credentials, {"id": supplied["nodeId"], "token": supplied["token"]})
+    model_url = supplied.get("modelUrl", "http://127.0.0.1:1/v1")
+    model = urlsplit(model_url)
+    if model.scheme != "http" or model.hostname != "127.0.0.1" or not model.port or model.username or model.password:
+        raise ValueError("The embedding worker fixture requires a loopback model endpoint")
     sys.argv = ["agat_worker.py", "--coordinator", supplied["coordinator"],
                 "--models", supplied["model"], "--embedding-models", supplied["model"],
-                "--credentials", str(credentials), "--model-url", "http://127.0.0.1:1/v1",
+                "--credentials", str(credentials), "--model-url", model_url,
                 "--model-discovery", "off", "--concurrency", "1", "--poll-interval", "0.2",
                 "--region", supplied["region"], "--residency-domain", supplied["residencyDomain"],
-                "--no-web", "--dry-run"]
+                "--no-web"]
+    if supplied.get("dryRun", True):
+        sys.argv.append("--dry-run")
     events: list[dict] = []
     requests: list[dict] = []
     active_requests: dict[int, dict] = {}
@@ -42,9 +48,11 @@ def main() -> int:
         with lock:
             if code in {execute_code, renew_code}:
                 lease_id = frame.f_locals["lease"]["leaseId"] if code is execute_code else frame.f_locals["lease_id"]
-                events.append({"operation": "execute" if code is execute_code else "renew",
-                               "event": event, "leaseId": lease_id, "threadId": thread_id,
-                               "atNs": time.monotonic_ns()})
+                record = {"operation": "execute" if code is execute_code else "renew",
+                          "event": event, "leaseId": lease_id, "threadId": thread_id,
+                          "atNs": time.monotonic_ns()}
+                events.append(record)
+                print("AGAT_EMBEDDING_WORKER_EVENT " + json.dumps(record), flush=True)
             elif code is request_code:
                 route = frame.f_locals["path"]
                 if not route.startswith("/api/v1/workers/knowledge/"):
@@ -65,6 +73,7 @@ def main() -> int:
                         record["leaseId"] = result["leaseId"]
                         record["documentId"] = result["document"]["id"]
                         record["chunkIds"] = [item["id"] for item in result["chunks"]]
+                    print("AGAT_EMBEDDING_WORKER_REQUEST " + json.dumps(record), flush=True)
             elif event == "call" and thread_id in active_requests:
                 active_requests[thread_id]["status"] = frame.f_locals["status"]
 

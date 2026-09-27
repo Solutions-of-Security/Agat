@@ -1,0 +1,71 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:48194) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (46124.1265ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=none; model calls=1
+  ℹ (node:48196) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:49770
+State store: postgresql
+HA-cell: eu-test-1/eu-test · embedding-cancel-2e2e34ef
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-embedding-lease-HgZwpM
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+Embedding lease renewal failed for 100e94d4-5ab2-46ef-85a1-9e33f3e6e57e: Embedding-аренда не найдена
+
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/lease", "startedNs": 13481418463541, "threadId": 1082010, "finishedNs": 13481437993208, "status": 200, "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "documentId": "dbd9daf4-fb8f-4527-8595-ea26e798576d", "chunkIds": ["c5428a2b357fede46d3e0d042895dc734876119b1a67b60ea84036321f219690"]}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "call", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082029, "atNs": 13481438554625}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "call", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082030, "atNs": 13481438979750}
+[100e94d4] embedding Delayed source · embedding-lease-d11859c9 · 1 chunks
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/100e94d4-5ab2-46ef-85a1-9e33f3e6e57e/renew", "startedNs": 13526447356708, "threadId": 1082030, "status": 404, "finishedNs": 13526456852166}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "return", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082030, "atNs": 13526457007250}
+[100e94d4] embedding lease lost; result discarded
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "return", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082029, "atNs": 13526534124333}
+AGAT_EMBEDDING_WORKER_PROBE {"exitCode": 0, "python": "3.14.3", "events": [{"operation": "execute", "event": "call", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082029, "atNs": 13481438554625}, {"operation": "renew", "event": "call", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082030, "atNs": 13481438979750}, {"operation": "renew", "event": "return", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082030, "atNs": 13526457007250}, {"operation": "execute", "event": "return", "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "threadId": 1082029, "atNs": 13526534124333}], "requests": [{"path": "/api/v1/workers/knowledge/lease", "startedNs": 13481418463541, "threadId": 1082010, "finishedNs": 13481437993208, "status": 200, "leaseId": "100e94d4-5ab2-46ef-85a1-9e33f3e6e57e", "documentId": "dbd9daf4-fb8f-4527-8595-ea26e798576d", "chunkIds": ["c5428a2b357fede46d3e0d042895dc734876119b1a67b60ea84036321f219690"]}, {"path": "/api/v1/workers/knowledge/leases/100e94d4-5ab2-46ef-85a1-9e33f3e6e57e/renew", "startedNs": 13526447356708, "threadId": 1082030, "status": 404, "finishedNs": 13526456852166}], "activeRequests": 0, "liveThreads": []}
+
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect) (1569.580875ms)
+  ℹ Python 3.14.3/disconnect: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold) (2476.578291ms)
+  ℹ Python 3.14.3/withhold: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+✖ PostgreSQL Fleet/HA integration (51592.215208ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52037.958542
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:20:6633
+✖ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (46124.1265ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  1 !== 0
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:929:113)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:861:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 16)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
