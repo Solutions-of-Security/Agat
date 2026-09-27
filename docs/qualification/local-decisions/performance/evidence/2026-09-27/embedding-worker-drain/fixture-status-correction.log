@@ -1,0 +1,108 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:56980) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, isolated) (51172.253667ms)
+  ℹ (node:56985) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:59173
+State store: postgresql
+HA-cell: eu-test-1/eu-test · embedding-drain-f72eff6e
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-embedding-lease-4jzKGM
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/lease", "startedNs": 22993199083041, "threadId": 2037813, "finishedNs": 22993218171541, "status": 200, "leaseId": "448ceed9-97a3-414c-b5ec-92f52016756b", "documentId": "89c1da9a-ada1-4832-a4fe-16494cf78a54", "chunkIds": ["6b15cc8d5df5990dd6b9bdee4af999c22a4e90af20fbb5d4369d00657f545b4a"]}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "call", "leaseId": "448ceed9-97a3-414c-b5ec-92f52016756b", "threadId": 2037827, "atNs": 22993218982291}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "call", "leaseId": "448ceed9-97a3-414c-b5ec-92f52016756b", "threadId": 2037828, "atNs": 22993219580500}
+[448ceed9] embedding Active source · embedding-lease-75239c85 · 1 chunks
+AGAT_EMBEDDING_WORKER_SIGNAL {"number": 15, "atNs": 22993297446416}
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/448ceed9-97a3-414c-b5ec-92f52016756b/renew", "startedNs": 23038224305958, "threadId": 2037828, "finishedNs": 23038239100916, "status": 204}
+
+Successor did not start
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (deadline, isolated) (6718.32925ms)
+  ℹ deadline/isolated: SIGTERM stopped admission; active terminal HTTP 200 after signal; deadline killed and reaped helper; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✖ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, session) (51158.396958ms)
+  ℹ (node:57594) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:59291
+State store: postgresql
+HA-cell: eu-test-1/eu-test · embedding-drain-e632948b
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-embedding-lease-FjlMsZ
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/lease", "startedNs": 23051070068625, "threadId": 2041374, "finishedNs": 23051092568958, "status": 200, "leaseId": "232b8661-6c1f-4113-b7b2-f488138c8c4d", "documentId": "90655d41-706a-4991-b12f-78c1c9c23880", "chunkIds": ["3d2cf82ae2b9c73a7d1a7379ee5a2b3862c32008a6ea7bf0f583fc641a61715a"]}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "call", "leaseId": "232b8661-6c1f-4113-b7b2-f488138c8c4d", "threadId": 2041389, "atNs": 23051093415416}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "call", "leaseId": "232b8661-6c1f-4113-b7b2-f488138c8c4d", "threadId": 2041390, "atNs": 23051094027208}
+[232b8661] embedding Active source · embedding-lease-6667b06c · 1 chunks
+AGAT_EMBEDDING_WORKER_SIGNAL {"number": 15, "atNs": 23051181646375}
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/232b8661-6c1f-4113-b7b2-f488138c8c4d/renew", "startedNs": 23096095905291, "threadId": 2041390, "finishedNs": 23096108292625, "status": 204}
+
+Successor did not start
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (deadline, session) (4822.039334ms)
+  ℹ deadline/session: SIGTERM stopped admission; active terminal HTTP 200 after signal; deadline killed and reaped helper; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+✖ PostgreSQL Fleet/HA integration (115292.672875ms)
+ℹ tests 4
+ℹ suites 1
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 115813.332625
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:21:510
+✖ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, isolated) (51172.253667ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  204 !== 200
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1074:52)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:987:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 26)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 204,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:21:510
+✖ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, session) (51158.396958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  204 !== 200
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1074:52)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:987:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 204,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
