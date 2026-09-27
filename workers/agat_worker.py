@@ -2531,7 +2531,8 @@ def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Even
 
 
 def knowledge_lease_renewer(
-    client: CoordinatorClient, lease_id: str, stop: threading.Event
+    client: CoordinatorClient, lease_id: str, stop: threading.Event,
+    cancelled: threading.Event | None = None,
 ) -> None:
     while not stop.wait(45):
         try:
@@ -2542,6 +2543,10 @@ def knowledge_lease_renewer(
                 file=sys.stderr,
                 flush=True,
             )
+            if error.status in (401, 403, 404, 409):
+                if cancelled is not None:
+                    cancelled.set()
+                return
 
 
 def execute_knowledge_lease(
@@ -2568,9 +2573,10 @@ def execute_knowledge_lease(
         print("Embedding lease has no model", file=sys.stderr, flush=True)
         return
     renew_stop = threading.Event()
+    cancelled = threading.Event()
     renew_thread = threading.Thread(
         target=knowledge_lease_renewer,
-        args=(client, lease_id, renew_stop),
+        args=(client, lease_id, renew_stop, cancelled),
         daemon=True,
     )
     renew_thread.start()
@@ -2592,11 +2598,18 @@ def execute_knowledge_lease(
                 raise RuntimeError("Embedding lease contains a malformed chunk")
             chunk_ids.append(chunk["id"])
             contents.append(chunk["content"])
+        if cancelled.is_set():
+            return
         vectors = (
             [model_client.dry_run_embedding(content) for content in contents]
             if dry_run
             else model_client.embed(embedding_model, contents)
         )
+        # A definitive renewal rejection makes both completion and failure
+        # obsolete. The coordinator still fences races after this local check.
+        if cancelled.is_set():
+            print(f"[{lease_id[:8]}] embedding lease lost; result discarded", flush=True)
+            return
         if len(vectors) != len(chunk_ids):
             raise RuntimeError("Embedding endpoint returned an incomplete batch")
         result = client.knowledge_complete(
@@ -2611,6 +2624,9 @@ def execute_knowledge_lease(
             flush=True,
         )
     except Exception as error:  # noqa: BLE001 - embedding failures must be retried upstream.
+        if cancelled.is_set():
+            print(f"[{lease_id[:8]}] embedding lease lost; error discarded", flush=True)
+            return
         message = f"{type(error).__name__}: {error}"
         print(f"[{lease_id[:8]}] embedding failed: {message}", file=sys.stderr, flush=True)
         try:

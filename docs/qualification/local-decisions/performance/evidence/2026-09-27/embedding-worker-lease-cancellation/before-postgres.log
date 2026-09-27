@@ -1,0 +1,74 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:45432) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (46166.0265ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=complete:400,fail:400; model calls=1
+  ℹ (node:45511) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+АГАТ слушает http://127.0.0.1:49449
+State store: postgresql
+HA-cell: eu-test-1/eu-test · embedding-cancel-71aa7fcd
+Artifact store: postgresql · cache /var/folders/64/73n6lrf52yb2rqxcntpzc4700000gn/T/agat-pg-embedding-lease-Tq2rGz
+Локальный worker launcher: выключен
+Runtime процессов: database
+OpenTelemetry: выключен
+MCP gateway: выключен
+Tool sandbox: Изолированное выполнение tools выключено
+A2A adapter: выключен
+Native edge workers: выключены
+
+Embedding lease renewal failed for f093efba-7927-4460-8ad8-d0e0e5b65bec: Embedding-аренда не найдена
+[f093efba] embedding failed: ApiError: Активная embedding-аренда не найдена
+Could not report embedding failure: Активная embedding-аренда не найдена
+
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/lease", "startedNs": 13314033456250, "threadId": 1069557, "finishedNs": 13314052053416, "status": 200, "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "documentId": "ae6be953-b21d-448f-94c0-5a66832dc94b", "chunkIds": ["6db09646574bf1e10966d01e31c82e5bb4f17beadf4ae45cc1c89d393eca1dfd"]}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "call", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069561, "atNs": 13314052537500}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "call", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069562, "atNs": 13314052943708}
+[f093efba] embedding Delayed source · embedding-lease-13e66fcb · 1 chunks
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/renew", "startedNs": 13359060369083, "threadId": 1069562, "status": 404, "finishedNs": 13359069869666}
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/complete", "startedNs": 13359166028291, "threadId": 1069561, "chunkIds": ["6db09646574bf1e10966d01e31c82e5bb4f17beadf4ae45cc1c89d393eca1dfd"], "status": 400, "finishedNs": 13359177011458}
+AGAT_EMBEDDING_WORKER_REQUEST {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/fail", "startedNs": 13359177096041, "threadId": 1069561, "status": 400, "finishedNs": 13359195237583}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "renew", "event": "return", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069562, "atNs": 13359195971416}
+AGAT_EMBEDDING_WORKER_EVENT {"operation": "execute", "event": "return", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069561, "atNs": 13359196088625}
+AGAT_EMBEDDING_WORKER_PROBE {"exitCode": 0, "python": "3.14.3", "events": [{"operation": "execute", "event": "call", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069561, "atNs": 13314052537500}, {"operation": "renew", "event": "call", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069562, "atNs": 13314052943708}, {"operation": "renew", "event": "return", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069562, "atNs": 13359195971416}, {"operation": "execute", "event": "return", "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "threadId": 1069561, "atNs": 13359196088625}], "requests": [{"path": "/api/v1/workers/knowledge/lease", "startedNs": 13314033456250, "threadId": 1069557, "finishedNs": 13314052053416, "status": 200, "leaseId": "f093efba-7927-4460-8ad8-d0e0e5b65bec", "documentId": "ae6be953-b21d-448f-94c0-5a66832dc94b", "chunkIds": ["6db09646574bf1e10966d01e31c82e5bb4f17beadf4ae45cc1c89d393eca1dfd"]}, {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/renew", "startedNs": 13359060369083, "threadId": 1069562, "status": 404, "finishedNs": 13359069869666}, {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/complete", "startedNs": 13359166028291, "threadId": 1069561, "chunkIds": ["6db09646574bf1e10966d01e31c82e5bb4f17beadf4ae45cc1c89d393eca1dfd"], "status": 400, "finishedNs": 13359177011458}, {"path": "/api/v1/workers/knowledge/leases/f093efba-7927-4460-8ad8-d0e0e5b65bec/fail", "startedNs": 13359177096041, "threadId": 1069561, "status": 400, "finishedNs": 13359195237583}], "activeRequests": 0, "liveThreads": []}
+
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect) (2159.324542ms)
+  ℹ Python 3.14.3/disconnect: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold) (2699.299958ms)
+  ℹ Python 3.14.3/withhold: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+✖ PostgreSQL Fleet/HA integration (52585.190292ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 53126.333583
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:20:6633
+✖ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (46166.0265ms)
+  AssertionError [ERR_ASSERTION]: A definitively lost embedding lease must not submit a stale completion or failure
+
+  2 !== 0
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:917:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:861:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 16)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

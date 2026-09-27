@@ -1,0 +1,87 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "7af816639f23063972866166137b874de51a24a0",
+  "node": "v24.14.0",
+  "python": "3.14.3",
+  "postgres": "17.6",
+  "checks": {
+    "beforePostgres": {
+      "expectedFail": 1,
+      "controlPass": 2,
+      "obsoleteResponses": [
+        "complete:400",
+        "fail:400"
+      ]
+    },
+    "fixtureCounterFailure": {
+      "pass": 2,
+      "fail": 1,
+      "reason": "After runtime correction, fixture incorrectly expected failures=0 instead of preserving the one maintenance expiry."
+    },
+    "postgresTargeted": {
+      "pass": 3,
+      "fail": 0,
+      "obsoleteTerminalAttempts": 0
+    },
+    "unitTargeted": {
+      "pass": 8,
+      "fail": 0
+    },
+    "workerUnit": {
+      "pass": 52,
+      "skip": 1,
+      "fail": 0,
+      "skipReason": "LangGraph dependency is not installed"
+    },
+    "typecheck": "pass",
+    "postgres": {
+      "pass": 68,
+      "fail": 0
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 165,
+      "localLinks": 1542,
+      "markdownFiles": 185,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "sourceSha256": {
+    "workers/agat_worker.py": "02251180cbc0f120673f8688721afb916d75db7e433e4eaf1f4376dedaea7809",
+    "workers/test_embedding_cancellation.py": "9d379b09cf0c1192ae682bfeef34f36762a58ed73e4f737316b68a6cbdd062cc",
+    "apps/coordinator/test/embedding-worker-probe.py": "4458147404c034b19bc61355b5ff6213cdde3bf4c7bf499c2b0016b594beda44",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "e7ba51502f8199d313700f7beb4d230f0d4341129b2812e266cb3fb39f121099",
+    "apps/coordinator/src/database.ts": "4837c0df0d9157441443f4e14780c5299f0fef677aff6528b7931a27598db411",
+    "apps/coordinator/src/server.ts": "29a68b507fee72a4e78aa1cd7289b7b571131857dc4042279868eb8c65f7aafb"
+  },
+  "logSha256": {
+    "before-postgres.log": "228887c301b2aa47f53af5c219fca5efd76f587f5ecf5e077fb5b78c75ff421f",
+    "fixture-counter-failure.log": "d40cdb58c0b058297132dcf638b3b898b66627f1a7fb908316db3016ed3a7111",
+    "postgres-targeted.log": "73301f4b8afd412616f851b1fab81cd385a215798aaae639a9bce25515aba546",
+    "unit-targeted.log": "42baead25681aab3bc4d7d4c807bd0fd279f7767f54663bd2a64a26d4a4dca6c",
+    "worker-unit.log": "71731a2a7b3127e1cb280d8e03a7dcd30c62479c1a8d3b9f2f3267e96d2e046f",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "postgres.log": "13417ea0d2692279edd2daf9eabc89444670535710c2b8d94dc22059a2512ffd",
+    "docs.log": "72dbd81374ff338a62fd2e6a29598c7f0738d26598c6995b5dd398b5604e9cec",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-postgres.log": "ed55b8acf815ac680e08fae6df3bc7a5175935dbf3ec29b6263866719e15af65",
+    "fixture-counter-failure.log": "4f4205b5420874f2267da5429505bd2230cae445a6fdb785ce6faeafd179b595",
+    "postgres-targeted.log": "73301f4b8afd412616f851b1fab81cd385a215798aaae639a9bce25515aba546",
+    "unit-targeted.log": "42baead25681aab3bc4d7d4c807bd0fd279f7767f54663bd2a64a26d4a4dca6c",
+    "worker-unit.log": "71731a2a7b3127e1cb280d8e03a7dcd30c62479c1a8d3b9f2f3267e96d2e046f",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "postgres.log": "13417ea0d2692279edd2daf9eabc89444670535710c2b8d94dc22059a2512ffd",
+    "docs.log": "72dbd81374ff338a62fd2e6a29598c7f0738d26598c6995b5dd398b5604e9cec",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "boundary": "Cooperative cancellation of renewal and stale completion/failure after definitive renewal rejection; does not interrupt an already-blocked model HTTP call or prove backend compute cancellation.",
+  "logNormalization": "Trailing whitespace and final blank lines removed; baseline and failed fixture expectation retained separately."
+}

@@ -121,3 +121,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Потерянное подтверждение embedding COMMIT](./embedding-commit-acknowledgement.md): независимая проверка записи до разрыва/timeout, отказ старому lease, restart без повторной записи и выдача только оставшегося chunk.
 
 [Восстановление настоящего Python worker](./embedding-worker-recovery.md): после потерянного COMMIT-ответа тот же worker завершает остаток и следующий документ; HTTP attempts, завершение renewal threads и точные сохранённые векторы проверяются независимо.
+
+[Отмена после окончательного отказа embedding renewal](./embedding-worker-lease-cancellation.md): HTTP 404 во время model HTTP прекращает renewer и отправку устаревших complete/fail; временные ошибки связи сохраняют нормальное продолжение.

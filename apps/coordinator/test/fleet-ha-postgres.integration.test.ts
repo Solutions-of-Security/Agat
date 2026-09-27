@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -102,6 +103,40 @@ function coordinatorProcessEnvironment(instance: string, artifacts: string, over
     AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_SERVE_WEB: "false", AGAT_SEED_DEMO: "false",
     AGAT_MCP_ENABLED: "false", AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false",
     AGAT_SIEM_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false", AGAT_TEMPORAL_ENABLED: "false", ...overrides };
+}
+
+interface EmbeddingWorkerObservation {
+  exitCode: number; python: string; activeRequests: number; liveThreads: string[];
+  events: Array<{ operation: string; event: string; leaseId: string; threadId: number; atNs: number }>;
+  requests: Array<{ path: string; status: number; startedNs: number; finishedNs: number; leaseId?: string; documentId?: string; chunkIds?: string[] }>;
+}
+
+function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: string; nodeId: string; token: string;
+  model: string; region: string; residencyDomain: string; dryRun?: boolean; modelUrl?: string }) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_") && !name.startsWith("OTEL_")));
+  const child = spawn("python3", [fileURLToPath(new URL("./embedding-worker-probe.py", import.meta.url))], {
+    env: { ...env, AGAT_OTEL_ENABLED: "false", AGAT_WORKER_LABELS: `pool=${input.model}`, PYTHONDONTWRITEBYTECODE: "1" },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "", diagnostic = "";
+  const closed = new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
+    child.once("close", (code, signal) => resolve({ code, signal })); child.once("error", reject);
+  });
+  void closed.catch(() => {});
+  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (data: string) => { output = (output + data).slice(-128 * 1024); });
+  child.stderr.on("data", (data: string) => { diagnostic = (diagnostic + data).slice(-8192); });
+  child.stdin.end(JSON.stringify(input));
+  const records = (prefix: string) => output.split("\n").slice(0, -1).filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
+  return { closed, diagnostic: () => `${diagnostic}\n${output}`,
+    requests: () => records("AGAT_EMBEDDING_WORKER_REQUEST ") as EmbeddingWorkerObservation["requests"],
+    events: () => records("AGAT_EMBEDDING_WORKER_EVENT ") as EmbeddingWorkerObservation["events"],
+    result: () => { const results = records("AGAT_EMBEDDING_WORKER_PROBE "); assert.equal(results.length, 1); return results[0] as EmbeddingWorkerObservation; },
+    stop: async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      try { return await within(closed, 5_000, "Python worker did not drain its embedding execution"); }
+      catch (error) { child.kill("SIGKILL"); await closed; throw error; }
+    } };
 }
 
 async function eventually(check: () => Promise<boolean>, message: string): Promise<void> {
@@ -822,6 +857,92 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await embeddingLeaseFixture(0);
+      f.first.completeKnowledgeEmbedding(f.worker.id, f.lease.leaseId, f.results);
+      const collection = String(f.first.createKnowledgeCollection({ name: "Cancelled worker", embeddingModel: f.project }, f.project).id);
+      const document = String(f.first.ingestKnowledgeDocument(collection, { name: "Delayed source", content: "Hold this local inference until renewal rejects the obsolete lease." }, f.project).id);
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
+      let releaseModel!: () => void, enteredModel!: () => void;
+      const released = new Promise<void>(resolve => { releaseModel = resolve; });
+      const entered = new Promise<void>(resolve => { enteredModel = resolve; });
+      const modelErrors: unknown[] = [];
+      let modelCalls = 0;
+      const model = http.createServer((request, response) => {
+        void (async () => {
+          assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
+          const parts: Buffer[] = []; for await (const chunk of request) parts.push(Buffer.from(chunk));
+          const body = JSON.parse(Buffer.concat(parts).toString("utf8")) as { model: string; input: string[] };
+          assert.equal(body.model, f.project); assert.equal(body.input.length, 1); modelCalls++;
+          enteredModel(); await released;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ data: body.input.map((_, index) => ({ index, embedding: [1, 0] })) }));
+        })().catch(error => { modelErrors.push(error); response.writeHead(500); response.end(); });
+      });
+      try {
+        await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
+        const address = model.address(); assert.ok(address && typeof address === "object");
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(`embedding-cancel-${randomUUID().slice(0, 8)}`, f.artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync" }));
+        worker = startObservedEmbeddingWorker({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain,
+          dryRun: false, modelUrl: `http://127.0.0.1:${address.port}/v1` });
+        await within(Promise.race([entered, worker.closed.then(result => {
+          throw new Error(`Worker exited before model HTTP: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+        })]), 8_000, "Real worker did not enter the local model HTTP request");
+        const job = () => f.first.db.prepare("SELECT status, node_id, lease_id, lease_expires_at, failures FROM knowledge_embedding_jobs WHERE document_id = ?").get(document)!;
+        const owned = job(); assert.equal(owned.status, "running"); assert.equal(owned.node_id, f.worker.id);
+        const oldLease = String(owned.lease_id);
+        f.first.db.prepare("UPDATE knowledge_embedding_jobs SET lease_expires_at = ? WHERE document_id = ?").run(new Date(Date.now() - 1000).toISOString(), document);
+        f.first.maintenanceTick(); assert.equal(job().status, "pending");
+        // Exercise the unchanged production 45-second renewal interval. The
+        // external model response remains blocked until the real HTTP 404.
+        const deadline = performance.now() + 50_000;
+        const renewPath = `/api/v1/workers/knowledge/leases/${oldLease}/renew`;
+        while (performance.now() < deadline && !worker.requests().some(request => request.path === renewPath && request.status === 404)) await delay(50);
+        assert.ok(worker.requests().some(request => request.path === renewPath && request.status === 404), "The real renewal thread must observe the lost lease before inference resumes");
+        await eventually(async () => worker!.events().some(event => event.operation === "renew" && event.event === "return" && event.leaseId === oldLease),
+          "Definitive rejection must stop the renewal thread before the model returns");
+        f.first.heartbeatNode(f.other.id, {});
+        const replacement = f.first.leaseKnowledgeEmbedding(f.other.id); assert.ok(replacement);
+        assert.equal(replacement.document.id, document); assert.notEqual(replacement.leaseId, oldLease);
+        const reassigned = job(); assert.equal(reassigned.node_id, f.other.id);
+        assert.equal(reassigned.failures, Number(owned.failures) + 1, "Maintenance records the one deliberate lease expiry");
+        releaseModel();
+        await eventually(async () => worker!.events().some(event => event.operation === "execute" && event.event === "return" && event.leaseId === oldLease),
+          "Worker did not finish after the cancelled model request returned");
+        assert.deepEqual(await worker.stop(), { code: 0, signal: null });
+        const observed = worker.result();
+        const obsolete = observed.requests.filter(request => request.path.endsWith("/complete") || request.path.endsWith("/fail"));
+        context.diagnostic(`Renewal HTTP 404; obsolete terminal HTTP attempts=${obsolete.map(request => `${request.path.endsWith("/complete") ? "complete" : "fail"}:${request.status}`).join(",") || "none"}; model calls=${modelCalls}`);
+        assert.equal(obsolete.length, 0, "A definitively lost embedding lease must not submit a stale completion or failure");
+        assert.deepEqual(job(), reassigned, "Old worker must preserve the replacement owner and deadline");
+        assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []);
+        assert.equal(observed.events.length, 4);
+        const renewer = observed.events.filter(event => event.operation === "renew");
+        assert.deepEqual(renewer.map(event => event.event), ["call", "return"]);
+        const execution = observed.events.filter(event => event.operation === "execute");
+        assert.deepEqual(execution.map(event => event.event), ["call", "return"]);
+        assert.ok(renewer[1]!.atNs <= execution[1]!.atNs);
+        assert.equal(modelCalls, 1); assert.deepEqual(modelErrors, []);
+        f.first.completeKnowledgeEmbedding(f.other.id, replacement.leaseId, replacement.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [0, 1] })));
+        const saved = f.first.db.prepare("SELECT embedding_json FROM knowledge_chunks WHERE document_id = ?").all(document);
+        assert.deepEqual(saved, [{ embedding_json: "[0,1]" }]); assert.equal(job().status, "completed"); assert.equal(job().failures, reassigned.failures);
+        const events = f.first.db.prepare("SELECT type FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ?").all(`%${document}%`);
+        assert.deepEqual(events, [{ type: "knowledge.document.ready" }]);
+        assert.equal(fs.existsSync(path.join(f.artifacts, "embedding-worker-credentials.json")), false);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
+      finally {
+        releaseModel(); await worker?.stop(); await child?.stop(); model.closeAllConnections();
+        await new Promise<void>(resolve => model.close(() => resolve()));
+        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+      }
+    });
+  });
+
   for (const fault of ["disconnect", "withhold"] as const) it(`real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (${fault})`, async context => {
     await runWithPostgresSystemScope(async () => {
       const f = await embeddingLeaseFixture(0);
@@ -833,37 +954,17 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const instance = `embedding-worker-${randomUUID().slice(0, 8)}`;
       const proxy = await interceptEmbeddingCommit(systemUrl, `agat-${instance}-system`);
       let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
-      let worker: ReturnType<typeof spawn> | undefined;
-      let workerClosed: Promise<{ code: number | null; signal: string | null }> | undefined;
-      let output = "", diagnostic = "";
-      const stopWorker = async () => {
-        if (!worker || !workerClosed) return undefined;
-        if (worker.exitCode === null && worker.signalCode === null) worker.kill("SIGTERM");
-        try { return await within(workerClosed, 5_000, "Python worker did not drain its embedding execution"); }
-        catch (error) { worker.kill("SIGKILL"); await workerClosed; throw error; }
-      };
+      let worker: ReturnType<typeof startObservedEmbeddingWorker> | undefined;
       const chunks = () => f.first.db.prepare("SELECT id, ordinal, content, embedding_model, embedding_json, embedding_dimensions, embedded_at FROM knowledge_chunks WHERE document_id = ? ORDER BY ordinal").all(document);
       const events = () => f.first.db.prepare("SELECT id, type, data_json FROM events WHERE type IN ('knowledge.document.ready', 'knowledge.embedding.batch.completed', 'knowledge.embedding.retrying', 'knowledge.embedding.failed') AND data_json LIKE ? ORDER BY id").all(`%${collection}%`);
       try {
         child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts, {
           AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl), AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync",
           ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) }));
-        const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_") && !name.startsWith("OTEL_")));
-        worker = spawn("python3", [fileURLToPath(new URL("./embedding-worker-probe.py", import.meta.url))], {
-          env: { ...env, AGAT_OTEL_ENABLED: "false", AGAT_WORKER_LABELS: `pool=${f.project}`, PYTHONDONTWRITEBYTECODE: "1" },
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        workerClosed = new Promise((resolve, reject) => {
-          worker!.once("close", (code, signal) => resolve({ code, signal })); worker!.once("error", reject);
-        });
-        void workerClosed.catch(() => {});
-        worker.stdout!.setEncoding("utf8"); worker.stderr!.setEncoding("utf8");
-        worker.stdout!.on("data", (data: string) => { output = (output + data).slice(-128 * 1024); });
-        worker.stderr!.on("data", (data: string) => { diagnostic = (diagnostic + data).slice(-8192); });
-        worker.stdin!.end(JSON.stringify({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
-          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain }));
-        await within(Promise.race([proxy.committed, workerClosed.then(result => {
-          throw new Error(`Python worker exited before its COMMIT fault: ${JSON.stringify(result)} ${diagnostic}`);
+        worker = startObservedEmbeddingWorker({ coordinator: `http://127.0.0.1:${child.port}`, artifacts: f.artifacts,
+          nodeId: f.worker.id, token: f.worker.token, model: f.project, region: cellRegion, residencyDomain: cellResidencyDomain });
+        await within(Promise.race([proxy.committed, worker.closed.then(result => {
+          throw new Error(`Python worker exited before its COMMIT fault: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
         })]), 8_000, "Actual Python worker did not reach the embedding COMMIT");
         const committed = chunks(), committedEvents = events();
         assert.equal(committed.length, 33); assert.equal(committed.filter(chunk => chunk.embedding_json !== null).length, 32);
@@ -874,14 +975,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           const rows = f.first.db.prepare("SELECT id, status FROM knowledge_documents WHERE collection_id = ?").all(collection);
           return rows.length === 2 && rows.every(row => row.status === "ready");
         }, "The real worker did not recover its slot and index the remaining/following document");
-        assert.deepEqual(await stopWorker(), { code: 0, signal: null });
-        const resultLine = output.split("\n").find(line => line.startsWith("AGAT_EMBEDDING_WORKER_PROBE "));
-        assert.ok(resultLine, "The real worker observer must report thread and HTTP evidence after shutdown");
-        const observed = JSON.parse(resultLine.slice("AGAT_EMBEDDING_WORKER_PROBE ".length)) as {
-          exitCode: number; python: string; activeRequests: number; liveThreads: string[];
-          events: Array<{ operation: string; event: string; leaseId: string; threadId: number; atNs: number }>;
-          requests: Array<{ path: string; status: number; startedNs: number; finishedNs: number; leaseId?: string; documentId?: string; chunkIds?: string[] }>;
-        };
+        assert.deepEqual(await worker.stop(), { code: 0, signal: null });
+        const observed = worker.result();
         assert.equal(observed.exitCode, 0); assert.equal(observed.activeRequests, 0); assert.deepEqual(observed.liveThreads, []);
         const leased = observed.requests.filter(request => request.path.endsWith("/lease") && request.status === 200);
         assert.equal(leased.length, 3); assert.deepEqual(leased.map(request => request.documentId), [document, document, following]);
@@ -926,9 +1021,9 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(proxy.errors, []);
         context.diagnostic(`Python ${observed.python}/${fault}: completion HTTP ${completions.map(request => request.status).join("/")}, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads`);
         assert.deepEqual(await child.stop(), { code: 0, signal: null });
-      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${diagnostic}\n${output}`); throw error; }
+      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
       finally {
-        await proxy.close(); await stopWorker(); await child?.stop();
+        await proxy.close(); await worker?.stop(); await child?.stop();
         f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
       }
     });
