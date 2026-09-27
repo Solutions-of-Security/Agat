@@ -133,3 +133,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Транспорт на настоящей embeddinggemma](./embedding-model-transport.md): 68 парных вызовов, точное совпадение полных vectors, закреплённые модель/входы и измеренная доля расходов subprocess для batch 1/32.
 
 [Прототип постоянного embedding helper](./embedding-session-prototype.md): 256 парных loopback-вызовов, проверка владения и отмены, явная стоимость readiness/idle RSS; обычный worker сохраняет прежний transport.
+
+[Постоянный helper на embeddinggemma](./embedding-session-model.md): 132 реальных model calls с точным совпадением vectors; отдельно readiness, hot latency и idle RSS, включая ухудшившийся batch-tail.
