@@ -1,0 +1,52 @@
+(node:38892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:38892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ rejects a lease that expires while retrieval waits for its run lock (2466.941917ms)
+(node:38892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✖ rejects a lease cancelled by a transaction that retrieval had to wait for (999.897667ms)
+✖ PostgreSQL Fleet/HA integration (5074.82325ms)
+ℹ tests 2
+ℹ suites 1
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5823.515833
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:17:9873
+✖ rejects a lease that expires while retrieval waits for its run lock (2466.941917ms)
+  AssertionError [ERR_ASSERTION]: Retrieval accepted a lease that expired during its SQL lock wait
+      at <anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:361:16)
+      at async TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:349:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 6)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:17:11067
+✖ rejects a lease cancelled by a transaction that retrieval had to wait for (999.897667ms)
+  AssertionError [ERR_ASSERTION]: Retrieval accepted the stage snapshot from before cancellation committed
+      at <anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:384:16)
+      at async TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:374:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

@@ -1,0 +1,39 @@
+(node:49205) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ expired retrieval leases fail before maintenance and stay invalid after reassignment (67.804916ms)
+✖ SQLite rechecks lease expiry after consuming candidates and rolls back before storing sources (46.595833ms)
+✔ wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds (34.754625ms)
+✔ every selected collection is validated and one incompatible query rolls the whole retrieval back (39.4705ms)
+✔ a selected empty optional collection remains a valid empty search, but not for the wrong model (33.145166ms)
+✔ damaged stored vectors are reported as an index error instead of discarded as missing evidence (35.818084ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 5
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1060.06675
+
+✖ failing tests:
+
+test at apps/coordinator/test/knowledge-retrieval-validation.test.ts:1:2804
+✖ SQLite rechecks lease expiry after consuming candidates and rolls back before storing sources (46.595833ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(replacement)
+  
+      at TestContext.<anonymous> (/private/tmp/agat-search-budget-20260927/apps/coordinator/test/knowledge-retrieval-validation.test.ts:65:56)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

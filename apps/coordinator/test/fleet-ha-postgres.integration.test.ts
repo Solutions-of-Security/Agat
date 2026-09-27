@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { before, describe, it } from "node:test";
 
 import pg from "pg";
@@ -51,6 +52,53 @@ function storeOptions(instanceId: string, artifactsDir: string, knowledgeSearchM
 
 function store(instanceId: string, artifactsDir: string, knowledgeSearchMaxCandidates?: number): AgatStore {
   return new AgatStore(":postgresql:", storeOptions(instanceId, artifactsDir, knowledgeSearchMaxCandidates));
+}
+
+async function retrievalLeaseRaceFixture() {
+  const suffix = randomUUID().slice(0, 8);
+  const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-rag-lock-"));
+  const first = store(`rag-lock-main-${suffix}`, artifacts);
+  const writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+  let executor: KnowledgeSearchExecutor | undefined;
+  try {
+    first.updateScheduler("parallel", 10);
+    const project = `rag-lock-${suffix}`, model = project;
+    first.createProject({ id: project, name: project, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const agent = first.createAgent({ name: "Lock fixture", role: "Test", systemPrompt: "Fixture", model }, project);
+    const node = first.registerNode({ enrollmentToken: "test", name: model, platform: "test", models: [model],
+      embeddingModels: [model], maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain });
+    const collection = String(first.createKnowledgeCollection({ name: "Lock source", embeddingModel: model }, project).id);
+    first.ingestKnowledgeDocument(collection, { name: "Source", content: "Lease lock fixture." }, project);
+    const embedding = first.leaseKnowledgeEmbedding(node.id)!; assert.ok(embedding);
+    first.completeKnowledgeEmbedding(node.id, embedding.leaseId, embedding.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })));
+    const run = first.createRun({ name: "Lock", input: "Synthetic query", agentIds: [String(agent.id)],
+      approvalRequired: false, knowledgeCollectionIds: [collection] }, project);
+    const lease = first.leaseNext(node.id)!; assert.equal(lease.run.id, run.id);
+    const application = `rag-lock-worker-${suffix}`;
+    executor = await KnowledgeSearchExecutor.create(":postgresql:", storeOptions(application, artifacts));
+    await writer.connect();
+    const request = { queries: [{ embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 }] };
+    return { first, writer, project, run, node, lease,
+      search: (leaseId = lease.leaseId) => executor!.search(node.token, node.id, leaseId, request),
+      waitForLock: async (queryPattern = /FOR UPDATE/) => {
+        const deadline = performance.now() + 5_000;
+        while (performance.now() < deadline) {
+          await writer.query("SELECT pg_stat_clear_snapshot()");
+          const result = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [`${application}-system`]);
+          if (result.rows.length) { assert.match(result.rows[0].query, queryPattern); return; }
+          await delay(10);
+        }
+        assert.fail("Retrieval did not reach the SQL lock; the race was not exercised");
+      },
+      close: async () => {
+        await writer.query("ROLLBACK"); await executor!.close(); await writer.end();
+        first.cancelRun(run.id, project);
+        first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      } };
+  } catch (error) {
+    await writer.end(); await executor?.close(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error;
+  }
 }
 
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
@@ -295,6 +343,97 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         await Promise.all(executors.map(executor => executor.close()));
         first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
       }
+    });
+  });
+
+  it("rejects a lease that expires while retrieval waits for its run lock", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN");
+        await f.writer.query("SELECT id FROM runs WHERE id = $1 FOR UPDATE", [f.run.id]);
+        const pending = f.search().then(value => ({ value }), error => ({ error }));
+        await f.waitForLock();
+        await delay(Math.max(0, expires - Date.now() + 50));
+        await f.writer.query("COMMIT");
+        const result = await pending;
+        assert.ok("error" in result, "Retrieval accepted a lease that expired during its SQL lock wait");
+        assert.match(result.error.message, /Активная stage-аренда не найдена/);
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 0);
+        assert.equal(f.first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(f.run.id).length, 0);
+        assert.equal((f.first.getRunTrace(f.run.id, f.project)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 0);
+        f.first.maintenanceTick();
+        const replacement = f.first.leaseNext(f.node.id)!; assert.ok(replacement);
+        assert.notEqual(replacement.leaseId, f.lease.leaseId);
+        assert.equal((await f.search(replacement.leaseId)).hits[0]!.marker, "K1");
+        f.first.completeLease(f.node.id, replacement.leaseId, "completed", []);
+      } finally { await f.close(); }
+    });
+  });
+
+  it("rejects a lease cancelled by a transaction that retrieval had to wait for", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      try {
+        await f.writer.query("BEGIN");
+        await f.writer.query("UPDATE stages SET status = 'cancelled', node_id = NULL, lease_id = NULL, lease_expires_at = NULL WHERE lease_id = $1", [f.lease.leaseId]);
+        await f.writer.query("UPDATE runs SET status = 'cancelled' WHERE id = $1", [f.run.id]);
+        const pending = f.search().then(value => ({ value }), error => ({ error }));
+        await f.waitForLock();
+        await f.writer.query("COMMIT");
+        const result = await pending;
+        assert.ok("error" in result, "Retrieval accepted the stage snapshot from before cancellation committed");
+        assert.match(result.error.message, /Активная stage-аренда не найдена/);
+        assert.equal(f.first.getRunKnowledgeSources(f.run.id, f.project)!.length, 0);
+        assert.equal(f.first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(f.run.id).length, 0);
+        assert.equal((f.first.getRunTrace(f.run.id, f.project)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 0);
+      } finally { await f.close(); }
+    });
+  });
+
+  it("rejects a lease that expires after validation while the knowledge index is blocked", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      try {
+        const expires = Date.now() + 5_000;
+        f.first.db.prepare("UPDATE stages SET lease_expires_at = ? WHERE lease_id = ?").run(new Date(expires).toISOString(), f.lease.leaseId);
+        await f.writer.query("BEGIN");
+        await f.writer.query("LOCK TABLE knowledge_chunks IN ACCESS EXCLUSIVE MODE");
+        const pending = f.search().then(value => ({ value }), error => ({ error }));
+        await f.waitForLock(/knowledge_chunks/);
+        await delay(Math.max(0, expires - Date.now() + 50));
+        await f.writer.query("COMMIT");
+        const result = await pending;
+        assert.ok("error" in result, "Retrieval persisted after lease expiry during the index read");
+        assert.match(result.error.message, /Активная stage-аренда не найдена/);
+        assert.equal(f.first.db.prepare("SELECT id FROM knowledge_retrievals WHERE run_id = ?").all(f.run.id).length, 0);
+        assert.equal((f.first.getRunTrace(f.run.id, f.project)!.events as Array<{ type: string }>).filter(e => e.type === "knowledge.retrieved").length, 0);
+      } finally { await f.close(); }
+    });
+  });
+
+  it("permits a concurrent lease renewal while retrieval is reading its index", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      try {
+        await f.writer.query("BEGIN");
+        await f.writer.query("LOCK TABLE knowledge_chunks IN ACCESS EXCLUSIVE MODE");
+        const pending = f.search();
+        const observed = pending.then(value => ({ value }), error => ({ error }));
+        await f.waitForLock(/knowledge_chunks/);
+        const expires = new Date(Date.now() + 180_000).toISOString();
+        const renewed = await f.writer.query(`UPDATE stages SET lease_expires_at = $1
+          WHERE node_id = $2 AND lease_id = $3 AND status = 'running' AND lease_expires_at > $4`,
+        [expires, f.node.id, f.lease.leaseId, new Date().toISOString()]);
+        assert.equal(renewed.rowCount, 1, "Ranking must not hold a stage row lock that prevents renewal");
+        await f.writer.query("COMMIT");
+        const result = await observed; assert.ok("value" in result);
+        assert.equal(result.value.hits[0]!.marker, "K1");
+        assert.equal(f.first.db.prepare("SELECT lease_expires_at FROM stages WHERE lease_id = ?").get(f.lease.leaseId)!.lease_expires_at, expires);
+        f.first.completeLease(f.node.id, f.lease.leaseId, "completed", []);
+      } finally { await f.close(); }
     });
   });
 
