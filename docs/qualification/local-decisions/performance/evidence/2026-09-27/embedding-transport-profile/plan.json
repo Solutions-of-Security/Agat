@@ -1,0 +1,485 @@
+{
+  "schema": "agat.embedding.transport-profile.v1",
+  "createdAt": "2026-09-27T16:47:12.474885+00:00",
+  "implementationCommit": "855ab3cee08e01a1e4e3bf9bc82aa53558897481",
+  "baselineCommit": "f9a16ea289845b9d7db142e5ee2144aad0d553ff",
+  "sourceSha256": {
+    "scripts/profile-embedding-transport.py": "fd71bedb55f887e11bc5bd10b6ecfe6de0202cdc1e475597dc7333a79c16e05e",
+    "scripts/verify-embedding-transport.py": "d92bf60c2ed2968d063ac048ecff3c77f7c7a700589ad33f34fdde28714ccc20",
+    "workers/agat_worker.py": "bf01e0246b56718280b930e51ea900b8647fcf33fc35234ef3d3959fa3f17bdb",
+    "workers/embedding_http.py": "be676a9efa4fe323ddaeb6eae472b875e8ae63f45b301b60f5189ef738211f05",
+    "workers/telemetry.py": "25d34e1f5bc0d2db4e33188a173e2fc8d4e1a721d6f4cf4eecf5af76ce87439f",
+    "workers/web_tools.py": "811bcd3871e8c64f1dceb66360035dc0d224a0775142a2e073b59cf56e8bec4e",
+    "workers/local_decisions.py": "1666e8897a0f17cef52446209cfb67a6c193f82ec065ac3964fe0955ae21d8f3"
+  },
+  "platform": "Darwin",
+  "machine": "arm64",
+  "python": "3.14.3",
+  "cpuCount": 10,
+  "vectorFormula": "((component % 19) + index + 1) / 37",
+  "sampleIntervalMs": 50,
+  "deadlineSeconds": 0.3,
+  "phases": [
+    {
+      "id": "warm-d768-b1-direct",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d768-b1-isolated",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d768-b32-direct",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d768-b32-isolated",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d4096-b1-direct",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d4096-b1-isolated",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d4096-b32-direct",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "warm-d4096-b32-isolated",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 1,
+      "measured": false
+    },
+    {
+      "id": "d768-b1-c1-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c1-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c1-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c1-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c4-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c4-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c4-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b1-c4-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c1-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c1-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c1-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c1-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c4-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c4-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c4-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d768-b32-c4-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c1-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c1-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c1-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c1-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c4-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c4-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c4-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b1-c4-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 1,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c1-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c1-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c1-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c1-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c4-0",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c4-1",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c4-2",
+      "mode": "isolated",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "d4096-b32-c4-3",
+      "mode": "direct",
+      "kind": "success",
+      "batch": 32,
+      "dimensions": 4096,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "cancel-headers-c1",
+      "mode": "isolated",
+      "kind": "cancel-headers",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "cancel-body-c1",
+      "mode": "isolated",
+      "kind": "cancel-body",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "deadline-body-c1",
+      "mode": "isolated",
+      "kind": "deadline-body",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 1,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "cancel-headers-c4",
+      "mode": "isolated",
+      "kind": "cancel-headers",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "cancel-body-c4",
+      "mode": "isolated",
+      "kind": "cancel-body",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    },
+    {
+      "id": "deadline-body-c4",
+      "mode": "isolated",
+      "kind": "deadline-body",
+      "batch": 1,
+      "dimensions": 768,
+      "concurrency": 4,
+      "calls": 8,
+      "measured": true
+    }
+  ],
+  "baselineWorkerSha256": "8a39e6ab11bdc384fc0faee6f148c2511d864bdc032335d530655195c41bd17c"
+}

@@ -127,3 +127,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Ограничение чтения embedding model HTTP](./embedding-http-response-limits.md): успешный JSON до 8 МиБ, error prefix до 4096 байт; два real-worker сценария подтверждают recovery с новой арендой и сохранением только успешного результата.
 
 [Общий срок и отмена embedding HTTP](./embedding-http-deadline.md): bounded ожидание DNS/connect/redirect/body, сохранение urllib proxy/TLS и гарантированное ожидание выхода собственного transport subprocess перед повторным использованием слота.
+
+[Цена изолированного embedding HTTP](./embedding-transport-profile.md): 312 loopback-запросов, 180 очищенных subprocess, batch/concurrency-профиль и серия отмен; независимый replay сохраняет наблюдаемый overhead и пределы измерения.

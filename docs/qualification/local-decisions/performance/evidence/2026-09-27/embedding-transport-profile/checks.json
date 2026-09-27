@@ -1,0 +1,77 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "checks": {
+    "profile": {
+      "requests": 312,
+      "warmup": 8,
+      "measuredSuccess": 256,
+      "cancelOrDeadline": 48,
+      "helpersReaped": 180,
+      "fdBefore": 6,
+      "fdAfter": 6
+    },
+    "independentReplay": "pass",
+    "verifierTests": {
+      "pass": 11,
+      "fail": 0
+    },
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 176,
+      "localLinks": 1561,
+      "markdownFiles": 188,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    },
+    "ragFixtureCorrection": {
+      "ciInitial": {
+        "pass": 283,
+        "fail": 1
+      },
+      "pacedBaseline": {
+        "pass": 2,
+        "fail": 1,
+        "maxPrimaryRequestsInFlight": 1,
+        "primaryCalls": 6,
+        "decisionCalls": 6,
+        "embeddingCalls": 8
+      },
+      "targeted": {
+        "pass": 3,
+        "fail": 0
+      },
+      "coordinator": {
+        "pass": 284,
+        "fail": 0
+      },
+      "typecheck": "pass",
+      "scope": "Only the synthetic HTTP fixture uses a barrier; workflow validation and runtime concurrency remain unchanged."
+    }
+  },
+  "sourceSha256": {
+    "scripts/profile-embedding-transport.py": "fd71bedb55f887e11bc5bd10b6ecfe6de0202cdc1e475597dc7333a79c16e05e",
+    "scripts/verify-embedding-transport.py": "d92bf60c2ed2968d063ac048ecff3c77f7c7a700589ad33f34fdde28714ccc20",
+    "scripts/test/test_embedding_transport_verifier.py": "466cf3df9af3e011fc2064d935959a03341eda5579af305742db81632b6d7b1d",
+    "apps/coordinator/test/decision-rag-workflow.test.ts": "2d3f91c107bf65401f2410b3d84047a9c78b3cbcedfd35cff2b91b3fbb7a749f"
+  },
+  "artifactSha256": {
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896",
+    "docs.log": "d99474528e894ced88da07fb9e633b265b3d902e73c370f500e5a547b948323d",
+    "plan.json": "18ee803adf27a146aaa2b083b10dee65e285591f03c5132308c54bcaa041825a",
+    "profile.log": "68c7e41dae1f49adb1bf98d5fe35bb845710cd5f3dc3cfa70427578d7502a906",
+    "replay.json": "8f13d9167e1144dc42de37bd3daa223806a17fa595d175ea8fee9c9e53f00937",
+    "result.json": "587959c214da078655ef36e47e3c755da0209e031d8168ea74841ebe1a2fbeab",
+    "verifier-tests.log": "93bafb36b054f7717115fb68c6b953d5a2accd199ca709c408449fb6ec231b2f",
+    "ci-coordinator-failure.log": "02a65c44ba7d9b99a1a3cfbcb9f3195679a0be56469a258a416e6f32997718a2",
+    "rag-overlap-before-barrier.log": "97395d617d685385507fbf0a3a6a582d2f1542df8077056ac3eba0a750791ab7",
+    "rag-overlap-targeted.log": "0b036a8b59a0ae9a14539d62986baeb779993348dbbbd3dbeb10d418a073fd21",
+    "coordinator.log": "bf7d9614a5058b7eaf80869851572ed37e8f839113837adf7a95614d3e02b8b4",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593"
+  },
+  "boundary": "Synthetic loopback transport cost; RSS is sampled for the harness and helper processes, not a production worker memory limit. Real inference overhead is the next gate."
+}
