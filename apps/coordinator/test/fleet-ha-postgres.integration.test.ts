@@ -83,8 +83,37 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
       });
     });
     assert.ok(port > 0);
-    return { port, stop };
+    return { port, stop, closed, signal: () => child.kill("SIGTERM") };
   } catch (error) { await stop(); throw error; }
+}
+
+function coordinatorProcessEnvironment(instance: string, artifacts: string, overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_")));
+  return { ...env, AGAT_HOST: "127.0.0.1", AGAT_PORT: "0",
+    AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql", AGAT_ARTIFACTS_DIR: artifacts,
+    AGAT_POSTGRES_URL: systemUrl, AGAT_POSTGRES_TENANT_URL: tenantUrl, AGAT_POSTGRES_SSL_MODE: "disable",
+    AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: cellRegion, AGAT_RESIDENCY_DOMAIN: cellResidencyDomain,
+    AGAT_COORDINATOR_INSTANCE_ID: instance, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
+    AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000",
+    AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false",
+    AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_SERVE_WEB: "false", AGAT_SEED_DEMO: "false",
+    AGAT_MCP_ENABLED: "false", AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false",
+    AGAT_SIEM_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false", AGAT_TEMPORAL_ENABLED: "false", ...overrides };
+}
+
+async function eventually(check: () => Promise<boolean>, message: string): Promise<void> {
+  const deadline = performance.now() + 5_000;
+  while (performance.now() < deadline) { if (await check()) return; await delay(20); }
+  assert.fail(message);
+}
+
+async function within<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 async function retrievalLeaseRaceFixture() {
@@ -114,11 +143,11 @@ async function retrievalLeaseRaceFixture() {
     const request = { queries: [{ embeddingModel: model, collectionIds: [collection], vector: [1, 0], topK: 1 }] };
     return { first, writer, project, run, node, lease, request, artifacts,
       search: (leaseId = lease.leaseId) => executor!.search(node.token, node.id, leaseId, request),
-      waitForLock: async (queryPattern = /FOR UPDATE/) => {
+      waitForLock: async (queryPattern = /FOR UPDATE/, applicationName = `${application}-system`) => {
         const deadline = performance.now() + 5_000;
         while (performance.now() < deadline) {
           await writer.query("SELECT pg_stat_clear_snapshot()");
-          const result = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [`${application}-system`]);
+          const result = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [applicationName]);
           if (result.rows.length) { assert.match(result.rows[0].query, queryPattern); return; }
           await delay(10);
         }
@@ -477,17 +506,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const instance = `rag-main-${randomUUID().slice(0, 8)}`;
       const names = [`agat-${instance}-system`, `agat-${instance}-tenant`, `agat-retrieval-${instance}-system`, `agat-retrieval-${instance}-tenant`];
       try {
-        const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_")));
-        child = await startCoordinatorProcess({ ...env, AGAT_HOST: "127.0.0.1", AGAT_PORT: "0",
-          AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql", AGAT_ARTIFACTS_DIR: f.artifacts,
-          AGAT_POSTGRES_URL: systemUrl, AGAT_POSTGRES_TENANT_URL: tenantUrl, AGAT_POSTGRES_SSL_MODE: "disable",
-          AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: cellRegion, AGAT_RESIDENCY_DOMAIN: cellResidencyDomain,
-          AGAT_COORDINATOR_INSTANCE_ID: instance, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
-          AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000",
-          AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false",
-          AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_SERVE_WEB: "false", AGAT_SEED_DEMO: "false",
-          AGAT_MCP_ENABLED: "false", AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false",
-          AGAT_SIEM_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false", AGAT_TEMPORAL_ENABLED: "false" });
+        child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, f.artifacts));
         const base = `http://127.0.0.1:${child.port}/api/v1`;
         const health = await fetch(`${base}/health`); assert.equal(health.status, 200);
         const body = await health.json() as { knowledgeSearch: Record<string, unknown> };
@@ -512,6 +531,73 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(remaining.rows[0].count, 0, "Shutdown releases both coordinator and retrieval pools");
       } finally {
         await f.writer.query("ROLLBACK"); await child?.stop(); await f.close();
+      }
+    });
+  });
+
+  it("rejects queued retrieval on SIGTERM, preserves active work and recovers without replay", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const f = await retrievalLeaseRaceFixture();
+      const instance = `rag-drain-${randomUUID().slice(0, 8)}`;
+      const env = coordinatorProcessEnvironment(instance, f.artifacts, {
+        AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "2", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "10000" });
+      let child: Awaited<ReturnType<typeof startCoordinatorProcess>> | undefined;
+      const pending: Promise<unknown>[] = [];
+      const retrievalCount = () => Number(f.first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_retrievals WHERE run_id = ?").get(f.run.id)!.count);
+      try {
+        child = await startCoordinatorProcess(env);
+        let base = `http://127.0.0.1:${child.port}/api/v1`;
+        const headers = { authorization: `Bearer ${f.node.token}`, "content-type": "application/json" };
+        const search = () => {
+          const result = fetch(`${base}/leases/${f.lease.leaseId}/knowledge/search`, { method: "POST", headers,
+            body: JSON.stringify(f.request), signal: AbortSignal.timeout(15_000) })
+            .then(async response => ({ status: response.status, body: await response.json() as { hits?: Array<{ marker: string }> } }))
+            .catch(error => ({ status: 0, body: { hits: undefined, error: String(error) } }));
+          pending.push(result); return result;
+        };
+        const beforeMaintenance = String(f.first.db.prepare("SELECT last_seen FROM coordinator_replicas WHERE instance_id = ?").get(instance)!.last_seen);
+        await f.writer.query("BEGIN");
+        await f.writer.query("LOCK TABLE knowledge_chunks IN ACCESS EXCLUSIVE MODE");
+        const active = search();
+        await f.waitForLock(/knowledge_chunks/, `agat-retrieval-${instance}-system`);
+        const queued = search();
+        await eventually(async () => {
+          const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(2_000) });
+          assert.equal(response.status, 200, "A full queue must not trigger failed readiness or restart");
+          const body = await response.json() as { knowledgeSearch: { active: number; queued: number; accepting: boolean } };
+          return body.knowledgeSearch.active === 1 && body.knowledgeSearch.queued === 1 && body.knowledgeSearch.accepting;
+        }, "Both requests were not admitted before SIGTERM");
+        assert.equal((await search()).status, 429, "The third request is refused before shutdown");
+        const heartbeat = await fetch(`${base}/workers/heartbeat`, { method: "POST", headers, body: "{}", signal: AbortSignal.timeout(2_000) });
+        assert.equal(heartbeat.status, 204);
+        const renewal = await fetch(`${base}/leases/${f.lease.leaseId}/renew`, { method: "POST", headers, body: "{}", signal: AbortSignal.timeout(2_000) });
+        assert.equal(renewal.status, 204);
+        await eventually(async () => String(f.first.db.prepare("SELECT last_seen FROM coordinator_replicas WHERE instance_id = ?").get(instance)!.last_seen) > beforeMaintenance,
+          "Real coordinator maintenance did not continue during blocked ranking");
+        assert.equal(retrievalCount(), 0);
+
+        child.signal();
+        const rejected = await within(queued, 2_500, "SIGTERM left queued retrieval waiting for the active database operation");
+        assert.equal(rejected.status, 503, "Queued retrieval must be rejected before the index lock is released");
+        assert.equal(retrievalCount(), 0);
+        // A repeated shutdown request must not close the active store prematurely.
+        child.signal();
+        await f.writer.query("ROLLBACK");
+        const completed = await active; assert.equal(completed.status, 200);
+        assert.equal(completed.body.hits?.[0]?.marker, "K1");
+        assert.deepEqual(await within(child.closed, 5_000, "Coordinator did not drain and exit"), { code: 0, signal: null });
+        assert.equal(retrievalCount(), 1);
+
+        child = await startCoordinatorProcess(env);
+        base = `http://127.0.0.1:${child.port}/api/v1`;
+        const recovered = await fetch(`${base}/health`); assert.equal(recovered.status, 200); await recovered.json();
+        assert.equal(retrievalCount(), 1, "Restart must not replay the refused or queued requests");
+        const explicit = await search(); assert.equal(explicit.status, 200);
+        assert.equal(explicit.body.hits?.[0]?.marker, "K2");
+        assert.equal(retrievalCount(), 2);
+        assert.deepEqual(await child.stop(), { code: 0, signal: null });
+      } finally {
+        await f.writer.query("ROLLBACK"); await child?.stop(); await Promise.allSettled(pending); await f.close();
       }
     });
   });

@@ -2982,14 +2982,20 @@ async function main(): Promise<void> {
   }, config.siemRetentionIntervalSeconds * 1_000);
   siemRetentionTimer.unref();
 
+  let shuttingDown = false;
   const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     clearInterval(maintenanceTimer);
     clearInterval(artifactLifecycleTimer);
     clearInterval(mcpRefreshTimer);
     clearInterval(siemTimer);
     clearInterval(siemRetentionTimer);
+    // Close admission and reject queued work before waiting for HTTP responses.
+    // The active transaction retains its deadline and may finish normally.
+    const retrievalClosed = knowledgeSearch?.close();
     server.close(() => void (async () => {
-      await knowledgeSearch?.close();
+      await retrievalClosed;
       store.close();
       await processRuntime.close();
       await telemetry.shutdown();

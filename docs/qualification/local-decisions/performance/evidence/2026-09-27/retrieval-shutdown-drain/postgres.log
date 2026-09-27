@@ -1,0 +1,51 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (432.591875ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (11937.0945ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (273.645958ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (15446.069916ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (1589.750292ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (2818.293417ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (6347.680541ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (951.187166ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5885.382667ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (898.302ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2760.983208ms)
+(node:78734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6557.169667ms)
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1023.103292ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (5973.09275ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (134.738ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (276.678708ms)
+  ✔ rejects a schema Job while a coordinator replica is active (260.108792ms)
+  ✔ rejects runtime startup after out-of-band schema drift (201.126209ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (1486.240833ms)
+✔ PostgreSQL Fleet/HA integration (68932.509667ms)
+ℹ tests 19
+ℹ suites 1
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 69866.228083
