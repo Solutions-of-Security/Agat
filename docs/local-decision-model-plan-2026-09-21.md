@@ -110,6 +110,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Session opt-in обычного worker](./qualification/local-decisions/performance/embedding-worker-session-opt-in.md) добавляет lazy pool не более concurrency, общий deadline очереди/HTTP и явный close после drain. Default isolated сохранён. Проверены реальные model HTTP-faults, renewal rejection и потерянный COMMIT acknowledgement через PostgreSQL в обоих режимах; 34 вектора и три события сохраняются без model replay, helper закрывается после drain. Host worker 96 pass + 1 skip, Linux 97/97. Следующий gate — полный RAG workload и память обычного worker.
 
+[Полный RAG-профиль обычного worker](./qualification/local-decisions/performance/embedding-worker-rag.md) завершил 12 процессов, 36 primary-этапов и 44 embedding-запроса с одинаковыми prompts/outputs и сохранённым provenance. Все 26 helpers закрыты, FD 4 → 4. Session снизил embedding p50 примерно со 159 до 69 мс, но не показал устойчивого ускорения полной фазы; постоянные helpers занимали до 58,4 МиБ sampled RSS. Default isolated сохранён. Следующий gate — остановка worker во время активного embedding и проверка drain/lease/result.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
