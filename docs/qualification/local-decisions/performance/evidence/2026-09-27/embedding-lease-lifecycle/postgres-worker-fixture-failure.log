@@ -1,0 +1,313 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (205.845958ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (8296.386333ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (825.392625ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (374.55775ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (229.135375ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (14019.228083ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (697.04225ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1372.29275ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing knowledge_retrievals (5933.618042ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing events (5912.367416ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (5896.061208ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (805.560334ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5826.126542ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (821.4775ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2683.558416ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3287.230042ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (2454.233541ms)
+  ℹ Successful COMMIT observed after 50 ms
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (3367.893625ms)
+  ℹ Successful COMMIT observed after 50 ms
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1323.754416ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6407.306542ms)
+(node:77402) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (11154.82925ms)
+  ✔ embedding renew respects expiry while waiting for job ownership over HTTP (7735.855417ms)
+  ℹ Embedding renew/expiry: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects reassignment while waiting for job ownership over HTTP (2365.6695ms)
+  ℹ Embedding renew/reassignment: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects renewal while waiting for job ownership over HTTP (6501.947125ms)
+  ℹ Embedding renew/renewal: HTTP 204, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects expiry while waiting for job ownership over HTTP (6742.405542ms)
+  ℹ Embedding complete/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects reassignment while waiting for job ownership over HTTP (1393.988708ms)
+  ℹ Embedding complete/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects renewal while waiting for job ownership over HTTP (6316.08775ms)
+  ℹ Embedding complete/renewal: HTTP 200, job=completed, document=ready, indexed=1, events=1
+  ✔ embedding fail respects expiry while waiting for job ownership over HTTP (6417.193667ms)
+  ℹ Embedding fail/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects reassignment while waiting for job ownership over HTTP (1544.044ms)
+  ℹ Embedding fail/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects renewal while waiting for job ownership over HTTP (6460.334375ms)
+  ℹ Embedding fail/renewal: HTTP 200, job=pending, document=pending, indexed=0, events=1
+  ✔ embedding complete rolls back when an event lock outlasts its lease over HTTP (6061.996ms)
+  ℹ Embedding complete/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding fail rolls back when an event lock outlasts its lease over HTTP (6091.682ms)
+  ℹ Embedding fail/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding maintenance preserves a renewal that holds its job row past the old expiry (3927.731625ms)
+  ℹ Embedding maintenance/renewal: health=200, job=running, document=indexing, failures=0
+  ✔ embedding maintenance stays responsive while a late completion rolls back across coordinators (7545.709917ms)
+  ℹ Embedding maintenance/completion: HTTP 400, health=200, job=running, document=indexing, indexed=0, events=0
+  ✖ maintenance preserves a timely renewal while its stage row is locked (351.599667ms)
+  ✖ maintenance preserves an admitted completion held past expiry by an event lock (351.209125ms)
+  ✖ maintenance reclaims an expired lease once across two coordinators (339.835916ms)
+  ✖ checks current ownership before complete after a concurrent expiry over HTTP (384.524958ms)
+  ✖ checks current ownership before complete after a concurrent reassignment over HTTP (384.662125ms)
+  ✖ checks current ownership before complete after a concurrent renewal over HTTP (384.984958ms)
+  ✖ checks current ownership before fail after a concurrent expiry over HTTP (399.482292ms)
+  ✖ checks current ownership before fail after a concurrent reassignment over HTTP (404.709875ms)
+  ✖ checks current ownership before fail after a concurrent renewal over HTTP (404.035084ms)
+  ✖ rejects shadow results when the lease expires during stage lock over HTTP (595.525708ms)
+  ✖ rejects shadow results when the lease expires during event insert over HTTP (561.417042ms)
+  ✖ rejects shadow results when the lease expires during idempotent retry over HTTP (582.613583ms)
+  ✖ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (920.7135ms)
+  ✖ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (3079.843084ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (99.57125ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (358.015625ms)
+  ✔ rejects a schema Job while a coordinator replica is active (340.493041ms)
+  ✔ rejects runtime startup after out-of-band schema drift (178.569917ms)
+  ✖ shares state between replicas, serializes project quota and enforces RLS (854.050834ms)
+✖ PostgreSQL Fleet/HA integration (163444.514292ms)
+ℹ tests 53
+ℹ suites 1
+ℹ pass 38
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 163827.485791
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:21:2164
+✖ maintenance preserves a timely renewal while its stage row is locked (351.599667ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at stageMaintenanceFixture (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:185:67)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1187:17)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1186:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:1119
+✖ maintenance preserves an admitted completion held past expiry by an event lock (351.209125ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at stageMaintenanceFixture (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:185:67)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1213:17)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1212:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:3330
+✖ maintenance reclaims an expired lease once across two coordinators (339.835916ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at stageMaintenanceFixture (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:185:67)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1251:17)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1250:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before complete after a concurrent expiry over HTTP (384.524958ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before complete after a concurrent reassignment over HTTP (384.662125ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before complete after a concurrent renewal over HTTP (384.984958ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before fail after a concurrent expiry over HTTP (399.482292ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before fail after a concurrent reassignment over HTTP (404.709875ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:22:4845
+✖ checks current ownership before fail after a concurrent renewal over HTTP (404.035084ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1295:75)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1276:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:1397
+✖ rejects shadow results when the lease expires during stage lock over HTTP (595.525708ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(lease?.decisionShadow)
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1411:61)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1379:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:1397
+✖ rejects shadow results when the lease expires during event insert over HTTP (561.417042ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(lease?.decisionShadow)
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1411:61)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1379:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:1397
+✖ rejects shadow results when the lease expires during idempotent retry over HTTP (582.613583ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(lease?.decisionShadow)
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1411:61)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1379:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:7069
+✖ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (920.7135ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Совместимый профиль локальной проверки заявлен/. Input:
+
+  '«Agent»: Ни один из 1 подходящих workers не заявил совместимый профиль локальной проверки. Основной шаг может выполняться без неё.\n' +
+    'Доступность модели и точное совпадение профиля проверяются при вызове. Успешный основной сценарий не подтверждает качество локальных проверок.'
+
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1507:16)
+      at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)
+      at runWithPostgresSystemScope (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:28:25)
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1470:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '«Agent»: Ни один из 1 подходящих workers не заявил совместимый профиль локальной проверки. Основной шаг может выполняться без неё.\nДоступность модели и точное совпадение профиля проверяются при вызове. Успешный основной сценарий не подтверждает качество локальных проверок.',
+    expected: /Совместимый профиль локальной проверки заявлен/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:24:11729
+✖ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (3079.843084ms)
+  TypeError: Cannot read properties of null (reading 'run')
+      at <anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1634:28)
+      at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)
+      at runWithPostgresSystemScope (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/src/postgres-database.ts:28:25)
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1546:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:30:1371
+✖ shares state between replicas, serializes project quota and enforces RLS (854.050834ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(lease)
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1814:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

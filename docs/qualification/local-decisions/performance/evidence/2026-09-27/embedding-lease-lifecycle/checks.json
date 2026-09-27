@@ -1,0 +1,96 @@
+{
+  "status": "pass",
+  "date": "2026-09-27",
+  "baselineCommit": "1e92917c5cd8c0123a2d4859e82566842f9b6f61",
+  "node": "v24.14.0",
+  "postgres": "17.6",
+  "checks": {
+    "beforeSqlite": {
+      "expectedFail": 12
+    },
+    "beforePostgres": {
+      "expectedFail": 7,
+      "controlPass": 4
+    },
+    "beforeMaintenancePostgres": {
+      "expectedFail": 2
+    },
+    "targeted": {
+      "pass": 31,
+      "fail": 0
+    },
+    "postgresTargeted": {
+      "pass": 13,
+      "fail": 0
+    },
+    "coordinator": {
+      "pass": 278,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 53,
+      "fail": 0
+    },
+    "typecheck": "pass",
+    "coordinatorBuild": "pass",
+    "docs": {
+      "nodePass": 12,
+      "pythonPass": 152,
+      "localLinks": 1516,
+      "markdownFiles": 179,
+      "templates": 13
+    },
+    "architecture": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    },
+    "discardedFullRuns": [
+      {
+        "pass": 38,
+        "fail": 15,
+        "cause": "Embedding fixture workers left online"
+      },
+      {
+        "pass": 52,
+        "fail": 1,
+        "cause": "Unclosed earlier budget run expires during longer full suite"
+      }
+    ]
+  },
+  "boundary": "Fresh lease admission after job lock; complete/fail SQL writes fenced before COMMIT. Row-lock maintenance health is not a production SLO. Synthetic vectors do not qualify model quality.",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "c03d094bdd011c39eed30effc96b7c2a5d1f387da51551d8b0c20f30d5e17184",
+    "apps/coordinator/test/embedding-lease-lifecycle.test.ts": "07cdc687d60923ddc1e648d42fae7265fff912e8c380804bc063eee884b2455a",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "315fa56672fe57a14a21fa767c64ade11b1d323d1fc5ff449057b182daf93c14"
+  },
+  "logSha256": {
+    "before-sqlite.log": "b0e5abc85468c3a9d259233319a11b1373dd157456591fc943ceebdcf189f459",
+    "before-postgres.log": "3f124e9ed79e52c15281fd8f2135f46134ba62f5ddce6601f4cf0618eb19eda6",
+    "before-maintenance-postgres.log": "1ae1e9226a3ddf3d88d9f88236eeaeeee870a2ca70356062f8d4f6e2ea963ddc",
+    "targeted.log": "10215e8f2a1dce5253ea6a91c907f827e321309ecb5c852b3608536765fd0160",
+    "postgres-targeted.log": "06559ad08c9478acd59f3b2afa3571fe7aa06e416d09ced86523ec6fb53e68f1",
+    "coordinator.log": "bdf14be5f973ff2566e956a1bf5e1bddb7e8be9d71ef57ec41a2b34496d9f2f3",
+    "postgres.log": "da505b7af65f41971cf2f73e518680f6a27c56751de5a64d1a4f071f1c9f2cfe",
+    "typecheck.log": "9ae4f01404b976f226b1e24b0a1a95f35142cf9c1fb56bd5b632228e66e7e593",
+    "docs.log": "cb51a9d0b4cd6d23cb9d14f664f40fc5b30789ff8e2d53e96bd544fa6642d078",
+    "postgres-worker-fixture-failure.log": "ccadc6f31578c788473770630ec55f107cb299c44e89da6967e142f094eea4c5",
+    "postgres-expired-fixture-failure.log": "fd54db817a9d38b00a2270ca6f7cfc26c4fc12fa66627971bac936f93c2eb7d4",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "rawLogSha256": {
+    "before-sqlite.log": "1b82c8476904530965d20431e2fe2000903b3693c5369109c2ba2ba2ccb15a43",
+    "before-postgres.log": "abd3eaac172f1fbea17ae281be132564b4df5aa98882992b542be9908c42ff8b",
+    "before-maintenance-postgres.log": "11c50ac80b68855b20955dc25b7cf4fe132131b6dcc246045c52d06b92e4df94",
+    "targeted.log": "10215e8f2a1dce5253ea6a91c907f827e321309ecb5c852b3608536765fd0160",
+    "postgres-targeted.log": "06559ad08c9478acd59f3b2afa3571fe7aa06e416d09ced86523ec6fb53e68f1",
+    "coordinator.log": "bdf14be5f973ff2566e956a1bf5e1bddb7e8be9d71ef57ec41a2b34496d9f2f3",
+    "postgres.log": "da505b7af65f41971cf2f73e518680f6a27c56751de5a64d1a4f071f1c9f2cfe",
+    "typecheck.log": "7da48ee44eeb06e2045c8f6f6d9435f66d5a6d9a769405918d27e6b3f806f42c",
+    "docs.log": "cb51a9d0b4cd6d23cb9d14f664f40fc5b30789ff8e2d53e96bd544fa6642d078",
+    "postgres-worker-fixture-failure.log": "30233fe28f66f5acd319bc88837ea55d05c4043b370c72932d0a79914fc15b17",
+    "postgres-expired-fixture-failure.log": "2a34f95046d50e32c7d2a854d508e808de0a44c298d1fad97829f926220c0ed6",
+    "architecture.json": "a76ceffa6792e7c17282c38b53315e6ccac48f7d9f83ec87c2e531939c568896"
+  },
+  "logNormalization": "Trailing whitespace and blank lines removed; diagnostics preserved. Both failed full-suite attempts are retained separately and are not counted as passing regression."
+}

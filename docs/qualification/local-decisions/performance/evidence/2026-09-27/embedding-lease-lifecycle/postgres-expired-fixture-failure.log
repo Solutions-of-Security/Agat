@@ -1,0 +1,225 @@
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (203.92925ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (8267.74125ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (842.619709ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (398.396958ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (221.121791ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (13414.409416ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (600.250333ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (1285.488ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing knowledge_retrievals (5918.716791ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing events (5890.499625ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (5948.9945ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (786.730916ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (5833.463541ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (780.011ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2677.832125ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3283.53075ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (2311.975708ms)
+  ℹ Successful COMMIT observed after 46 ms
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (3319.522417ms)
+  ℹ Successful COMMIT observed after 56 ms
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1329.354042ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (6316.855583ms)
+(node:80590) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (9763.58475ms)
+  ✔ embedding renew respects expiry while waiting for job ownership over HTTP (5918.520625ms)
+  ℹ Embedding renew/expiry: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects reassignment while waiting for job ownership over HTTP (838.9775ms)
+  ℹ Embedding renew/reassignment: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects renewal while waiting for job ownership over HTTP (5860.804834ms)
+  ℹ Embedding renew/renewal: HTTP 204, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects expiry while waiting for job ownership over HTTP (5890.564083ms)
+  ℹ Embedding complete/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects reassignment while waiting for job ownership over HTTP (815.687541ms)
+  ℹ Embedding complete/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects renewal while waiting for job ownership over HTTP (5871.546375ms)
+  ℹ Embedding complete/renewal: HTTP 200, job=completed, document=ready, indexed=1, events=1
+  ✔ embedding fail respects expiry while waiting for job ownership over HTTP (5891.889667ms)
+  ℹ Embedding fail/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects reassignment while waiting for job ownership over HTTP (868.486ms)
+  ℹ Embedding fail/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects renewal while waiting for job ownership over HTTP (5872.294333ms)
+  ℹ Embedding fail/renewal: HTTP 200, job=pending, document=pending, indexed=0, events=1
+  ✔ embedding complete rolls back when an event lock outlasts its lease over HTTP (5922.459792ms)
+  ℹ Embedding complete/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding fail rolls back when an event lock outlasts its lease over HTTP (5905.231583ms)
+  ℹ Embedding fail/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding maintenance preserves a renewal that holds its job row past the old expiry (3836.056791ms)
+  ℹ Embedding maintenance/renewal: health=200, job=running, document=indexing, failures=0
+  ✔ embedding maintenance stays responsive while a late completion rolls back across coordinators (6408.224917ms)
+  ℹ Embedding maintenance/completion: HTTP 400, health=200, job=running, document=indexing, indexed=0, events=0
+  ✔ maintenance preserves a timely renewal while its stage row is locked (3922.379292ms)
+  ℹ Renewal after maintenance: health=200, stage=running, expiryEvents=0
+  ✔ maintenance preserves an admitted completion held past expiry by an event lock (7381.831458ms)
+  ℹ Completion after maintenance: health=200, run=completed, expiryEvents=0
+  ✔ maintenance reclaims an expired lease once across two coordinators (5505.921875ms)
+  ℹ Two maintainers: healthy=2, expiryEvents=1
+  ✔ checks current ownership before complete after a concurrent expiry over HTTP (6060.567125ms)
+  ℹ complete/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent reassignment over HTTP (974.689959ms)
+  ℹ complete/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent renewal over HTTP (6033.29025ms)
+  ℹ complete/renewal: wait=stage read, HTTP 200, stage=completed, artifacts=3
+  ✔ checks current ownership before fail after a concurrent expiry over HTTP (6080.791125ms)
+  ℹ fail/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent reassignment over HTTP (984.013167ms)
+  ℹ fail/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent renewal over HTTP (6090.458208ms)
+  ℹ fail/renewal: wait=stage read, HTTP 200, stage=queued, artifacts=0
+  ✔ rejects shadow results when the lease expires during stage lock over HTTP (6222.678416ms)
+  ℹ After expiry at stage lock: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during event insert over HTTP (6232.986458ms)
+  ℹ After expiry at event insert: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during idempotent retry over HTTP (6240.171875ms)
+  ℹ After expiry at idempotent retry: HTTP 400, observation=true, events=1
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1306.4515ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (3975.179583ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (109.020709ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (333.246208ms)
+  ✔ rejects a schema Job while a coordinator replica is active (323.990042ms)
+  ✔ rejects runtime startup after out-of-band schema drift (170.239208ms)
+  ✖ shares state between replicas, serializes project quota and enforces RLS (781.238375ms)
+✖ PostgreSQL Fleet/HA integration (209406.461167ms)
+ℹ tests 53
+ℹ suites 1
+ℹ pass 52
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 209918.522209
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:30:1371
+✖ shares state between replicas, serializes project quota and enforces RLS (781.238375ms)
+  AssertionError [ERR_ASSERTION]: project maxRunningTasks must hold across replicas
+  + actual - expected
+
+  + {
+  +   agent: {
+  +     definitionVersion: '017be2d970434e650e8834527bdf85a884dfe57ed7b5297547fb2201cb9e8108',
+  +     id: 'collector',
+  +     model: null,
+  +     name: 'Сборщик',
+  +     promptVersion: 'b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f',
+  +     role: 'Собирает факты и формирует проверяемый набор исходных данных',
+  +     runtime: 'single',
+  +     runtimeConfig: {
+  +       maxIterations: 6,
+  +       profile: 'tool_loop_v1'
+  +     },
+  +     specialists: [],
+  +     systemPrompt: 'Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.'
+  +   },
+  +   context: [],
+  +   expiresAt: '2026-09-27T14:25:08.507Z',
+  +   knowledge: {
+  +     groups: [],
+  +     memory: []
+  +   },
+  +   leaseId: 'a75ecb08-28b0-42b7-a8db-38362102c645',
+  +   mcpTools: [],
+  +   routing: {
+  +     alternativesConsidered: 21,
+  +     fallbackFrom: null,
+  +     nodeId: '5e8dd7e7-ef85-429e-bb43-42bd92ccee93',
+  +     nodeName: 'node-b-8523dc99',
+  +     reasons: [
+  +       'Выбрана минимальная модель, прошедшая ограничения policy',
+  +       'На узле свободно 1 из 1 слотов',
+  +       'Пассивный benchmark ещё не накоплен',
+  +       'Часть capabilities неизвестна; разрешён compatibility fallback'
+  +     ],
+  +     requestedModel: null,
+  +     schemaVersion: 1,
+  +     selectedAt: '2026-09-27T14:22:08.502Z',
+  +     selectedModel: null,
+  +     signals: {
+  +       batteryPercent: null,
+  +       benchmarkSamples: 0,
+  +       contextWindow: null,
+  +       cpuPercent: null,
+  +       freeSlots: 1,
+  +       joulesPer1kTokens: null,
+  +       memoryPercent: null,
+  +       onBattery: false,
+  +       parameterCount: null,
+  +       profileKnown: false,
+  +       qualityScore: null,
+  +       sizeBytes: null,
+  +       temperatureC: null,
+  +       tokensPerSecond: null
+  +     },
+  +     strategy: 'balanced'
+  +   },
+  +   run: {
+  +     artifactPath: null,
+  +     id: '6df8a270-1ecd-45fd-b182-ef14c6005075',
+  +     input: 'one',
+  +     name: 'replica-visible-a',
+  +     resultDestination: 'artifacts'
+  +   },
+  +   stage: {
+  +     attempt: 1,
+  +     id: '2a4ffeed-18a3-4543-98b8-10006df58a98',
+  +     position: 0,
+  +     processNodeId: null
+  +   },
+  +   traceContext: {
+  +     traceId: '4a106fce3c245e48485294cc891c369f',
+  +     traceparent: '00-4a106fce3c245e48485294cc891c369f-d7fa783d3f2be41a-01'
+  +   }
+  + }
+  - null
+
+      at TestContext.<anonymous> (/Users/mdavliatshin/Developer/Agat-recovery-20260927/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:1816:14)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { leaseId: 'a75ecb08-28b0-42b7-a8db-38362102c645', expiresAt: '2026-09-27T14:25:08.507Z', traceContext: { traceId: '4a106fce3c245e48485294cc891c369f', traceparent: '00-4a106fce3c245e48485294cc891c369f-d7fa783d3f2be41a-01' }, run: { id: '6df8a270-1ecd-45fd-b182-ef14c6005075', name: 'replica-visible-a', input: 'one', resultDestination: 'artifacts', artifactPath: null }, stage: { id: '2a4ffeed-18a3-4543-98b8-10006df58a98', position: 0, attempt: 1, processNodeId: null }, agent: { id: 'collector', name: 'Сборщик', role: 'Собирает факты и формирует проверяемый набор исходных данных', systemPrompt: 'Ты внутренний агент-сборщик. Выдели факты, источники, ограничения и пробелы. Не делай выводов без опоры на входные данные. Верни структурированный материал для следующего агента.', model: null, runtime: 'single', runtimeConfig: [Object], specialists: [], promptVersion: 'b14fd18b5aee40649df1a9c64e1826e58112a9c2ca34753f3e87398da1221c6f', definitionVersion: '017be2d970434e650e8834527bdf85a884dfe57ed7b5297547fb2201cb9e8108' }, context: [], routing: { schemaVersion: 1, selectedAt: '2026-09-27T14:22:08.502Z', strategy: 'balanced', requestedModel: null, selectedModel: null, nodeId: '5e8dd7e7-ef85-429e-bb43-42bd92ccee93', nodeName: 'node-b-8523dc99', alternativesConsidered: 21, fallbackFrom: null, reasons: [Array], signals: [Object] }, mcpTools: [], knowledge: { groups: [], memory: [] } },
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -109,3 +109,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Допуск terminal-ответов](./terminal-lease-admission.md) проверен независимо от retrieval и shadow: свежий срок после stage lock, сохранение нового владельца при позднем `/fail`, отказ до записи артефактов и успешный retry.
 
 [Конкурирующий maintenance](./lease-maintenance-locks.md) сохраняет своевременное renewal и принятое завершение, освобождает lease одной из реплик и откатывает SQL-переходы при отказе события.
+
+[Lifecycle embedding lease](./embedding-lease-lifecycle.md): просроченные и переназначенные попытки не продлевают аренду и не меняют индекс; поздняя запись откатывается, maintenance сохраняет согласованность job/document.

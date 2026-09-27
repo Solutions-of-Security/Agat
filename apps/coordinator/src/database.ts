@@ -201,9 +201,13 @@ function futureIso(seconds: number): string {
   return new Date(Date.now() + seconds * 1_000).toISOString();
 }
 
+function unexpiredLeaseDeadline(row: Row | undefined): number | null {
+  const expiresAt = Date.parse(String(row?.lease_expires_at));
+  return row && Number.isFinite(expiresAt) && expiresAt > Date.now() ? expiresAt : null;
+}
+
 function assertUnexpiredStageLease(stage: Row | undefined): asserts stage is Row {
-  const expiresAt = Date.parse(String(stage?.lease_expires_at));
-  if (!stage || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+  if (unexpiredLeaseDeadline(stage) === null) throw new Error("Активная аренда не найдена");
 }
 
 function parseJson<T>(value: unknown, fallback: T): T {
@@ -8977,11 +8981,19 @@ export class AgatStore {
   }
 
   renewKnowledgeEmbeddingLease(nodeId: string, leaseId: string): boolean {
-    const result = this.db.prepare(`
-      UPDATE knowledge_embedding_jobs SET lease_expires_at = ?, updated_at = ?
-      WHERE node_id = ? AND lease_id = ? AND status = 'running'
-    `).run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId);
-    return result.changes === 1;
+    return this.transaction(() => {
+      const job = this.db.prepare(`
+        SELECT id, lease_expires_at FROM knowledge_embedding_jobs
+        WHERE node_id = ? AND lease_id = ? AND status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE" : ""}
+      `).get(nodeId, leaseId) as Row | undefined;
+      if (unexpiredLeaseDeadline(job) === null) return false;
+      const result = this.db.prepare(`
+        UPDATE knowledge_embedding_jobs SET lease_expires_at = ?, updated_at = ?
+        WHERE node_id = ? AND lease_id = ? AND status = 'running'
+      `).run(futureIso(this.leaseTtlSeconds), nowIso(), nodeId, leaseId);
+      return result.changes === 1;
+    });
   }
 
   completeKnowledgeEmbedding(
@@ -8999,8 +9011,10 @@ export class AgatStore {
         JOIN knowledge_collections c ON c.id = j.collection_id
         JOIN knowledge_documents d ON d.id = j.document_id
         WHERE j.node_id = ? AND j.lease_id = ? AND j.status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF j" : ""}
       `).get(nodeId, leaseId) as Row | undefined;
-      if (!job) throw new Error("Активная embedding-аренда не найдена");
+      const leaseExpiresAt = unexpiredLeaseDeadline(job);
+      if (!job || leaseExpiresAt === null) throw new Error("Активная embedding-аренда не найдена");
       const expected = this.db.prepare(`
         SELECT id FROM knowledge_chunks
         WHERE document_id = ? AND embedding_json IS NULL
@@ -9059,6 +9073,8 @@ export class AgatStore {
         remainingChunks: remaining,
         dimensions,
       });
+      // Index, job, document and event share this rollback boundary.
+      if (leaseExpiresAt <= Date.now()) throw new Error("Активная embedding-аренда не найдена");
       return { completed: remaining === 0, remainingChunks: remaining };
     });
   }
@@ -9069,8 +9085,10 @@ export class AgatStore {
         SELECT j.*, d.name AS document_name FROM knowledge_embedding_jobs j
         JOIN knowledge_documents d ON d.id = j.document_id
         WHERE j.node_id = ? AND j.lease_id = ? AND j.status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF j" : ""}
       `).get(nodeId, leaseId) as Row | undefined;
-      if (!job) throw new Error("Активная embedding-аренда не найдена");
+      const leaseExpiresAt = unexpiredLeaseDeadline(job);
+      if (!job || leaseExpiresAt === null) throw new Error("Активная embedding-аренда не найдена");
       const failures = Number(job.failures) + 1;
       const retrying = failures < Number(job.max_failures);
       const timestamp = nowIso();
@@ -9089,6 +9107,7 @@ export class AgatStore {
         maxFailures: Number(job.max_failures),
         error: errorMessage.slice(0, 1_000),
       });
+      if (leaseExpiresAt <= Date.now()) throw new Error("Активная embedding-аренда не найдена");
       return { retrying };
     });
   }
@@ -9346,24 +9365,28 @@ export class AgatStore {
   }
 
   private cleanupExpiredKnowledgeLeases(): void {
-    const expired = this.db.prepare(`
-      SELECT * FROM knowledge_embedding_jobs
-      WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?
-    `).all(nowIso()) as Row[];
-    if (expired.length === 0) return;
-    const timestamp = nowIso();
-    for (const job of expired) {
-      const failures = Number(job.failures) + 1;
-      const retrying = failures < Number(job.max_failures);
-      this.db.prepare(`
-        UPDATE knowledge_embedding_jobs SET status = ?, node_id = NULL, lease_id = NULL,
-          lease_expires_at = NULL, failures = ?, last_error = 'Embedding lease expired', updated_at = ?
-        WHERE id = ? AND status = 'running'
-      `).run(retrying ? "pending" : "failed", failures, timestamp, String(job.id));
-      this.db.prepare(`
-        UPDATE knowledge_documents SET status = ?, error = 'Embedding lease expired', updated_at = ? WHERE id = ?
-      `).run(retrying ? "pending" : "failed", timestamp, String(job.document_id));
-    }
+    // Leave in-flight ownership changes to finish; claim them on a later tick.
+    this.transaction(() => {
+      const expired = this.db.prepare(`
+        SELECT * FROM knowledge_embedding_jobs
+        WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE SKIP LOCKED" : ""}
+      `).all(nowIso()) as Row[];
+      if (expired.length === 0) return;
+      const timestamp = nowIso();
+      for (const job of expired) {
+        const failures = Number(job.failures) + 1;
+        const retrying = failures < Number(job.max_failures);
+        this.db.prepare(`
+          UPDATE knowledge_embedding_jobs SET status = ?, node_id = NULL, lease_id = NULL,
+            lease_expires_at = NULL, failures = ?, last_error = 'Embedding lease expired', updated_at = ?
+          WHERE id = ? AND status = 'running'
+        `).run(retrying ? "pending" : "failed", failures, timestamp, String(job.id));
+        this.db.prepare(`
+          UPDATE knowledge_documents SET status = ?, error = 'Embedding lease expired', updated_at = ? WHERE id = ?
+        `).run(retrying ? "pending" : "failed", timestamp, String(job.document_id));
+      }
+    });
   }
 
   private cleanupExpiredMemory(): void {
