@@ -66,6 +66,8 @@ Collection IDs фиксируются в run при создании. Повто
 
 Health включает режим, active/queued, maxPending и accepting. После остановки исполнителя нужен перезапуск coordinator. В текущем Kubernetes manifest этот endpoint используют readiness и liveness: после порогов неуспеха pod снимается с обслуживания и перезапускается. Заполненная очередь сама по себе не вызывает restart. Docker Compose healthcheck отмечает unhealthy; одного этого недостаточно для автоматического restart. Откат режима — вернуть `sync` и перезапустить coordinator; схема и данные совместимы.
 
+При SIGTERM admission закрывается сразу, ожидающие retrieval-запросы получают 503; активный сохраняет свой deadline и возможность завершиться. Проверены очередь, продолжающиеся heartbeat/renew/maintenance и отсутствие replay после restart: [shutdown-сценарий](./qualification/local-decisions/performance/retrieval-shutdown-drain.md). Результат активного запроса при принудительном завершении процесса всё ещё может быть неизвестен.
+
 Проверены собранный entry point, реальные PostgreSQL pools, поиск, отказ и освобождение соединений: [протокол операторского opt-in](./qualification/local-decisions/performance/retrieval-postgres-opt-in.md). Нагрузочные показатели предыдущего прототипа не являются SLO полного coordinator. Значения по умолчанию в Compose и Kubernetes сохранены как `sync`; изменение репозитория само не меняет работающий deployment.
 
 ## Подготовка embedding-модели

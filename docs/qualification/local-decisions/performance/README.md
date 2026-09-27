@@ -90,4 +90,6 @@ python3 -m unittest scripts.test.test_decision_performance -v
 
 [Операторский PostgreSQL opt-in](./retrieval-postgres-opt-in.md): подключение в main, разделение прежнего pool budget между main и retrieval, health после остановки, проверка настоящего entry point. Default sync сохранён; нагрузка и восстановление полного coordinator продолжаются отдельно.
 
+[Shutdown с заполненной очередью](./retrieval-shutdown-drain.md): воспроизведение и исправление позднего закрытия admission; heartbeat, lease renewal, main maintenance и restart без replay на настоящем coordinator/PostgreSQL.
+
 [Повторная проверка lease перед сохранением](./retrieval-lease-locking.md): поиск отклоняет истечение и отмену во время ожидания; PostgreSQL row locks удерживаются после ranking, чтобы чтение индекса не задерживало продление.
