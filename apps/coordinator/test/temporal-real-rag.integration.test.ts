@@ -402,6 +402,12 @@ for (const transport of ["isolated", "session"] as const) {
     } finally {
       release?.(); releaseThird?.(); cancelled.abort();
       for (const child of children.reverse()) await child.stop();
+      // Keep bounded child output after failures such as ingestion timeout.
+      // Raw logs may include local paths; they never enter public evidence.
+      const privateLogs = path.join(root, "docs/private/temporal-real-rag", path.relative(path.join(root, "docs"), directory));
+      fs.mkdirSync(privateLogs, { recursive: true, mode: 0o700 });
+      children.forEach((child, index) => fs.writeFileSync(path.join(privateLogs, `${transport}-child-${index}.log`),
+        child.log(), { flag: "wx", mode: 0o600 }));
       await close(modelProxy); await close(tickProxy); await close(shadowProxy); await connection?.close(); store.close();
       fs.rmSync(temporary, { recursive: true, force: true });
       fs.writeFileSync(output, JSON.stringify({ schema: `agat.temporal.real-rag.v${schemaVersion}`, status: result ? "pass" : "fail", failure: failure ?? null,

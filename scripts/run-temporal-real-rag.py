@@ -357,14 +357,14 @@ def main():
                 sample_resources('after_cleanup')
         model_log_sha = sha((temporary / 'ollama.log').read_bytes())
         decision_log_sha = sha((temporary / 'decision.log').read_bytes())
-        if shadow_enabled:
-            # Keep retirement diagnostics even when the workload fails before
-            # phase evidence is written. Raw process output is always private.
-            private_log = ROOT / 'docs/private/temporal-real-rag' / directory.relative_to(ROOT / 'docs') / 'decision.log'
-            private_log.parent.mkdir(parents=True, exist_ok=True)
-            with private_log.open('xb') as stream:
-                stream.write((temporary / 'decision.log').read_bytes())
-            private_log.chmod(0o600)
+        # Keep model/retirement diagnostics even when a workload fails before
+        # phase evidence is written. Raw process output is always private.
+        private_logs = ROOT / 'docs/private/temporal-real-rag' / directory.relative_to(ROOT / 'docs')
+        private_logs.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for name in ['ollama.log', *(['decision.log'] if shadow_enabled else [])]:
+            descriptor = os.open(private_logs / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'wb') as stream:
+                stream.write((temporary / name).read_bytes())
     phase_hashes = {}
     for transport in plan['transports']:
         phase_path = directory / f'{transport}.json'
