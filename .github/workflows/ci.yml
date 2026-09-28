@@ -34,12 +34,12 @@ jobs:
       - run: npm run typecheck
       - name: Documentation links, catalog and checker tests
         run: npm run docs:check
-      - name: Owned Docker cleanup fault injection
+      - name: Owned Docker cleanup and disposable storage
         env:
           AGAT_TEST_DOCKER_CLEANUP: "1"
         run: |
           docker pull busybox:1.36
-          python -m unittest discover -s scripts/test -p 'test_temporal_container_cleanup.py'
+          python -m unittest discover -s scripts/test -p 'test_temporal_*cleanup.py'
       - name: Unit and Temporal history replay tests
         run: npm test
       - run: npm run build

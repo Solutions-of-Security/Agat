@@ -1,0 +1,64 @@
+{
+  "schema": "agat.temporal.volume-cleanup-checks.v1",
+  "status": "pass",
+  "baseCommit": "b68da16a7124c1840d35e904d9314a4b8301d2d1",
+  "sourceSha256": {
+    ".github/workflows/ci.yml": "7d72a6e6712aa974cd25a22cd80881f1f475a0d555d037e14a9958d591485905",
+    "scripts/run-temporal-real-rag.py": "c27add3e97a64604f70f1e3e05faf9bba815962fdd8bbee08b8e25824d51c001",
+    "scripts/test-temporal-postgres-rag.sh": "46e04e1a4495e2f9f42c483c285e6d9af0cebfc88321885c3f125dbc337cebfd",
+    "scripts/test-temporal-rag.sh": "449647370a0e6b79770affbb4052a6466b936496fb63de28ed53dfa10b689c29",
+    "scripts/test/test_temporal_container_cleanup.py": "6dfda382052a70b952e960ed0a925060bb47bad91a33d9c97bac9df9ce2e3193",
+    "scripts/test/test_temporal_volume_cleanup.py": "b2f4720664faea9d1054563b8340d58f21d095df02dd1f1d8902a1d749523b05"
+  },
+  "beforeFix": {
+    "failingScenarios": 3,
+    "fixtureCleanupVerified": true
+  },
+  "targeted": {
+    "pass": 74,
+    "liveContainerFaultScenarios": 3,
+    "liveVolumeLifecycleScenarios": 3,
+    "namedVolumeMarkerPreserved": true
+  },
+  "postgresImageReproduction": {
+    "schema": "agat.postgres-volume-reproduction.v1",
+    "imageId": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+    "declaredVolumePaths": [
+      "/var/lib/postgresql/data"
+    ],
+    "anonymousVolumePersistedAfterContainerRemoval": true,
+    "databaseServerStarted": false,
+    "fixtureStorageRemoved": true
+  },
+  "postgresImageAfterFix": {
+    "schema": "agat.postgres-volume-fixed.v1",
+    "status": "pass",
+    "imageId": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+    "declaredVolumePaths": [
+      "/var/lib/postgresql/data"
+    ],
+    "anonymousVolumeRemovedWithContainer": true,
+    "databaseServerStarted": false,
+    "cleanupErrors": []
+  },
+  "documentation": {
+    "nodePass": 12,
+    "pythonPass": 430,
+    "optInDockerSkippedAndCoveredSeparately": 4,
+    "localLinkTargetsBeforeEvidenceLink": 2123,
+    "markdownFiles": 231,
+    "processCatalog": "pass"
+  },
+  "bashSyntax": "pass",
+  "changedCiActionlint": "pass",
+  "logSha256": {
+    "before": "793f45b207eb28cd75a01ab048b32f22d8ea4accc25a61b7346d980f0cb922c1",
+    "before-sanitized": "3219bc3dca63b2a3c1d5208f6e4390295729dbe6876e610e6e2de1ae3a792d0f",
+    "targeted": "b6bee715347d72e7a62d2f635798f27493eed85649587b3b8c9bc7ee4ef38f7c",
+    "docs": "7a6056c8652235e6e9efde164fe78d42a5496bbe27547066524f0f7dd2cc16ca",
+    "actionlint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "oldUnownedVolumesRemoved": false,
+  "priorEnospcCause": "not_established",
+  "qualification": "not_assessed"
+}
