@@ -1,0 +1,1125 @@
+
+> agat-platform@1.7.0 docs:check
+> node --test scripts/test/*.test.mjs && python3 -m unittest discover -s scripts/test -p "test_*.py" && npm run docs:links:check && npm run docs:processes:check
+
+✔ checks Markdown reference links, images, escaped spaces and fragments (7.652542ms)
+✔ ignores fenced code, inline code and external links (1.454125ms)
+✔ reports missing files and case differences on all platforms (1.439208ms)
+✔ rejects links outside the checkout while allowing repository-root links (1.30125ms)
+✔ does not accept a generated local file absent from the repository (3.612083ms)
+✔ qualification accepts only explicit loopback addresses, without credentials or redirects (1.289583ms)
+✔ model identity requires installed digest, Qwen3 architecture and local capability (1.467833ms)
+✔ ingestion fails for changed content, missing or incompatible embeddings (1.540875ms)
+✔ citations must resolve to both ingested sources on each real model stage (1.49475ms)
+✔ synthetic rubric rejects wrong numbers, percentage-point confusion and absent limitations (1.695916ms)
+✔ history evidence excludes payloads, secrets, failures and host identities (0.922333ms)
+✔ absent infrastructure is a nonzero FAIL with evidence, never skip or PASS (5749.217791ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5901.243959
+........................................E..........................................EEEE.............EEE............EEEE...........EEEEEEEEEEEE.EEE.E..........................EE..............EEEEEEE.E.EEEEEEEE.EEEEE..........................................................................................................................
+======================================================================
+ERROR: test_probe_sends_utf8_and_validates_full_bound_response (test_decision_recovery.RecoveryTransportTest.test_probe_sends_utf8_and_validates_full_bound_response)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_decision_recovery.py", line 17, in test_probe_sends_utf8_and_validates_full_bound_response
+    with make_server(engine,0) as server:
+         ~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/agat-temporal-rag-20260928/decision_runtime/server.py", line 172, in make_server
+    server = DecisionHTTPServer(("127.0.0.1", port), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_before_and_after_both_transports_match_their_actual_process (test_embedding_guard_profile_tracking.GuardProfileTrackingTests.test_before_and_after_both_transports_match_their_actual_process) (mode='isolated', guard=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_guard_profile_tracking.py", line 30, in test_before_and_after_both_transports_match_their_actual_process
+    fixture = profile.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_before_and_after_both_transports_match_their_actual_process (test_embedding_guard_profile_tracking.GuardProfileTrackingTests.test_before_and_after_both_transports_match_their_actual_process) (mode='isolated', guard=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_guard_profile_tracking.py", line 30, in test_before_and_after_both_transports_match_their_actual_process
+    fixture = profile.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_before_and_after_both_transports_match_their_actual_process (test_embedding_guard_profile_tracking.GuardProfileTrackingTests.test_before_and_after_both_transports_match_their_actual_process) (mode='session', guard=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_guard_profile_tracking.py", line 30, in test_before_and_after_both_transports_match_their_actual_process
+    fixture = profile.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_before_and_after_both_transports_match_their_actual_process (test_embedding_guard_profile_tracking.GuardProfileTrackingTests.test_before_and_after_both_transports_match_their_actual_process) (mode='session', guard=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_guard_profile_tracking.py", line 30, in test_before_and_after_both_transports_match_their_actual_process
+    fixture = profile.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_maximum_pool_is_reused_after_idle_and_releases_all_resources (test_embedding_idle_budget_measurement.IdleMeasurementTests.test_maximum_pool_is_reused_after_idle_and_releases_all_resources) (capacity=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_budget_measurement.py", line 25, in test_maximum_pool_is_reused_after_idle_and_releases_all_resources
+    phase = profile.run_phase({'id': 'probe', 'capacity': capacity, 'guard': True, 'idleSeconds': .02},
+                              profile.guard.embedding_transport, counters)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 145, in run_phase
+    fixture = Fixture(capacity)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 126, in __init__
+    self.server = Server(('127.0.0.1', 0), Handler)
+                  ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 123, in server_bind
+    TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_maximum_pool_is_reused_after_idle_and_releases_all_resources (test_embedding_idle_budget_measurement.IdleMeasurementTests.test_maximum_pool_is_reused_after_idle_and_releases_all_resources) (capacity=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_budget_measurement.py", line 25, in test_maximum_pool_is_reused_after_idle_and_releases_all_resources
+    phase = profile.run_phase({'id': 'probe', 'capacity': capacity, 'guard': True, 'idleSeconds': .02},
+                              profile.guard.embedding_transport, counters)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 145, in run_phase
+    fixture = Fixture(capacity)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 126, in __init__
+    self.server = Server(('127.0.0.1', 0), Handler)
+                  ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 123, in server_bind
+    TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_maximum_pool_is_reused_after_idle_and_releases_all_resources (test_embedding_idle_budget_measurement.IdleMeasurementTests.test_maximum_pool_is_reused_after_idle_and_releases_all_resources) (capacity=32)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_budget_measurement.py", line 25, in test_maximum_pool_is_reused_after_idle_and_releases_all_resources
+    phase = profile.run_phase({'id': 'probe', 'capacity': capacity, 'guard': True, 'idleSeconds': .02},
+                              profile.guard.embedding_transport, counters)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 145, in run_phase
+    fixture = Fixture(capacity)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 126, in __init__
+    self.server = Server(('127.0.0.1', 0), Handler)
+                  ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 123, in server_bind
+    TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_real_processes_and_transport_intervals_survive_both_bursts (test_embedding_idle_model_tracking.IdleModelTrackingTests.test_real_processes_and_transport_intervals_survive_both_bursts) (mode='keep', concurrency=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_model_tracking.py", line 20, in test_real_processes_and_transport_intervals_survive_both_bursts
+    fixture = profile.guard.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_real_processes_and_transport_intervals_survive_both_bursts (test_embedding_idle_model_tracking.IdleModelTrackingTests.test_real_processes_and_transport_intervals_survive_both_bursts) (mode='keep', concurrency=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_model_tracking.py", line 20, in test_real_processes_and_transport_intervals_survive_both_bursts
+    fixture = profile.guard.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_real_processes_and_transport_intervals_survive_both_bursts (test_embedding_idle_model_tracking.IdleModelTrackingTests.test_real_processes_and_transport_intervals_survive_both_bursts) (mode='retire', concurrency=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_model_tracking.py", line 20, in test_real_processes_and_transport_intervals_survive_both_bursts
+    fixture = profile.guard.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_real_processes_and_transport_intervals_survive_both_bursts (test_embedding_idle_model_tracking.IdleModelTrackingTests.test_real_processes_and_transport_intervals_survive_both_bursts) (mode='retire', concurrency=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_model_tracking.py", line 20, in test_real_processes_and_transport_intervals_survive_both_bursts
+    fixture = profile.guard.support.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_active_headers_and_body_outlive_idle_timeout_without_interruption (test_embedding_idle_pool.IdlePoolTests.test_active_headers_and_body_outlive_idle_timeout_without_interruption) (mode='headers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 111, in test_active_headers_and_body_outlive_idle_timeout_without_interruption
+    with self.subTest(mode=mode), slow_endpoint(mode) as (url, entered, release), observed_processes() as children:
+                                  ~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_active_headers_and_body_outlive_idle_timeout_without_interruption (test_embedding_idle_pool.IdlePoolTests.test_active_headers_and_body_outlive_idle_timeout_without_interruption) (mode='body')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 111, in test_active_headers_and_body_outlive_idle_timeout_without_interruption
+    with self.subTest(mode=mode), slow_endpoint(mode) as (url, entered, release), observed_processes() as children:
+                                  ~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_admission_waiting_for_retirement_keeps_deadline_and_cancellation (test_embedding_idle_pool.IdlePoolTests.test_admission_waiting_for_retirement_keeps_deadline_and_cancellation) (cancel_waiter=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 142, in test_admission_waiting_for_retirement_keeps_deadline_and_cancellation
+    with self.subTest(cancel_waiter=cancel_waiter), endpoint(Echo) as port, observed_processes() as children:
+                                                    ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_admission_waiting_for_retirement_keeps_deadline_and_cancellation (test_embedding_idle_pool.IdlePoolTests.test_admission_waiting_for_retirement_keeps_deadline_and_cancellation) (cancel_waiter=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 142, in test_admission_waiting_for_retirement_keeps_deadline_and_cancellation
+    with self.subTest(cancel_waiter=cancel_waiter), endpoint(Echo) as port, observed_processes() as children:
+                                                    ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_caller_waits_for_retirement_then_uses_a_new_helper_once (test_embedding_idle_pool.IdlePoolTests.test_caller_waits_for_retirement_then_uses_a_new_helper_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 176, in test_caller_waits_for_retirement_then_uses_a_new_helper_once
+    with endpoint(Echo) as port, observed_processes() as children:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper (test_embedding_idle_pool.IdlePoolTests.test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper) (cancellation=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 55, in test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper
+    with self.subTest(cancellation=cancellation), endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+                                                  ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper (test_embedding_idle_pool.IdlePoolTests.test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper) (cancellation=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 55, in test_cancel_and_deadline_after_idle_reap_discard_only_the_fresh_helper
+    with self.subTest(cancellation=cancellation), endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+                                                  ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_close_cancels_active_http_and_joins_maintenance_before_return (test_embedding_idle_pool.IdlePoolTests.test_close_cancels_active_http_and_joins_maintenance_before_return)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 223, in test_close_cancels_active_http_and_joins_maintenance_before_return
+    with slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+         ~~~~~~~~~~~~~^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_close_racing_an_idle_retire_does_not_deadlock_or_reopen (test_embedding_idle_pool.IdlePoolTests.test_close_racing_an_idle_retire_does_not_deadlock_or_reopen)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 240, in test_close_racing_an_idle_retire_does_not_deadlock_or_reopen
+    with endpoint(Echo) as port, observed_processes() as children:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_close_signals_active_slot_before_waiting_for_another_slots_retire (test_embedding_idle_pool.IdlePoolTests.test_close_signals_active_slot_before_waiting_for_another_slots_retire)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 269, in test_close_signals_active_slot_before_waiting_for_another_slots_retire
+    with endpoint(Echo) as port, slow_endpoint('body') as (url, active_entered, body_release), observed_processes() as children:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_idle_helper_is_reaped_then_next_request_starts_fresh_without_replay (test_embedding_idle_pool.IdlePoolTests.test_idle_helper_is_reaped_then_next_request_starts_fresh_without_replay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 94, in test_idle_helper_is_reaped_then_next_request_starts_fresh_without_replay
+    with endpoint(CountedEcho) as port, observed_processes() as children, self.pool_type(1, idle_timeout=.08) as pool:
+         ~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_idle_neighbor_is_retired_while_another_slot_is_active (test_embedding_idle_pool.IdlePoolTests.test_idle_neighbor_is_retired_while_another_slot_is_active)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 126, in test_idle_neighbor_is_retired_while_another_slot_is_active
+    with endpoint(Echo) as port, slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_maintenance_failure_closes_admission_and_remains_visible (test_embedding_idle_pool.IdlePoolTests.test_maintenance_failure_closes_admission_and_remains_visible)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 306, in test_maintenance_failure_closes_admission_and_remains_visible
+    with endpoint(Echo) as port, observed_processes(), self.pool_type(1, idle_timeout=.08) as pool:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_maximum_burst_retires_to_zero_and_restarts_only_for_new_requests (test_embedding_idle_pool.IdlePoolTests.test_maximum_burst_retires_to_zero_and_restarts_only_for_new_requests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 317, in test_maximum_burst_retires_to_zero_and_restarts_only_for_new_requests
+    fixture = fixture_support.Fixture(32)
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 126, in __init__
+    self.server = Server(('127.0.0.1', 0), Handler)
+                  ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-idle-budget.py", line 123, in server_bind
+    TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_queued_cancel_does_not_interrupt_active_lease_or_refresh_idle (test_embedding_idle_pool.IdlePoolTests.test_queued_cancel_does_not_interrupt_active_lease_or_refresh_idle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_pool.py", line 205, in test_queued_cancel_does_not_interrupt_active_lease_or_refresh_idle
+    with slow_endpoint('body') as (url, entered, release), observed_processes() as children:
+         ~~~~~~~~~~~~~^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_real_worker_lease_vectors_and_idle_snapshots (test_embedding_idle_worker_probe.WorkerIdleProbeTests.test_real_worker_lease_vectors_and_idle_snapshots)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_idle_worker_probe.py", line 28, in test_real_worker_lease_vectors_and_idle_snapshots
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Endpoint)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_loopback_profile_records_and_reaps_guarded_helper (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_loopback_profile_records_and_reaps_guarded_helper)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_profile_process_tracking.py", line 17, in test_loopback_profile_records_and_reaps_guarded_helper
+    fixture = loopback.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_model_profile_records_guarded_helper_without_real_model (test_embedding_profile_process_tracking.ProfileProcessTrackingTests.test_model_profile_records_guarded_helper_without_real_model)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_profile_process_tracking.py", line 33, in test_model_profile_records_guarded_helper_without_real_model
+    fixture = loopback.Fixture()
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/profile-embedding-transport.py", line 147, in __init__
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                  ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover (test_embedding_session.EmbeddingSessionTests.test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover) (mode='headers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 123, in test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover
+    with self.subTest(mode=mode), endpoint(Echo) as port, observed_processes() as children:
+                                  ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover (test_embedding_session.EmbeddingSessionTests.test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover) (mode='body')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 123, in test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover
+    with self.subTest(mode=mode), endpoint(Echo) as port, observed_processes() as children:
+                                  ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover (test_embedding_session.EmbeddingSessionTests.test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover) (mode='error')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 123, in test_cancelled_active_headers_body_and_error_reap_before_tail_release_and_recover
+    with self.subTest(mode=mode), endpoint(Echo) as port, observed_processes() as children:
+                                  ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_cancelled_owner_hands_fresh_helper_to_queued_successor (test_embedding_session.EmbeddingSessionTests.test_cancelled_owner_hands_fresh_helper_to_queued_successor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 277, in test_cancelled_owner_hands_fresh_helper_to_queued_successor
+    with endpoint(Echo) as port, observed_processes() as children, EmbeddingSession() as session:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_close_aborts_active_request_and_rejects_following_work (test_embedding_session.EmbeddingSessionTests.test_close_aborts_active_request_and_rejects_following_work)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 197, in test_close_aborts_active_request_and_rejects_following_work
+    with observed_processes(), EmbeddingSession() as session, slow_endpoint('headers') as (url, entered, release), ThreadPoolExecutor(max_workers=1) as pool:
+                                                              ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_full_batch_crosses_many_partial_pipe_reads (test_embedding_session.EmbeddingSessionTests.test_full_batch_crosses_many_partial_pipe_reads)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 114, in test_full_batch_crosses_many_partial_pipe_reads
+    with endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_http_errors_and_byte_limits_do_not_contaminate_following_reply (test_embedding_session.EmbeddingSessionTests.test_http_errors_and_byte_limits_do_not_contaminate_following_reply)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 103, in test_http_errors_and_byte_limits_do_not_contaminate_following_reply
+    with endpoint(Echo) as port, observed_processes() as children, EmbeddingSession() as session:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_idle_helper_exit_is_reaped_and_next_request_recovers (test_embedding_session.EmbeddingSessionTests.test_idle_helper_exit_is_reaped_and_next_request_recovers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 317, in test_idle_helper_exit_is_reaped_and_next_request_recovers
+    with endpoint(Echo) as port, observed_processes() as children, EmbeddingSession() as session:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='wrong-id')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='kind')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='length')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='short')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='exit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_protocol_faults_retire_and_next_request_uses_fresh_helper (test_embedding_session.EmbeddingSessionTests.test_protocol_faults_retire_and_next_request_uses_fresh_helper) (fault='extra-success')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 252, in test_protocol_faults_retire_and_next_request_uses_fresh_helper
+    with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory, endpoint(Echo) as port, observed_processes(), EmbeddingSession() as session:
+                                                                               ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_queued_timeout_and_cancellation_leave_current_owner_alive (test_embedding_session.EmbeddingSessionTests.test_queued_timeout_and_cancellation_leave_current_owner_alive) (cancelled=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 156, in test_queued_timeout_and_cancellation_leave_current_owner_alive
+    with EmbeddingSession() as session, slow_endpoint('headers') as (url, entered, release), ThreadPoolExecutor(max_workers=1) as pool:
+                                        ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_queued_timeout_and_cancellation_leave_current_owner_alive (test_embedding_session.EmbeddingSessionTests.test_queued_timeout_and_cancellation_leave_current_owner_alive) (cancelled=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 156, in test_queued_timeout_and_cancellation_leave_current_owner_alive
+    with EmbeddingSession() as session, slow_endpoint('headers') as (url, entered, release), ThreadPoolExecutor(max_workers=1) as pool:
+                                        ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_repeated_deadlines_return_file_descriptors_and_guard_threads (test_embedding_session.EmbeddingSessionTests.test_repeated_deadlines_return_file_descriptors_and_guard_threads)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 328, in test_repeated_deadlines_return_file_descriptors_and_guard_threads
+    with observed_processes(), slow_endpoint('body') as (url, _entered, _release):
+                               ~~~~~~~~~~~~~^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_reuses_ready_helper_and_keeps_headers_inputs_and_origins_separate (test_embedding_session.EmbeddingSessionTests.test_reuses_ready_helper_and_keeps_headers_inputs_and_origins_separate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 86, in test_reuses_ready_helper_and_keeps_headers_inputs_and_origins_separate
+    with endpoint(Echo) as first, endpoint(Echo) as second, observed_processes() as children:
+         ~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 101, in endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_separate_sessions_cancel_only_their_own_request (test_embedding_session.EmbeddingSessionTests.test_separate_sessions_cancel_only_their_own_request)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 182, in test_separate_sessions_cancel_only_their_own_request
+    with slow_endpoint('headers') as (url1, entered1, release1), slow_endpoint('body') as (url2, entered2, release2), ThreadPoolExecutor(max_workers=2) as pool:
+         ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_total_deadline_covers_trickling_success_and_error_body (test_embedding_session.EmbeddingSessionTests.test_total_deadline_covers_trickling_success_and_error_body) (mode='body')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 144, in test_total_deadline_covers_trickling_success_and_error_body
+    with slow_endpoint(mode) as (url, entered, release):
+         ~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_total_deadline_covers_trickling_success_and_error_body (test_embedding_session.EmbeddingSessionTests.test_total_deadline_covers_trickling_success_and_error_body) (mode='error')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/agat-temporal-rag-20260928/scripts/test/test_embedding_session.py", line 144, in test_total_deadline_covers_trickling_success_and_error_body
+    with slow_endpoint(mode) as (url, entered, release):
+         ~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/private/tmp/agat-temporal-rag-20260928/workers/test_embedding_http_deadline.py", line 53, in slow_endpoint
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+----------------------------------------------------------------------
+Ran 316 tests in 65.340s
+
+FAILED (errors=51)

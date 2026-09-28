@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { AgatStore, ScheduledStartConflictError } from "../src/database.js";
+import { AgatStore, POSTGRES_SCHEMA_VERSION, ScheduledStartConflictError } from "../src/database.js";
 import { loadConfig } from "../src/config.js";
 import { createCoordinatorServer } from "../src/server.js";
 import type { ProcessGraph } from "../src/types.js";
@@ -25,9 +25,9 @@ test("scheduled-start receipt survives restart, publication, capacity changes an
   try {
     store.close();
     const legacy = new DatabaseSync(database);
-    legacy.exec("DROP TABLE process_scheduled_start_receipts; PRAGMA user_version = 27"); legacy.close();
+    legacy.exec("DROP TABLE process_scheduled_start_receipts; ALTER TABLE process_instances DROP COLUMN workflow_start_owner; PRAGMA user_version = 27"); legacy.close();
     store = new AgatStore(database, options);
-    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 28);
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, POSTGRES_SCHEMA_VERSION);
     const processId = String(store.createProcess({ name: "Scheduled", graph }).id);
     store.publishProcess(processId);
     const input = { input: "Synthetic input", priority: 50, knowledgeCollectionIds: [] };
@@ -80,6 +80,38 @@ test("scheduled-start rolls back all process writes if receipt persistence fails
     assert.ok(store.startScheduledProcess(processId, { input: "Synthetic" }, "default", key("a")));
     assert.equal(store.listProcessInstances().length, 1);
   } finally { db.close(); store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("schema 28 receipts restore scheduled ownership without taking over manual or foreign-project instances", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-scheduled-owner-upgrade-"));
+  const database = path.join(directory, "state.sqlite");
+  const options = { seedDemo: false, temporalProcesses: true, artifactsDir: path.join(directory, "artifacts") };
+  let store = new AgatStore(database, options);
+  const activeGraph: ProcessGraph = { nodes: [graph.nodes[0]!,
+    { id: "wait", type: "signal", name: "Hold", position: { x: 100, y: 0 }, config: { signalName: "resume", signalTimeoutSeconds: 3600 } }, graph.nodes[1]!],
+    edges: [{ id: "a", source: "start", target: "wait", branch: "default" }, { id: "b", source: "wait", target: "end", branch: "default" }] };
+  try {
+    const processId = String(store.createProcess({ name: "Ownership", graph: activeGraph }).id); store.publishProcess(processId);
+    const scheduled = store.startScheduledProcess(processId, { input: "Synthetic" }, "default", key("a"))!;
+    const manual = store.startProcess(processId, { input: "Manual" })!;
+    store.createProject({ id: "foreign", name: "Foreign" });
+    const foreignProcess = String(store.createProcess({ name: "Foreign ownership", graph: activeGraph }, "foreign").id); store.publishProcess(foreignProcess, "foreign");
+    const foreign = store.startProcess(foreignProcess, { input: "Foreign manual" }, "foreign")!;
+    assert.deepEqual(store.listActiveDurableProcesses().map(row => row.instanceId).sort(), [String(manual.id), String(foreign.id)].sort());
+    // A receipt naming an ID from another project must never cross that boundary
+    // when the migration role backfills ownership with system privileges.
+    store.db.prepare(`INSERT INTO process_scheduled_start_receipts(project_id, idempotency_key, request_sha256, response_json, created_at)
+      VALUES ('default', ?, ?, ?, ?)`).run(key("c"), "a".repeat(64), JSON.stringify({ instanceId: foreign.id, processId: foreignProcess, projectId: "default" }), new Date().toISOString());
+    store.close();
+    const legacy = new DatabaseSync(database);
+    legacy.exec("ALTER TABLE process_instances DROP COLUMN workflow_start_owner; PRAGMA user_version = 28"); legacy.close();
+    store = new AgatStore(database, options);
+    const owner = (id: string) => store.db.prepare("SELECT workflow_start_owner FROM process_instances WHERE id = ?").get(id)!.workflow_start_owner;
+    assert.equal(owner(scheduled.instanceId), "temporal_parent");
+    assert.equal(owner(String(manual.id)), "coordinator"); assert.equal(owner(String(foreign.id)), "coordinator");
+    assert.deepEqual(store.listActiveDurableProcesses().map(row => row.instanceId).sort(), [String(manual.id), String(foreign.id)].sort());
+    assert.deepEqual(store.startScheduledProcess(processId, { input: "Synthetic" }, "default", key("a")), scheduled);
+  } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("scheduled-start HTTP requires a bounded key and internal auth, rejects mismatches and isolates projects", async () => {

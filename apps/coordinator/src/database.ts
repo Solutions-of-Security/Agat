@@ -252,8 +252,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 28;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-scheduled-start-receipts-v28";
+export const POSTGRES_SCHEMA_VERSION = 29;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-temporal-start-ownership-v29";
 
 export class ScheduledStartConflictError extends Error {}
 
@@ -1544,6 +1544,7 @@ export class AgatStore {
         transition_count INTEGER NOT NULL DEFAULT 0,
         runtime TEXT NOT NULL DEFAULT 'database',
         workflow_id TEXT,
+        workflow_start_owner TEXT NOT NULL DEFAULT 'coordinator' CHECK(workflow_start_owner IN ('coordinator', 'temporal_parent')),
         replay_of_instance_id TEXT REFERENCES process_instances(id),
         replay_mode TEXT NOT NULL DEFAULT 'live',
         terminal_status_after_compensation TEXT,
@@ -2400,6 +2401,20 @@ export class AgatStore {
     if (!processInstanceColumns.some((column) => column.name === "workflow_id")) {
       this.db.exec("ALTER TABLE process_instances ADD COLUMN workflow_id TEXT;");
     }
+    if (!processInstanceColumns.some((column) => column.name === "workflow_start_owner")) {
+      this.db.exec("ALTER TABLE process_instances ADD COLUMN workflow_start_owner TEXT NOT NULL DEFAULT 'coordinator' CHECK(workflow_start_owner IN ('coordinator', 'temporal_parent'));");
+      const receiptInstanceId = this.stateStoreDriver === "postgresql"
+        ? "(receipt.response_json::jsonb ->> 'instanceId')"
+        : "json_extract(receipt.response_json, '$.instanceId')";
+      // Schema 28 receipts prove which existing instances belong to a scheduled
+      // parent. Check the project as well as the global instance ID on backfill.
+      this.db.exec(`UPDATE process_instances SET workflow_start_owner = 'temporal_parent'
+        WHERE runtime = 'temporal' AND EXISTS (
+          SELECT 1 FROM process_scheduled_start_receipts receipt
+          JOIN runs r ON r.project_id = receipt.project_id
+          WHERE r.id = process_instances.run_id AND ${receiptInstanceId} = process_instances.id
+        )`);
+    }
     if (!processInstanceColumns.some((column) => column.name === "replay_of_instance_id")) {
       this.db.exec("ALTER TABLE process_instances ADD COLUMN replay_of_instance_id TEXT;");
     }
@@ -2919,7 +2934,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 28;");
+    this.db.exec("PRAGMA user_version = 29;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -10260,6 +10275,7 @@ export class AgatStore {
       });
       if (!instance) return null;
       const response = { instanceId: String(instance.id), processId, projectId: project };
+      this.db.prepare("UPDATE process_instances SET workflow_start_owner = 'temporal_parent' WHERE id = ?").run(response.instanceId);
       this.db.prepare(`INSERT INTO process_scheduled_start_receipts(
         project_id, idempotency_key, request_sha256, response_json, created_at
       ) VALUES (?, ?, ?, ?, ?)`).run(project, idempotencyKey, requestSha256, JSON.stringify(response), nowIso());
@@ -10651,7 +10667,7 @@ export class AgatStore {
       FROM process_instances pi
       JOIN processes p ON p.id = pi.process_id
       JOIN runs r ON r.id = pi.run_id
-      WHERE pi.runtime = 'temporal'
+      WHERE pi.runtime = 'temporal' AND pi.workflow_start_owner = 'coordinator'
         AND pi.status IN ('queued', 'running', 'waiting_approval', 'waiting_external', 'compensating')
       ORDER BY pi.created_at ASC
     `).all() as Row[]).map((row) => ({
