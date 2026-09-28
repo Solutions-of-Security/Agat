@@ -12,7 +12,7 @@ import { before, describe, it } from "node:test";
 import pg from "pg";
 import { decisionProfileJson } from "../../../tests/fixtures/decision-shadow-profile.mjs";
 
-import { AgatStore } from "../src/database.js";
+import { AgatStore, ScheduledStartCancelledError } from "../src/database.js";
 import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
@@ -390,6 +390,104 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(recovered.map(row => row.instanceId).sort(), [String(manual.id), String(foreign.id)].sort());
         assert.deepEqual(database.startScheduledProcess(processId, { input: "Synthetic" }, projectId, `agat-scheduled-v1:${"e".repeat(64)}`), scheduled);
       } finally { database?.close(); if (!migrationClosed) await migration.end(); fs.rmSync(artifacts, { recursive: true, force: true }); }
+    });
+  });
+
+  it("upgrades scheduled cancellation receipts and fences concurrent starts plus lost COMMIT acknowledgements", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-cancel-intent-"));
+      let store: AgatStore | undefined = new AgatStore(":postgresql:", { ...storeOptions("intent-parent", artifacts), temporalProcesses: true });
+      const observer = new pg.Client({ connectionString: systemUrl, ssl: false });
+      const probes: Array<ReturnType<typeof startProbe>> = [];
+      function startProbe(name: string, operation: "start" | "cancel", projectId: string, processId: string, key: string, url = systemUrl) {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", `
+          import fs from 'node:fs';
+          import { AgatStore, ScheduledStartCancelledError } from ${JSON.stringify(fileURLToPath(new URL("../dist/database.js", import.meta.url)))};
+          const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+          const store = new AgatStore(':postgresql:', data.options);
+          try {
+            const result = data.operation === 'start'
+              ? store.startScheduledProcess(data.processId, {input:'Intent fixture'}, data.projectId, data.key)
+              : store.cancelScheduledProcess(data.processId, {input:'Intent fixture'}, data.projectId, data.key);
+            process.stdout.write(JSON.stringify({result}));
+          } catch(error) {
+            if (error instanceof ScheduledStartCancelledError) process.stdout.write(JSON.stringify({cancelled:true}));
+            else { process.stdout.write(JSON.stringify({errorCode:error.code})); process.exitCode=1; }
+          } finally { store.close(); }
+        `], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "", diagnostic = ""; child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+        child.stdout.on("data", chunk => { output += chunk; }); child.stderr.on("data", chunk => { diagnostic = (diagnostic + chunk).slice(-4000); });
+        const closed = new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); }); void closed.catch(() => {});
+        const options = storeOptions(name, artifacts);
+        child.stdin.end(JSON.stringify({ operation, projectId, processId, key,
+          options: { ...options, postgres: { ...options.postgres, systemUrl: url }, temporalProcesses: true } }));
+        return { child, closed, output: () => JSON.parse(output), result: async () => {
+          assert.equal(await closed, 0, diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>")); return JSON.parse(output);
+        } };
+      }
+      try {
+        await observer.connect();
+        const projectId = `intent-${randomUUID().slice(0, 8)}`, foreign = `foreign-${randomUUID().slice(0, 8)}`;
+        store.createProject({ id: projectId, name: projectId }); store.createProject({ id: foreign, name: foreign });
+        const processId = String(store.createProcess({ name: projectId, graph: {
+          nodes: [
+            { id: "start", type: "start", name: "Start", position: { x: 0, y: 0 }, config: {} },
+            { id: "hold", type: "signal", name: "Hold", position: { x: 100, y: 0 }, config: { signalName: "resume", signalTimeoutSeconds: 3600 } },
+            { id: "end", type: "end", name: "End", position: { x: 200, y: 0 }, config: {} },
+          ], edges: [{ id: "a", source: "start", target: "hold", branch: "default" }, { id: "b", source: "hold", target: "end", branch: "default" }],
+        } }, projectId).id); store.publishProcess(processId, projectId);
+        const oldKey = `agat-scheduled-v1:${"a".repeat(64)}`;
+        const old = store.startScheduledProcess(processId, { input: "Intent fixture" }, projectId, oldKey)!;
+        store.close(); store = undefined;
+        const migration = new pg.Client({ connectionString: migrationUrl, ssl: false });
+        try { await migration.connect(); await migration.query("ALTER TABLE process_scheduled_start_receipts DROP COLUMN cancel_requested_at"); }
+        finally { await migration.end(); }
+        await migratePostgresSchemaAndAdmit();
+        store = new AgatStore(":postgresql:", { ...storeOptions("intent-upgraded", artifacts), temporalProcesses: true });
+        assert.deepEqual(store.startScheduledProcess(processId, { input: "Intent fixture" }, projectId, oldKey), old);
+        assert.equal(store.cancelScheduledProcess(processId, { input: "Intent fixture" }, projectId, oldKey)!.status, "cancelled");
+        const raceKey = `agat-scheduled-v1:${"b".repeat(64)}`, names = [`${projectId}-start`, `${projectId}-cancel`];
+        await observer.query("BEGIN"); await observer.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [projectId]);
+        probes.push(startProbe(names[0]!, "start", projectId, processId, raceKey), startProbe(names[1]!, "cancel", projectId, processId, raceKey));
+        let waiters = 0;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          for (const probe of probes) if (probe.child.exitCode !== null) await probe.result();
+          await observer.query("SELECT pg_stat_clear_snapshot()");
+          waiters = (await observer.query(`SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = ANY($1::text[])
+            AND wait_event_type = 'Lock' AND query LIKE 'SELECT id FROM projects WHERE id = %FOR UPDATE'`,
+            [names.map(name => `${name}-system`)])).rows[0].n;
+          if (waiters === 2) break; await delay(50);
+        }
+        assert.equal(waiters, 2); await observer.query("COMMIT"); await Promise.all(probes.map(probe => probe.result()));
+        assert.throws(() => store!.startScheduledProcess(processId, { input: "Intent fixture" }, projectId, raceKey), ScheduledStartCancelledError);
+        assert.ok(store.listProcessInstances(100, projectId).every(row => row.status === "cancelled"));
+        assert.ok(store.listProcessInstances(100, projectId).length <= 2);
+        const commitName = `${projectId}-commit`, commitKey = `agat-scheduled-v1:${"c".repeat(64)}`;
+        const proxy = await interceptScheduledStartCommit(systemUrl, `${commitName}-system`);
+        try {
+          const probe = startProbe(commitName, "cancel", projectId, processId, commitKey, proxy.route(systemUrl)); probes.push(probe);
+          await within(proxy.committed, 5_000, "Cancellation intent did not commit"); proxy.disconnect();
+          assert.equal(await within(probe.closed, 5_000, "Unknown cancellation commit outcome did not propagate"), 1);
+          assert.deepEqual(probe.output(), { errorCode: "AGAT_COMMIT_UNKNOWN" });
+          assert.equal(store.cancelScheduledProcess(processId, { input: "Intent fixture" }, projectId, commitKey), null);
+          assert.throws(() => store!.startScheduledProcess(processId, { input: "Intent fixture" }, projectId, commitKey), ScheduledStartCancelledError);
+          assert.deepEqual(proxy.errors, []);
+        } finally { await proxy.close(); }
+        const tenant = new pg.Client({ connectionString: tenantUrl, ssl: false });
+        try {
+          await tenant.connect(); await tenant.query("BEGIN"); await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [foreign]);
+          assert.equal((await tenant.query("SELECT * FROM process_scheduled_start_receipts WHERE project_id = $1", [projectId])).rowCount, 0);
+          assert.equal((await tenant.query("UPDATE process_scheduled_start_receipts SET cancel_requested_at = 'forged' WHERE project_id = $1", [projectId])).rowCount, 0);
+          await tenant.query("ROLLBACK");
+        } finally { await tenant.end(); }
+      } finally {
+        await observer.query("ROLLBACK").catch(() => {});
+        for (const probe of probes) {
+          if (probe.child.exitCode === null && probe.child.signalCode === null) probe.child.kill("SIGKILL");
+          await probe.closed.catch(() => {});
+        }
+        await observer.end(); store?.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      }
     });
   });
 

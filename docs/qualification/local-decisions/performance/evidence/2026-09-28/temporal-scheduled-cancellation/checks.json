@@ -1,0 +1,81 @@
+{
+  "schema": "agat.temporal.scheduled-cancellation-checks.v1",
+  "baseCommit": "43d7e6271d83b67f0c2dc8dae4d7ff78336ba0c1",
+  "databaseSchema": 30,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": true,
+  "patch": "agat-scheduled-cancellation-intent-v1",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "4a94e8841b305ec3d53b565c45eb8a7dd54793db81e58e8db02b7b5a445e31a1",
+    "apps/coordinator/src/server.ts": "ed61c05840673f8c749ce9ea7e22743b7cce74bf688904333752775ae1941d32",
+    "apps/temporal-worker/src/activities.ts": "b288ef4ae40b8ee7b96b7da486b6e5d51c1bbf44fe536093066533d54e01ee9d",
+    "apps/temporal-worker/src/contracts.ts": "9f6e9e2cd290522c2a02fc21c2c7ecd071f690c915835d4567c0bb165c6e19bf",
+    "apps/temporal-worker/src/workflows.ts": "e93be01234f36841a67f2391a90794b03d57516e92575cb0e641d27e4648da8f",
+    "apps/coordinator/test/scheduled-cancellation.test.ts": "67580335b0285d04ffd8bdcddfbb49215e2affe831a5c553ae157660cc60e266",
+    "apps/coordinator/test/temporal-scheduled-cancellation.integration.test.ts": "0a4e2c733b4b7b6170d7f932473a61a8664003f783e2fe0015e6d1b182c34102",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "4f101bdd99873511e7ae40d6d1bcf05409e3e3f32a24b5db2540d1360a3516de",
+    "apps/coordinator/test/sqlite-postgres-migrator.integration.test.ts": "cc708437bc91af3819fd73ad4b3a5d24ef5b129b5d5075a94570444bb5a12557"
+  },
+  "evidenceSha256": {
+    "baseline/before-commit.json": "ee6d59d51917ca2282c9dd65f89c2fcdcbc9cb2eda976b51028ff3a53b2e3fb3",
+    "baseline/after-commit.json": "b3e1bcdc95ba065070ec9912418dcecc85f626f76784ac407576b87f2b2fd36f",
+    "verified/before-commit.json": "6e6034add5698e7b7cbdc25e2f1511029f183dce55186e95e8ab40f43776e574",
+    "verified/after-commit.json": "0a45cf301a17827e971609d1b6ac08dbfd42bd695eb95459d456ef96eb7cc899",
+    "verified/after-commit-compensating.json": "f261e09248c968cadd7b19f13acb220025b9381a2312e3e74a5eb8fb86468a84"
+  },
+  "checks": {
+    "sqliteAndHttp": {
+      "pass": 3,
+      "fail": 0,
+      "log": "sqlite-http.log"
+    },
+    "postgresSharedScenarios": {
+      "pass": 4,
+      "fail": 0,
+      "log": "postgres-verified.log"
+    },
+    "offlineMigration": {
+      "pass": 2,
+      "fail": 0,
+      "log": "migration.log"
+    },
+    "liveTemporal": {
+      "scenarios": 9,
+      "pass": 9,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "coordinator": {
+      "pass": 292,
+      "skip": 9,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 18,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "newTestsStrict": "pass",
+      "log": "typecheck.log"
+    },
+    "initialSharedPostgresFixtureFailure": {
+      "pass": 2,
+      "fail": 1,
+      "log": "postgres.log",
+      "cause": "Globally unique project name Foreign was shared between new fixtures; unique project IDs are now also used as names. Four related scenarios passed together."
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1800,
+      "markdownFiles": 208,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Cancellation during scheduled-start before child creation, durable fencing of late HTTP requests, compensation polling without child. Retry-budget exhaustion without cancellation remains a separate gate."
+}

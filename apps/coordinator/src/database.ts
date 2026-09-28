@@ -252,10 +252,11 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 29;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-temporal-start-ownership-v29";
+export const POSTGRES_SCHEMA_VERSION = 30;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-scheduled-cancellation-intent-v30";
 
 export class ScheduledStartConflictError extends Error {}
+export class ScheduledStartCancelledError extends Error {}
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -1517,6 +1518,7 @@ export class AgatStore {
         idempotency_key TEXT NOT NULL,
         request_sha256 TEXT NOT NULL,
         response_json TEXT NOT NULL,
+        cancel_requested_at TEXT,
         created_at TEXT NOT NULL,
         PRIMARY KEY (project_id, idempotency_key)
       );
@@ -2394,6 +2396,10 @@ export class AgatStore {
       this.db.exec("ALTER TABLE a2a_endpoints ADD COLUMN max_files INTEGER NOT NULL DEFAULT 4;");
     }
     this.db.exec("UPDATE a2a_push_deliveries SET status = 'pending' WHERE status = 'delivering';");
+    const scheduledReceiptColumns = this.db.prepare("PRAGMA table_info(process_scheduled_start_receipts)").all() as Row[];
+    if (!scheduledReceiptColumns.some(column => column.name === "cancel_requested_at")) {
+      this.db.exec("ALTER TABLE process_scheduled_start_receipts ADD COLUMN cancel_requested_at TEXT;");
+    }
     const processInstanceColumns = this.db.prepare("PRAGMA table_info(process_instances)").all() as Row[];
     if (!processInstanceColumns.some((column) => column.name === "runtime")) {
       this.db.exec("ALTER TABLE process_instances ADD COLUMN runtime TEXT NOT NULL DEFAULT 'database';");
@@ -2934,7 +2940,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 29;");
+    this.db.exec("PRAGMA user_version = 30;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -10259,11 +10265,14 @@ export class AgatStore {
       // SQLite serializes writers with BEGIN IMMEDIATE. The project lock gives
       // concurrent PostgreSQL coordinators the same check/create/record boundary.
       this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
-      const receipt = this.db.prepare(`SELECT request_sha256, response_json FROM process_scheduled_start_receipts
+      const receipt = this.db.prepare(`SELECT request_sha256, response_json, cancel_requested_at FROM process_scheduled_start_receipts
         WHERE project_id = ? AND idempotency_key = ?`).get(project, idempotencyKey) as Row | undefined;
       if (receipt) {
         if (receipt.request_sha256 !== requestSha256) {
           throw new ScheduledStartConflictError("Idempotency-Key уже использован для другого scheduled-start запроса");
+        }
+        if (receipt.cancel_requested_at !== null) {
+          throw new ScheduledStartCancelledError("Запуск по расписанию отменён");
         }
         // Return the committed identity even after publication/config changes or
         // run retention. Never recreate a deleted run for an old Activity retry.
@@ -10280,6 +10289,40 @@ export class AgatStore {
         project_id, idempotency_key, request_sha256, response_json, created_at
       ) VALUES (?, ?, ?, ?, ?)`).run(project, idempotencyKey, requestSha256, JSON.stringify(response), nowIso());
       return response;
+    });
+  }
+
+  cancelScheduledProcess(
+    processId: string, input: StartProcessInput, projectId: string, idempotencyKey: unknown,
+  ): DurableProcessState | null {
+    if (typeof idempotencyKey !== "string" || !/^agat-scheduled-v1:[a-f0-9]{64}$/.test(idempotencyKey)) {
+      throw new Error("scheduled-cancel требует Idempotency-Key формата agat-scheduled-v1:<sha256>");
+    }
+    if (!this.temporalProcesses) throw new Error("Расписания процессов требуют включённого Temporal runtime");
+    const project = this.requireProject(projectId);
+    const requestSha256 = sha256Text(canonicalJson({ processId, input }));
+    return this.transaction(() => {
+      // Share the creation lock. A request whose HTTP handler arrives after
+      // cancellation must observe the durable intent before creating a run.
+      this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
+      const receipt = this.db.prepare(`SELECT request_sha256, response_json FROM process_scheduled_start_receipts
+        WHERE project_id = ? AND idempotency_key = ?`).get(project, idempotencyKey) as Row | undefined;
+      if (receipt && receipt.request_sha256 !== requestSha256) {
+        throw new ScheduledStartConflictError("Idempotency-Key уже использован для другого scheduled-start запроса");
+      }
+      const timestamp = nowIso();
+      if (receipt) {
+        this.db.prepare(`UPDATE process_scheduled_start_receipts SET cancel_requested_at = COALESCE(cancel_requested_at, ?)
+          WHERE project_id = ? AND idempotency_key = ?`).run(timestamp, project, idempotencyKey);
+      } else {
+        this.db.prepare(`INSERT INTO process_scheduled_start_receipts(
+          project_id, idempotency_key, request_sha256, response_json, cancel_requested_at, created_at
+        ) VALUES (?, ?, ?, 'null', ?, ?)`).run(project, idempotencyKey, requestSha256, timestamp, timestamp);
+      }
+      // JSON null records cancellation before creation. A retained receipt may
+      // also refer to a run already removed by retention; never recreate it.
+      const identity = receipt ? JSON.parse(String(receipt.response_json)) as { instanceId: string } | null : null;
+      return identity ? this.temporalProcessCancel(identity.instanceId, project) : null;
     });
   }
 

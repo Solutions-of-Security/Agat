@@ -138,6 +138,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Отмена Temporal и application state](./qualification/local-decisions/performance/temporal-cancellation.md) устраняет подтверждённое расхождение после отмены scheduled parent: Temporal завершал child, а база сохраняла активное ожидание. Идемпотентная cleanup Activity синхронизирует state и дожидается компенсаций; проверены потерянный ответ, SIGKILL/restart worker, PostgreSQL concurrency/RLS и replay старых cancellation histories. Следующий gate — отмена parent во время scheduled-start, когда commit уже мог произойти, но child ещё не создан.
 
+[Отмена scheduled-start до появления child](./qualification/local-decisions/performance/temporal-scheduled-cancellation.md) закрывает воспроизведённые orphan instances при неизвестном create reply и позднем запросе после отмены. Schema 30 сохраняет cancellation intent под ключом creation Activity; PostgreSQL сериализует его с create. Проверены потеря COMMIT acknowledgement, rollback, retention, RLS, три живые границы отмены, компенсация до child и legacy replay. Следующий gate — исчерпание обычного retry budget scheduled-start после возможного commit; qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

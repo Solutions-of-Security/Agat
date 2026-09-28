@@ -1,0 +1,24 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh --test-name-pattern=backfills scheduled workflow ownership|upgrades scheduled cancellation|serializes Temporal cancellation|deduplicates scheduled-start
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:26952) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ backfills scheduled workflow ownership from the schema 28 column layout with project isolation (2075.46925ms)
+  ✔ upgrades scheduled cancellation receipts and fences concurrent starts plus lost COMMIT acknowledgements (2816.252083ms)
+  ✔ serializes Temporal cancellation retries across replicas without duplicate terminal events (765.239292ms)
+  ✔ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (1424.89175ms)
+✔ PostgreSQL Fleet/HA integration (8644.22025ms)
+ℹ tests 4
+ℹ suites 1
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9226.013833
