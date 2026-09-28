@@ -46,6 +46,20 @@ const { startScheduledProcess: startCancellableScheduledProcess } = proxyActivit
   activityId: SCHEDULED_START_ACTIVITY_ID,
   cancellationType: ActivityCancellationType.TRY_CANCEL,
 });
+// A missing create acknowledgement is not evidence that creation failed. Keep
+// the same idempotent Activity alive until it is acknowledged or cancelled;
+// individual attempts stay bounded and permanent request errors still fail.
+const { startScheduledProcess: startDurableScheduledProcess } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "15 seconds",
+  activityId: SCHEDULED_START_ACTIVITY_ID,
+  cancellationType: ActivityCancellationType.TRY_CANCEL,
+  retry: {
+    initialInterval: "1 second",
+    backoffCoefficient: 2,
+    maximumInterval: "15 seconds",
+    nonRetryableErrorTypes: ["ConfigurationError", "CoordinatorRequestError"],
+  },
+});
 
 // Cancellation remains pending during a coordinator outage. The application
 // cancellation endpoint is idempotent, including its compensation transition.
@@ -158,9 +172,12 @@ export async function agatScheduledProcessWorkflow(
   input: ScheduledProcessWorkflowInput,
 ): Promise<DurableProcessState> {
   const cancellationIntent = patched("agat-scheduled-cancellation-intent-v1");
+  const durableCreation = cancellationIntent && patched("agat-scheduled-start-durable-retry-v1");
   let childStarted = false;
   try {
-    const childInput = await (cancellationIntent ? startCancellableScheduledProcess : startScheduledProcess)(input);
+    const start = durableCreation ? startDurableScheduledProcess
+      : cancellationIntent ? startCancellableScheduledProcess : startScheduledProcess;
+    const childInput = await start(input);
     log.info("Scheduled process instance created", {
       instanceId: childInput.instanceId,
       processId: childInput.processId,

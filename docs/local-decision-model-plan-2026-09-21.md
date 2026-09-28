@@ -140,6 +140,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Отмена scheduled-start до появления child](./qualification/local-decisions/performance/temporal-scheduled-cancellation.md) закрывает воспроизведённые orphan instances при неизвестном create reply и позднем запросе после отмены. Schema 30 сохраняет cancellation intent под ключом creation Activity; PostgreSQL сериализует его с create. Проверены потеря COMMIT acknowledgement, rollback, retention, RLS, три живые границы отмены, компенсация до child и legacy replay. Следующий gate — исчерпание обычного retry budget scheduled-start после возможного commit; qualification остаётся открытой.
 
+[Scheduled-start при длительном outage](./qualification/local-decisions/performance/temporal-scheduled-retry.md) устраняет воспроизведённый отказ после 8 попыток с оставленным активным instance. Новая Activity повторяет transient ошибки без общего лимита, сохраняя bounds отдельного attempt, idempotency key и cancellation intent. На 13-й попытке через 135 секунд восстановлен тот же instance и завершён child; 10 живых сценариев и 20 replay histories прошли. Следующий gate — длительный outage обычного process tick и согласование child/application state; qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

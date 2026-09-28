@@ -1,0 +1,54 @@
+{
+  "schema": "agat.temporal.scheduled-retry-checks.v1",
+  "baseCommit": "6772c082856cd6a07218876d7e344149a4d54bcb",
+  "databaseSchema": 30,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": true,
+  "patch": "agat-scheduled-start-durable-retry-v1",
+  "sourceSha256": {
+    "apps/temporal-worker/src/workflows.ts": "c964fcfbaa719f7fbd7357c8beea495818413a82f11ea0ca6d4a324898502f2b",
+    "apps/temporal-worker/src/activities.ts": "b288ef4ae40b8ee7b96b7da486b6e5d51c1bbf44fe536093066533d54e01ee9d",
+    "apps/coordinator/test/temporal-scheduled-retry.integration.test.ts": "d3aa5988ca5e36aa839594b65bd2ade61b4b9872c1e3352900ad0ede3026029f"
+  },
+  "evidenceSha256": {
+    "baseline/retry.json": "ffac57da6c21a3b2fe9446bf03972d217292799cc1fd342b018faf4f59ed79a3",
+    "verified/retry.json": "a28b21f7992f080c2e4b3ba5531f581c9685246368e746876ca907798c76ff85"
+  },
+  "checks": {
+    "liveTemporal": {
+      "scenarios": 10,
+      "pass": 10,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "coordinator": {
+      "pass": 292,
+      "skip": 10,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 20,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "newTestStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "new-test-typecheck.log"
+      ]
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1812,
+      "markdownFiles": 209,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Scheduled-start transient failures beyond the previous retry/time budget. Legacy policies replay unchanged; ordinary process tick retry exhaustion remains a separate gate."
+}
