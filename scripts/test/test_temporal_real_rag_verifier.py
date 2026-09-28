@@ -92,6 +92,8 @@ class TemporalRealRagEvidenceTests(unittest.TestCase):
         self.rejects(lambda f: f['isolated.json']['trace']['decisionObservations'].append({}))
 
     def test_process_container_and_model_cleanup(self):
+        self.rejects(lambda f: f['launcher.json']['cleanupErrors'].append('containerInventory:OSError'))
+        self.rejects(lambda f: f['launcher.json']['cleanupErrors'].append('containerVerification:OSError'))
         self.rejects(lambda f: f['launcher.json']['remainingOwnedPids'].append(f['launcher.json']['ollamaPid']))
         self.rejects(lambda f: f['launcher.json']['modelsAfterUnload']['models'].append({'name': 'qwen3:8b'}))
         self.rejects(lambda f: f['launcher.json']['ownedPids'].remove(f['isolated.json']['children'][0]['pid']))
