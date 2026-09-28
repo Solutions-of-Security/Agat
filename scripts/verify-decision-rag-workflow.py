@@ -28,6 +28,20 @@ def sha(value):
     return hashlib.sha256(value.encode() if isinstance(value, str) else value).hexdigest()
 
 
+def transport_profile(plan, launcher):
+    # Historical evidence did not freeze this setting. Do not invent a default
+    # when replaying it, or allow a new plan to disagree with its launcher.
+    if 'embeddingTransport' not in plan and 'embeddingTransport' not in launcher:
+        return 'legacy_unspecified'
+    mode = plan.get('embeddingTransport')
+    require(type(mode) is str and mode in ('isolated', 'session')
+            and launcher.get('embeddingTransport') == mode, 'Embedding transport profile mismatch')
+    for name in ('workers/embedding_http.py', 'workers/embedding_transport.py'):
+        digest = plan.get('files', {}).get(name)
+        require(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest), 'Missing HTTP transport source digest: ' + name)
+    return mode
+
+
 def peak(calls):
     events = sorted((row[key], delta) for row in calls for key, delta in (('startedMs', 1), ('finishedMs', -1)))
     current = maximum = 0
@@ -64,6 +78,7 @@ assert.equal(crypto.createHash('sha256').update(JSON.stringify(body)).digest('he
             and result['planSha256'] == sha(plan_path.read_bytes()) and lr['launcherPlanSha256'] == lp['sha256'], 'Incomplete/unbound run')
     require(all(value['routingEnabled'] is False for value in (plan, result, lp, lr))
             and result['qualification'] == plan['qualification'] == 'not_assessed' and lr['qualifiedForRouting'] is False, 'Unexpected qualification')
+    embedding_transport = transport_profile(plan, lp)
     for evidence in (plan, lp):
         for name, digest in evidence['files'].items():
             file = (ROOT / name).resolve()
@@ -202,7 +217,8 @@ assert.equal(crypto.createHash('sha256').update(JSON.stringify(body)).digest('he
     report = sealed({'schemaVersion': 'agat.decision.rag-workflow-verification.v1', 'createdAt': datetime.now(timezone.utc).isoformat(),
                      'status': 'verified_diagnostic_only', 'planSha256': result['planSha256'], 'resultSha256': result['sha256'],
                      'launcherResultSha256': lr['sha256'], 'runtimeVersion': VERSION, 'implementationSha256': implementation_sha256(),
-                     'profileSha256': plan['decision']['profileSha256'], 'totals': dict(totals), 'phases': phases, 'finalReports': finals,
+                     'profileSha256': plan['decision']['profileSha256'], 'embeddingTransport': embedding_transport,
+                     'totals': dict(totals), 'phases': phases, 'finalReports': finals,
                      'verifiedGonePids': lr['observedOwnedPids'], 'verifierSha256': sha(Path(__file__).read_bytes()),
                      'sourceSnapshotsSha256': [snapshot['sha256'] for snapshot in snapshots], 'pairedComparison': paired,
                      'routingEnabled': False, 'qualifiedForRouting': False,

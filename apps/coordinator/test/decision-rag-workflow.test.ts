@@ -79,6 +79,9 @@ with make_server(DecisionEngine(Backend()),0) as server:
     server.serve_forever()
 `], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   const lines = createInterface({ input: backend.stdout! });let chatCalls = 0, embedCalls = 0, invalidVectors = false;
+  const inheritedTransport = process.env.AGAT_EMBEDDING_TRANSPORT;
+  // Explicit experiment modes must override an inherited, unusable default.
+  process.env.AGAT_EMBEDDING_TRANSPORT = "invalid-inherited-transport";
   const serverErrors: unknown[] = [];
   let nextEmbeddingResponse = 0, primaryBarrierReleased = false;
   const firstPrimaryResponses: Array<() => void> = [];
@@ -131,7 +134,8 @@ with make_server(DecisionEngine(Backend()),0) as server:
     const primaryUrl = `http://127.0.0.1:${address.port}`, decisionUrl = `http://127.0.0.1:${port}`;
     const profile = await decisionProfile(decisionUrl);
     const result = await workflowPhase({ phase: { id: "rag_shadow", shadow: true, runs: 2, concurrency: 2 },
-      fixture, model: "fixture-primary", primaryUrl, decisionUrl, profileJson: profile.profileJson, timeoutMs: 15_000, metadataId: "fixed_fixture" });
+      fixture, model: "fixture-primary", primaryUrl, decisionUrl, profileJson: profile.profileJson, timeoutMs: 15_000,
+      metadataId: "fixed_fixture", embeddingTransport: "isolated" });
     assert.equal(result.status, "observed", JSON.stringify({ failure: result.failure,
       maxPrimaryRequestsInFlight: result.maxPrimaryRequestsInFlight, primaryCalls: result.primaryCalls.length,
       decisionCalls: result.decisionCalls.length, embeddingCalls: result.embeddingCalls?.length }));
@@ -146,10 +150,13 @@ with make_server(DecisionEngine(Backend()),0) as server:
     }
     invalidVectors = true;
     const failed = await workflowPhase({ phase: { id: "invalid_index", shadow: true, runs: 1, concurrency: 1 },
-      fixture, model: "fixture-primary", primaryUrl, decisionUrl, profileJson: profile.profileJson, timeoutMs: 10_000 });
+      fixture, model: "fixture-primary", primaryUrl, decisionUrl, profileJson: profile.profileJson, timeoutMs: 10_000,
+      embeddingTransport: "session" });
     assert.equal(failed.status, "incomplete");assert.equal(failed.failure, "embedding_adapter_failed");
     assert.equal(failed.primaryCalls.length, 0);assert.equal(failed.decisionCalls.length, 0);assert.equal(chatCalls, 6);
   } finally {
+    if (inheritedTransport === undefined) delete process.env.AGAT_EMBEDDING_TRANSPORT;
+    else process.env.AGAT_EMBEDDING_TRANSPORT = inheritedTransport;
     lines.close();backend.kill("SIGTERM");
     if (backend.exitCode === null && backend.signalCode === null) await new Promise(resolve => backend.once("exit", resolve));
     primary.closeAllConnections();if (primary.listening) await new Promise<void>(resolve => primary.close(() => resolve()));

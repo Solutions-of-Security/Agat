@@ -77,6 +77,7 @@ def main():
     for name in ('manifest', 'policy', 'fixture', 'evidence-dir'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--design', choices=['sequence', 'paired-rag'], default='sequence')
+    parser.add_argument('--embedding-transport', choices=['isolated', 'session'], default='isolated')
     args = parser.parse_args()
     require(args.evidence_dir.resolve().is_relative_to((ROOT / 'docs').resolve()), 'Evidence belongs under docs')
     paths = {name: args.evidence_dir / f'rag-workflow-{name}.json' for name in ('plan', 'result', 'launcher-plan', 'launcher-result')}
@@ -92,7 +93,8 @@ def main():
               'OLLAMA_CONTEXT_LENGTH': '8192', 'OLLAMA_KEEP_ALIVE': '5m'}
     launcher_plan = sealed({'schemaVersion': 'agat.decision.rag-launcher-plan.v1', 'createdAt': datetime.now(timezone.utc).isoformat(),
                             'models': {name: digest for name, (_relative, digest) in MODELS.items()}, 'ollamaSettings': config,
-                            'host': host, 'design': args.design, 'nodeBudgetMs': 660000, 'startupBudgetMs': 30000,
+                            'host': host, 'design': args.design, 'embeddingTransport': args.embedding_transport,
+                            'nodeBudgetMs': 660000, 'startupBudgetMs': 30000,
                             'runtime': {'maxTokens': 2048, 'cacheLimitMiB': 128, 'inferenceTimeoutMs': 5000},
                             'files': {str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                                       for p in (Path(__file__).resolve(), ROOT / 'scripts/benchmark-decision-workflow.ts', args.fixture.resolve(), args.manifest.resolve(), args.policy.resolve())},
@@ -130,6 +132,7 @@ def main():
                             stage = 'workflow'
                             command = ['node', '--import', 'tsx', 'scripts/benchmark-decision-workflow.ts',
                                        '--design', args.design,
+                                       '--embedding-transport', args.embedding_transport,
                                        '--decision-url', f'http://127.0.0.1:{server.server_port}', '--primary-url', f'http://127.0.0.1:{ollama_port}',
                                        '--primary-model', 'qwen3:8b', '--expected-primary-digest', MODELS['qwen3:8b'][1],
                                        '--expected-embedding-digest', MODELS['embeddinggemma:latest'][1], '--fixture', str(args.fixture.resolve()),

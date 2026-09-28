@@ -12,6 +12,7 @@ const { values } = parseArgs({ options: {
   "decision-url": { type: "string" }, "primary-url": { type: "string" }, "primary-model": { type: "string", default: "qwen3:8b" },
   "expected-primary-digest": { type: "string" }, output: { type: "string" }, "plan-output": { type: "string" },
   "expected-embedding-digest": { type: "string" },
+  "embedding-transport": { type: "string", default: "isolated" },
   design: { type: "string", default: "sequence" },
   fixture: { type: "string", default: "docs/qualification/local-decisions/performance/workflow.fixture.json" },
 } });
@@ -30,6 +31,8 @@ if (output === planOutput) throw new Error("Plan and result paths must differ");
 const primaryUrl = origin(values["primary-url"]!), decisionUrl = origin(values["decision-url"]!);
 const fixture = JSON.parse(fs.readFileSync(path.resolve(root, values.fixture!), "utf8")) as Fixture;
 if (!["sequence", "paired-rag"].includes(values.design!)) throw new Error("Unsupported experiment design");
+const embeddingTransport = values["embedding-transport"];
+if (embeddingTransport !== "isolated" && embeddingTransport !== "session") throw new Error("Unsupported embedding transport");
 const paired = values.design === "paired-rag";
 if (paired && !fixture.rag) throw new Error("The paired design requires RAG");
 const metadataId = paired ? "paired_rag" : undefined;
@@ -51,10 +54,11 @@ const model = values["primary-model"]!, expected = values["expected-primary-dige
 const [primary, profile] = await Promise.all([primaryIdentity(primaryUrl, model, expected), decisionProfile(decisionUrl)]);
 const embedding = fixture.rag ? await embeddingIdentity(primaryUrl, fixture.rag.embeddingModel, values["expected-embedding-digest"]!, json) : null;
 const files = ["scripts/benchmark-decision-workflow.ts", "scripts/lib/decision-primary-workflow.ts", "scripts/lib/decision-shadow-proxy.ts", "scripts/lib/decision-rag.ts", "workers/agat_worker.py",
-  "workers/local_decisions.py", "apps/coordinator/src/local-decisions.ts", "apps/coordinator/src/database.ts",
+  "workers/local_decisions.py", "workers/embedding_http.py", "workers/embedding_transport.py", "workers/telemetry.py", "workers/web_tools.py",
+  "apps/coordinator/src/local-decisions.ts", "apps/coordinator/src/database.ts",
   "apps/coordinator/src/server.ts", "apps/coordinator/src/process-engine.ts", "apps/coordinator/src/types.ts"];
 const plan = { schemaVersion: "agat.decision.workflow-plan.v1", createdAt: new Date().toISOString(), qualification: "not_assessed",
-  routingEnabled: false, fixture, phases, primary, ...(embedding ? { embedding } : {}), decision: profile, endpoints: { primaryUrl, decisionUrl },
+  routingEnabled: false, fixture, phases, primary, embeddingTransport, ...(embedding ? { embedding } : {}), decision: profile, endpoints: { primaryUrl, decisionUrl },
   timeBudgetMs: 600_000, warmupCalls: 1, primaryAdapter: "OpenAI-compatible worker request to native Ollama chat; no fixture outputs",
   executionOrder: "worker runs primary first, then shadow; overlap is possible across concurrent leases",
   coordinatorScheduler: "sequential with globalMaxConcurrency explicitly equal to phase.concurrency",
@@ -96,7 +100,7 @@ try {
     console.log(`${phase.id}: ${phase.runs} workflows, 3 stages, worker concurrency ${phase.concurrency}`);
     step = `${phase.id}.workflow`;
     batches.push(await workflowPhase({ phase, fixture, model, primaryUrl, decisionUrl, profileJson: profile.profileJson,
-      timeoutMs: Math.min(180_000, remaining), metadataId }));
+      timeoutMs: Math.min(180_000, remaining), metadataId, embeddingTransport }));
     if (batches.at(-1)!.status !== "observed") throw new Error("Incomplete workflow batch");
     console.log(`${phase.id}: completed; primary calls=${batches.at(-1)!.primaryCalls.length}; shadow=${batches.at(-1)!.decisionCalls.length}`);
   }
