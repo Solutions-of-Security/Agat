@@ -1,0 +1,39 @@
+{
+  "schema": "agat.temporal.private-log-checks.v1",
+  "status": "offline_pass_live_docker_unavailable",
+  "baseCommit": "fc805ee19fbaf7fc123702d116180fd96919ba62",
+  "sourceSha256": {
+    "scripts/run-temporal-real-rag.py": "aae3e25becbcfea6b12bee40a67e74aa3a39e19d66204792066da4d60825e1d8",
+    "scripts/test/test_temporal_log_retention.py": "a258433c4ece1d73d48a38975d2d4aa0c16d8ca607494c61c7a3dbc9b21ad9b3"
+  },
+  "beforeFix": {
+    "reproducedScenarios": 3,
+    "assertionFailures": 1,
+    "lateEnospcErrors": 2
+  },
+  "newLogRetentionTests": {
+    "pass": 6,
+    "modelAndProcessData": "explicit_fixtures"
+  },
+  "targeted": {
+    "pass": 76,
+    "error": 4,
+    "errors": "Docker image inspection timeout before creating fixtures",
+    "timeoutSecondsUnchanged": 10
+  },
+  "documentation": {
+    "nodePass": 12,
+    "pythonPass": 436,
+    "optInDockerSkipped": 4,
+    "localLinkTargetsBeforeEvidenceLinks": 2128,
+    "markdownFiles": 232,
+    "processCatalog": "pass"
+  },
+  "logSha256": {
+    "before-reproduced": "8d960c5bd910b4d37419c2065a81fad562724da3d20ceb219bb95c5d190182bc",
+    "targeted": "9757d16dc3c0b5d99cff38b0720929ec5889271361e01809b1f42a7743e46bf1",
+    "docs": "f0b8164c7c76d49801b8ba2903e957b6965e31b68a6d45dc5a49df90d866d6d5"
+  },
+  "realModelRepeat": "failed_enospc_no_phase_or_launcher_report",
+  "qualification": "not_assessed"
+}
