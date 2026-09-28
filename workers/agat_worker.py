@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
-from embedding_http import HttpResponseError, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
+from embedding_http import HttpResponseError, request_knowledge_response, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
 from embedding_transport import validate_idle_timeout as validate_embedding_idle_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
@@ -56,6 +56,10 @@ MAX_EMBEDDING_ERROR_BYTES = 4096
 MAX_MODEL_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_MODEL_ERROR_BYTES = 4096
 MODEL_HTTP_TIMEOUT = 900
+KNOWLEDGE_HTTP_TIMEOUT = 120
+# Coordinator returns at most 20 hits, each with at most 4000 content characters.
+MAX_KNOWLEDGE_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_KNOWLEDGE_ERROR_BYTES = 4096
 # LangGraph copies context into its node execution; thread-local state alone
 # would lose cancellation when a graph runs a node on another thread.
 _PRIMARY_CANCELLED: ContextVar[threading.Event | None] = ContextVar("agat_primary_cancelled", default=None)
@@ -435,14 +439,31 @@ class CoordinatorClient:
         return result
 
     def knowledge_search(
-        self, lease_id: str, queries: list[dict[str, Any]]
+        self, lease_id: str, queries: list[dict[str, Any]], *, cancelled: threading.Event | None = None,
     ) -> dict[str, Any]:
-        result = self.request(
-            "POST",
-            f"/api/v1/leases/{lease_id}/knowledge/search",
-            {"queries": queries},
-            timeout=120,
-        )
+        if not self.node_token:
+            raise ApiError(401, "Worker is not registered")
+        headers = {"Accept": "application/json", "Content-Type": "application/json",
+                   "User-Agent": f"agat-worker/{VERSION}", "Authorization": f"Bearer {self.node_token}"}
+        self.telemetry.inject(headers)
+        try:
+            payload = request_knowledge_response(
+                f"{self.base_url}/api/v1/leases/{lease_id}/knowledge/search", {"queries": queries}, headers,
+                timeout=KNOWLEDGE_HTTP_TIMEOUT, cancelled=cancelled,
+                max_response_bytes=MAX_KNOWLEDGE_RESPONSE_BYTES, max_error_bytes=MAX_KNOWLEDGE_ERROR_BYTES,
+            )
+        except HttpResponseError as error:
+            try:
+                parsed = json.loads(error.detail)
+                message = parsed.get("error", error.detail) if isinstance(parsed, dict) else error.detail
+            except json.JSONDecodeError:
+                message = error.detail or str(error)
+            raise ApiError(error.status, str(message)) from error
+        except RuntimeError as error:
+            if cancelled is not None and cancelled.is_set():
+                raise
+            raise ApiError(0, str(error)) from error
+        result = json.loads(payload.decode("utf-8")) if payload else None
         if not isinstance(result, dict):
             raise RuntimeError("Coordinator returned an invalid knowledge search response")
         return result
@@ -656,7 +677,7 @@ class LocalModelClient:
                     }
                 )
             check_cancelled()
-            result = self.coordinator_client.knowledge_search(str(lease["leaseId"]), queries)
+            result = self.coordinator_client.knowledge_search(str(lease["leaseId"]), queries, cancelled=cancelled)
             check_cancelled()
             raw_hits = result.get("hits")
             if not isinstance(raw_hits, list):

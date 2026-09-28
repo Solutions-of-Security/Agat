@@ -152,6 +152,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Отмена query embedding](./qualification/local-decisions/performance/rag-query-cancellation.md) закрывает воспроизведённое ожидание до primary после отказа обычной process lease. Оба embedding transport получают cancellation event; между группами и после поиска проверяется отмена. Второй primary/shadow не запускается, первый результат и provenance сохранены; тот же worker завершает следующий RAG с новым helper. Следующий gate — прерывание HTTP ожидания coordinator knowledge search; предметная qualification остаётся открытой.
 
+[Отмена coordinator search HTTP](./qualification/local-decisions/performance/knowledge-http-cancellation.md) устраняет воспроизведённое ожидание ответа после cancellation и отказа renewal. Управляемый helper сохраняет auth, trace и HTTP errors, ограничивает deadline и тело, освобождает слот без нового primary/shadow. Уже записанный retrieval provenance сохранён при потерянном ответе. Следующий gate — SIGKILL Python worker во время primary HTTP и восстановление после истечения lease; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

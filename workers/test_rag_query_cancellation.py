@@ -107,7 +107,7 @@ class RagQueryCancellationTests(unittest.TestCase):
         coordinator = Mock(spec=CoordinatorClient)
         model = LocalModelClient("http://unused.invalid/v1", "", coordinator_client=coordinator)
 
-        def search(*_args):
+        def search(*_args, **_kwargs):
             cancelled.set()
             return {"hits": [{"content": "late result"}]}
 
