@@ -158,6 +158,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Потеря acknowledgement completion](./qualification/local-decisions/performance/completion-ack-recovery.md) проверяет SIGKILL Python worker после приёма второго output/shadow coordinator. Два принятых stage/shadow сохранены без повторного model call. Прошли 4 SQLite crash-сценария, полная матрица 14 PostgreSQL RAG сценариев и 293 coordinator tests. Следующий gate — потеря самого coordinator после commit completion.
 
+[Restart coordinator после completion](./qualification/local-decisions/performance/coordinator-completion-recovery.md) проверяет сохранность принятого output/shadow/provenance после SIGKILL coordinator при живом Python worker. Оба transport прошли настоящий tick outage, Update и чтение trace новым coordinator без смены Temporal Run ID. Проверены 6 SQLite и 6 PostgreSQL crash-сценариев, 293 coordinator tests. Следующий этап — повтор реальных локальных RAG-измерений после HTTP isolation.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

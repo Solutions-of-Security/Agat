@@ -1,0 +1,100 @@
+{
+  "schema": "agat.coordinator-completion-recovery-checks.v1",
+  "baseCommit": "9f96c97351f3711c71140ad39c60a162f9535df3",
+  "databaseSchema": 30,
+  "productionBehaviorChanged": false,
+  "workflowCommandsChanged": false,
+  "sourceSha256": {
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "50d4da0cdeba3bbd4a276ed0870d96ace9bfeedb42b5e41c21b578a99f97bf8a",
+    "apps/coordinator/src/process-runtime.ts": "792d2a3f4e8b7410d612e8ffe47e5b0b0d44268be76d369336e4790e0c1e9463",
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/coordinator/src/server.ts": "38f0c27a965a04f82f28cc09a4964cd0ad79dddb7f07e64f2632376ef74a0102",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "workers/agat_worker.py": "2435dc80140611fbd045575401b75030d5297479bc2c9bcb5b42592b265a310e"
+  },
+  "checks": {
+    "firstCrash": {
+      "pass": 1,
+      "nonMatchingFileEntries": 6,
+      "log": "first.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "fail": 0,
+      "skip": 26,
+      "log": "coordinator.log"
+    },
+    "sqliteCrashMatrix": {
+      "scenarios": 6,
+      "pass": 6,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "sqlite.log"
+    },
+    "postgresCrashMatrix": {
+      "scenarios": 6,
+      "pass": 6,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "docs": {
+      "status": "pass",
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinkTargets": 1973,
+      "markdownFiles": 218,
+      "log": "docs.log"
+    },
+    "strictFixtureTypes": {
+      "status": "pass",
+      "log": "test-typecheck.log"
+    }
+  },
+  "scope": "Synthetic model, real coordinator SIGKILL/restart on the same store, real Temporal Update and tick failure, accepted state read via replacement coordinator HTTP, unchanged Python worker and Temporal Run ID; no replication/region/database-loss claim.",
+  "evidenceSha256": {
+    "first/isolated-coordinator-crash.json": "224743732498c293fe6c790feb2b3c4359305f89ab4e1c16791c24fb2e4c216a",
+    "postgres/isolated-coordinator-crash.json": "d92b29632998e00f48df925c33fec22f4d4b344a87edebe617a7e98e90d80e25",
+    "postgres/session-coordinator-crash.json": "f4cec00ffc6da89aee1d42b3022eb31e735edd1d7028987876122e1f724b7417",
+    "sqlite/isolated-coordinator-crash.json": "7d0793baf0c1302e5f155630200beb94c5f34c3e885589b17bf6159e56503fb7",
+    "sqlite/session-coordinator-crash.json": "fce4c6b57855d30e82403cbd39688f01c1dfb23e91c99e24e6737ac0ed921084"
+  },
+  "observations": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "outage": {
+        "ticks": 1,
+        "workerRequests": 0
+      },
+      "acceptedUpdateRevision": 3
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "outage": {
+        "ticks": 1,
+        "workerRequests": 0
+      },
+      "acceptedUpdateRevision": 3
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "outage": {
+        "ticks": 1,
+        "workerRequests": 0
+      },
+      "acceptedUpdateRevision": 3
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "outage": {
+        "ticks": 1,
+        "workerRequests": 0
+      },
+      "acceptedUpdateRevision": 3
+    }
+  ]
+}
