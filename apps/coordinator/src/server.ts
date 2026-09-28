@@ -27,7 +27,7 @@ import {
   type AgatRole,
   type AuthContext,
 } from "./auth.js";
-import { AgatStore, type StoreOptions } from "./database.js";
+import { AgatStore, ScheduledStartConflictError, type StoreOptions } from "./database.js";
 import { validateProcessFormData } from "./process-forms.js";
 import type { ProcessApprovalForm } from "./types.js";
 import { enterPostgresTenantScope, runWithPostgresSystemScope } from "./postgres-database.js";
@@ -1005,13 +1005,11 @@ export function createCoordinatorServer(
         }
         const body = await readJson<StartProcessInput & { projectId?: unknown }>(request);
         if (typeof body.projectId !== "string") throw new HttpError(400, "projectId обязателен");
-        const instance = store.startProcess(scheduledProcessId, body, body.projectId, { ...scenarioContext(), executionTrigger: { kind: "schedule" } });
-        if (!instance) throw new HttpError(404, "Процесс расписания не найден");
-        json(response, 201, {
-          instanceId: String(instance.id),
-          processId: scheduledProcessId,
-          projectId: body.projectId,
-        });
+        const { projectId, ...input } = body;
+        const result = store.startScheduledProcess(scheduledProcessId, input, projectId,
+          request.headers["idempotency-key"], scenarioContext());
+        if (!result) throw new HttpError(404, "Процесс расписания не найден");
+        json(response, 201, result);
         return;
       }
 
@@ -2741,6 +2739,10 @@ export function createCoordinatorServer(
       }
       if (error instanceof ScenarioPreflightError) {
         json(response, 409, { error: safeMessage(error), preflight: error.preflight });
+        return;
+      }
+      if (error instanceof ScheduledStartConflictError) {
+        json(response, 409, { error: safeMessage(error), code: "SCHEDULED_START_IDEMPOTENCY_CONFLICT" });
         return;
       }
       const status = error instanceof HttpError

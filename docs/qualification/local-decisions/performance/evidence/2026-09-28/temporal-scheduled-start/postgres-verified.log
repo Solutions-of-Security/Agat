@@ -1,0 +1,21 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh --test-name-pattern=deduplicates scheduled-start
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:60439) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (1609.962917ms)
+✔ PostgreSQL Fleet/HA integration (3168.3905ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3636.9875

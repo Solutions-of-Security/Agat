@@ -29,7 +29,10 @@ describe("SQLite to PostgreSQL migration integration", {
     const artifactsDir = path.join(root, "artifacts");
     const applyReportPath = path.join(root, "apply-report.json");
     const verifyReportPath = path.join(root, "verify-report.json");
+    const scheduledKey = `agat-scheduled-v1:${"d".repeat(64)}`;
+    let scheduledReceipt: ReturnType<AgatStore["startScheduledProcess"]> = null;
     const source = new AgatStore(sourcePath, {
+      temporalProcesses: true,
       region: "eu-migration-test",
       residencyDomain: "eu-test",
       artifactsDir,
@@ -69,6 +72,8 @@ describe("SQLite to PostgreSQL migration integration", {
         },
       });
       source.publishProcess(String(process.id));
+      scheduledReceipt = source.startScheduledProcess(String(process.id), { input: "Scheduled migration" }, "default", scheduledKey);
+      assert.ok(scheduledReceipt);
       const instance = source.startProcess(String(process.id), { input: "dependency order" });
       assert.ok(instance);
       const insertToken = source.db.prepare(`
@@ -123,6 +128,10 @@ describe("SQLite to PostgreSQL migration integration", {
           WHERE id = 'z-parent-token' OR parent_token_id = 'z-parent-token'
         `);
         assert.equal(tokens.rows[0]?.count, "301");
+        const receipt = await client.query("SELECT response_json, request_sha256 FROM process_scheduled_start_receipts WHERE project_id = 'default' AND idempotency_key = $1", [scheduledKey]);
+        assert.equal(receipt.rowCount, 1);
+        assert.deepEqual(JSON.parse(receipt.rows[0].response_json), scheduledReceipt);
+        assert.match(receipt.rows[0].request_sha256, /^[a-f0-9]{64}$/);
       } finally {
         await client.end();
       }

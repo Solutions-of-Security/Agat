@@ -1,0 +1,233 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:58953) TimeoutNaNWarning: NaN is not a number.
+Timeout duration was set to 1.
+▶ PostgreSQL Fleet/HA integration
+  ✖ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (3614.710875ms)
+  ✔ reuses the response buffer across large, short, SQL-error and oversized responses (710.770833ms)
+  ✔ ranks 10000 wide vectors through a 1 MiB bridge at the operator hard boundary (18631.510083ms)
+  ✔ rejects commit after the request deadline, permits rollback and restores the SQL timeout (985.263209ms)
+  ✔ applies the remaining request deadline to every cursor fetch and cleans up after SQL cancellation (430.559083ms)
+  ✔ ranks all worker cursor batches against one snapshot while another connection updates the source (357.415875ms)
+  ✔ applies an operator budget above 5000 to real PostgreSQL retrieval without worker override or partial writes (29174.067375ms)
+  ✔ rejects expired retrieval leases before maintenance and accepts only the replacement lease across replicas (999.565208ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ isolates whole retrieval transactions across workers without duplicate markers or partial writes (2318.228875ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing knowledge_retrievals (6732.942209ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rolls back retrieval when its lease expires while writing events (6934.315375ms)
+  ℹ After the expired write: 0 durable retrievals, 0 retrieval events
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires while retrieval waits for its run lock (6777.332833ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease cancelled by a transaction that retrieval had to wait for (1112.654958ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects a lease that expires after validation while the knowledge index is blocked (6078.748875ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ permits a concurrent lease renewal while retrieval is reading its index (1000.5615ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ starts isolated retrieval from coordinator main within its pool budget and fails readiness after a deadline (2951.378625ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ enforces the retrieval deadline while main is blocked renewing the same stage (3790.504667ms)
+  ✔ real Python embedding worker retires idle helpers and drains a resumed lease (0) (2629.4025ms)
+  ℹ idle=0: two exact vectors/leases, 1 helpers reaped, SIGTERM drain and restart without replay
+  ✔ real Python embedding worker retires idle helpers and drains a resumed lease (0.15) (2682.214375ms)
+  ℹ idle=0.15: two exact vectors/leases, 2 helpers reaped, SIGTERM drain and restart without replay
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (oversized-success, isolated) (1889.24175ms)
+  ℹ oversized-success/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (unfinished-error, isolated) (1665.498208ms)
+  ℹ unfinished-error/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-headers, isolated) (2582.799458ms)
+  ℹ slow-headers/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-success, isolated) (2410.230666ms)
+  ℹ slow-success/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-error, isolated) (2466.5105ms)
+  ℹ slow-error/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (oversized-success, session) (1911.620333ms)
+  ℹ oversized-success/session: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (unfinished-error, session) (1714.607083ms)
+  ℹ unfinished-error/session: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-headers, session) (2339.576042ms)
+  ℹ slow-headers/session: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-success, session) (2530.787958ms)
+  ℹ slow-success/session: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-error, session) (2118.368667ms)
+  ℹ slow-error/session: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, isolated) (47281.378166ms)
+  ℹ renew-complete/isolated: SIGTERM stopped admission; active terminal HTTP 200 after signal; real renewal HTTP 204 during drain; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (deadline, isolated) (5408.75475ms)
+  ℹ deadline/isolated: SIGTERM stopped admission; active terminal HTTP 200 after signal; deadline killed and reaped helper; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, session) (47881.818416ms)
+  ℹ renew-complete/session: SIGTERM stopped admission; active terminal HTTP 200 after signal; real renewal HTTP 204 during drain; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (deadline, session) (5471.848084ms)
+  ℹ deadline/session: SIGTERM stopped admission; active terminal HTTP 200 after signal; deadline killed and reaped helper; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (headers, isolated) (1602.931ms)
+  ℹ headers/isolated: worker SIGKILL; model HTTP closed after 44.2 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (body, isolated) (1521.153875ms)
+  ℹ body/isolated: worker SIGKILL; model HTTP closed after 43.5 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (headers, session) (1617.925541ms)
+  ℹ headers/session: worker SIGKILL; model HTTP closed after 42.2 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (body, session) (1583.068917ms)
+  ℹ body/session: worker SIGKILL; model HTTP closed after 43.5 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (isolated) (46203.223875ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=none; model calls=1
+  ✔ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (session) (46704.628333ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=none; model calls=1
+  ✔ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (session-idle) (46773.770334ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=none; model calls=1
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect, dry-run) (2234.582292ms)
+  ℹ Python 3.14.3/disconnect/dry-run: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold, dry-run) (3056.39725ms)
+  ℹ Python 3.14.3/withhold/dry-run: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect, isolated) (2203.735084ms)
+  ℹ Python 3.14.3/disconnect/isolated: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold, isolated) (3061.620583ms)
+  ℹ Python 3.14.3/withhold/isolated: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect, session) (2185.1465ms)
+  ℹ Python 3.14.3/disconnect/session: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold, session) (3004.800166ms)
+  ℹ Python 3.14.3/withhold/session: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect, session-idle) (2271.170667ms)
+  ℹ Python 3.14.3/disconnect/session-idle: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold, session-idle) (3241.986ms)
+  ℹ Python 3.14.3/withhold/session-idle: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (terminal, disconnect) (3946.105292ms)
+  ℹ Independent connection observed 1 committed vectors and one knowledge.document.ready before losing its acknowledgement
+  ℹ disconnect returned HTTP 503 after 38 ms; query timeout=30000 ms
+  ✔ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (partial, disconnect) (4438.740125ms)
+  ℹ Independent connection observed 32 committed vectors and one knowledge.embedding.batch.completed before losing its acknowledgement
+  ℹ disconnect returned HTTP 503 after 120 ms; query timeout=30000 ms
+  ✔ preserves a committed embedding batch after lost COMMIT acknowledgement and restart (terminal, withhold) (5006.587167ms)
+  ℹ Independent connection observed 1 committed vectors and one knowledge.document.ready before losing its acknowledgement
+  ℹ withhold returned HTTP 503 after 1039 ms; query timeout=1000 ms
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (disconnect) (3107.0045ms)
+  ℹ Successful COMMIT observed after 55 ms
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ fails closed when a committed retrieval loses its COMMIT acknowledgement (withhold) (4484.716625ms)
+  ℹ Successful COMMIT observed after 76 ms
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ reports an uncertain sync COMMIT as operational failure and replaces its broken pooled connection (1955.510333ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ rejects queued retrieval on SIGTERM, preserves active work and recovers without replay (7337.10475ms)
+(node:58953) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✔ closes UI and A2A streams on SIGTERM without cancelling durable tasks and resumes events after restart (10684.333541ms)
+  ✔ serializes embedding dimensions across jobs with different dimensions (2131.288459ms)
+  ℹ Concurrent dimensions/different dimensions: HTTP 200/400, first collection=2
+  ✔ serializes embedding dimensions across jobs with matching dimensions (1977.319666ms)
+  ℹ Concurrent dimensions/matching dimensions: HTTP 200/200, first collection=2
+  ✔ serializes embedding dimensions across jobs with separate collections (1970.944ms)
+  ℹ Concurrent dimensions/separate collections: HTTP 200/200, first collection=2
+  ✔ embedding completion rechecks lease expiry after waiting for its collection (6661.411041ms)
+  ℹ Completion after collection wait: HTTP 400, indexed=0, events=0
+  ✔ stage renewal checks current ownership after expiry during its SQL lock wait (6869.218ms)
+  ℹ Stage renewal/expiry: HTTP 404
+  ✔ stage renewal checks current ownership after reassignment during its SQL lock wait (2049.558417ms)
+  ℹ Stage renewal/reassignment: HTTP 404
+  ✔ stage renewal checks current ownership after renewal during its SQL lock wait (8241.319833ms)
+  ℹ Stage renewal/renewal: HTTP 204
+  ✔ stage renewal rolls back when its UPDATE waits past the admitted deadline (6649.909542ms)
+  ℹ stage renewal/UPDATE wait: HTTP 404
+  ✔ embedding renewal rolls back when its UPDATE waits past the admitted deadline (6563.198375ms)
+  ℹ embedding renewal/UPDATE wait: HTTP 404
+  ✔ embedding renew respects expiry while waiting for job ownership over HTTP (6611.388333ms)
+  ℹ Embedding renew/expiry: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects reassignment while waiting for job ownership over HTTP (1569.950958ms)
+  ℹ Embedding renew/reassignment: HTTP 404, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding renew respects renewal while waiting for job ownership over HTTP (6275.684ms)
+  ℹ Embedding renew/renewal: HTTP 204, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects expiry while waiting for job ownership over HTTP (6798.713042ms)
+  ℹ Embedding complete/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects reassignment while waiting for job ownership over HTTP (1619.836333ms)
+  ℹ Embedding complete/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding complete respects renewal while waiting for job ownership over HTTP (6404.75725ms)
+  ℹ Embedding complete/renewal: HTTP 200, job=completed, document=ready, indexed=1, events=1
+  ✔ embedding fail respects expiry while waiting for job ownership over HTTP (6546.984375ms)
+  ℹ Embedding fail/expiry: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects reassignment while waiting for job ownership over HTTP (1427.702583ms)
+  ℹ Embedding fail/reassignment: HTTP 400, job=running, document=indexing, indexed=0, events=0
+  ✔ embedding fail respects renewal while waiting for job ownership over HTTP (6736.504792ms)
+  ℹ Embedding fail/renewal: HTTP 200, job=pending, document=pending, indexed=0, events=1
+  ✔ embedding complete rolls back when an event lock outlasts its lease over HTTP (7429.99725ms)
+  ℹ Embedding complete/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding fail rolls back when an event lock outlasts its lease over HTTP (6489.774875ms)
+  ℹ Embedding fail/event lock: HTTP 400, indexed=0, events=0
+  ✔ embedding maintenance preserves a renewal that holds its job row past the old expiry (4283.420834ms)
+  ℹ Embedding maintenance/renewal: health=200, job=running, document=indexing, failures=0
+  ✔ embedding maintenance stays responsive while a late completion rolls back across coordinators (8506.55ms)
+  ℹ Embedding maintenance/completion: HTTP 400, health=200, job=running, document=indexing, indexed=0, events=0
+  ✔ maintenance preserves a timely renewal while its stage row is locked (4633.090584ms)
+  ℹ Renewal after maintenance: health=200, stage=running, expiryEvents=0
+  ✔ maintenance preserves an admitted completion held past expiry by an event lock (8016.958833ms)
+  ℹ Completion after maintenance: health=200, run=completed, expiryEvents=0
+  ✔ maintenance reclaims an expired lease once across two coordinators (6202.936916ms)
+  ℹ Two maintainers: healthy=2, expiryEvents=1
+  ✔ checks current ownership before complete after a concurrent expiry over HTTP (6696.071167ms)
+  ℹ complete/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent reassignment over HTTP (1268.57225ms)
+  ℹ complete/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before complete after a concurrent renewal over HTTP (6245.898917ms)
+  ℹ complete/renewal: wait=stage read, HTTP 200, stage=completed, artifacts=3
+  ✔ checks current ownership before fail after a concurrent expiry over HTTP (6327.331834ms)
+  ℹ fail/expiry: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent reassignment over HTTP (1136.991834ms)
+  ℹ fail/reassignment: wait=stage read, HTTP 400, stage=running, artifacts=0
+  ✔ checks current ownership before fail after a concurrent renewal over HTTP (6215.1205ms)
+  ℹ fail/renewal: wait=stage read, HTTP 200, stage=queued, artifacts=0
+  ✔ rejects shadow results when the lease expires during stage lock over HTTP (8884.509166ms)
+  ℹ After expiry at stage lock: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during event insert over HTTP (6491.922417ms)
+  ℹ After expiry at event insert: HTTP 400, observation=false, events=0
+  ✔ rejects shadow results when the lease expires during idempotent retry over HTTP (6475.559833ms)
+  ℹ After expiry at idempotent retry: HTTP 400, observation=true, events=1
+  ✔ persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output (1648.7965ms)
+  ✔ streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas (4269.309875ms)
+  ✔ rejects a tenant connection that resolves to the system BYPASSRLS role (100.83675ms)
+  ✔ keeps the runtime role DDL-free after a separate migration gate (392.962167ms)
+  ✔ rejects a schema Job while a coordinator replica is active (391.496ms)
+  ✔ rejects runtime startup after out-of-band schema drift (172.3495ms)
+  ✔ shares state between replicas, serializes project quota and enforces RLS (1087.18625ms)
+✖ PostgreSQL Fleet/HA integration (626658.747041ms)
+ℹ tests 97
+ℹ suites 1
+ℹ pass 96
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 627200.934458
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:2:13432
+✖ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (3614.710875ms)
+  Error
+      at Timeout.<anonymous> (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:162:39)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)

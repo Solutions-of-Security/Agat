@@ -2,7 +2,7 @@
 
 ## Решение и граница
 
-DDL-free boundary введена schema v21 и сохраняется в текущей schema v25. PostgreSQL schema применяется только отдельной migration Job. Coordinator runtime больше не выполняет `CREATE`, `ALTER`, policy/trigger installation или grants при startup: он подключается DDL-free system role, проверяет immutable catalog manifest, privilege boundary и успешный connection admission marker, затем выполняет только application DML.
+DDL-free boundary введена schema v21 и сохраняется в текущей schema v28. PostgreSQL schema применяется только отдельной migration Job. Coordinator runtime больше не выполняет `CREATE`, `ALTER`, policy/trigger installation или grants при startup: он подключается DDL-free system role, проверяет immutable catalog manifest, privilege boundary и успешный connection admission marker, затем выполняет только application DML.
 
 Этот этап сам по себе не объявляет локальный PostgreSQL multi-AZ. Следующий этап добавил отдельный [managed PostgreSQL resilience contract](./managed-postgresql-resilience.md), не меняя migration/runtime role boundary.
 
@@ -25,7 +25,7 @@ Owner rights в PostgreSQL нельзя отнять обычным `REVOKE`, п
 
 | Источник | Версия / дата проверки | Claim scope |
 |---|---|---|
-| `apps/coordinator/src/postgres-schema-migrator.ts` | текущая schema v25 | exclusive migration, runtime validation, admission finalize |
+| `apps/coordinator/src/postgres-schema-migrator.ts` | текущая schema v28 | exclusive migration, runtime validation, admission finalize |
 | `apps/coordinator/src/postgres-admission.ts` | report schema v1 | connection budget и bounded read-only load probe |
 | `apps/coordinator/src/postgres-worker.ts` | pg 8.23 bridge | фактическая role/ownership validation до первого query |
 | `deploy/k8s/docker-desktop/coordinator-postgres-migration.yaml` | Job v25 | admin bootstrap и schema/admission Jobs |
@@ -49,7 +49,7 @@ Owner rights в PostgreSQL нельзя отнять обычным `REVOKE`, п
 1. Role-bootstrap Job выполняет role changes, ownership transfer, database/schema revokes и grants в одной transaction.
 2. Schema Job берёт отдельный session advisory gate на весь workflow и проверяет отсутствие `ready` coordinator с heartbeat моложе трёх минут.
 3. `agat_migrator` берёт `pg_advisory_xact_lock(867530901)` и применяет весь DDL/backfill/grant contract в одной transaction.
-4. `agat_schema_migrations` получает текущую version `25`, contract ID и SHA-256 catalog manifest; admission становится `pending`.
+4. `agat_schema_migrations` получает текущую version `28`, contract ID и SHA-256 catalog manifest; admission становится `pending`.
 5. Новый runtime connection доказывает отсутствие `CREATE`/ownership/elevated membership, exact DML boundary, validated constraints и совпадение catalog manifest.
 6. Admission probe проверяет capacity и выполняет read-only load; только успешный report hash переводит marker в `passed`.
 7. Финальная runtime validation перечитывает marker. Coordinator startup и Kubernetes init container fail-closed до `passed`.
@@ -135,7 +135,7 @@ AGAT_STATE_STORE_DRIVER=postgresql docker compose --profile ha up -d coordinator
 | catalog/grant validation | runtime не стартует | сравнить catalog с release, исправлять только migration role |
 | connection budget | load не начинается, marker `pending` | уменьшить replicas/pools или увеличить подтверждённую capacity; rerun |
 | load errors/p99/min operations | marker `pending` | сохранить report, диагностировать endpoint/pool/latency, rerun |
-| process lost после DDL commit до marker pass | текущая schema v25, admission `pending` | безопасно rerun всей Job; coordinator остаётся заблокирован |
+| process lost после DDL commit до marker pass | текущая schema v28, admission `pending` | безопасно rerun всей Job; coordinator остаётся заблокирован |
 | out-of-band DDL после pass | manifest mismatch | incident, diff catalog, утверждённая migration; не обновлять hash вручную |
 
 ## Операции и NFR

@@ -132,6 +132,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Сквозной RAG через Temporal](./qualification/local-decisions/performance/temporal-rag-recovery.md) проверяет оба embedding transport: реальный Activity retry после потерянного tick reply, SIGKILL/restart Temporal worker, durable timer и JSON history replay. В каждом сценарии сохранены 3 primary-ответа, 3 shadow-наблюдения и 6 источников без повторных model calls при replay. Добавлен обязательный CI job и две реальные replay fixtures. Используются учебные model responses и SQLite; qualification не заявлена. Следующий gate — потерянное подтверждение создания процесса по расписанию и идемпотентность scheduled-start.
 
+[Идемпотентный scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md) устраняет подтверждённое создание двух instance при повторе Activity. Ключ Run/Activity ID, транзакционная receipt в schema 28, конфликт payload и FORCE RLS проверяются на SQLite/PostgreSQL; настоящий Temporal повторяет потерянный HTTP reply с одним instance и одним child. Следующий gate — конкуренция startup reconciliation coordinator с parent workflow за запуск того же child; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
