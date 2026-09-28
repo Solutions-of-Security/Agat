@@ -17,6 +17,8 @@ Workflow plan теперь сохраняет SHA `embedding_http.py`, `embeddin
 
 [SHA и журналы проверок](./evidence/2026-09-28/rag-http-isolation/profile-checks.json) фиксируют проверенную реализацию. Эти тесты проверяют протокол опыта; результаты повторного прогона реальных моделей ещё должны быть записаны отдельно.
 
+Первый CI остановился в отдельном Artifact Store job: после restart MinIO вышел с `Unable to initialize console server: Specified port is already in use`. Тестовый launcher теперь задаёт внутренний console port `9001`, как существующий Kubernetes deployment; новый host port не публикуется. [MinIO документирует](https://min.io/docs/minio/kubernetes/upstream/administration/minio-console.html) случайный console port по умолчанию и `--console-address` для явного назначения. Владелец конфликтовавшего порта из исходного лога неизвестен. Повторный полный S3-сценарий с migration, cache, outbox, version deletion и restart прошёл: [лог](./evidence/2026-09-28/rag-http-isolation/artifact-store-console.log), [исходная ошибка и SHA исправления](./evidence/2026-09-28/rag-http-isolation/artifact-store-console-checks.json).
+
 ```bash
 python scripts/run-decision-rag-workflow.py \
   --manifest .local-models/decisions/decider-2b.json \

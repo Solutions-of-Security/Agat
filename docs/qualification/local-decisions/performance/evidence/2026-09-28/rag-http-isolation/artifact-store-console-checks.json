@@ -1,0 +1,26 @@
+{
+  "schema": "agat.artifact-console-checks.v1",
+  "failedCiRun": 36380154572,
+  "failedHead": "1017433",
+  "failedJob": "https://github.com/Solutions-of-Security/Agat/actions/runs/36380154572/job/108794066136",
+  "originalDownloadedLogSha256": "036aee7424ea0ef4a42f7a7968710028f9e2fdba397aafd151b591beb089fbe5",
+  "failure": [
+    "the restarted local MinIO must become ready",
+    "exited 1 {}",
+    "FATAL Unable to initialize console server: Specified port is already in use"
+  ],
+  "sourceSha256": {
+    "scripts/test-s3-artifact-store.sh": "fcae96d173440ae160865996479e4beda299b72abb33fa99e20c0f1c8492caf3"
+  },
+  "change": "Fixed internal console port 9001, matching the existing Kubernetes deployment; published API port is unchanged.",
+  "validation": {
+    "shellSyntax": "pass",
+    "s3Integration": {
+      "pass": 1,
+      "fail": 0,
+      "log": "artifact-store-console.log",
+      "sha256": "b948fdf6a655d4102297d7a5a24814a9ba423446ebeda0519013e4e548488872"
+    }
+  },
+  "limitation": "Initial conflicting port owner is not identified in the CI log."
+}
