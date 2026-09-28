@@ -33,15 +33,16 @@ SHADOW_REFERENCE = 'docs/qualification/local-decisions/performance/evidence/2026
 SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
 
 
-def request(port, path, body=None, timeout=5):
+def request(port, path, body=None, timeout=5, capture_status=False):
     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=timeout)
     try:
         connection.request('GET' if body is None else 'POST', path,
                            body=None if body is None else json.dumps(body), headers={'Content-Type': 'application/json'})
         response = connection.getresponse()
         raw = response.read(524289)
-        require(response.status == 200 and len(raw) <= 524288, 'Owned model request failed')
-        return json.loads(raw)
+        require(len(raw) <= 524288 and (capture_status or response.status == 200), 'Owned model request failed')
+        value = json.loads(raw)
+        return {'httpStatus': response.status, 'result': value} if capture_status else value
     finally:
         connection.close()
 
@@ -93,7 +94,7 @@ def main():
         require(runtime['packages'] == requirements, 'Shadow dependencies differ from the pinned requirements')
         decision = {'profile': expected, 'manifest': {key: value for key, value in manifest.items() if key != 'snapshot'},
                     'policy': json.loads((ROOT / SHADOW_POLICY).read_text()), 'runtime': runtime,
-                    'referencePath': SHADOW_REFERENCE, 'policyPath': SHADOW_POLICY}
+                    'referencePath': SHADOW_REFERENCE, 'policyPath': SHADOW_POLICY, 'warmupCalls': 1}
     model_root = Path(os.environ.get('OLLAMA_MODELS', str(Path.home() / '.ollama/models')))
     for name, digest in shared.MODELS.items():
         require(sha((model_root / 'manifests/registry.ollama.ai/library' / name.replace(':', '/')).read_bytes()) == digest,
@@ -123,6 +124,7 @@ def main():
     samples, cleanup_errors, warmup, workloads = [], [], [], []
     version = initial = unloaded = failure = None
     decision_before = decision_after = None
+    decision_warmup = None
     with tempfile.TemporaryDirectory(prefix='agat-temporal-real-rag-') as temporary:
         temporary = Path(temporary)
         shim = temporary / 'python3'
@@ -155,6 +157,11 @@ def main():
                             time.sleep(.1)
                     require(decision_before.get('status') == 'ready' and decision_before.get('mode') == 'shadow', 'Shadow runtime not ready')
                     require(all(decision_before[key] == decision['profile'][key] for key in ['profileJson', 'profileSha256']), 'Live shadow profile changed')
+                    warmup_request = {'schemaVersion': 'agat.decision.v1', 'id': 'temporal-shadow-warmup',
+                                      'state': plan['fixture']['input'], **plan['fixture']['shadow']}
+                    decision_warmup = request(shadow_port, '/v1/decisions', warmup_request, 12, capture_status=True)
+                    require(decision_warmup['httpStatus'] == 200 and decision_warmup['result'].get('status') in ['ok', 'abstain'],
+                            'Shadow warmup failed: ' + str(decision_warmup['result'].get('reason')))
                     shadow_environment['AGAT_TEMPORAL_REAL_DECISION_URL'] = f'http://127.0.0.1:{shadow_port}'
                 ollama = subprocess.Popen(['ollama', 'serve'], cwd=ROOT, stdout=model_log, stderr=subprocess.STDOUT,
                                           start_new_session=True, env={**os.environ, **settings, 'OLLAMA_HOST': f'127.0.0.1:{port}'})
@@ -229,8 +236,9 @@ def main():
                 try:
                     if shadow_runtime is not None:
                         pids.update(shared.inventory(shadow_runtime.pid)[0])
+                        was_running = shadow_runtime.poll() is None
                         shared.stop(shadow_runtime)
-                        require(shadow_runtime.returncode == 130, 'Shadow runtime did not drain on SIGTERM')
+                        require(not was_running or shadow_runtime.returncode == 130, 'Shadow runtime did not drain on SIGTERM')
                 except Exception as error:
                     cleanup_errors.append(type(error).__name__)
                 try:
@@ -268,7 +276,8 @@ def main():
               'loadedModelSamples': samples, 'logSha256': {'ollama.log': model_log_sha, 'tests.log': sha((directory / 'tests.log').read_bytes())}}
     if shadow_enabled:
         report['shadowRuntime'] = {'pid': shadow_runtime.pid if shadow_runtime else None,
-            'exitCode': shadow_runtime.returncode if shadow_runtime else None, 'before': decision_before, 'after': decision_after}
+            'exitCode': shadow_runtime.returncode if shadow_runtime else None, 'before': decision_before, 'after': decision_after,
+            'warmup': decision_warmup}
         report['logSha256']['decision.log'] = decision_log_sha
     write(directory / 'launcher.json', report)
     print(report['status'], failure, flush=True)

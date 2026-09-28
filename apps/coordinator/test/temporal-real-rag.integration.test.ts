@@ -149,8 +149,8 @@ for (const transport of ["isolated", "session"] as const) {
           assert.equal(req.headers["x-agat-decision-profile"], decision.profileSha256);
         }
         const upstream = await forwardDecisionRequest(req, res, decisionUrl!, raw, cancelled.signal);
-        assert.equal(upstream.httpStatus, 200);
         Object.assign(row, { httpStatus: upstream.httpStatus, result: JSON.parse(upstream.text), finishedMs: clock() });
+        assert.equal(upstream.httpStatus, 200);
         res.writeHead(upstream.httpStatus, { "content-type": "application/json" }).end(upstream.text);
       } catch (error) {
         serverErrors.push(error instanceof Error ? error.name : "shadow_proxy_failure");
