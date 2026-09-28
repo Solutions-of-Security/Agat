@@ -162,6 +162,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Явный профиль transport для повторных RAG-измерений](./qualification/local-decisions/performance/rag-transport-profile.md) закрепляет CLI mode в обоих планах и передаёт его worker независимо от inherited environment. SHA новых HTTP helpers включены в frozen sources; verifier не приписывает старым опытам текущий default. Прошли 5 workflow и 5 профильных проверок, 293 coordinator tests, 12 Node + 323 Python documentation tests. Следующий шаг — реальный model run с этим профилем.
 
+[Повтор реального RAG после HTTP isolation](./qualification/local-decisions/performance/rag-http-isolation.md) завершил 12 workflows / 36 primary / 44 embedding items / 18 accepted shadow calls с прежним model profile и одинаковыми наборами prompts/outputs. Арифметика всех 12 повторных итогов верна; модели выгружены, 71 наблюдавшийся собственный PID отсутствует. Workload 164,092 с не даёт причинной оценки overhead относительно прежних 112,036 с. Первый startup timeout на dataless-файлах сохранён; окружение и pinned weights восстановлены вне Documents без смены версий. Следующий gate — времена запросов и sampled RSS всех трёх типов HTTP helpers.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
