@@ -156,6 +156,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Восстановление после SIGKILL Python worker](./qualification/local-decisions/performance/python-worker-recovery.md) проверяет самостоятельное завершение owned HTTP helpers, настоящий lease expiry и повтор только незавершённого stage. Первый принятый результат сохраняется, старый completion отвергается, обе попытки retrieval остаются проверяемыми. Прошли 22 SQLite Temporal и 12 PostgreSQL RAG сценариев; следующий gate — потерянный acknowledgement уже принятого completion.
 
+[Потеря acknowledgement completion](./qualification/local-decisions/performance/completion-ack-recovery.md) проверяет SIGKILL Python worker после приёма второго output/shadow coordinator. Два принятых stage/shadow сохранены без повторного model call. Прошли 4 SQLite crash-сценария, полная матрица 14 PostgreSQL RAG сценариев и 293 coordinator tests. Следующий gate — потеря самого coordinator после commit completion.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

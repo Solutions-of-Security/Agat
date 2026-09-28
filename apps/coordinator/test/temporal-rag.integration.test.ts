@@ -34,18 +34,21 @@ function processInventory() {
   });
 }
 
-for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt", "worker-crash"] as const) {
-  const workerCrash = completion === "worker-crash";
+const completions = ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt", "worker-crash", "completion-crash"] as const;
+for (const transport of ["isolated", "session"] as const) for (const completion of completions) {
+  const leaseRecovery = completion === "worker-crash";
+  const completionCrash = completion === "completion-crash";
+  const workerCrash = leaseRecovery || completionCrash;
   const cancelling = completion !== "recover" && !workerCrash;
   const queryInterrupted = completion === "query-interrupt";
   const searchInterrupted = completion === "search-interrupt";
   const beforePrimary = queryInterrupted || searchInterrupted;
   const interrupted = completion === "interrupt" || beforePrimary;
-  const expectedPrimaryCalls = cancelling ? (beforePrimary ? 1 : 2) : workerCrash ? 4 : 3;
+  const expectedPrimaryCalls = cancelling ? (beforePrimary ? 1 : 2) : leaseRecovery ? 4 : 3;
   const expectedRetrievals = searchInterrupted ? 2 : expectedPrimaryCalls;
   const requestName = queryInterrupted ? "Query embedding" : searchInterrupted ? "Coordinator search" : "Primary";
   const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : searchInterrupted ? "Knowledge" : "Model"} request cancelled`;
-  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${workerCrash ? "exits owned HTTP helpers after Python SIGKILL and recovers on real lease expiry" : interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
+  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${completionCrash ? "preserves committed output after Python SIGKILL before completion acknowledgement" : leaseRecovery ? "exits owned HTTP helpers after Python SIGKILL and recovers on real lease expiry" : interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
     { skip: !address || (workerCrash && globalThis.process.platform === "win32"), timeout: 120_000 }, async () => {
@@ -71,8 +74,9 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
     let heldConnectionClosed = false;
     let interruption: Record<string, unknown> | undefined;
     let recovery: Record<string, unknown> | undefined;
-    let acceptedStageBeforeCrash: string | undefined;
+    const acceptedStagesBeforeCrash = new Map<string, string>(), acceptedShadowsBeforeCrash = new Map<string, string>();
     let crashedLeaseId = "", workflowRunId = "";
+    let heldCompletionLeaseId = "";
     const modelServer = http.createServer(async (req, res) => {
       try {
         assert.equal(req.method, "POST");
@@ -99,12 +103,12 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         primaryOutputs.push(content);
         const finish = () => res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
           usage: { prompt_tokens: 100, completion_tokens: 20 } }));
-        if (primaryCalls === 2 && !beforePrimary) {
+        if (primaryCalls === 2 && !beforePrimary && !completionCrash) {
           held = finish; res.once("close", () => { heldConnectionClosed = true; });
         } else finish();
       } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
     });
-    let searchCalls = 0;
+    let searchCalls = 0, completionCalls = 0;
     const workerProxy = http.createServer(async (req, res) => {
       try {
         const headers = new Headers();
@@ -120,7 +124,16 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         if (req.url!.endsWith("/knowledge/search")) {
           searchCalls++;
           assert.equal(response.status, 200);
-          if (searchCalls === 2) {
+          if (searchInterrupted && searchCalls === 2) {
+            held = finish; res.once("close", () => { heldConnectionClosed = true; });
+            return;
+          }
+        }
+        const completedLease = /^\/api\/v1\/leases\/([^/]+)\/complete$/.exec(req.url!);
+        if (completedLease) {
+          completionCalls++; assert.equal(response.status, 200);
+          if (completionCrash && completionCalls === 2) {
+            heldCompletionLeaseId = completedLease[1]!;
             held = finish; res.once("close", () => { heldConnectionClosed = true; });
             return;
           }
@@ -188,7 +201,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_DECISION_SHADOW_ENABLED: "true",
         AGAT_TEMPORAL_ENABLED: "true", AGAT_TEMPORAL_ADDRESS: address!, AGAT_TEMPORAL_NAMESPACE: "default",
         AGAT_TEMPORAL_TASK_QUEUE: taskQueue, AGAT_TEMPORAL_INTERNAL_TOKEN: "temporal-rag-internal",
-        ...(workerCrash ? { AGAT_LEASE_TTL_SECONDS: "30" } : {}),
+        ...(leaseRecovery ? { AGAT_LEASE_TTL_SECONDS: "30" } : {}),
         ...(postgres ? { AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql",
           AGAT_POSTGRES_URL: globalThis.process.env.AGAT_POSTGRES_URL, AGAT_POSTGRES_TENANT_URL: globalThis.process.env.AGAT_POSTGRES_TENANT_URL,
           AGAT_POSTGRES_SSL_MODE: "disable", AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: region, AGAT_RESIDENCY_DOMAIN: residencyDomain,
@@ -199,7 +212,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       children.push(coordinator);
       coordinatorUrl = `http://127.0.0.1:${(await coordinator.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
       const proxyUrl = await listen(proxy), modelUrl = await listen(modelServer);
-      const workerCoordinatorUrl = searchInterrupted ? await listen(workerProxy) : coordinatorUrl;
+      const workerCoordinatorUrl = searchInterrupted || completionCrash ? await listen(workerProxy) : coordinatorUrl;
       const startTemporal = async (identity: string) => {
         const child = processChild(globalThis.process.execPath, ["apps/temporal-worker/dist/worker.js"], {
           ...env, AGAT_COORDINATOR_INTERNAL_URL: proxyUrl, AGAT_TEMPORAL_METRICS_ADDRESS: "127.0.0.1:0",
@@ -240,7 +253,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       assert.equal(store.getProcessInstance(instance.id)!.runtime, "temporal");
       const workflowId = `agat-process-${instance.id}`, handle = client.workflow.getHandle(workflowId);
       if (workerCrash) workflowRunId = (await handle.describe()).runId;
-      await eventually(() => Boolean(held), "Second stage did not reach the held model request");
+      await eventually(() => Boolean(held), "Second stage did not reach the held HTTP response");
       await within(handle.query("processState"), "Workflow did not become queryable");
       await eventually(async () => {
         const history = await handle.fetchHistory();
@@ -256,38 +269,50 @@ with make_server(DecisionEngine(Backend()),0) as server:
       assert.equal(primaryCalls, beforePrimary ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
       if (workerCrash) {
         const before = store.getRunTrace(instance.runId)! as any;
-        const accepted = before.run.stages.find((stage: any) => stage.processNodeId === fixture.roles[0]!.id);
-        assert.equal(accepted.status, "completed"); assert.equal(accepted.output, primaryOutputs[0]);
-        acceptedStageBeforeCrash = JSON.stringify(accepted);
-        const active = store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!;
+        const accepted = before.run.stages.filter((stage: any) => stage.status === "completed"
+          && fixture.roles.some(role => role.id === stage.processNodeId));
+        assert.equal(accepted.length, completionCrash ? 2 : 1);
+        for (const [index, stage] of accepted.entries()) {
+          assert.equal(stage.output, primaryOutputs[index]);
+          acceptedStagesBeforeCrash.set(stage.id, JSON.stringify(stage));
+        }
+        assert.equal(before.decisionObservations.length, accepted.length);
+        for (const shadow of before.decisionObservations) acceptedShadowsBeforeCrash.set(shadow.stageId, JSON.stringify(shadow));
+        const active = completionCrash
+          ? store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt, status FROM stages WHERE run_id = ? AND lease_id = ?").get(instance.runId, heldCompletionLeaseId)!
+          : store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt, status FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!;
+        assert.equal(active.status, completionCrash ? "completed" : "running");
         crashedLeaseId = String(active.lease_id);
         const expiry = Date.parse(String(active.lease_expires_at));
-        assert.ok(expiry > Date.now(), "Worker must die before its active lease expires");
+        if (leaseRecovery) assert.ok(expiry > Date.now(), "Worker must die before its active lease expires");
         const helperPids = processInventory().filter(row => row.parent === worker.child.pid).map(row => row.pid);
-        assert.ok(helperPids.length >= 1, "No owned helper observed during primary HTTP");
+        if (leaseRecovery) assert.ok(helperPids.length >= 1, "No owned helper observed during primary HTTP");
         const killedAt = performance.now();
         assert.deepEqual(await worker.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
-        await eventually(() => heldConnectionClosed, "Primary helper retained HTTP after Python worker SIGKILL", 5_000);
+        await eventually(() => heldConnectionClosed, "Held HTTP connection remained open after Python worker SIGKILL", 5_000);
         await eventually(() => processInventory().every(row => !helperPids.includes(row.pid) || row.state.startsWith("Z")),
           "Owned helper remained executing after Python worker SIGKILL", 5_000);
         const helpersExitedAfterMs = performance.now() - killedAt;
-        assert.ok(held, "The primary response must remain held throughout recovery");
+        assert.ok(held, "The HTTP response must remain held throughout recovery");
         worker = startWorker();
-        await eventually(() => {
-          const trace = store.getRunTrace(instance.runId)! as any;
-          return trace.events.some((event: any) => event.type === "lease.expired" && event.stageId === active.id);
-        }, "The real lease deadline did not requeue the interrupted stage", 40_000);
-        assert.ok(Date.now() >= expiry);
-        await eventually(() => primaryCalls >= 3, "Replacement worker did not retry primary after lease expiry");
+        if (leaseRecovery) {
+          await eventually(() => {
+            const trace = store.getRunTrace(instance.runId)! as any;
+            return trace.events.some((event: any) => event.type === "lease.expired" && event.stageId === active.id);
+          }, "The real lease deadline did not requeue the interrupted stage", 40_000);
+          assert.ok(Date.now() >= expiry);
+        }
+        await eventually(() => primaryCalls >= 3, "Replacement worker did not continue the RAG process");
         const credentials = JSON.parse(fs.readFileSync(path.join(directory, "worker.json"), "utf8"));
         const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${crashedLeaseId}/complete`, { method: "POST",
           headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
           body: JSON.stringify({ output: "stale abandoned primary" }), signal: AbortSignal.timeout(5_000) });
         assert.equal(stale.status, 400); assert.match(await stale.text(), /Активная аренда не найдена/);
-        recovery = { signal: "SIGKILL", leaseTtlSeconds: 30, leaseId: crashedLeaseId,
+        recovery = { signal: "SIGKILL", leaseTtlSeconds: leaseRecovery ? 30 : 180, leaseId: crashedLeaseId,
           helpersObserved: helperPids.length, helpersExitedAfterMs, helperProcessesExited: true,
-          primaryConnectionClosed: heldConnectionClosed, responseStillHeld: true, staleCompletionRejected: true,
-          expiredStageId: active.id, originalAttempt: active.attempt };
+          responseStillHeld: true, staleCompletionRejected: true, originalAttempt: active.attempt,
+          ...(leaseRecovery ? { primaryConnectionClosed: heldConnectionClosed, expiredStageId: active.id }
+            : { completionConnectionClosed: heldConnectionClosed, committedStageId: active.id, committedBeforeReplyLoss: true }) };
       }
       let cancelledLeaseId = "";
       if (cancelling) {
@@ -328,7 +353,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       }
       const trace = store.getRunTrace(instance.runId)! as any;
       assert.equal(trace.truncated, false); assert.equal(trace.run.status, cancelling ? "cancelled" : "completed");
-      assert.equal(primaryCalls, expectedPrimaryCalls); assert.equal(embeddedItems, cancelling ? 4 : workerCrash ? 6 : 5);
+      assert.equal(primaryCalls, expectedPrimaryCalls); assert.equal(embeddedItems, cancelling ? 4 : leaseRecovery ? 6 : 5);
       const stages = trace.run.stages.filter((stage: any) => fixture.roles.some(role => role.id === stage.processNodeId));
       assert.equal(stages.length, cancelling ? 2 : 3);
       for (const [index, stage] of stages.entries()) {
@@ -336,23 +361,29 @@ with make_server(DecisionEngine(Backend()),0) as server:
           assert.equal(stage.status, "cancelled"); assert.equal(stage.output, null);
           continue;
         }
-        const outputIndex = workerCrash && index > 0 ? index + 1 : index;
+        const outputIndex = leaseRecovery && index > 0 ? index + 1 : index;
         assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryOutputs[outputIndex]);
         assert.equal(stage.metrics.modelCalls, 1);
-        const retrieval = verifyRetrieval(trace, stage, ingestion, workerCrash && index === 1 ? 2 : 1);
+        const retrieval = verifyRetrieval(trace, stage, ingestion, leaseRecovery && index === 1 ? 2 : 1);
         assert.ok(retrieval.bothSourcesCited); assert.deepEqual(retrieval.unknownMarkers, []);
       }
       if (workerCrash) {
-        assert.equal(JSON.stringify(stages[0]), acceptedStageBeforeCrash);
-        assert.equal(stages[1].attempt, 2); assert.equal(stages[2].attempt, 1);
+        for (const [id, snapshot] of acceptedStagesBeforeCrash) assert.equal(JSON.stringify(stages.find((stage: any) => stage.id === id)), snapshot);
+        for (const [id, snapshot] of acceptedShadowsBeforeCrash) assert.equal(JSON.stringify(trace.decisionObservations.find((row: any) => row.stageId === id)), snapshot);
+        assert.equal(stages[1].attempt, leaseRecovery ? 2 : 1); assert.equal(stages[2].attempt, 1);
         const replacementLeaseId = store.db.prepare("SELECT lease_id FROM stages WHERE id = ?").get(stages[1].id)!.lease_id;
-        assert.equal(typeof replacementLeaseId, "string"); assert.notEqual(replacementLeaseId, crashedLeaseId);
-        assert.notEqual(stages[1].output, primaryOutputs[1], "The abandoned primary output must not be accepted");
-        assert.equal(trace.events.filter((event: any) => event.type === "lease.expired").length, 1);
+        assert.equal(typeof replacementLeaseId, "string");
+        if (leaseRecovery) {
+          assert.notEqual(replacementLeaseId, crashedLeaseId);
+          assert.notEqual(stages[1].output, primaryOutputs[1], "The abandoned primary output must not be accepted");
+        } else assert.equal(replacementLeaseId, crashedLeaseId, "An accepted stage must retain its completed lease");
+        assert.equal(trace.events.filter((event: any) => event.type === "lease.expired").length, leaseRecovery ? 1 : 0);
         assert.equal((await handle.describe()).runId, workflowRunId);
         assert.ok(held && heldConnectionClosed);
         recovery = { ...recovery, sameWorkflowRun: true, replacementAttempt: stages[1].attempt,
-          firstAcceptedStageUnchanged: true, replacementLeaseId };
+          firstAcceptedStageUnchanged: true, acceptedStagesPreserved: acceptedStagesBeforeCrash.size,
+          acceptedShadowsPreserved: acceptedShadowsBeforeCrash.size,
+          ...(leaseRecovery ? { replacementLeaseId } : { completedStageNotRepeated: true, completedLeaseId: replacementLeaseId }) };
       }
       assert.equal(trace.decisionObservations.length, cancelling ? 1 : 3);
       assert.ok(trace.decisionObservations.every((row: any) => row.observation.status === "ok"
