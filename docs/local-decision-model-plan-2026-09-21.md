@@ -166,6 +166,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Все HTTP helpers в реальном RAG](./qualification/local-decisions/performance/http-helper-observability.md) наблюдает 116 запросов и 98 закрытых/reaped процессов: embedding, primary и knowledge. Четыре ABBA-блока сохранили все 36 ответов и одинаковые векторы; независимый replay и 31 mutation/replay test прошли. Session уменьшает число embedding helpers с 11 до 2 на блок, с дополнительными примерно 44 МиБ sampled RSS; причинное ускорение всего workflow не заявляется. Следующий шаг — ранее незавершённая Linux deployment-проверка после Docker ENOSPC.
 
+[Linux deployment после ENOSPC](./qualification/local-decisions/performance/linux-worker-deployment.md) закрывает прежнее ограничение среды: 50/50 round trips и 143/143 worker tests прошли на закреплённом image. Настоящий Python PID 1 в isolated/session/idle режимах дождался активного HTTP после SIGTERM и сохранил обе lease, exit 0; временные Docker resources удалены. Следующий шаг — совместный workload реальных Qwen3/embeddinggemma, Temporal и PostgreSQL; qualification не заявляется.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
