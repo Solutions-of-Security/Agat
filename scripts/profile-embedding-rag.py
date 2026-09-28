@@ -93,6 +93,7 @@ def main():
         raise RuntimeError('Assertions must be enabled')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence-dir', type=Path, required=True)
+    parser.add_argument('--http-helpers', action='store_true', help='Observe all owned HTTP helpers as well as embedding transport')
     args = parser.parse_args()
     directory = args.evidence_dir.resolve()
     require(directory.is_relative_to(ROOT / 'docs') and not directory.exists(), 'Use a new evidence directory under docs')
@@ -127,6 +128,8 @@ def main():
             'blocks': [{'transport': mode, 'phase': {'id': f'{index}_{mode}', 'concurrency': 2, 'runs': 3, 'shadow': False}}
                        for index, mode in enumerate(('isolated', 'session', 'session', 'isolated'))],
             'qualification': 'not_assessed', 'routingEnabled': False}
+    if args.http_helpers:
+        plan['ownedHttpProbe'] = 'agat.worker.owned-http.v1'
     directory.mkdir(parents=True)
     write(directory / 'plan.json', plan)
     started = time.monotonic()
@@ -162,6 +165,7 @@ def main():
                                          '--plan', str(directory / 'plan.json'), '--primary-url', f'http://127.0.0.1:{port}'],
                                         cwd=ROOT, stdout=node_log, stderr=subprocess.STDOUT, start_new_session=True,
                                         env={**os.environ, 'PATH': str(temporary) + os.pathsep + os.environ['PATH'],
+                                             'AGAT_HTTP_HELPER_PROBE': '1' if args.http_helpers else '0',
                                              'AGAT_OTEL_ENABLED': 'false', 'OTEL_SDK_DISABLED': 'true'})
                 owned.add(node.pid)
                 deadline = time.monotonic() + plan['nodeBudgetSeconds']
@@ -211,6 +215,8 @@ def main():
             probe = json.loads(probe_path.read_text())
             owned.add(probe['pid'])
             owned.update(child['pid'] for child in probe['children'])
+            if args.http_helpers:
+                owned.update(child['pid'] for child in probe.get('ownedHttp', {}).get('children', []))
     remaining = sorted(owned & inventory(os.getpid())[1])
     if (cleanup_errors or remaining) and failure is None:
         failure = {'type': 'CleanupError', 'reason': 'Owned processes did not close'}

@@ -15,9 +15,11 @@ spec.loader.exec_module(verifier)
 
 
 class EmbeddingRagEvidenceTests(unittest.TestCase):
+    evidence = EVIDENCE
+
     @contextmanager
     def changed(self, mutation):
-        files = {path.name: json.loads(path.read_text()) for path in EVIDENCE.glob('*.json')
+        files = {path.name: json.loads(path.read_text()) for path in self.evidence.glob('*.json')
                  if path.name in {'plan.json', 'workflow.json', 'launcher.json'} or path.name.endswith('.worker.json')}
         mutation(files)
         with tempfile.TemporaryDirectory(prefix='embedding-rag-replay-', dir=ROOT / 'docs') as temporary:
@@ -42,7 +44,12 @@ class EmbeddingRagEvidenceTests(unittest.TestCase):
                 verifier.verify(directory)
 
     def test_real_evidence_replays_exactly(self):
-        self.assertEqual(verifier.verify(EVIDENCE), json.loads((EVIDENCE / 'replay.json').read_text()))
+        self.assertEqual(verifier.verify(self.evidence), json.loads((self.evidence / 'replay.json').read_text()))
+
+    def test_http_helper_scope_must_be_frozen_and_present_in_every_probe(self):
+        self.rejects(lambda f: f['plan.json'].update(ownedHttpProbe='unknown'))
+        self.rejects(lambda f: f['plan.json'].update(ownedHttpProbe='agat.worker.owned-http.v1'))
+        self.rejects(lambda f: f['0_isolated.worker.json'].update(ownedHttp={}))
 
     def test_frozen_runtime_source_cannot_be_omitted_or_rehashed(self):
         self.rejects(lambda f: f['plan.json']['sourceSha256'].pop('workers/embedding_transport.py'))
@@ -116,6 +123,42 @@ class EmbeddingRagEvidenceTests(unittest.TestCase):
         self.rejects(lambda f: f['launcher.json']['remainingOwnedPids'].append(f['launcher.json']['ollamaPid']))
         self.rejects(lambda f: f['launcher.json']['modelsAfterUnload']['models'].append({'name': 'qwen3:8b'}))
         self.rejects(lambda f: f['launcher.json']['ownedPids'].remove(f['1_session.worker.json']['pid']))
+
+
+class OwnedHttpRagEvidenceTests(EmbeddingRagEvidenceTests):
+    evidence = ROOT / 'docs/qualification/local-decisions/performance/evidence/2026-09-28/http-helper-observability/run'
+
+    def test_http_helper_scope_must_be_frozen_and_present_in_every_probe(self):
+        self.rejects(lambda f: f['plan.json'].pop('ownedHttpProbe'))
+        self.rejects(lambda f: f['plan.json'].update(ownedHttpProbe='unknown'))
+        self.rejects(lambda f: f['0_isolated.worker.json'].pop('ownedHttp'))
+
+    def test_primary_and_knowledge_helpers_cannot_be_omitted_or_left_open(self):
+        for kind in ('Model', 'Knowledge'):
+            with self.subTest(kind=kind):
+                def omit(files):
+                    h = files['0_isolated.worker.json']['ownedHttp']
+                    h['children'] = [child for child in h['children'] if child['kind'] != kind]
+                self.rejects(omit)
+                def open_pipe(files):
+                    h = files['0_isolated.worker.json']['ownedHttp']
+                    next(child for child in h['children'] if child['kind'] == kind)['stdoutClosed'] = False
+                self.rejects(open_pipe)
+
+    def test_helper_rebinding_completion_and_out_of_lifetime_samples_fail(self):
+        self.rejects(lambda f: f['0_isolated.worker.json']['ownedHttp']['children'][-1].update(createdByCallId=1))
+        self.rejects(lambda f: f['0_isolated.worker.json']['ownedHttp']['calls'][-1].update(completed=False))
+        def expired(files):
+            probe = files['0_isolated.worker.json']
+            child = probe['ownedHttp']['children'][0]
+            probe['ownedHttp']['samples'][-1]['helperRssBytes'][str(child['pid'])] = 4096
+        self.rejects(expired)
+
+    def test_primary_owner_must_be_in_launcher_inventory(self):
+        def omit(files):
+            child = next(child for child in files['0_isolated.worker.json']['ownedHttp']['children'] if child['kind'] == 'Model')
+            files['launcher.json']['ownedPids'].remove(child['pid'])
+        self.rejects(omit)
 
 
 if __name__ == '__main__':
