@@ -34,12 +34,14 @@ function processInventory() {
   });
 }
 
-const completions = ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt", "worker-crash", "completion-crash"] as const;
+const completions = ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt", "worker-crash", "completion-crash", "coordinator-crash"] as const;
 for (const transport of ["isolated", "session"] as const) for (const completion of completions) {
   const leaseRecovery = completion === "worker-crash";
-  const completionCrash = completion === "completion-crash";
-  const workerCrash = leaseRecovery || completionCrash;
-  const cancelling = completion !== "recover" && !workerCrash;
+  const coordinatorCrash = completion === "coordinator-crash";
+  const completionCrash = completion === "completion-crash" || coordinatorCrash;
+  const workerCrash = leaseRecovery || completion === "completion-crash";
+  const recovering = workerCrash || coordinatorCrash;
+  const cancelling = completion !== "recover" && !recovering;
   const queryInterrupted = completion === "query-interrupt";
   const searchInterrupted = completion === "search-interrupt";
   const beforePrimary = queryInterrupted || searchInterrupted;
@@ -48,10 +50,10 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
   const expectedRetrievals = searchInterrupted ? 2 : expectedPrimaryCalls;
   const requestName = queryInterrupted ? "Query embedding" : searchInterrupted ? "Coordinator search" : "Primary";
   const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : searchInterrupted ? "Knowledge" : "Model"} request cancelled`;
-  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${completionCrash ? "preserves committed output after Python SIGKILL before completion acknowledgement" : leaseRecovery ? "exits owned HTTP helpers after Python SIGKILL and recovers on real lease expiry" : interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
+  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${coordinatorCrash ? "preserves committed completion through coordinator SIGKILL, tick retry and restart" : completionCrash ? "preserves committed output after Python SIGKILL before completion acknowledgement" : leaseRecovery ? "exits owned HTTP helpers after Python SIGKILL and recovers on real lease expiry" : interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
-    { skip: !address || (workerCrash && globalThis.process.platform === "win32"), timeout: 120_000 }, async () => {
+    { skip: !address || (recovering && globalThis.process.platform === "win32"), timeout: 120_000 }, async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-temporal-rag-"));
     const dbPath = path.join(directory, "state.sqlite"), artifacts = path.join(directory, "artifacts");
     const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: true, artifactsDir: artifacts,
@@ -77,6 +79,10 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
     const acceptedStagesBeforeCrash = new Map<string, string>(), acceptedShadowsBeforeCrash = new Map<string, string>();
     let crashedLeaseId = "", workflowRunId = "";
     let heldCompletionLeaseId = "";
+    let coordinatorRestarting = false;
+    const coordinatorOutage = { ticks: 0, workerRequests: 0 };
+    const expectedConnectionLoss = (error: unknown, target: string) => coordinatorCrash
+      && (coordinatorRestarting || target !== coordinatorUrl) && error instanceof TypeError && error.message === "fetch failed";
     const modelServer = http.createServer(async (req, res) => {
       try {
         assert.equal(req.method, "POST");
@@ -110,6 +116,7 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
     });
     let searchCalls = 0, completionCalls = 0;
     const workerProxy = http.createServer(async (req, res) => {
+      const target = coordinatorUrl;
       try {
         const headers = new Headers();
         for (const [name, value] of Object.entries(req.headers)) {
@@ -117,7 +124,7 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
             headers.set(name, Array.isArray(value) ? value.join(", ") : value);
         }
         let body = ""; for await (const chunk of req) body += chunk;
-        const response = await fetch(`${coordinatorUrl}${req.url}`, { method: req.method!, headers,
+        const response = await fetch(`${target}${req.url}`, { method: req.method!, headers,
           ...(body ? { body } : {}), signal: AbortSignal.timeout(5_000) });
         const output = Buffer.from(await response.arrayBuffer());
         const finish = () => res.writeHead(response.status, { "content-type": response.headers.get("content-type") ?? "application/json" }).end(output);
@@ -139,15 +146,19 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
           }
         }
         finish();
-      } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
+      } catch (error) {
+        if (expectedConnectionLoss(error, target)) { coordinatorOutage.workerRequests++; res.writeHead(503).end(); }
+        else { serverErrors.push(error); res.writeHead(502).end(); }
+      }
     });
     const proxy = http.createServer(async (req, res) => {
+      const target = coordinatorUrl;
       try {
         assert.equal(req.method, "POST"); assert.match(req.url!, /^\/api\/v1\/internal\/processes\/[^/]+\/(tick|cancel)$/);
         assert.equal(req.headers["x-agat-temporal-token"], "temporal-rag-internal");
         let body = ""; for await (const chunk of req) body += chunk;
         assert.deepEqual(JSON.parse(body), { projectId: "default" });
-        const result = await fetch(`${coordinatorUrl}${req.url}`, { method: "POST", body,
+        const result = await fetch(`${target}${req.url}`, { method: "POST", body,
           headers: { "content-type": "application/json", "x-agat-temporal-token": "temporal-rag-internal" },
           signal: AbortSignal.timeout(5_000) });
         assert.equal(result.status, 200); const text = await result.text();
@@ -157,7 +168,10 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         ticks.push({ path: req.url!, response: JSON.parse(text), dropped });
         // Lose acknowledgement only after the real coordinator committed the tick.
         if (dropped) res.destroy(); else res.writeHead(200, { "content-type": "application/json" }).end(text);
-      } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
+      } catch (error) {
+        if (expectedConnectionLoss(error, target)) { coordinatorOutage.ticks++; res.writeHead(503).end(); }
+        else { serverErrors.push(error); res.writeHead(502).end(); }
+      }
     });
     try {
       const decision = processChild("python3", ["-u", "-c", `
@@ -208,9 +222,13 @@ with make_server(DecisionEngine(Backend()),0) as server:
           AGAT_COORDINATOR_INSTANCE_ID: `${taskQueue}-coordinator`, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
           AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000" } : {}),
       };
-      const coordinator = processChild(globalThis.process.execPath, ["apps/coordinator/dist/server.js"], env);
-      children.push(coordinator);
-      coordinatorUrl = `http://127.0.0.1:${(await coordinator.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
+      const startCoordinator = async () => {
+        const child = processChild(globalThis.process.execPath, ["apps/coordinator/dist/server.js"], env);
+        children.push(child);
+        coordinatorUrl = `http://127.0.0.1:${(await child.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
+        return child;
+      };
+      let coordinator = await startCoordinator();
       const proxyUrl = await listen(proxy), modelUrl = await listen(modelServer);
       const workerCoordinatorUrl = searchInterrupted || completionCrash ? await listen(workerProxy) : coordinatorUrl;
       const startTemporal = async (identity: string) => {
@@ -252,7 +270,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const instance = await started.json() as { id: string; runId: string };
       assert.equal(store.getProcessInstance(instance.id)!.runtime, "temporal");
       const workflowId = `agat-process-${instance.id}`, handle = client.workflow.getHandle(workflowId);
-      if (workerCrash) workflowRunId = (await handle.describe()).runId;
+      if (recovering) workflowRunId = (await handle.describe()).runId;
       await eventually(() => Boolean(held), "Second stage did not reach the held HTTP response");
       await within(handle.query("processState"), "Workflow did not become queryable");
       await eventually(async () => {
@@ -267,17 +285,19 @@ with make_server(DecisionEngine(Backend()),0) as server:
       // releasing the still-running primary request on the independent Python worker.
       await within(handle.query("processState"), "Replacement worker did not restore workflow state");
       assert.equal(primaryCalls, beforePrimary ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
-      if (workerCrash) {
-        const before = store.getRunTrace(instance.runId)! as any;
+      const captureAccepted = (before: any, expected: number) => {
         const accepted = before.run.stages.filter((stage: any) => stage.status === "completed"
           && fixture.roles.some(role => role.id === stage.processNodeId));
-        assert.equal(accepted.length, completionCrash ? 2 : 1);
+        assert.equal(accepted.length, expected);
         for (const [index, stage] of accepted.entries()) {
           assert.equal(stage.output, primaryOutputs[index]);
           acceptedStagesBeforeCrash.set(stage.id, JSON.stringify(stage));
         }
         assert.equal(before.decisionObservations.length, accepted.length);
         for (const shadow of before.decisionObservations) acceptedShadowsBeforeCrash.set(shadow.stageId, JSON.stringify(shadow));
+      };
+      if (workerCrash) {
+        captureAccepted(store.getRunTrace(instance.runId)!, completionCrash ? 2 : 1);
         const active = completionCrash
           ? store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt, status FROM stages WHERE run_id = ? AND lease_id = ?").get(instance.runId, heldCompletionLeaseId)!
           : store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt, status FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!;
@@ -314,6 +334,40 @@ with make_server(DecisionEngine(Backend()),0) as server:
           ...(leaseRecovery ? { primaryConnectionClosed: heldConnectionClosed, expiredStageId: active.id }
             : { completionConnectionClosed: heldConnectionClosed, committedStageId: active.id, committedBeforeReplyLoss: true }) };
       }
+      if (coordinatorCrash) {
+        captureAccepted(store.getRunTrace(instance.runId)!, 2);
+        crashedLeaseId = heldCompletionLeaseId;
+        const sourcesBefore = JSON.stringify(store.getRunKnowledgeSources(instance.runId));
+        const pythonPid = worker.child.pid, coordinatorPid = coordinator.child.pid;
+        coordinatorRestarting = true;
+        assert.deepEqual(await coordinator.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
+        const wake = await within(handle.executeUpdate<{ acceptedRevision: number }, [string]>("processChangedV1",
+          { args: ["fixture.coordinator-restart"] }), "Workflow did not accept an Update during coordinator outage");
+        assert.ok(wake.acceptedRevision > 0);
+        await eventually(() => coordinatorOutage.ticks > 0, "The tick did not observe the real coordinator outage");
+        coordinator = await startCoordinator(); coordinatorRestarting = false;
+        assert.notEqual(coordinator.child.pid, coordinatorPid);
+        assert.equal(worker.child.pid, pythonPid); assert.equal(worker.child.exitCode, null, worker.log());
+        assert.equal(primaryCalls, 2, "Worker must still wait for the held completion acknowledgement");
+        assert.ok(held && !heldConnectionClosed);
+        const restored = await fetch(`${coordinatorUrl}/api/v1/runs/${instance.runId}/trace`, {
+          headers: { "x-agat-admin-token": "temporal-rag-admin" }, signal: AbortSignal.timeout(5_000) });
+        assert.equal(restored.status, 200, await restored.clone().text());
+        const restoredTrace = await restored.json() as any;
+        for (const [id, snapshot] of acceptedStagesBeforeCrash) assert.equal(JSON.stringify(restoredTrace.run.stages.find((stage: any) => stage.id === id)), snapshot);
+        for (const [id, snapshot] of acceptedShadowsBeforeCrash) assert.equal(JSON.stringify(restoredTrace.decisionObservations.find((row: any) => row.stageId === id)), snapshot);
+        assert.equal(JSON.stringify(store.getRunKnowledgeSources(instance.runId)), sourcesBefore);
+        const credentials = JSON.parse(fs.readFileSync(path.join(directory, "worker.json"), "utf8"));
+        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${crashedLeaseId}/complete`, { method: "POST",
+          headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ output: "stale completion after coordinator restart" }), signal: AbortSignal.timeout(5_000) });
+        assert.equal(stale.status, 400); assert.match(await stale.text(), /Активная аренда не найдена/);
+        held(); held = undefined;
+        recovery = { signal: "SIGKILL", target: "coordinator", leaseTtlSeconds: 180, leaseId: crashedLeaseId,
+          coordinatorRestarted: true, samePythonWorker: true, acceptedStateReadFromReplacement: true,
+          sourcesPreservedBeforeAcknowledgement: true, completionAcknowledgedAfterRestart: true,
+          staleCompletionRejected: true, outage: coordinatorOutage, acceptedUpdateRevision: wake.acceptedRevision };
+      }
       let cancelledLeaseId = "";
       if (cancelling) {
         cancelledLeaseId = String(store.db.prepare("SELECT lease_id FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!.lease_id);
@@ -336,7 +390,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         assert.ok(held, "Model fixture must not release the response to free the worker");
         interruption = { renewalRejectedAfterMs: rejectedAt - cancelledAt,
           clientDisconnectedAfterRejectionMs: performance.now() - rejectedAt, responseStillHeld: true };
-      } else if (!workerCrash) {
+      } else if (!recovering) {
         held!(); held = undefined;
       }
       if (cancelling) {
@@ -367,7 +421,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const retrieval = verifyRetrieval(trace, stage, ingestion, leaseRecovery && index === 1 ? 2 : 1);
         assert.ok(retrieval.bothSourcesCited); assert.deepEqual(retrieval.unknownMarkers, []);
       }
-      if (workerCrash) {
+      if (recovering) {
         for (const [id, snapshot] of acceptedStagesBeforeCrash) assert.equal(JSON.stringify(stages.find((stage: any) => stage.id === id)), snapshot);
         for (const [id, snapshot] of acceptedShadowsBeforeCrash) assert.equal(JSON.stringify(trace.decisionObservations.find((row: any) => row.stageId === id)), snapshot);
         assert.equal(stages[1].attempt, leaseRecovery ? 2 : 1); assert.equal(stages[2].attempt, 1);
@@ -379,7 +433,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         } else assert.equal(replacementLeaseId, crashedLeaseId, "An accepted stage must retain its completed lease");
         assert.equal(trace.events.filter((event: any) => event.type === "lease.expired").length, leaseRecovery ? 1 : 0);
         assert.equal((await handle.describe()).runId, workflowRunId);
-        assert.ok(held && heldConnectionClosed);
+        if (workerCrash) assert.ok(held && heldConnectionClosed);
         recovery = { ...recovery, sameWorkflowRun: true, replacementAttempt: stages[1].attempt,
           firstAcceptedStageUnchanged: true, acceptedStagesPreserved: acceptedStagesBeforeCrash.size,
           acceptedShadowsPreserved: acceptedShadowsBeforeCrash.size,
