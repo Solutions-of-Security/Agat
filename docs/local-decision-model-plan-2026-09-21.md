@@ -154,6 +154,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Отмена coordinator search HTTP](./qualification/local-decisions/performance/knowledge-http-cancellation.md) устраняет воспроизведённое ожидание ответа после cancellation и отказа renewal. Управляемый helper сохраняет auth, trace и HTTP errors, ограничивает deadline и тело, освобождает слот без нового primary/shadow. Уже записанный retrieval provenance сохранён при потерянном ответе. Следующий gate — SIGKILL Python worker во время primary HTTP и восстановление после истечения lease; предметная qualification остаётся открытой.
 
+[Восстановление после SIGKILL Python worker](./qualification/local-decisions/performance/python-worker-recovery.md) проверяет самостоятельное завершение owned HTTP helpers, настоящий lease expiry и повтор только незавершённого stage. Первый принятый результат сохраняется, старый completion отвергается, обе попытки retrieval остаются проверяемыми. Прошли 22 SQLite Temporal и 12 PostgreSQL RAG сценариев; следующий gate — потерянный acknowledgement уже принятого completion.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
