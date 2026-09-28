@@ -85,6 +85,7 @@ def main():
             'host': host, 'models': shared.MODELS, 'ollamaSettings': settings, 'fixturePath': shared.FIXTURE,
             'fixture': json.loads((ROOT / shared.FIXTURE).read_text()), 'shadow': False,
             'transports': ['isolated', 'session'], 'concurrency': 1, 'workloadBudgetSeconds': 600,
+            'databaseIsolation': 'one_owned_server_per_transport',
             'postgresImage': 'postgres:17.6-alpine', 'temporalImage': 'temporalio/temporal:1.8.1',
             'qualification': 'not_assessed', 'routingEnabled': False}
     directory.mkdir(parents=True)
@@ -92,7 +93,7 @@ def main():
     started = time.monotonic()
     ollama = workload = None
     pids, containers, container_details = set(), set(), {}
-    samples, cleanup_errors, warmup = [], [], []
+    samples, cleanup_errors, warmup, workloads = [], [], [], []
     version = initial = unloaded = failure = None
     with tempfile.TemporaryDirectory(prefix='agat-temporal-real-rag-') as temporary:
         temporary = Path(temporary)
@@ -128,29 +129,31 @@ def main():
                     warmup.append({'model': payload['model'], 'nativeTotalMs': result['total_duration'] / 1e6,
                                    'nativeLoadMs': result['load_duration'] / 1e6})
                 environment = {key: value for key, value in os.environ.items() if not key.startswith(('AGAT_', 'OTEL_'))}
-                workload = subprocess.Popen(['bash', 'scripts/test-temporal-postgres-rag.sh',
-                    '--test-skip-pattern=Temporal RAG (sqlite|postgresql)/'], cwd=ROOT, stdout=test_log,
-                    stderr=subprocess.STDOUT, start_new_session=True, env={**environment,
-                        'PATH': str(temporary) + os.pathsep + os.environ['PATH'], 'AGAT_OTEL_ENABLED': 'false', 'OTEL_SDK_DISABLED': 'true',
-                        'AGAT_TEMPORAL_REAL_MODEL_URL': f'http://127.0.0.1:{port}',
-                        'AGAT_TEMPORAL_REAL_RAG_PLAN': str(directory / 'plan.json')})
-                pids.add(workload.pid)
                 deadline, next_sample = time.monotonic() + plan['workloadBudgetSeconds'], 0
                 print('Owned models warmed; real PostgreSQL/Temporal RAG started', flush=True)
-                while workload.poll() is None:
-                    require(time.monotonic() < deadline, 'Workload budget exceeded')
-                    pids.update(shared.inventory(ollama.pid)[0]); pids.update(shared.inventory(workload.pid)[0])
-                    containers.update(own_containers(pids))
-                    for name in containers - container_details.keys():
-                        inspected = json.loads(command(['docker', 'inspect', name]))[0]
-                        container_details[name] = {'id': inspected['Id'], 'image': inspected['Config']['Image'], 'imageId': inspected['Image']}
-                    if time.monotonic() >= next_sample:
-                        samples.append({'elapsedMs': (time.monotonic() - started) * 1000, 'models': request(port, '/api/ps')['models']})
-                        next_sample = time.monotonic() + 10
-                    time.sleep(.5)
-                require(workload.returncode == 0, 'Live integration tests failed; inspect tests.log')
                 for transport in plan['transports']:
+                    workload = subprocess.Popen(['bash', 'scripts/test-temporal-postgres-rag.sh',
+                        '--test-skip-pattern=Temporal RAG (sqlite|postgresql)/'], cwd=ROOT, stdout=test_log,
+                        stderr=subprocess.STDOUT, start_new_session=True, env={**environment,
+                            'PATH': str(temporary) + os.pathsep + os.environ['PATH'], 'AGAT_OTEL_ENABLED': 'false', 'OTEL_SDK_DISABLED': 'true',
+                            'AGAT_TEMPORAL_REAL_MODEL_URL': f'http://127.0.0.1:{port}',
+                            'AGAT_TEMPORAL_REAL_RAG_PLAN': str(directory / 'plan.json'), 'AGAT_TEMPORAL_REAL_RAG_TRANSPORT': transport})
+                    pids.add(workload.pid)
+                    while workload.poll() is None:
+                        require(time.monotonic() < deadline, 'Workload budget exceeded')
+                        pids.update(shared.inventory(ollama.pid)[0]); pids.update(shared.inventory(workload.pid)[0])
+                        containers.update(own_containers(pids))
+                        for name in containers - container_details.keys():
+                            inspected = json.loads(command(['docker', 'inspect', name]))[0]
+                            container_details[name] = {'id': inspected['Id'], 'image': inspected['Config']['Image'], 'imageId': inspected['Image']}
+                        if time.monotonic() >= next_sample:
+                            samples.append({'elapsedMs': (time.monotonic() - started) * 1000, 'models': request(port, '/api/ps')['models']})
+                            next_sample = time.monotonic() + 10
+                        time.sleep(.5)
+                    workloads.append({'transport': transport, 'pid': workload.pid, 'exitCode': workload.returncode})
+                    require(workload.returncode == 0, 'Live integration tests failed; inspect tests.log')
                     require(json.loads((directory / f'{transport}.json').read_text()).get('status') == 'pass', 'Incomplete transport evidence')
+                    print(transport + ': recovery and native replay passed', flush=True)
             except Exception as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
             finally:
@@ -196,6 +199,7 @@ def main():
               'containers': container_details, 'cleanupErrors': cleanup_errors,
               'ollamaPid': ollama.pid if ollama else None, 'ollamaExitCode': ollama.returncode if ollama else None,
               'workloadPid': workload.pid if workload else None, 'workloadExitCode': workload.returncode if workload else None,
+              'workloads': workloads,
               'loadedModelSamples': samples, 'logSha256': {'ollama.log': model_log_sha, 'tests.log': sha((directory / 'tests.log').read_bytes())}}
     write(directory / 'launcher.json', report)
     print(report['status'], failure, flush=True)

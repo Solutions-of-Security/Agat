@@ -18,10 +18,12 @@ import { embeddingIdentity, forwardEmbedding, verifyIngestion, verifyRetrieval }
 const address = process.env.AGAT_TEST_TEMPORAL_ADDRESS;
 const modelUrl = process.env.AGAT_TEMPORAL_REAL_MODEL_URL;
 const planPath = process.env.AGAT_TEMPORAL_REAL_RAG_PLAN;
+const selectedTransport = process.env.AGAT_TEMPORAL_REAL_RAG_TRANSPORT;
 const enabled = Boolean(modelUrl && planPath && address);
 if (modelUrl || planPath) {
   assert.ok(enabled, "Real-model qualification requires a model URL, frozen plan and Temporal address");
   assert.equal(process.env.AGAT_TEST_TEMPORAL_STATE_STORE, "postgresql");
+  assert.ok(selectedTransport === "isolated" || selectedTransport === "session", "Each transport requires its own database/server");
 }
 const fixturePath = "docs/qualification/local-decisions/performance/rag-workflow.fixture.json";
 const fixture = JSON.parse(fs.readFileSync(path.join(root, fixturePath), "utf8")) as Fixture;
@@ -36,7 +38,7 @@ async function body(req: http.IncomingMessage) {
 
 for (const transport of ["isolated", "session"] as const) {
   test(`Temporal RAG real-model ${transport}: preserves real outputs across retry, worker restart and native replay`,
-    { skip: !enabled, timeout: 240_000 }, async () => {
+    { skip: !enabled || selectedTransport !== transport, timeout: 240_000 }, async () => {
     const target = origin(modelUrl!), planFile = path.resolve(planPath!);
     assert.ok(planFile.startsWith(path.join(root, "docs") + path.sep));
     const directory = path.dirname(planFile), output = path.join(directory, `${transport}.json`);
