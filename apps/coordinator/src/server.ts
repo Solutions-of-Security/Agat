@@ -653,8 +653,9 @@ export function createCoordinatorServer(
     eventStreams.clear();
   };
   shutdownSignal?.addEventListener("abort", closeEventStreams, { once: true });
-  const scenarioContext = (): ScenarioPreflightContext => ({
+  const scenarioContext = (projectId?: string): ScenarioPreflightContext => ({
     runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
+    ...(projectId ? { fleet: runWithPostgresSystemScope(() => store.scenarioFleetReadiness(projectId)) } : {}),
   });
   const a2aPublicBaseUrl = normalizeA2APublicBaseUrl(
     config.a2aPublicBaseUrl,
@@ -1839,7 +1840,8 @@ export function createCoordinatorServer(
         if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
         const body = await readJson<ProcessPackInput>(request);
         const alreadyInstalled = store.getProcessPackInstallation(id, auth.projectId);
-        const result = installing ? store.installProcessPack(id, body, auth.projectId, scenarioContext()) : store.preflightProcessPack(id, body, auth.projectId, scenarioContext());
+        const context = scenarioContext(auth.projectId);
+        const result = installing ? store.installProcessPack(id, body, auth.projectId, context) : store.preflightProcessPack(id, body, auth.projectId, context);
         json(response, installing && !alreadyInstalled ? 201 : 200, result);
         return;
       }
@@ -1856,7 +1858,7 @@ export function createCoordinatorServer(
         const id = decodeURIComponent(preflightMatch[2]!);
         const body = await readJson<ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }>(request);
         const trigger = scenarioTrigger(body.trigger);
-        const context = scenarioContext();
+        const context = scenarioContext(auth.projectId);
         if (preflightMatch[1] === "processes" && !store.getProcess(id, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         if (trigger.kind === "schedule" && context.runtime.mode === "temporal" && preflightMatch[1] === "processes") {
           try { context.schedule = await processRuntime.getProcessSchedule(id, auth.projectId); }
@@ -1988,7 +1990,7 @@ export function createCoordinatorServer(
       if (request.method === "POST" && startProcessId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
         const body = await readJson<StartProcessInput>(request);
-        const instance = store.startProcess(startProcessId, body, auth.projectId, scenarioContext());
+        const instance = store.startProcess(startProcessId, body, auth.projectId, scenarioContext(auth.projectId));
         if (!instance) throw new HttpError(404, "Процесс не найден");
         const instanceId = String(instance.id);
         try {

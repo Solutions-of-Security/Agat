@@ -1,0 +1,79 @@
+{
+  "schema": "agat.temporal.postgres-rag-checks.v1",
+  "baseCommit": "a38335867e765227e36aebf3d563bb51212cee0c",
+  "databaseSchema": 30,
+  "postgresImage": "postgres:17.6-alpine",
+  "temporalImage": "temporalio/temporal:1.8.1",
+  "temporalSdk": "1.24.0",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/coordinator/src/server.ts": "38f0c27a965a04f82f28cc09a4964cd0ad79dddb7f07e64f2632376ef74a0102",
+    "apps/coordinator/src/scenario-preflight.ts": "36c2dd401cbdd4d227462d6b61c1f28514847f549446e88a8e131e4d9fa4d360",
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "381fcabb08e3c27670b9b5cad2c70baf93a7ed3997d4a1bc3f88c66e924fbb68",
+    "apps/coordinator/test/scenario-preflight.test.ts": "2906a1c391d5bd69f88f78ad02f28b600b5b40136253f8c801c5b769bc3cc76e",
+    "scripts/test-temporal-postgres-rag.sh": "9d9fcba9a528ec352a46668895f9d78cce1606d4bbfad8e22f2bda6905ff78eb",
+    "scripts/test-temporal-rag.sh": "b53b35af2b175703315e2c7e741260685dbc4fce7dd85b4339ac8097e3e54dab",
+    ".github/workflows/ci.yml": "074a28e499f4db7ce81c8477536954f2e625ad9824bc0c6b730c6ec3a02186d0",
+    "package.json": "592c8c97ab11810ccbcc85884f55ff7b821e335c26a5dfffea52a45b778021bc"
+  },
+  "evidenceSha256": {
+    "final/isolated.json": "355b8bcbbe9205a51f2ee71699dffc7b3905c2c99221117b6685b0a4c2a57cea",
+    "final/session.json": "dd9fbc906c5b6d29775189b77698685e078017097461a219b93c183c66204287"
+  },
+  "checks": {
+    "initialPostgresRag": {
+      "scenarios": 2,
+      "pass": 0,
+      "fail": 2,
+      "log": "initial.log",
+      "cause": "Tenant preflight queried worker_releases inside its transaction; HTTP start returned permission denied."
+    },
+    "postgresRag": {
+      "scenarios": 2,
+      "pass": 2,
+      "fail": 0,
+      "log": "integration-final.log",
+      "nonMatchingFileEntries": 6
+    },
+    "preflight": {
+      "pass": 16,
+      "fail": 0,
+      "log": "preflight.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 12,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 30,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedTestsStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "tests-typecheck.log"
+      ]
+    },
+    "shellSyntax": "pass",
+    "sqliteTemporal": {
+      "pass": 12,
+      "fail": 0,
+      "log": "sqlite-temporal.log"
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1844,
+      "markdownFiles": 211,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Full RAG through Temporal and PostgreSQL runtime/tenant roles, isolated retrieval, both embedding transports, retry/restart/replay, tenant visibility and denied registry read. Synthetic model responses, no HA/failover or business qualification."
+}

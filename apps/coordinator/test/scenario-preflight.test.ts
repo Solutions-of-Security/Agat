@@ -36,6 +36,23 @@ function check(store: AgatStore, id: string, patch: Parameters<AgatStore["prefli
 }
 const context: ScenarioPreflightContext = { runtime: { mode: "database", connected: true }, mcpEnabled: true };
 
+test("fleet readiness snapshot is project-bound and remains advisory when worker capacity changes", () => {
+  const store = fixture(), id = published(store), node = worker(store);
+  const fleet = store.scenarioFleetReadiness("default");
+  assert.deepEqual(fleet, { projectId: "default", eligibleWorkerIds: [node], activeTasks: 0 });
+  assert.equal(store.preflightProcess(id, { version: 1 }, "default", { ...context, fleet })!.runnableNow, true);
+  assert.throws(() => store.preflightProcess(id, { version: 1 }, "default", {
+    ...context, fleet: { ...fleet, projectId: "another-project" },
+  }), /другому проекту/);
+  store.startProcess(id, { input: "occupy worker" });
+  assert.ok(store.leaseNext(node));
+  assert.equal(store.scenarioFleetReadiness("default").activeTasks, 1);
+  // A captured ready state cannot bypass current node capacity or grant a lease.
+  assert.equal(store.preflightProcess(id, { version: 1 }, "default", { ...context, fleet })!.runnableNow, false);
+  assert.throws(() => store.startProcess(id, { input: "now", startMode: "now" }, "default", { ...context, fleet }), ScenarioPreflightError);
+  assert.equal(store.leaseNext(node), null);
+});
+
 test("template preview, saved draft, queueable, runnable and verified are distinct; blockers have exact recovery targets", () => {
   const store = fixture();
   const preview = store.preflightTemplate("research-to-report", { catalogTemplateVersion: 1 });

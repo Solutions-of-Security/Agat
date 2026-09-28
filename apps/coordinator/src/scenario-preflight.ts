@@ -12,6 +12,8 @@ export interface ScenarioPreflightContext {
   sandbox?: { available: boolean; networkPolicyEnforced: boolean } | null;
   schedule?: { paused: boolean; nextActionTimes: string[]; knowledgeCollectionIds?: string[] } | null;
   scheduleError?: boolean;
+  /** Server-only advisory snapshot read with system credentials before a tenant transaction. */
+  fleet?: { projectId: string; eligibleWorkerIds: string[]; activeTasks: number };
   /** Set only by authenticated trigger handlers, never by the public start payload. */
   executionTrigger?: ScenarioTrigger;
 }
