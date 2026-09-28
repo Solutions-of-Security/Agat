@@ -168,6 +168,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Linux deployment после ENOSPC](./qualification/local-decisions/performance/linux-worker-deployment.md) закрывает прежнее ограничение среды: 50/50 round trips и 143/143 worker tests прошли на закреплённом image. Настоящий Python PID 1 в isolated/session/idle режимах дождался активного HTTP после SIGTERM и сохранил обе lease, exit 0; временные Docker resources удалены. Следующий шаг — совместный workload реальных Qwen3/embeddinggemma, Temporal и PostgreSQL; qualification не заявляется.
 
+[Реальные модели с Temporal/PostgreSQL](./qualification/local-decisions/performance/temporal-real-rag.md) завершили оба embedding transport: 6 primary calls и 10 embedding items, одинаковые prompts/outputs/vectors. Потерянный tick reply и SIGKILL Temporal worker сохранили Run ID, принятый stage и все citations; RLS изоляция и два независимых native replay прошли. Все четыре контейнера удалены, модели выгружены. Сохранён первый отказ из-за общей тестовой БД, затем весь опыт повторён с отдельными БД. Следующий gate — настоящий локальный shadow decider в том же сценарии; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
