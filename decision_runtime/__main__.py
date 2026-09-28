@@ -16,6 +16,7 @@ from .development import compare_development, prepare_development
 from .engine import DecisionEngine
 from .evaluation import evaluate, load_dataset
 from .evaluation_guard import validate_evaluation_profile, validate_evaluation_start
+from .lifecycle import log_retirement
 from .model_store import DEFAULT_STORE, download
 from .qualification import qualify
 from .server import make_server
@@ -24,6 +25,7 @@ from .server import make_server
 def main() -> int:
     backend = None
     old_sigterm = None
+    retired_profile = None
     parser = argparse.ArgumentParser(description="Agat local typed decisions (experimental shadow runtime)")
     commands = parser.add_subparsers(dest="command", required=True)
     fetch = commands.add_parser("download", help="Download pinned weights; the only network model operation")
@@ -192,8 +194,11 @@ def main() -> int:
         with make_server(engine, args.port, exit_on_backend_unavailable=args.exit_on_backend_unavailable) as server:
             print(f"Agat decision runtime: http://127.0.0.1:{server.server_port} (shadow)", flush=True)
             server.serve_forever()
-            if args.exit_on_backend_unavailable and server.backend_failed.is_set():
-                return 75
+            backend_failed = args.exit_on_backend_unavailable and server.backend_failed.is_set()
+        # The context has drained accepted handlers before retirement is recorded.
+        if backend_failed:
+            retired_profile = fingerprint(engine.profile())
+            return 75
     except KeyboardInterrupt:
         return 130
     except (DecisionError, ValueError, OSError, ImportError, RuntimeError) as exc:
@@ -205,6 +210,8 @@ def main() -> int:
             backend.close()
         if old_sigterm is not None:
             signal.signal(signal.SIGTERM, old_sigterm)
+        if retired_profile is not None:
+            log_retirement(backend, retired_profile)
     return 0
 
 
