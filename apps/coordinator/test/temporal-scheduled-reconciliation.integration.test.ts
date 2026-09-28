@@ -23,12 +23,17 @@ test("Temporal scheduled child keeps its parent ownership across coordinator res
   let coordinatorUrl = "", connection: Connection | undefined;
   let held: http.ServerResponse | undefined, instanceId = "", starts = 0;
   let allowTick = Promise.resolve(), releaseTicks: (() => void) | undefined;
+  let activeTicks = 0;
   const proxyErrors: unknown[] = [];
   const proxy = http.createServer(async (req, res) => {
+    let activeTick = false;
     try {
       assert.equal(req.method, "POST"); assert.equal(req.headers["x-agat-temporal-token"], "owner-internal");
       assert.match(req.url!, /^\/api\/v1\/internal\/processes\/[^/]+\/(tick|scheduled-start)$/);
-      if (req.url!.endsWith("/tick")) await allowTick;
+      if (req.url!.endsWith("/tick")) {
+        await allowTick;
+        activeTicks++; activeTick = true;
+      }
       let body = ""; for await (const chunk of req) body += chunk;
       const key = req.headers["idempotency-key"];
       const result = await fetch(`${coordinatorUrl}${req.url}`, { method: "POST", body,
@@ -46,6 +51,7 @@ test("Temporal scheduled child keeps its parent ownership across coordinator res
       }
       res.writeHead(result.status, { "content-type": "application/json" }).end(text);
     } catch (error) { proxyErrors.push(error); res.writeHead(502).end(); }
+    finally { if (activeTick) activeTicks--; }
   });
   try {
     const process = store.createProcess({ name: "Scheduled ownership recovery", graph: {
@@ -100,6 +106,10 @@ test("Temporal scheduled child keeps its parent ownership across coordinator res
     const startedChild = await child.describe();
     // A second restart exercises the already-started child boundary as well.
     allowTick = new Promise<void>(resolve => { releaseTicks = resolve; });
+    // A tick may already have passed the gate when the child-start event arrives.
+    // Drain it before SIGKILL so the fixture isolates startup ownership rather
+    // than accidentally injecting an additional lost tick response.
+    await eventually(() => activeTicks === 0, "In-flight ticks did not drain before restart");
     assert.deepEqual(await second.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
     const third = await startCoordinator(); releaseTicks!(); releaseTicks = undefined;
     assert.equal((await child.describe()).runId, startedChild.runId);

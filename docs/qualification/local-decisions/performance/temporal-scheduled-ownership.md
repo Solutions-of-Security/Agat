@@ -31,6 +31,8 @@ npm run fleet:test-state-migration
 npm run test:temporal
 ```
 
+Первый [CI Temporal job](https://github.com/Solutions-of-Security/Agat/actions/runs/36364573956/job/108748322142) выявил гонку в fixture: tick уже прошёл gate перед вторым SIGKILL, и proxy зафиксировал оборванный ответ. Все проверки ownership прошли, но строгая проверка отсутствия дополнительных proxy errors — нет. Перед SIGKILL fixture теперь дожидается завершения уже отправленных ticks; намеренно потерянный scheduled-start reply сохраняется. [Ошибка](./evidence/2026-09-28/temporal-scheduled-owner/ci-tick-drain-failure.log) сохранена, production-код не менялся. [Повтор четырёх сценариев](./evidence/2026-09-28/temporal-scheduled-owner/drained.log) и [финальная целевая проверка полного drain](./evidence/2026-09-28/temporal-scheduled-owner/drain-verified.log) прошли.
+
 ## Обновление и границы
 
 Перед обновлением приостановите расписания, завершите старые scheduled parents/Activities и остановите writers. После согласованного backup примените schema **29** штатной PostgreSQL migration Job с passing admission либо откройте SQLite store текущим release. Обновите все coordinator до возобновления работы: старый coordinator не учитывает владельца запуска. Требования согласованного обновления worker/coordinator из этапа schema 28 сохраняются. Offline migrator требует уже обновлённый SQLite source: [runbook](../../../sqlite-postgresql-migration.md).

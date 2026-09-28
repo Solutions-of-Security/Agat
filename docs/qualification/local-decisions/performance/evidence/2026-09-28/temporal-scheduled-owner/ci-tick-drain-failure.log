@@ -1,0 +1,48 @@
+2026-09-28T01:05:47.9107958Z test at apps/coordinator/test/temporal-scheduled-reconciliation.integration.test.ts:1:686
+2026-09-28T01:05:47.9108981Z ✖ Temporal scheduled child keeps its parent ownership across coordinator restart before and after child start (4914.953305ms)
+2026-09-28T01:05:47.9109762Z   AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+2026-09-28T01:05:47.9110196Z   + actual - expected
+2026-09-28T01:05:47.9110532Z
+2026-09-28T01:05:47.9110710Z   + [
+2026-09-28T01:05:47.9111012Z   +   [TypeError: fetch failed] {
+2026-09-28T01:05:47.9111629Z   +     [cause]: SocketError: other side closed
+2026-09-28T01:05:47.9112445Z   +         at Socket.onHttpSocketEnd (node:internal/deps/undici/undici:7833:26)
+2026-09-28T01:05:47.9112912Z   +         at Socket.emit (node:events:526:24)
+2026-09-28T01:05:47.9113312Z   +         at endReadableNT (node:internal/streams/readable:1764:12)
+2026-09-28T01:05:47.9114223Z   +         at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+2026-09-28T01:05:47.9114707Z   +       code: 'UND_ERR_SOCKET',
+2026-09-28T01:05:47.9114960Z   +       socket: {
+2026-09-28T01:05:47.9115173Z   +         bytesRead: 1508,
+2026-09-28T01:05:47.9115436Z   +         bytesWritten: 1230,
+2026-09-28T01:05:47.9116296Z   +         localAddress: '127.0.0.1',
+2026-09-28T01:05:47.9116839Z   +         localPort: 50984,
+2026-09-28T01:05:47.9119027Z   +         remoteAddress: '127.0.0.1',
+2026-09-28T01:05:47.9119597Z   +         remoteFamily: 'IPv4',
+2026-09-28T01:05:47.9120160Z   +         remotePort: 37351,
+2026-09-28T01:05:47.9120697Z   +         timeout: undefined
+2026-09-28T01:05:47.9121142Z   +       }
+2026-09-28T01:05:47.9121496Z   +     }
+2026-09-28T01:05:47.9121829Z   +   }
+2026-09-28T01:05:47.9122159Z   + ]
+2026-09-28T01:05:47.9122533Z   - []
+2026-09-28T01:05:47.9122890Z
+2026-09-28T01:05:47.9124101Z       at TestContext.<anonymous> (/home/runner/work/Agat/Agat/apps/coordinator/test/temporal-scheduled-reconciliation.integration.test.ts:127:91)
+2026-09-28T01:05:47.9125131Z       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+2026-09-28T01:05:47.9125735Z       at async Test.run (node:internal/test_runner/test:1409:7)
+2026-09-28T01:05:47.9126325Z       at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+2026-09-28T01:05:47.9126815Z     generatedMessage: true,
+2026-09-28T01:05:47.9127106Z     code: 'ERR_ASSERTION',
+2026-09-28T01:05:47.9127361Z     actual: [
+2026-09-28T01:05:47.9127598Z       [TypeError: fetch failed] {
+2026-09-28T01:05:47.9128190Z         [cause]: SocketError: other side closed
+2026-09-28T01:05:47.9128696Z             at Socket.onHttpSocketEnd (node:internal/deps/undici/undici:7833:26)
+2026-09-28T01:05:47.9129184Z             at Socket.emit (node:events:526:24)
+2026-09-28T01:05:47.9129632Z             at endReadableNT (node:internal/streams/readable:1764:12)
+2026-09-28T01:05:47.9130272Z             at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+2026-09-28T01:05:47.9130751Z       }
+2026-09-28T01:05:47.9130963Z     ],
+2026-09-28T01:05:47.9131152Z     expected: [],
+2026-09-28T01:05:47.9131400Z     operator: 'deepStrictEqual',
+2026-09-28T01:05:47.9131687Z     diff: 'simple'
+2026-09-28T01:05:47.9131891Z   }
+2026-09-28T01:05:48.0676442Z ##[error]Process completed with exit code 1.
