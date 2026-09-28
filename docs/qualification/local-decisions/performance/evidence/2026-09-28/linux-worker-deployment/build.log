@@ -1,0 +1,59 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.0s
+
+#2 copy /context /
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.13-slim
+#3 ...
+
+#4 [auth] library/python:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.13-slim
+#3 DONE 2.0s
+
+#5 [ 1/10] FROM docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+#5 resolve docker.io/library/python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b 0.0s done
+#5 DONE 0.0s
+
+#6 [ 2/10] RUN useradd --create-home --uid 10001 agat && mkdir -p /state && chown agat:agat /state
+#6 CACHED
+
+#7 [ 3/10] COPY workers/requirements.txt /opt/agat/requirements.txt
+#7 CACHED
+
+#8 [ 4/10] RUN pip install --no-cache-dir --requirement /opt/agat/requirements.txt
+#8 CACHED
+
+#9 [ 5/10] COPY --chown=agat:agat workers/agat_worker.py /opt/agat/agat_worker.py
+#9 DONE 0.0s
+
+#10 [ 6/10] COPY --chown=agat:agat workers/web_tools.py /opt/agat/web_tools.py
+#10 DONE 0.0s
+
+#11 [ 7/10] COPY --chown=agat:agat workers/telemetry.py /opt/agat/telemetry.py
+#11 DONE 0.0s
+
+#12 [ 8/10] COPY --chown=agat:agat workers/local_decisions.py /opt/agat/local_decisions.py
+#12 DONE 0.0s
+
+#13 [ 9/10] COPY --chown=agat:agat workers/embedding_http.py /opt/agat/embedding_http.py
+#13 DONE 0.0s
+
+#14 [10/10] COPY --chown=agat:agat workers/embedding_transport.py /opt/agat/embedding_transport.py
+#14 DONE 0.0s
+
+#15 exporting to image
+#15 exporting layers 0.1s done
+#15 exporting manifest sha256:caaf89c4b0930757b49929264d76234f7334869aeb910447249033011661c4e9 done
+#15 exporting config sha256:c44e92c1c7538d48a7babf17b773278050f09856f48e9feedc8da9098ae5f374 done
+#15 exporting attestation manifest sha256:02d3f4bd2978dbd09d11ac88291c8d4b1c6723ed7c277cd6a604e3e3ce5196b4 done
+#15 exporting manifest list sha256:3cbc714690f682d8a53c17c97255a4090ff49434d0372adc5269893d8050b8c5 done
+#15 naming to docker.io/library/agat-worker:linux-http-deployment-20260928 done
+#15 unpacking to docker.io/library/agat-worker:linux-http-deployment-20260928 0.0s done
+#15 DONE 0.2s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/hhft533gu7ani6bbhahl7qwrz
