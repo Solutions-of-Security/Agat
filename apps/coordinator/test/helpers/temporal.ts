@@ -17,8 +17,8 @@ export async function within<T>(promise: Promise<T>, message: string, timeout = 
   } finally { clearTimeout(timer); }
 }
 
-export async function eventually(check: () => boolean | Promise<boolean>, message: string): Promise<void> {
-  const until = performance.now() + 20_000;
+export async function eventually(check: () => boolean | Promise<boolean>, message: string, timeout = 20_000): Promise<void> {
+  const until = performance.now() + timeout;
   while (performance.now() < until) { if (await check()) return; await delay(25); }
   assert.fail(message);
 }

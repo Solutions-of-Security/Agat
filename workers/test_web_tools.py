@@ -649,15 +649,15 @@ class ModelToolLoopTests(unittest.TestCase):
         telemetry = _OrderingTelemetry()
         client = LocalModelClient("http://model.invalid/v1", "", telemetry=telemetry)
         with patch(
-            "agat_worker.urllib.request.urlopen",
-            return_value=_FakeResponse(json.dumps(response).encode()),
+            "agat_worker.request_model_response",
+            return_value=json.dumps(response).encode(),
         ) as request_model:
             client._chat("qwen3:8b", [{"role": "user", "content": "input"}], with_tools=False)
 
         self.assertTrue(telemetry.injected_inside_model_span)
-        request = request_model.call_args.args[0]
+        headers = request_model.call_args.args[2]
         self.assertEqual(
-            request.get_header("Traceparent"),
+            headers["traceparent"],
             "00-11111111111111111111111111111111-2222222222222222-01",
         )
 
@@ -670,8 +670,8 @@ class ModelToolLoopTests(unittest.TestCase):
         client = LocalModelClient("http://model.invalid/v1", "")
         metrics = ExecutionMetrics.start("qwen3:8b", "none")
         with patch(
-            "agat_worker.urllib.request.urlopen",
-            return_value=_FakeResponse(json.dumps(response).encode()),
+            "agat_worker.request_model_response",
+            return_value=json.dumps(response).encode(),
         ):
             with use_execution_metrics(metrics):
                 message = client._chat(
@@ -1015,16 +1015,15 @@ class ModelToolLoopTests(unittest.TestCase):
             "http://model.invalid/v1", "", _FakeToolbox(), max_tool_rounds=3
         )
         with patch(
-            "agat_worker.urllib.request.urlopen",
-            return_value=_FakeResponse(json.dumps(response).encode()),
+            "agat_worker.request_model_response",
+            return_value=json.dumps(response).encode(),
         ) as request_model:
             client._chat(
                 "qwen3:8b",
                 [{"role": "user", "content": "search"}],
                 with_tools=True,
             )
-        request = request_model.call_args.args[0]
-        payload = json.loads(request.data.decode())
+        payload = request_model.call_args.args[1]
         self.assertEqual(payload["tool_choice"], "auto")
         self.assertFalse(payload["parallel_tool_calls"])
 

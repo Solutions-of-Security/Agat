@@ -25,11 +25,12 @@ const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
 
-for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel"] as const) {
-  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${completion === "cancel"
+for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt"] as const) {
+  const cancelling = completion !== "recover";
+  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${completion === "interrupt" ? "interrupts blocked primary HTTP after lease rejection and reuses the worker slot" : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
-    { skip: !address, timeout: 90_000 }, async () => {
+    { skip: !address, timeout: 120_000 }, async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-temporal-rag-"));
     const dbPath = path.join(directory, "state.sqlite"), artifacts = path.join(directory, "artifacts");
     const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: true, artifactsDir: artifacts,
@@ -49,6 +50,8 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
     let dropNextTick = true, dropNextCancel = true;
     let applicationCancelledBeforeLateResponse = false, latePrimaryRejected = false;
     let latePrimaryFailure: string | undefined;
+    let heldConnectionClosed = false;
+    let interruption: Record<string, unknown> | undefined;
     const modelServer = http.createServer(async (req, res) => {
       try {
         assert.equal(req.method, "POST");
@@ -72,7 +75,9 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         primaryOutputs.push(content);
         const finish = () => res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
           usage: { prompt_tokens: 100, completion_tokens: 20 } }));
-        if (primaryCalls === 2) held = finish; else finish();
+        if (primaryCalls === 2) {
+          held = finish; res.once("close", () => { heldConnectionClosed = true; });
+        } else finish();
       } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
     });
     const proxy = http.createServer(async (req, res) => {
@@ -196,7 +201,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       await within(handle.query("processState"), "Replacement worker did not restore workflow state");
       assert.equal(primaryCalls, 2, "Worker restart must not re-execute the completed primary stage");
       let cancelledLeaseId = "";
-      if (completion === "cancel") {
+      if (cancelling) {
         cancelledLeaseId = String(store.db.prepare("SELECT lease_id FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!.lease_id);
         await handle.cancel();
         await assert.rejects(within(handle.result(), "RAG workflow did not cancel"));
@@ -206,24 +211,39 @@ with make_server(DecisionEngine(Backend()),0) as server:
         applicationCancelledBeforeLateResponse = true;
         assert.equal(ticks.filter(row => row.path.endsWith("/cancel")).length, 2);
       }
-      held!(); held = undefined;
-      if (completion === "cancel") {
+      if (completion === "interrupt") {
+        const cancelledAt = performance.now();
+        await eventually(() => worker.log().includes(`Lease renewal failed for ${cancelledLeaseId}:`),
+          "Real 45-second lease renewal did not reject the cancelled lease", 60_000);
+        const rejectedAt = performance.now();
+        await eventually(() => heldConnectionClosed, "Primary HTTP remained open after lease renewal rejection", 5_000);
+        await eventually(() => worker.log().includes(`[${cancelledLeaseId.slice(0, 8)}] failed: RuntimeError: Model request cancelled`),
+          "Worker did not stop the blocked primary request", 5_000);
+        assert.ok(held, "Model fixture must not release the response to free the worker");
+        interruption = { renewalRejectedAfterMs: rejectedAt - cancelledAt,
+          clientDisconnectedAfterRejectionMs: performance.now() - rejectedAt, responseStillHeld: true };
+      } else {
+        held!(); held = undefined;
+      }
+      if (cancelling) {
         await eventually(() => worker.log().includes(`[${cancelledLeaseId.slice(0, 8)}] failed:`)
           && worker.log().includes("Could not report failure:"), "The real worker did not observe rejection of the late primary result");
         latePrimaryFailure = worker.log().split("\n").find(line => line.includes(`[${cancelledLeaseId.slice(0, 8)}] failed:`));
-        assert.ok(latePrimaryFailure?.endsWith("failed: ApiError: Активная аренда не найдена"), latePrimaryFailure ?? "Missing late primary failure");
-        latePrimaryRejected = true;
+        assert.ok(latePrimaryFailure?.endsWith(completion === "interrupt"
+          ? "failed: RuntimeError: Model request cancelled" : "failed: ApiError: Активная аренда не найдена"),
+          latePrimaryFailure ?? "Missing primary failure");
+        latePrimaryRejected = completion === "cancel";
       } else {
         const result = await within(handle.result(), "Recovered workflow did not finish") as { status: string };
         assert.equal(result.status, "completed");
       }
       const trace = store.getRunTrace(instance.runId)! as any;
-      assert.equal(trace.truncated, false); assert.equal(trace.run.status, completion === "cancel" ? "cancelled" : "completed");
-      assert.equal(primaryCalls, completion === "cancel" ? 2 : 3); assert.equal(embeddedItems, completion === "cancel" ? 4 : 5);
+      assert.equal(trace.truncated, false); assert.equal(trace.run.status, cancelling ? "cancelled" : "completed");
+      assert.equal(primaryCalls, cancelling ? 2 : 3); assert.equal(embeddedItems, cancelling ? 4 : 5);
       const stages = trace.run.stages.filter((stage: any) => fixture.roles.some(role => role.id === stage.processNodeId));
-      assert.equal(stages.length, completion === "cancel" ? 2 : 3);
+      assert.equal(stages.length, cancelling ? 2 : 3);
       for (const [index, stage] of stages.entries()) {
-        if (completion === "cancel" && index === 1) {
+        if (cancelling && index === 1) {
           assert.equal(stage.status, "cancelled"); assert.equal(stage.output, null);
           continue;
         }
@@ -232,10 +252,10 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const retrieval = verifyRetrieval(trace, stage, ingestion);
         assert.ok(retrieval.bothSourcesCited); assert.deepEqual(retrieval.unknownMarkers, []);
       }
-      assert.equal(trace.decisionObservations.length, completion === "cancel" ? 1 : 3);
+      assert.equal(trace.decisionObservations.length, cancelling ? 1 : 3);
       assert.ok(trace.decisionObservations.every((row: any) => row.observation.status === "ok"
         && row.observation.fallback === "primary"));
-      assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, completion === "cancel" ? 4 : 6);
+      assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, cancelling ? 4 : 6);
       if (postgres) {
         const runtimeRole = store.db.prepare("SELECT current_user AS role").get()!.role;
         assert.equal(runtimeRole, "agat_system");
@@ -257,7 +277,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
             ];
             await tenant.query("ROLLBACK");
           }
-          assert.deepEqual(visible, { own: [1, 1, completion === "cancel" ? 2 : 3, 2], foreign: [0, 0, 0, 0] });
+          assert.deepEqual(visible, { own: [1, 1, cancelling ? 2 : 3, 2], foreign: [0, 0, 0, 0] });
           databaseEvidence = { driver: stateStoreDriver, runtimeRole, tenantRole: role, visible, releaseRegistryDenied: true,
             visibilityColumns: ["runs", "process_instances", "knowledge_retrievals", "knowledge_chunks"], retrievalExecution: "isolated" };
         } finally { await tenant.end(); }
@@ -275,6 +295,24 @@ with make_server(DecisionEngine(Backend()),0) as server:
       await Worker.runReplayHistory({ workflowBundle }, serializedHistory, workflowId);
       assert.deepEqual({ primaryCalls, embeddedItems, ticks: ticks.length, trace: JSON.stringify(store.getRunTrace(instance.runId)) }, checkpoint,
         "History replay must perform no HTTP activities, model calls or database writes");
+      if (completion === "interrupt") {
+        const resumed = await fetch(`${coordinatorUrl}/api/v1/processes/${process.id}/start`, { method: "POST",
+          headers: { "x-agat-admin-token": "temporal-rag-admin", "content-type": "application/json" },
+          body: JSON.stringify({ input: fixture.input }), signal: AbortSignal.timeout(5_000) });
+        assert.equal(resumed.status, 201, await resumed.clone().text());
+        const next = await resumed.json() as { id: string; runId: string };
+        const result = await within(client.workflow.getHandle(`agat-process-${next.id}`).result(),
+          "The same single-slot worker did not complete another RAG process", 30_000) as { status: string };
+        assert.equal(result.status, "completed");
+        assert.equal(primaryCalls, 5); assert.equal(embeddedItems, 7);
+        assert.ok(held && heldConnectionClosed);
+        assert.equal(JSON.stringify(store.getRunTrace(instance.runId)), checkpoint.trace);
+        const nextTrace = store.getRunTrace(next.runId)! as any;
+        assert.equal(nextTrace.run.status, "completed");
+        assert.equal(nextTrace.decisionObservations.length, 3);
+        interruption = { ...interruption, sameWorkerReused: true, nextInstanceId: next.id,
+          totalPrimaryCalls: primaryCalls, totalEmbeddedItems: embeddedItems, nextTrace };
+      }
       assert.deepEqual(await worker.stop(), { code: 0, signal: null }, worker.log());
       assert.deepEqual(await second.stop(), { code: 0, signal: null }, second.log());
       assert.deepEqual(await coordinator.stop(), { code: 0, signal: null }, coordinator.log());
@@ -283,11 +321,15 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const target = path.resolve(evidenceRoot);
         assert.ok(target.startsWith(path.join(root, "docs") + path.sep));
         fs.mkdirSync(target, { recursive: true });
-        fs.writeFileSync(path.join(target, `${transport}${completion === "cancel" ? "-cancel" : ""}.json`), JSON.stringify({ transport, completion, workflowId, database: databaseEvidence,
-          primaryCalls, embeddedItems, modelInputs, primaryOutputs, ingestion, ticks, history: serializedHistory, trace, latePrimaryFailure,
+        fs.writeFileSync(path.join(target, `${transport}${cancelling ? `-${completion}` : ""}.json`), JSON.stringify({ transport, completion, workflowId, database: databaseEvidence,
+          primaryCalls: checkpoint.primaryCalls, embeddedItems: checkpoint.embeddedItems,
+          modelInputs: modelInputs.slice(0, checkpoint.primaryCalls), primaryOutputs: primaryOutputs.slice(0, checkpoint.primaryCalls),
+          ingestion, ticks: ticks.slice(0, checkpoint.ticks), history: serializedHistory, trace, latePrimaryFailure, interruption,
           assertions: { activityRetry: true, workerRestart: true, nativeReplay: true, primaryPreserved: true,
             provenance: true, workersDrained: true,
-            ...(completion === "cancel" ? { applicationCancelledBeforeLateResponse, latePrimaryRejected } : {}) },
+            ...(cancelling ? { applicationCancelledBeforeLateResponse } : {}),
+            ...(completion === "cancel" ? { latePrimaryRejected } : {}),
+            ...(completion === "interrupt" ? { primaryConnectionClosed: heldConnectionClosed, workerSlotReused: true } : {}) },
           qualification: "not_assessed" }, null, 2) + "\n", { flag: "wx" });
       }
     } finally {
