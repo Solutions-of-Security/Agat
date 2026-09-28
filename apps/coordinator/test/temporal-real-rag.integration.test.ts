@@ -23,11 +23,18 @@ const planPath = process.env.AGAT_TEMPORAL_REAL_RAG_PLAN;
 const selectedTransport = process.env.AGAT_TEMPORAL_REAL_RAG_TRANSPORT;
 const decisionUrl = process.env.AGAT_TEMPORAL_REAL_DECISION_URL;
 const shadowEnabled = Boolean(decisionUrl);
+const controlDirectory = process.env.AGAT_TEMPORAL_SHADOW_CONTROL;
+const shadowRecoveryEnabled = Boolean(controlDirectory);
+const schemaVersion = shadowRecoveryEnabled ? 3 : shadowEnabled ? 2 : 1;
 const enabled = Boolean(modelUrl && planPath && address);
-if (modelUrl || planPath || decisionUrl) {
+if (modelUrl || planPath || decisionUrl || controlDirectory) {
   assert.ok(enabled, "Real-model qualification requires a model URL, frozen plan and Temporal address");
   assert.equal(process.env.AGAT_TEST_TEMPORAL_STATE_STORE, "postgresql");
   assert.ok(selectedTransport === "isolated" || selectedTransport === "session", "Each transport requires its own database/server");
+  if (controlDirectory) {
+    assert.ok(shadowEnabled && path.basename(path.dirname(controlDirectory)).startsWith("agat-temporal-real-rag-"));
+    assert.equal(fs.statSync(controlDirectory).mode & 0o777, 0o700);
+  }
 }
 const fixturePath = "docs/qualification/local-decisions/performance/rag-workflow.fixture.json";
 const fixture = JSON.parse(fs.readFileSync(path.join(root, fixturePath), "utf8")) as Fixture;
@@ -47,11 +54,15 @@ for (const transport of ["isolated", "session"] as const) {
     assert.ok(planFile.startsWith(path.join(root, "docs") + path.sep));
     const directory = path.dirname(planFile), output = path.join(directory, `${transport}.json`);
     assert.ok(!fs.existsSync(output));
+    const shadowJournal = path.join(directory, `${transport}.shadow.jsonl`);
+    if (shadowRecoveryEnabled) fs.writeFileSync(shadowJournal, "", { flag: "wx", mode: 0o600 });
     const planBytes = fs.readFileSync(planFile), plan = JSON.parse(planBytes.toString());
-    assert.equal(plan.schema, `agat.temporal.real-rag-plan.v${shadowEnabled ? 2 : 1}`);
+    assert.equal(plan.schema, `agat.temporal.real-rag-plan.v${schemaVersion}`);
     assert.equal(plan.sourceSha256[fixturePath], digest(fs.readFileSync(path.join(root, fixturePath))));
     assert.deepEqual(plan.fixture, fixture);
     assert.equal(plan.shadow, shadowEnabled); assert.deepEqual(plan.transports, ["isolated", "session"]);
+    if (shadowRecoveryEnabled) assert.deepEqual(plan.shadowRecovery, { protocol: "private-files-v1", signal: "SIGKILL",
+      actions: ["isolated/kill", "isolated/restart", "session/kill", "session/restart"] });
     const primary = await primaryIdentity(target, primaryName, plan.models[primaryName]);
     const embedding = await embeddingIdentity(target, fixture.rag!.embeddingModel, plan.models[fixture.rag!.embeddingModel], json);
     const decision = shadowEnabled ? await decisionProfile(origin(decisionUrl!)) : undefined;
@@ -70,10 +81,13 @@ for (const transport of ["isolated", "session"] as const) {
     const children: ReturnType<typeof processChild>[] = [];
     const primaryCalls: Array<Record<string, any>> = [], embeddingCalls: Array<Record<string, any>> = [];
     const decisionCalls: Array<Record<string, any>> = [];
+    const controlCalls: Array<Record<string, any>> = [];
     const ticks: Array<{ path: string; response: unknown; dropped: boolean }> = [];
     const serverErrors: string[] = [], cancelled = new AbortController();
     const started = performance.now(), clock = () => Number((performance.now() - started).toFixed(3));
-    let coordinatorUrl = "", dropNextTick = true, release: (() => void) | undefined;
+    let coordinatorUrl = "", dropNextTick = true, release: (() => void) | undefined, releaseThird: (() => void) | undefined;
+    let runtimeDown = false;
+    let fallbackSnapshot: Record<string, any> | undefined;
     let connection: Connection | undefined, result: Record<string, unknown> | undefined;
     let failure: string | undefined;
     const modelProxy = http.createServer(async (req, res) => {
@@ -110,6 +124,7 @@ for (const transport of ["isolated", "session"] as const) {
         // Keep a real completed response at the HTTP boundary during Temporal
         // restart. The Python worker and model result stay unchanged.
         if (primaryCalls.length === 2) await new Promise<void>(resolve => { release = resolve; });
+        if (primaryCalls.length === 3 && shadowRecoveryEnabled) await new Promise<void>(resolve => { releaseThird = resolve; });
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
           choices: [{ message: { role: "assistant", content: answer.message.content }, finish_reason: "stop" }],
           usage: { prompt_tokens: answer.prompt_eval_count, completion_tokens: answer.eval_count } }));
@@ -153,10 +168,35 @@ for (const transport of ["isolated", "session"] as const) {
         assert.equal(upstream.httpStatus, 200);
         res.writeHead(upstream.httpStatus, { "content-type": "application/json" }).end(upstream.text);
       } catch (error) {
+        if (shadowRecoveryEnabled && runtimeDown && req.method === "POST" && decisionCalls.length === 2
+          && error instanceof TypeError && (error.cause as any)?.code === "ECONNREFUSED") {
+          Object.assign(row, { status: "unavailable", transportError: "ECONNREFUSED", finishedMs: clock() });
+          res.destroy(); return;
+        }
         serverErrors.push(error instanceof Error ? error.name : "shadow_proxy_failure");
         if (!res.destroyed) res.writeHead(502).end();
+      } finally {
+        // Preserve the typed response even if the supervising launcher sees
+        // exit 75 and stops this test before its final trace is written.
+        if (shadowRecoveryEnabled && decisionCalls.includes(row)) {
+          fs.appendFileSync(shadowJournal, JSON.stringify(row) + "\n");
+        }
       }
     });
+    const control = async (action: "kill" | "restart", instanceId: string) => {
+      assert.ok(controlDirectory && shadowRecoveryEnabled);
+      const name = `${transport}-${action}`, responsePath = path.join(controlDirectory, `${name}.response.json`);
+      assert.ok(!fs.existsSync(responsePath));
+      const row: Record<string, any> = { action, startedMs: clock() }; controlCalls.push(row);
+      fs.writeFileSync(path.join(controlDirectory, `${name}.request.json`), JSON.stringify({
+        schema: "agat.shadow.control.v1", transport, action, instanceId }), { flag: "wx", mode: 0o600 });
+      await eventually(() => fs.existsSync(responsePath), "Owned shadow control did not acknowledge", 50_000);
+      const response = JSON.parse(fs.readFileSync(responsePath, "utf8"));
+      Object.assign(row, { response, finishedMs: clock() });
+      assert.equal(response.status, "pass", JSON.stringify(response.failure));
+      assert.equal(response.instanceId, instanceId); assert.equal(response.transport, transport); assert.equal(response.action, action);
+      return response;
+    };
     try {
       const collection = store.createKnowledgeCollection({ name: "real_temporal_rag sources", embeddingModel: embedding.name,
         chunkSize: 4000, chunkOverlap: 0, topK: 2 });
@@ -248,8 +288,23 @@ for (const transport of ["isolated", "session"] as const) {
       recovery.restoredAtMs = clock(); recovery.primaryCallsBeforeRelease = primaryCalls.length;
       assert.equal(primaryCalls.length, 2); assert.equal((await handle.describe()).runId, workflowRunId);
       if (shadowEnabled) assert.equal(decisionCalls.length, 1);
+      if (shadowRecoveryEnabled) { await control("kill", instance.id); runtimeDown = true; }
       recovery.releasedAtMs = clock();
       release!(); release = undefined;
+      if (shadowRecoveryEnabled) {
+        await eventually(() => { assert.deepEqual(serverErrors, []); return Boolean(releaseThird); }, "Third model response did not reach recovery hold", 60_000);
+        assert.equal(decisionCalls.length, 2); assert.equal(decisionCalls[1]!.transportError, "ECONNREFUSED");
+        const beforeRestart = store.getRunTrace(instance.runId)! as any;
+        const stage = beforeRestart.run.stages.find((row: any) => row.processNodeId === fixture.roles[1]!.id);
+        const observation = beforeRestart.decisionObservations.find((row: any) => row.stageId === stage.id);
+        assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryCalls[1]!.output);
+        assert.deepEqual(observation.observation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+        fallbackSnapshot = { stageId: stage.id, stageSha256: digest(JSON.stringify(stage)), observationSha256: digest(JSON.stringify(observation)),
+          recordedMs: clock(), restartFinishedMs: 0, thirdResponseReleasedMs: 0 };
+        await control("restart", instance.id); runtimeDown = false;
+        fallbackSnapshot.restartFinishedMs = clock(); assert.equal(decisionCalls.length, 2);
+        fallbackSnapshot.thirdResponseReleasedMs = clock(); releaseThird!(); releaseThird = undefined;
+      }
       assert.equal((await within(handle.result(), "Real RAG did not finish after recovery", 60_000) as any).status, "completed");
       assert.deepEqual(await python.stop(), { code: 0, signal: null }, python.log());
       assert.deepEqual(await second.stop(), { code: 0, signal: null }, second.log());
@@ -269,6 +324,13 @@ for (const transport of ["isolated", "session"] as const) {
           assert.equal(rows.length, 1); assert.equal(calls.length, 1);
           const observation = rows[0].observation;
           assert.equal(observation.mode, "shadow"); assert.equal(observation.fallback, "primary");
+          if (shadowRecoveryEnabled && stage.processNodeId === fixture.roles[1]!.id) {
+            assert.deepEqual(observation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+            assert.equal(calls[0]!.transportError, "ECONNREFUSED");
+            assert.equal(digest(JSON.stringify(stage)), fallbackSnapshot!.stageSha256);
+            assert.equal(digest(JSON.stringify(rows[0])), fallbackSnapshot!.observationSha256);
+            continue;
+          }
           assert.ok(["ok", "abstain"].includes(observation.status));
           assert.deepEqual(observation.result, calls[0]!.result);
           for (const field of ["model", "policy", "calibration", "runtimeVersion", "schemaVersion", "inputFingerprintVersions"])
@@ -309,10 +371,10 @@ for (const transport of ["isolated", "session"] as const) {
       assert.ok(identities.has(firstIdentity) && identities.has(secondIdentity));
       const serializedHistory = JSON.parse(historyToJSON(history), (key, value) => key === "identity" && typeof value === "string"
         && value !== firstIdentity && value !== secondIdentity ? "fixture-client" : value);
-      const checkpoint = { primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length,
+      const checkpoint = { primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length, controls: controlCalls.length,
         ticks: ticks.length, trace: JSON.stringify(trace) };
       await Worker.runReplayHistory({ workflowBundle }, serializedHistory, workflowId);
-      assert.deepEqual({ primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length, ticks: ticks.length,
+      assert.deepEqual({ primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length, controls: controlCalls.length, ticks: ticks.length,
         trace: JSON.stringify(store.getRunTrace(instance.runId)) }, checkpoint);
       assert.deepEqual(serverErrors, []);
       assert.deepEqual(await primaryIdentity(target, primaryName, plan.models[primaryName]), primary);
@@ -323,24 +385,26 @@ for (const transport of ["isolated", "session"] as const) {
         ticks, trace, retrieval, recovery, history: serializedHistory,
         ...(decision ? { decision, decisionCalls, shadowRecovery: { firstAcceptedObservationSha256: digest(observationSnapshot!),
           decisionCallsBeforeRelease: 1, primaryFallbackPreserved: true } } : {}),
+        ...(shadowRecoveryEnabled ? { runtimeRecovery: { controlCalls, fallbackSnapshot } } : {}),
         workflowBundleSha256: digest(fs.readFileSync(workflowBundle.codePath)),
         children: children.map(child => ({ pid: child.child.pid, exitCode: child.child.exitCode, signal: child.child.signalCode })),
         database: { driver: "postgresql", runtimeRole: "agat_system",
           tenantRole: "agat_tenant", visibility, releaseRegistryDenied: true, retrievalExecution: "isolated" },
         checks: { activityRetried: true, temporalWorkerKilledAndReplaced: true, sameWorkflowRun: true,
           firstAcceptedStageUnchanged: true, realModelOutputsPreserved: true, durableTimerFired: true, nativeReplayWithoutSideEffects: true,
-          ...(shadowEnabled ? { shadowObservationsPreserved: true } : { shadowDisabled: true }), childrenDrained: true }, qualification: "not_assessed" };
+          ...(shadowEnabled ? { shadowObservationsPreserved: true } : { shadowDisabled: true }),
+          ...(shadowRecoveryEnabled ? { shadowRuntimeFailureAndRecovery: true } : {}), childrenDrained: true }, qualification: "not_assessed" };
     } catch (error) {
       failure = error instanceof Error ? error.name : "qualification_failed";
       throw error;
     } finally {
-      release?.(); cancelled.abort();
+      release?.(); releaseThird?.(); cancelled.abort();
       for (const child of children.reverse()) await child.stop();
       await close(modelProxy); await close(tickProxy); await close(shadowProxy); await connection?.close(); store.close();
       fs.rmSync(temporary, { recursive: true, force: true });
-      fs.writeFileSync(output, JSON.stringify({ schema: `agat.temporal.real-rag.v${shadowEnabled ? 2 : 1}`, status: result ? "pass" : "fail", failure: failure ?? null,
+      fs.writeFileSync(output, JSON.stringify({ schema: `agat.temporal.real-rag.v${schemaVersion}`, status: result ? "pass" : "fail", failure: failure ?? null,
         transport, planSha256: digest(planBytes), elapsedMs: clock(), ...result,
-        ...(result ? {} : { primaryCalls, embeddingCalls, decisionCalls, ticks, serverErrors }) }, null, 2) + "\n", { flag: "wx" });
+        ...(result ? {} : { primaryCalls, embeddingCalls, decisionCalls, controlCalls, ticks, serverErrors }) }, null, 2) + "\n", { flag: "wx" });
     }
   });
 }

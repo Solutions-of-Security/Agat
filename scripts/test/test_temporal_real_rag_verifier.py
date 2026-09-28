@@ -34,6 +34,11 @@ class TemporalRealRagEvidenceTests(unittest.TestCase):
                 name = f'{transport}.json'
                 files[name]['planSha256'] = plan_sha
                 files['launcher.json']['phaseSha256'][name] = save(name)
+                if 'shadowJournalSha256' in files['launcher.json']:
+                    journal = f'{transport}.shadow.jsonl'
+                    data = ''.join(json.dumps(row, ensure_ascii=False) + '\n' for row in files[name]['decisionCalls']).encode()
+                    (directory / journal).write_bytes(data)
+                    files['launcher.json']['shadowJournalSha256'][journal] = hashlib.sha256(data).hexdigest()
             save('launcher.json')
             (directory / 'tests.log').write_bytes((self.evidence / 'tests.log').read_bytes())
             yield directory
@@ -135,6 +140,65 @@ class TemporalRealShadowEvidenceTests(TemporalRealRagEvidenceTests):
         self.rejects(lambda f: f['launcher.json']['shadowRuntime']['after'].update(status='unavailable'))
         self.rejects(lambda f: f['launcher.json']['shadowRuntime']['warmup']['result'].update(status='error'))
         self.rejects(lambda f: f['launcher.json']['ownedPids'].remove(f['launcher.json']['shadowRuntime']['pid']))
+
+
+class TemporalShadowRuntimeRecoveryEvidenceTests(TemporalRealShadowEvidenceTests):
+    evidence = ROOT / 'docs/qualification/local-decisions/performance/evidence/2026-09-28/temporal-shadow-runtime-recovery/run-journal'
+
+    def change_event(self, files, index, mutation):
+        event = files['launcher.json']['shadowRecovery']['events'][index]
+        mutation(event)
+        files[event['transport'] + '.json']['runtimeRecovery']['controlCalls'][index % 2]['response'] = event
+
+    def test_frozen_control_protocol_sources_and_warmup_count(self):
+        self.rejects(lambda f: f['plan.json']['sourceSha256'].pop('scripts/lib/temporal_shadow_control.py'))
+        self.rejects(lambda f: f['plan.json']['shadowRecovery']['actions'].reverse())
+        self.rejects(lambda f: f['plan.json']['decision'].update(warmupCalls=1))
+
+    def test_physical_owner_failure_and_child_retirement(self):
+        self.rejects(lambda f: self.change_event(f, 0, lambda e: e.update(exitCode=0)))
+        self.rejects(lambda f: self.change_event(f, 0, lambda e: e.update(remainingAfterKill=[e['oldPid']])))
+        self.rejects(lambda f: self.change_event(f, 0, lambda e: e.update(ownedBeforeKill=[e['oldPid']])))
+        self.rejects(lambda f: f['launcher.json']['shadowRecovery']['runtimes'][0].update(exitCode=130))
+
+    def test_restart_owns_new_ready_runtime_and_same_profile(self):
+        self.rejects(lambda f: self.change_event(f, 1, lambda e: e.update(newPid=e['oldPid'])))
+        self.rejects(lambda f: self.change_event(f, 1, lambda e: e.update(profileSha256='0' * 64)))
+        self.rejects(lambda f: f['launcher.json']['shadowRecovery']['runtimes'][1]['warmup']['result'].update(inputSha256='0' * 64))
+        self.rejects(lambda f: f['launcher.json']['shadowRecovery']['runtimes'][1].update(readyMs=1))
+        self.rejects(lambda f: f['launcher.json']['shadowRecovery'].update(closed=False))
+
+    def test_control_ack_is_bound_to_phase_instance_and_launcher(self):
+        self.rejects(lambda f: self.change_event(f, 0, lambda e: e.update(instanceId='changed')))
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['controlCalls'][0]['response'].update(oldPid=1))
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['controlCalls'].reverse())
+
+    def test_unavailability_has_no_inference_result_and_primary_is_preserved(self):
+        self.rejects(lambda f: f['isolated.json']['decisionCalls'][1].update(result=f['isolated.json']['decisionCalls'][0]['result']))
+        self.rejects(lambda f: f['isolated.json']['decisionCalls'][1].update(transportError='ECONNRESET'))
+        def change_fallback(files):
+            phase = files['isolated.json']
+            observation = next(row for row in phase['trace']['decisionObservations']
+                               if row['stageId'] == phase['decisionCalls'][1]['stageId'])
+            observation['observation']['reason'] = 'inference_timeout'
+            phase['runtimeRecovery']['fallbackSnapshot']['observationSha256'] = verifier.sha(verifier.compact(observation))
+        self.rejects(change_fallback)
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['fallbackSnapshot'].update(stageSha256='0' * 64))
+
+    def test_recovery_occurs_only_after_fallback_and_while_third_response_is_held(self):
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['controlCalls'][0].update(startedMs=1))
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['fallbackSnapshot'].update(recordedMs=1))
+        self.rejects(lambda f: f['isolated.json']['runtimeRecovery']['fallbackSnapshot'].update(
+            thirdResponseReleasedMs=f['isolated.json']['primaryCalls'][2]['finishedMs'] + 1))
+
+    def test_journal_corruption_rejected_even_after_digest_is_updated(self):
+        with self.changed(lambda f: None) as directory:
+            journal = directory / 'isolated.shadow.jsonl'
+            journal.write_text(journal.read_text().splitlines()[0] + '\n')
+            file = directory / 'launcher.json'; launcher = json.loads(file.read_text())
+            launcher['shadowJournalSha256'][journal.name] = hashlib.sha256(journal.read_bytes()).hexdigest()
+            file.write_text(json.dumps(launcher))
+            with self.assertRaises(AssertionError): verifier.verify(directory)
 
 
 if __name__ == '__main__':
