@@ -41,6 +41,17 @@ const processActivityOptions = {
   },
 } satisfies ActivityOptions;
 const { tickProcess, startScheduledProcess } = proxyActivities<typeof activities>(processActivityOptions);
+// A coordinator outage must not finish the workflow while its application
+// instance is still active. Preserve the original policy for replay below.
+const { tickProcess: tickDurableProcess } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "15 seconds",
+  retry: {
+    initialInterval: "1 second",
+    backoffCoefficient: 2,
+    maximumInterval: "15 seconds",
+    nonRetryableErrorTypes: ["ConfigurationError", "CoordinatorRequestError"],
+  },
+});
 const { startScheduledProcess: startCancellableScheduledProcess } = proxyActivities<typeof activities>({
   ...processActivityOptions,
   activityId: SCHEDULED_START_ACTIVITY_ID,
@@ -90,6 +101,7 @@ function nextCheckDelay(state: DurableProcessState): number {
 }
 
 export async function agatProcessWorkflow(input: ProcessWorkflowInput): Promise<DurableProcessState> {
+  const durableTicks = patched("agat-process-durable-tick-retry-v1");
   let revision = 0;
   let state: DurableProcessState | null = null;
 
@@ -143,7 +155,7 @@ export async function agatProcessWorkflow(input: ProcessWorkflowInput): Promise<
   async function driveProcess(): Promise<DurableProcessState> {
     while (true) {
       const observedRevision = revision;
-      state = await tickProcess(input);
+      state = await (durableTicks ? tickDurableProcess : tickProcess)(input);
       if (terminalStatuses.has(state.status)) {
         log.info("Durable process workflow completed", {
           instanceId: input.instanceId,

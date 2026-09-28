@@ -142,6 +142,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Scheduled-start при длительном outage](./qualification/local-decisions/performance/temporal-scheduled-retry.md) устраняет воспроизведённый отказ после 8 попыток с оставленным активным instance. Новая Activity повторяет transient ошибки без общего лимита, сохраняя bounds отдельного attempt, idempotency key и cancellation intent. На 13-й попытке через 135 секунд восстановлен тот же instance и завершён child; 10 живых сценариев и 20 replay histories прошли. Следующий gate — длительный outage обычного process tick и согласование child/application state; qualification остаётся открытой.
 
+[Process tick при длительном outage](./qualification/local-decisions/performance/temporal-process-retry.md) устраняет такой же подтверждённый отказ child после 8 попыток при активном application state. Новый tick пережил 125-секундный outage и SIGKILL worker, восстановился на 13-й попытке без смены Run ID и завершил instance. Отмена во время retry согласована с application cleanup; 12 live сценариев и 28 replay histories прошли. Следующий gate — совместный RAG/Temporal/PostgreSQL runtime после штатной migration/admission; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
