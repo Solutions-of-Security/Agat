@@ -1,4 +1,4 @@
-"""Bounded embedding and primary model HTTP in disposable owned processes."""
+"""Bounded worker HTTP in disposable owned processes."""
 from __future__ import annotations
 
 import json
@@ -49,7 +49,7 @@ def watch_parent(arguments: list[str]) -> None:
 
 class HttpResponseError(RuntimeError):
     def __init__(self, status: int, detail: str, endpoint_name: str) -> None:
-        super().__init__(f"{endpoint_name} endpoint returned HTTP {status}: {detail}")
+        super().__init__(f"{endpoint_name} endpoint returned HTTP {status}: {detail[:1000]}")
         self.status, self.detail = status, detail
 
 
@@ -73,6 +73,14 @@ def request_model_response(url: str, payload: dict, headers: dict[str, str], *, 
     return _request_response(url, payload, headers, timeout=timeout, cancelled=cancelled,
                              max_response_bytes=max_response_bytes, max_error_bytes=max_error_bytes,
                              endpoint_name="Model")
+
+
+def request_knowledge_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
+                               cancelled: threading.Event | None, max_response_bytes: int,
+                               max_error_bytes: int) -> bytes:
+    return _request_response(url, payload, headers, timeout=timeout, cancelled=cancelled,
+                             max_response_bytes=max_response_bytes, max_error_bytes=max_error_bytes,
+                             endpoint_name="Knowledge")
 
 
 def _request_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
@@ -142,7 +150,7 @@ def _fetch(request: dict) -> bytes:
     except urllib.error.HTTPError as error:
         with error:
             detail = error.read(request["maxErrorBytes"]).decode("utf-8", errors="replace")
-        raise HttpResponseError(error.code, detail[:1000], endpoint_name) from error
+        raise HttpResponseError(error.code, detail, endpoint_name) from error
     except urllib.error.URLError as error:
         raise RuntimeError(f"{endpoint_name} endpoint unavailable: {error.reason}") from error
 
@@ -153,9 +161,10 @@ def main() -> None:
         output = b"S" + _fetch(request)
     except HttpResponseError as error:
         # Keep the embedding/session string protocol stable. Primary tools need
-        # the HTTP status without parsing a human-readable error message.
+        # the HTTP status without parsing a human-readable error message. Knowledge
+        # requests also retain the bounded JSON error body for the coordinator API.
         output = (b"H" + json.dumps({"status": error.status, "detail": error.detail}).encode("utf-8")
-                  if request.get("endpointName") == "Model"
+                  if request.get("endpointName") in {"Model", "Knowledge"}
                   else b"E" + str(error)[:1200].encode("utf-8", errors="replace"))
     except Exception as error:
         output = b"E" + str(error)[:1200].encode("utf-8", errors="replace")

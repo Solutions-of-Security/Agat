@@ -40,6 +40,7 @@ class WorkerProbeTrackingTests(unittest.TestCase):
                 self.rfile.read(int(self.headers["Content-Length"]))
                 received.append(self.path)
                 data = ({"data": [{"index": 0, "embedding": [1, 0]}]} if self.path.endswith("/embeddings")
+                        else {"hits": []} if self.path.endswith("/knowledge/search")
                         else {"choices": [{"message": {"content": "synthetic primary"}}]})
                 body = json.dumps(data).encode()
                 self.send_response(200)
@@ -57,6 +58,8 @@ class WorkerProbeTrackingTests(unittest.TestCase):
             self.assertEqual(client.embed("local", ["synthetic"]), [[1, 0]])
             lease = {"agent": {"systemPrompt": "Answer.", "model": "local"}, "run": {"name": "test", "input": "synthetic"}}
             self.assertEqual(client.complete(lease, "local"), "synthetic primary")
+            coordinator = agat_worker.CoordinatorClient(url, "test-node-token")
+            self.assertEqual(coordinator.knowledge_search("lease", []), {"hits": []})
             return 0
 
         try:
@@ -91,7 +94,7 @@ class WorkerProbeTrackingTests(unittest.TestCase):
                     self.assertEqual(report["helpers"][0]["pid"], child["pid"])
                 self.assertEqual(child["returncode"], 0)
                 self.assertTrue(child["stdinClosed"] and child["stdoutClosed"])
-                self.assertEqual(received, ["/v1/embeddings", "/v1/chat/completions"])
+                self.assertEqual(received, ["/v1/embeddings", "/v1/chat/completions", "/api/v1/leases/lease/knowledge/search"])
         finally:
             server.shutdown()
             server.server_close()

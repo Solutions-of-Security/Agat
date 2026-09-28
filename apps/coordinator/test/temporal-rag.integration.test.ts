@@ -25,14 +25,16 @@ const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
 
-for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt"] as const) {
+for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt"] as const) {
   const cancelling = completion !== "recover";
   const queryInterrupted = completion === "query-interrupt";
-  const interrupted = completion === "interrupt" || queryInterrupted;
-  const expectedPrimaryCalls = cancelling ? (queryInterrupted ? 1 : 2) : 3;
-  const expectedRetrievals = expectedPrimaryCalls;
-  const requestName = queryInterrupted ? "Query embedding" : "Primary";
-  const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : "Model"} request cancelled`;
+  const searchInterrupted = completion === "search-interrupt";
+  const beforePrimary = queryInterrupted || searchInterrupted;
+  const interrupted = completion === "interrupt" || beforePrimary;
+  const expectedPrimaryCalls = cancelling ? (beforePrimary ? 1 : 2) : 3;
+  const expectedRetrievals = searchInterrupted ? 2 : expectedPrimaryCalls;
+  const requestName = queryInterrupted ? "Query embedding" : searchInterrupted ? "Coordinator search" : "Primary";
+  const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : searchInterrupted ? "Knowledge" : "Model"} request cancelled`;
   test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
@@ -84,9 +86,33 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         primaryOutputs.push(content);
         const finish = () => res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
           usage: { prompt_tokens: 100, completion_tokens: 20 } }));
-        if (primaryCalls === 2 && !queryInterrupted) {
+        if (primaryCalls === 2 && !beforePrimary) {
           held = finish; res.once("close", () => { heldConnectionClosed = true; });
         } else finish();
+      } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
+    });
+    let searchCalls = 0;
+    const workerProxy = http.createServer(async (req, res) => {
+      try {
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(req.headers)) {
+          if (value !== undefined && !["host", "connection", "content-length", "transfer-encoding"].includes(name))
+            headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+        }
+        let body = ""; for await (const chunk of req) body += chunk;
+        const response = await fetch(`${coordinatorUrl}${req.url}`, { method: req.method!, headers,
+          ...(body ? { body } : {}), signal: AbortSignal.timeout(5_000) });
+        const output = Buffer.from(await response.arrayBuffer());
+        const finish = () => res.writeHead(response.status, { "content-type": response.headers.get("content-type") ?? "application/json" }).end(output);
+        if (req.url!.endsWith("/knowledge/search")) {
+          searchCalls++;
+          assert.equal(response.status, 200);
+          if (searchCalls === 2) {
+            held = finish; res.once("close", () => { heldConnectionClosed = true; });
+            return;
+          }
+        }
+        finish();
       } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
     });
     const proxy = http.createServer(async (req, res) => {
@@ -159,6 +185,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       children.push(coordinator);
       coordinatorUrl = `http://127.0.0.1:${(await coordinator.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
       const proxyUrl = await listen(proxy), modelUrl = await listen(modelServer);
+      const workerCoordinatorUrl = searchInterrupted ? await listen(workerProxy) : coordinatorUrl;
       const startTemporal = async (identity: string) => {
         const child = processChild(globalThis.process.execPath, ["apps/temporal-worker/dist/worker.js"], {
           ...env, AGAT_COORDINATOR_INTERNAL_URL: proxyUrl, AGAT_TEMPORAL_METRICS_ADDRESS: "127.0.0.1:0",
@@ -169,7 +196,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const first = await startTemporal(firstIdentity);
       connection = await Connection.connect({ address, connectTimeout: 5_000 });
       const client = new Client({ connection, namespace: "default" });
-      const worker = processChild("python3", ["workers/agat_worker.py", "--coordinator", coordinatorUrl,
+      const worker = processChild("python3", ["workers/agat_worker.py", "--coordinator", workerCoordinatorUrl,
         "--enrollment-token", "temporal-rag-enroll", "--credentials", path.join(directory, "worker.json"),
         "--name", `${taskQueue}-worker`, "--models", model, "--embedding-models", fixture.rag!.embeddingModel,
         "--region", region, "--residency-domain", residencyDomain,
@@ -202,13 +229,13 @@ with make_server(DecisionEngine(Backend()),0) as server:
         return Boolean(history.events?.some(event => Number(event.activityTaskStartedEventAttributes?.attempt) === 2));
       }, "The lost response must cause a real Temporal Activity retry");
       assert.equal(ticks.filter(row => row.dropped).length, 1);
-      assert.equal(primaryCalls, queryInterrupted ? 1 : 2);
+      assert.equal(primaryCalls, beforePrimary ? 1 : 2);
       assert.deepEqual(await first.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
       const second = await startTemporal(secondIdentity);
       // Query forces the replacement worker to replay the existing history before
       // releasing the still-running primary request on the independent Python worker.
       await within(handle.query("processState"), "Replacement worker did not restore workflow state");
-      assert.equal(primaryCalls, queryInterrupted ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
+      assert.equal(primaryCalls, beforePrimary ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
       let cancelledLeaseId = "";
       if (cancelling) {
         cancelledLeaseId = String(store.db.prepare("SELECT lease_id FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!.lease_id);
@@ -216,7 +243,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         await assert.rejects(within(handle.result(), "RAG workflow did not cancel"));
         assert.equal((await handle.describe()).status.name, "CANCELLED");
         assert.equal(store.getProcessInstance(instance.id)!.status, "cancelled");
-        assert.ok(held, "Primary response must remain pending until after application cancellation");
+        assert.ok(held, "The held HTTP response must remain pending until after application cancellation");
         applicationCancelledBeforeLateResponse = true;
         assert.equal(ticks.filter(row => row.path.endsWith("/cancel")).length, 2);
       }
@@ -338,14 +365,15 @@ with make_server(DecisionEngine(Backend()),0) as server:
             provenance: true, workersDrained: true,
             ...(cancelling ? { applicationCancelledBeforeLateResponse } : {}),
             ...(completion === "cancel" ? { latePrimaryRejected } : {}),
-            ...(interrupted ? { modelConnectionClosed: heldConnectionClosed, workerSlotReused: true,
-              ...(queryInterrupted ? { cancelledStageNeverCalledPrimary: true } : { primaryConnectionClosed: heldConnectionClosed }) } : {}) },
+            ...(interrupted ? { workerSlotReused: true,
+              ...(searchInterrupted ? { coordinatorConnectionClosed: heldConnectionClosed } : { modelConnectionClosed: heldConnectionClosed }),
+              ...(beforePrimary ? { cancelledStageNeverCalledPrimary: true } : { primaryConnectionClosed: heldConnectionClosed }) } : {}) },
           qualification: "not_assessed" }, null, 2) + "\n", { flag: "wx" });
       }
     } finally {
       held?.();
       for (const child of children.reverse()) await child.stop();
-      await close(proxy); await close(modelServer); await connection?.close(); store.close();
+      await close(proxy); await close(workerProxy); await close(modelServer); await connection?.close(); store.close();
       fs.rmSync(directory, { recursive: true, force: true });
     }
   });

@@ -1,0 +1,134 @@
+{
+  "schema": "agat.knowledge-http-cancellation-checks.v1",
+  "baseCommit": "c273b42149cb2a93f2d7603a8cae72e28a4ce5df",
+  "databaseSchema": 30,
+  "workflowCommandsChanged": false,
+  "temporalSdk": "1.24.0",
+  "langgraph": "1.2.11",
+  "sourceSha256": {
+    "workers/agat_worker.py": "2435dc80140611fbd045575401b75030d5297479bc2c9bcb5b42592b265a310e",
+    "workers/embedding_http.py": "df29bd156de19369e990b221585c49592d6dc55e2baf7f8f44a31eaa49116c5c",
+    "workers/embedding_transport.py": "dd795245b0f2da130a6b4f730be5368fab2492ca5d21154d29fa7ea1928d7e88",
+    "workers/test_knowledge_http_cancellation.py": "6494683d4c4f1da2530d3e296b72c5c547940548c80bc39d26a81985bfba418c",
+    "workers/test_rag_query_cancellation.py": "ef70f2742c55a7ba9a7abbdfa8d079ad84f424dd68443f89e304ae090d7e732f",
+    "workers/test_web_tools.py": "32dc52b7732e04c44b4671809fc2dc673095ec2dee7494d9e86edba23ed98985",
+    "scripts/test/test_embedding_worker_probe_tracking.py": "9551425be31b16a23b22cd2cf2b19ba25f4c0a4225e2ae84264324e085dab569",
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "1ef9e2835d57074c42c312666c95d2238c8bc4567412b4f057be522ac5e8de7a",
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434"
+  },
+  "evidenceSha256": {
+    "first-fixed/isolated-search-interrupt.json": "2ee88b96cee7170e8051dcaefa9498b14af490a6ae4eb1f947bb2d1cf4092d46",
+    "postgres/isolated-cancel.json": "d356104f1a904e3096716eeaa7d5353695ddf50d77343a18983344a49c77a662",
+    "postgres/isolated-interrupt.json": "8f3ee5b1ba74a989047d320958bdadb0dc5577157d58c5b9567bd8f78e6d125e",
+    "postgres/isolated-query-interrupt.json": "3aaa48df35f299ef8b83658fcb1d4b5f0bf0e8fbe4b13f02b3c26942ad1ac6cb",
+    "postgres/isolated-search-interrupt.json": "0802989866c9214fd04b7957f8abf9d48348f21043df7f9cb5b1390144ec27e2",
+    "postgres/isolated.json": "2bed59c10b823ad34077538d5e41eae3bd539bea64b0b096725b4049672fa7fd",
+    "postgres/session-cancel.json": "888972f8efa7c430bbafb39e4f5a907fcb0b5efd68e7aa0248c7a83c06c6cf90",
+    "postgres/session-interrupt.json": "e01737269d55a38bf84d0616007ad0960f259d2297bc07807f2384521eda8484",
+    "postgres/session-query-interrupt.json": "1d7b94b42c7bdf87bb037a94b925cdf282165c876dbd23509b51311a8333d15d",
+    "postgres/session-search-interrupt.json": "0fe4efa853523752cc2a158faa3ac209e08bf59d72db461deb65a41454ec39fc",
+    "postgres/session.json": "b31f36e901ea5bdf4853d1c65a267e708f556aeef3024ffa95d4932e7efd9f85",
+    "sqlite/isolated-cancel.json": "04a35d019be7afc101b3b241d9c75d28b22baafbdc51889649aa0070348d1600",
+    "sqlite/isolated-interrupt.json": "04b54c058eab5ba2e492e23186b1dc9fe7c34e441ed7e84223915927f0f7e5d5",
+    "sqlite/isolated-query-interrupt.json": "4f14ede9ec27063e71a57c25d08f3290025d307c95fed012f28f6ebd34295283",
+    "sqlite/isolated-search-interrupt.json": "7078ce0f974e7e9a85e10721ab9adeeb2011a8125e9775424e96150f17713b3f",
+    "sqlite/isolated.json": "fbca81179340fdc4c072a0d1aa394b30b067f8bcedc67b08b743aa769a4df020",
+    "sqlite/session-cancel.json": "eb21f5707c4549db53698603c26fbd5342bc3834bab9a74291a7ae7612c7e24f",
+    "sqlite/session-interrupt.json": "22089751b9ba0c7552d998ae3a3c14d4d7c00d4fd0c5934e2e4221acce3d1439",
+    "sqlite/session-query-interrupt.json": "7c22fc05f8b856bfb6df3fbc4a6cc0cf40a43f08bd4b5821857ad54743bbb177",
+    "sqlite/session-search-interrupt.json": "185f99651969a83da52b01a99cbce07d45ad6a57205597b97919d24faa973caf",
+    "sqlite/session.json": "ed51e872cce3585686f4317f16ed8e325ab48d921407428990000667de1a3ee0"
+  },
+  "baseline": {
+    "result": "expected_failure",
+    "diagnostic": "Coordinator search HTTP remained open after lease renewal rejection",
+    "log": "baseline.log"
+  },
+  "checks": {
+    "targeted": {
+      "pass": 54,
+      "fail": 0,
+      "log": "targeted.log"
+    },
+    "worker": {
+      "pass": 143,
+      "fail": 0,
+      "skip": 0,
+      "log": "worker.log"
+    },
+    "probeTracking": {
+      "pass": 2,
+      "fail": 0,
+      "log": "probe-tracking.log"
+    },
+    "postgresRag": {
+      "scenarios": 10,
+      "pass": 10,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "sqliteTemporal": {
+      "pass": 20,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 20,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 34,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedFixtureStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "test-typecheck.log"
+      ]
+    },
+    "docs": {
+      "status": "pass",
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinkTargets": 1926,
+      "markdownFiles": 215,
+      "log": "docs.log"
+    }
+  },
+  "measurements": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33061.32324999999,
+      "clientDisconnectedAfterRejectionMs": 51.15687499998603
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33256.20733299997,
+      "clientDisconnectedAfterRejectionMs": 0.09558399999514222
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33109.33799999999,
+      "clientDisconnectedAfterRejectionMs": 27.563208000006853
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33170.82320799999,
+      "clientDisconnectedAfterRejectionMs": 26.385667000024114
+    }
+  ],
+  "measurementCaveat": "Polling observations only; near-zero delay means disconnect was already observed when the renewal log was observed. No latency SLO claim.",
+  "scope": "Synthetic model, real ordinary lease renewal and Temporal/SQLite/PostgreSQL. Coordinator search HTTP is interrupted after a committed retrieval response is withheld; no second primary call; accepted output and provenance persist; same worker reused. Does not roll back server transactions or prove server-side query cancellation."
+}

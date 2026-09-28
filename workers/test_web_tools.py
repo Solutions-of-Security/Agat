@@ -247,7 +247,7 @@ class _FakeKnowledgeCoordinator:
         self.failed: list[dict[str, str]] = []
 
     def knowledge_search(
-        self, lease_id: str, queries: list[dict[str, Any]]
+        self, lease_id: str, queries: list[dict[str, Any]], *, cancelled=None
     ) -> dict[str, Any]:
         self.searches.append({"leaseId": lease_id, "queries": queries})
         return {
