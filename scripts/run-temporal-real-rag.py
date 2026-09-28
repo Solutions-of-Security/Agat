@@ -64,10 +64,37 @@ def request(port, path, body=None, timeout=5, capture_status=False):
         connection.close()
 
 
-def own_containers(pids):
-    names = command(['docker', 'ps', '--all', '--format', '{{.Names}}', '--filter', 'name=agat-temporal-']).splitlines()
+def owned_container_names(names, pids):
     return {name for name in names if (match := re.fullmatch(r'agat-temporal-(?:postgres-)?rag-(\d+)-\d+', name))
             and int(match[1]) in pids}
+
+
+def own_containers(pids):
+    names = command(['docker', 'ps', '--all', '--format', '{{.Names}}', '--filter', 'name=agat-temporal-']).splitlines()
+    return owned_container_names(names, pids)
+
+
+def cleanup_owned_containers(pids, containers, errors):
+    # Previously observed owned names remain usable if Docker listing fails.
+    targets = owned_container_names(containers, pids)
+    try:
+        targets = own_containers(pids)
+        containers.update(targets)
+    except Exception as error:
+        errors.append('containerInventory:' + type(error).__name__)
+    for name in sorted(targets):
+        try:
+            command(['docker', 'rm', '--force', name])
+        except Exception as error:
+            errors.append('containerRemove:' + type(error).__name__)
+    # Verification runs even after discovery or individual deletion failed.
+    try:
+        remaining = own_containers(pids)
+        containers.update(remaining)
+        if remaining:
+            errors.append('containerRemove:ContainersStillPresent')
+    except Exception as error:
+        errors.append('containerVerification:' + type(error).__name__)
 
 
 def stop_owned_process(process, owned, errors):
@@ -368,16 +395,7 @@ def main():
                 except Exception as error:
                     cleanup_errors.append(type(error).__name__)
                 stop_owned_process(ollama, pids, cleanup_errors)
-                try:
-                    # Names are admitted only when their embedded owner PID was
-                    # observed in this launcher's process tree.
-                    remaining_containers = own_containers(pids)
-                    containers.update(remaining_containers)
-                    for name in remaining_containers:
-                        command(['docker', 'rm', '--force', name])
-                    require(not own_containers(pids), 'Owned containers remain')
-                except Exception as error:
-                    cleanup_errors.append(type(error).__name__)
+                cleanup_owned_containers(pids, containers, cleanup_errors)
                 sample_resources('after_cleanup')
         model_log_sha = sha((temporary / 'ollama.log').read_bytes())
         decision_log_sha = sha((temporary / 'decision.log').read_bytes())
