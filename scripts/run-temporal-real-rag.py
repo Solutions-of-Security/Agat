@@ -84,7 +84,7 @@ def cleanup_owned_containers(pids, containers, errors):
         errors.append('containerInventory:' + type(error).__name__)
     for name in sorted(targets):
         try:
-            command(['docker', 'rm', '--force', name])
+            command(['docker', 'rm', '--force', '--volumes', name])
         except Exception as error:
             errors.append('containerRemove:' + type(error).__name__)
     # Verification runs even after discovery or individual deletion failed.

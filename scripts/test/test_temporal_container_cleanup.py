@@ -22,8 +22,8 @@ class DockerFixture:
             if self.listings in self.listing_errors:
                 raise OSError('private Docker diagnostic')
             return '\n'.join(sorted(self.names))
-        if args[:3] == ['docker', 'rm', '--force'] and len(args) == 4:
-            name = args[3]
+        if args[:4] == ['docker', 'rm', '--force', '--volumes'] and len(args) == 5:
+            name = args[-1]
             self.removals.append(name)
             if self.fail_first_remove and len(self.removals) == 1:
                 raise OSError('private Docker diagnostic')
@@ -128,7 +128,7 @@ class LiveContainerCleanupTests(unittest.TestCase):
                         if (fault == 'discovery' and listings == 1) or (fault == 'verification' and listings == 2):
                             raise OSError('Injected private Docker listing failure')
                     if args[:3] == ['docker', 'rm', '--force']:
-                        removals.append(args[3])
+                        removals.append(args[-1])
                         if fault == 'removal' and len(removals) == 1:
                             raise OSError('Injected private Docker removal failure')
                     return real_command(args)
@@ -159,7 +159,7 @@ class LiveContainerCleanupTests(unittest.TestCase):
                     cleanup_errors = []
                     for container_id in created:
                         try:
-                            subprocess.run(['docker', 'rm', '--force', container_id],
+                            subprocess.run(['docker', 'rm', '--force', '--volumes', container_id],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
                         except (OSError, subprocess.SubprocessError) as error:
                             cleanup_errors.append(type(error).__name__)
