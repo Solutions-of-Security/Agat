@@ -28,4 +28,4 @@ if [[ "${ready}" != true ]]; then
   exit 1
 fi
 AGAT_TEST_TEMPORAL_ADDRESS="127.0.0.1:${temporal_port}" \
-  node --import tsx --test "$@" apps/coordinator/test/temporal-rag.integration.test.ts
+  node --import tsx --test "$@" apps/coordinator/test/temporal-*.integration.test.ts

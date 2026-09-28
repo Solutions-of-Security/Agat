@@ -1,4 +1,5 @@
-import { ApplicationFailure, log } from "@temporalio/activity";
+import { createHash } from "node:crypto";
+import { activityInfo, ApplicationFailure, log } from "@temporalio/activity";
 
 import type {
   DurableProcessState,
@@ -46,6 +47,15 @@ export async function tickProcess(input: ProcessWorkflowInput): Promise<DurableP
 
 export async function startScheduledProcess(input: ScheduledProcessWorkflowInput): Promise<ProcessWorkflowInput> {
   assertConfiguration();
+  const info = activityInfo();
+  if (!info.workflowExecution) {
+    throw ApplicationFailure.nonRetryable("scheduled-start требует Workflow Activity", "ConfigurationError");
+  }
+  // Attempt numbers and task tokens change on retry; the Workflow Run + Activity
+  // identity is stable. A different schedule occurrence receives its own key.
+  const key = "agat-scheduled-v1:" + createHash("sha256").update(JSON.stringify([
+    info.namespace, info.workflowExecution.runId, info.activityId,
+  ])).digest("hex");
   let response: Response;
   try {
     response = await fetch(
@@ -56,6 +66,7 @@ export async function startScheduledProcess(input: ScheduledProcessWorkflowInput
           accept: "application/json",
           "content-type": "application/json",
           "x-agat-temporal-token": internalToken,
+          "idempotency-key": key,
         },
         body: JSON.stringify({
           projectId: input.projectId,
@@ -71,7 +82,7 @@ export async function startScheduledProcess(input: ScheduledProcessWorkflowInput
     throw error;
   }
 
-  const body = await response.json().catch(() => ({})) as Partial<ProcessWorkflowInput> & { error?: string };
+  const body = await response.json().catch(() => ({})) as Partial<ProcessWorkflowInput> & { error?: string; code?: string };
   if (
     response.ok
     && typeof body.instanceId === "string"
@@ -85,7 +96,8 @@ export async function startScheduledProcess(input: ScheduledProcessWorkflowInput
     };
   }
   const message = body.error || `Coordinator вернул HTTP ${response.status}`;
-  if (response.status === 400 || response.status === 401 || response.status === 403 || response.status === 404) {
+  if ([400, 401, 403, 404].includes(response.status)
+    || (response.status === 409 && body.code === "SCHEDULED_START_IDEMPOTENCY_CONFLICT")) {
     throw ApplicationFailure.nonRetryable(message, "CoordinatorRequestError");
   }
   throw new Error(message);

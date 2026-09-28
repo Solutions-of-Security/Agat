@@ -252,8 +252,10 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 27;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-knowledge-files-v27";
+export const POSTGRES_SCHEMA_VERSION = 28;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-scheduled-start-receipts-v28";
+
+export class ScheduledStartConflictError extends Error {}
 
 function normalizeFleetRegions(value: unknown, homeRegion: string): string[] {
   if (value === undefined) return [homeRegion];
@@ -1508,6 +1510,15 @@ export class AgatStore {
         pack_id TEXT NOT NULL,
         installation_json TEXT NOT NULL,
         PRIMARY KEY (project_id, pack_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS process_scheduled_start_receipts (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        idempotency_key TEXT NOT NULL,
+        request_sha256 TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, idempotency_key)
       );
 
       CREATE TABLE IF NOT EXISTS process_versions (
@@ -2908,7 +2919,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 27;");
+    this.db.exec("PRAGMA user_version = 28;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -3218,6 +3229,7 @@ export class AgatStore {
       events: "project_id = agat_current_project()",
       processes: "project_id = agat_current_project()",
       process_pack_installations: "project_id = agat_current_project()",
+      process_scheduled_start_receipts: "project_id = agat_current_project()",
       process_signal_waits: "project_id = agat_current_project()",
       process_webhooks: "project_id = agat_current_project()",
       credentials: "project_id = agat_current_project()",
@@ -10216,6 +10228,43 @@ export class AgatStore {
     const queueable = processId !== null && !blockers.some((item) => item.blocks === "queue");
     return { checkedAt: nowIso(), processId, version, saved: processId !== null, queueable, runnableNow: queueable && blockers.length === 0,
       scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)] };
+  }
+
+  startScheduledProcess(
+    processId: string, input: StartProcessInput, projectId: string, idempotencyKey: unknown,
+    context?: ScenarioPreflightContext,
+  ): { instanceId: string; processId: string; projectId: string } | null {
+    if (typeof idempotencyKey !== "string" || !/^agat-scheduled-v1:[a-f0-9]{64}$/.test(idempotencyKey)) {
+      throw new Error("scheduled-start требует Idempotency-Key формата agat-scheduled-v1:<sha256>");
+    }
+    if (!this.temporalProcesses) throw new Error("Расписания процессов требуют включённого Temporal runtime");
+    const project = this.requireProject(projectId);
+    const requestSha256 = sha256Text(canonicalJson({ processId, input }));
+    return this.transaction(() => {
+      // SQLite serializes writers with BEGIN IMMEDIATE. The project lock gives
+      // concurrent PostgreSQL coordinators the same check/create/record boundary.
+      this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
+      const receipt = this.db.prepare(`SELECT request_sha256, response_json FROM process_scheduled_start_receipts
+        WHERE project_id = ? AND idempotency_key = ?`).get(project, idempotencyKey) as Row | undefined;
+      if (receipt) {
+        if (receipt.request_sha256 !== requestSha256) {
+          throw new ScheduledStartConflictError("Idempotency-Key уже использован для другого scheduled-start запроса");
+        }
+        // Return the committed identity even after publication/config changes or
+        // run retention. Never recreate a deleted run for an old Activity retry.
+        return JSON.parse(String(receipt.response_json)) as { instanceId: string; processId: string; projectId: string };
+      }
+      const instance = this.startProcess(processId, input, project, {
+        ...(context ?? { runtime: { mode: "temporal", connected: true }, mcpEnabled: true }),
+        executionTrigger: { kind: "schedule" },
+      });
+      if (!instance) return null;
+      const response = { instanceId: String(instance.id), processId, projectId: project };
+      this.db.prepare(`INSERT INTO process_scheduled_start_receipts(
+        project_id, idempotency_key, request_sha256, response_json, created_at
+      ) VALUES (?, ?, ?, ?, ?)`).run(project, idempotencyKey, requestSha256, JSON.stringify(response), nowIso());
+      return response;
+    });
   }
 
   startProcess(processId: string, input: StartProcessInput, projectId = "default", context?: ScenarioPreflightContext): Record<string, unknown> | null {

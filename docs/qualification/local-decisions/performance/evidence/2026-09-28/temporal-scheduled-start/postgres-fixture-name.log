@@ -1,0 +1,43 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh --test-name-pattern=deduplicates scheduled-start
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:53064) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✖ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (5540.870375ms)
+✖ PostgreSQL Fleet/HA integration (7017.621459ms)
+ℹ tests 1
+ℹ suites 1
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7492.887084
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:2:13432
+✖ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (5540.870375ms)
+  AssertionError [ERR_ASSERTION]: Both independent processes must reach the database lock before it is released
+
+  0 !== 2
+
+      at <anonymous> (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:401:16)
+      at async TestContext.<anonymous> (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:351:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

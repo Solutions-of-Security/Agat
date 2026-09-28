@@ -1,0 +1,87 @@
+{
+  "schema": "agat.temporal.scheduled-start-checks.v1",
+  "baseCommit": "297179d29904a3dd4ba18bd45f25110e44ebc2c9",
+  "databaseSchema": 28,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": false,
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "d9fba7ee970ba092510f229550b88a9c0fa59ae11d09d5c732de64999a4a16e0",
+    "apps/coordinator/src/server.ts": "4ecea3932a4ac3c659275e577f48cc0e2f7c7c4f89e327371c8ed16e38be9143",
+    "apps/temporal-worker/src/activities.ts": "33e5a1f49b15f52de021d2acba7ac4150e7a2f704d38a1e6b8a82b16c25614e6",
+    "apps/temporal-worker/src/workflows.ts": "bae603846cd95b5376fd2e9487437c74cb853424ac88abcd4449cb3793b9b7d2",
+    "apps/coordinator/test/scheduled-start.test.ts": "61caf35c2a566a9198c62206de3dbc0d3098bae3f46b18ce087515840bb6818b",
+    "apps/coordinator/test/temporal-scheduled-start.integration.test.ts": "769b9ac0b8cad1108b4561dd7aa8740e44287e9ede6c8ed511de5c3d82bae12f",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "dbc1a34b934f50b659910f287098f3008f9cc125281c172660963d1a9b76b4d4",
+    "apps/coordinator/test/sqlite-postgres-migrator.integration.test.ts": "35d9371fbd1dc39a0388097c1565ce626691a17b306e2e53f83139a7ba5caf6f",
+    "apps/coordinator/test/postgres-commit-proxy.ts": "d984e12ed91325281d7cede632698f4b3dda758ea0f3c6c60f6e6362d3a387c9",
+    "apps/coordinator/test/helpers/temporal.ts": "1dd9ff0e047d7ef6460d11e0afe3cbf943a7fb2c45f9d486f8303a35cc13f36b",
+    "scripts/test-temporal-rag.sh": "b53b35af2b175703315e2c7e741260685dbc4fce7dd85b4339ac8097e3e54dab"
+  },
+  "evidenceSha256": {
+    "baseline.json": "096e27c664074f8165244d7f0e55a84a55aa7460f64f6dd052a0c6f8449cb82c",
+    "final/recovery.json": "4ddb70fa1a01adc76deee35d73d4115aca9d2d5373bc52109471a3dad44c00d4"
+  },
+  "checks": {
+    "sqliteAndHttp": {
+      "pass": 3,
+      "fail": 0,
+      "log": "sqlite-http-final.log"
+    },
+    "temporalIntegration": {
+      "pass": 3,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "temporalConflictRetry": {
+      "scenarios": 1,
+      "pass": true,
+      "log": "conflict-integration.log"
+    },
+    "postgresConcurrencyRlsAndCommitLoss": {
+      "pass": 1,
+      "fail": 0,
+      "log": "postgres-verified.log"
+    },
+    "offlineMigration": {
+      "pass": 2,
+      "fail": 0,
+      "log": "migration.log"
+    },
+    "coordinator": {
+      "pass": 287,
+      "skip": 3,
+      "fail": 0,
+      "log": "coordinator-final.log"
+    },
+    "offlineReplay": {
+      "configTests": 3,
+      "histories": 6,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "workspaceTypecheck": "pass",
+    "strictNewTestsTypecheck": "pass",
+    "additionalLegacyHaTestTypecheck": {
+      "diagnostics": 18,
+      "newDiagnostics": 0,
+      "baselineLog": "test-types-baseline.log",
+      "log": "test-types.log"
+    },
+    "docs": {
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1733,
+      "markdownFiles": 205,
+      "pass": true,
+      "log": "docs.log"
+    },
+    "initialFullPostgres": {
+      "tests": 97,
+      "pass": 96,
+      "fail": 1,
+      "log": "postgres.log",
+      "failure": "New test called the pre-existing timeout helper with the wrong signature; corrected targeted rerun passed."
+    }
+  },
+  "scope": "Creation idempotency; synthetic processes; child ownership during coordinator restart remains a separate gate."
+}

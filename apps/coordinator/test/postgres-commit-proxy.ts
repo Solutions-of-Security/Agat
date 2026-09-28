@@ -9,6 +9,10 @@ export function interceptEmbeddingCommit(connectionString: string, applicationNa
   return interceptCommit(connectionString, applicationName, /^UPDATE knowledge_chunks\s+SET embedding_model\s*=/i);
 }
 
+export function interceptScheduledStartCommit(connectionString: string, applicationName: string) {
+  return interceptCommit(connectionString, applicationName, /^INSERT INTO process_scheduled_start_receipts\s*\(/i);
+}
+
 /** Loopback-only fault fixture: forward COMMIT, retain its real server reply.
  * Only the named connection after the selected transaction's write is affected.
  * Authentication bytes and SQL payloads are never logged or saved.

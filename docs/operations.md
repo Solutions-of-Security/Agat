@@ -15,11 +15,11 @@ Health содержит `stateStore.driver`, cell/replica readiness, а для P
 
 ## Rollout 1.7 Fleet и HA
 
-Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, v24 добавила immutable region-loss activation ledger и monotonic cell write epoch, а текущая v25 — OCI provenance/runtime-attestation evidence и SIEM DLQ/retention state. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
+Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, v24 добавила immutable region-loss activation ledger и monotonic cell write epoch, v25 — OCI provenance/runtime-attestation evidence и SIEM DLQ/retention state, а текущая v28 добавляет durable receipts для scheduled-start. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
 2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
-3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v25 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
+3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v28 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
 4. Для production endpoint выполните multi-AZ/PITR preflight, actual failover и isolated restore по [managed PostgreSQL runbook](./managed-postgresql-resilience.md). Сохраните HMAC reports и exact SLO policy approval; application `haReady` этот gate не заменяет.
 5. Подготовьте versioned S3-compatible bucket, примените Agat lifecycle rule без current-version expiration, выполните BYTEA backfill/reconciliation и только затем включите `AGAT_ARTIFACT_STORE_DRIVER=s3`; подробный порядок — в [artifact store runbook](./s3-artifact-store-lifecycle.md).
 6. Подготовьте dormant target в разрешённом residency domain, внешний source fencing и односторонние PostgreSQL/S3/Temporal recovery paths; выполните rehearsal по [region-loss runbook](./region-loss-dr.md). Не запускайте target runtime без exact activation ID/write epoch.
@@ -50,7 +50,7 @@ Coordinator startup не выполняет DDL. При rollout останови
 
 ### Managed PostgreSQL resilience
 
-Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, DDL-free schema v25 и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
+Production Job валидирует fresh provider evidence и сам endpoint: ≥2 AZ, synchronous standby, automatic failover, PITR freshness/retention, private encryption, TLS/checksums/WAL, текущую DDL-free schema и distinct SLO approval. Planned failover и isolated PITR clone доказываются canaries «до/после» и HMAC reports; локальный physical drill не считается provider qualification. Команды, RPO/RTO/SLO и failure semantics: [Managed PostgreSQL](./managed-postgresql-resilience.md).
 
 ### S3-compatible Artifact Store
 
@@ -118,6 +118,8 @@ Coordinator мигрирует SQLite schema `15 → 16` и добавляет �
 Team нельзя распределить между несколькими узлами. При недостатке хотя бы одной pinned модели stage остаётся в очереди с обычным readiness/scheduler explanation. Rollback binary допустим только после проверенного backup базы: старый coordinator не знает manifest v3 и новое поле capability, поэтому смешанный control-plane rollout не поддерживается.
 
 ## Temporal rollout и replay
+
+Создание процесса по расписанию использует обязательный Idempotency-Key и transactional receipt в schema **28**. Порядок обновления coordinator/worker, запрет смешанных версий и recovery при неизвестном исходе старого запроса: [scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md). Сначала приостановите расписания и завершите старые Activities; затем выполните штатную schema migration и обновите оба компонента.
 
 Сквозная проверка RAG с Activity retry, аварийным restart worker и replay: `npm run fleet:test-temporal-rag`. Она запускает отдельный Temporal dev server и тестовые coordinator/worker; [протокол и границы проверки](./qualification/local-decisions/performance/temporal-rag-recovery.md) сохранены вместе с evidence. Две полученные history входят в обычный `npm run test:temporal`.
 

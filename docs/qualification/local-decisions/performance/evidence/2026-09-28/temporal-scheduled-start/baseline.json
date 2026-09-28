@@ -1,0 +1,31 @@
+{
+  "baseCommit": "beb7734",
+  "scenario": "Two identical scheduled-start requests, including identical idempotency key; client repeats after discarding first response",
+  "responses": [
+    {
+      "instanceId": "07604572-979e-4f9c-a522-44d5cbf725ad",
+      "processId": "4d1394cc-d808-4c55-bc4c-becf9523487a",
+      "projectId": "default"
+    },
+    {
+      "instanceId": "3e59b98f-3668-4ac3-9542-30d51a459996",
+      "processId": "4d1394cc-d808-4c55-bc4c-becf9523487a",
+      "projectId": "default"
+    }
+  ],
+  "instances": [
+    {
+      "id": "3e59b98f-3668-4ac3-9542-30d51a459996",
+      "runId": "e57676f3-b3b7-47b0-8fbb-9c821f0e32e3",
+      "processId": "4d1394cc-d808-4c55-bc4c-becf9523487a"
+    },
+    {
+      "id": "07604572-979e-4f9c-a522-44d5cbf725ad",
+      "runId": "daf030e0-88a7-42b1-90a1-7f25c0b86e75",
+      "processId": "4d1394cc-d808-4c55-bc4c-becf9523487a"
+    }
+  ],
+  "observed": "duplicate_creation",
+  "expectedInstances": 1,
+  "actualInstances": 2
+}

@@ -17,7 +17,7 @@ import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.j
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
-import { interceptEmbeddingCommit, interceptRetrievalCommit } from "./postgres-commit-proxy.js";
+import { interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -345,6 +345,110 @@ async function embeddingLeaseFixture(replicas = 1, options: { content?: string; 
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
+  });
+
+  it("deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-scheduled-"));
+      const first = new AgatStore(":postgresql:", { ...storeOptions("scheduled-parent", artifacts), temporalProcesses: true });
+      const connection = new pg.Client({ connectionString: systemUrl, ssl: false });
+      const probes: Array<ReturnType<typeof startProbe>> = [];
+      function startProbe(name: string, input: { processId: string; projectId: string; key: string }, databaseUrl = systemUrl) {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", `
+          import fs from 'node:fs';
+          import { AgatStore } from ${JSON.stringify(fileURLToPath(new URL("../dist/database.js", import.meta.url)))};
+          const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+          const store = new AgatStore(':postgresql:', data.options);
+          try { process.stdout.write(JSON.stringify(store.startScheduledProcess(data.processId, {input:'Synthetic scheduled'}, data.projectId, data.key))); }
+          catch(error) { process.stdout.write(JSON.stringify({errorCode:error.code})); process.exitCode=1; }
+          finally { store.close(); }
+        `], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "", diagnostic = "";
+        child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+        child.stdout.on("data", chunk => { output += chunk; });
+        child.stderr.on("data", chunk => { diagnostic = (diagnostic + chunk).slice(-4000); });
+        const closed = new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
+        void closed.catch(() => {});
+        const options = storeOptions(name, artifacts);
+        child.stdin.end(JSON.stringify({ ...input, options: { ...options, postgres: { ...options.postgres, systemUrl: databaseUrl }, temporalProcesses: true } }));
+        return { child, closed, output: () => JSON.parse(output), result: async () => {
+          assert.equal(await closed, 0, diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>"));
+          return JSON.parse(output) as { instanceId: string; processId: string; projectId: string };
+        } };
+      }
+      try {
+        await connection.connect();
+        const projectId = `scheduled-${randomUUID().slice(0, 8)}`, otherProject = `other-${randomUUID().slice(0, 8)}`;
+        first.createProject({ id: projectId, name: "Scheduled" }); first.createProject({ id: otherProject, name: "Other" });
+        const processId = String(first.createProcess({ name: `Scheduled ${projectId}`, graph: {
+          nodes: [
+            { id: "start", type: "start", name: "Start", position: { x: 0, y: 0 }, config: {} },
+            { id: "end", type: "end", name: "End", position: { x: 200, y: 0 }, config: {} },
+          ], edges: [{ id: "e", source: "start", target: "end", branch: "default" }],
+        } }, projectId).id); first.publishProcess(processId, projectId);
+        const key = `agat-scheduled-v1:${"a".repeat(64)}`;
+        const names = [`${projectId}-a`, `${projectId}-b`];
+        await connection.query("BEGIN");
+        await connection.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [projectId]);
+        for (const name of names) probes.push(startProbe(name, { processId, projectId, key }));
+        let waiters = 0;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          for (const probe of probes) if (probe.child.exitCode !== null) await probe.result();
+          // pg_stat_activity is cached for the observing transaction that holds
+          // the barrier lock. Refresh it to see newly arrived sessions.
+          await connection.query("SELECT pg_stat_clear_snapshot()");
+          const rows = await connection.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE application_name = ANY($1::text[]) AND wait_event_type = 'Lock'
+              AND query LIKE 'SELECT id FROM projects WHERE id = %FOR UPDATE'`, [names.map(name => `${name}-system`)]);
+          waiters = rows.rows[0].n;
+          if (waiters === 2) break;
+          await delay(50);
+        }
+        assert.equal(waiters, 2, "Both independent processes must reach the database lock before it is released");
+        await connection.query("COMMIT");
+        const [one, two] = await Promise.all(probes.map(probe => probe.result()));
+        assert.deepEqual(one, two); assert.equal(first.listProcessInstances(100, projectId).length, 1);
+        assert.deepEqual(first.startScheduledProcess(processId, { input: "Synthetic scheduled" }, projectId, key), one);
+        assert.throws(() => first.startScheduledProcess(processId, { input: "Changed" }, projectId, key), /другого scheduled-start/);
+        const receipts = await connection.query("SELECT count(*)::int AS n FROM process_scheduled_start_receipts WHERE project_id = $1", [projectId]);
+        assert.equal(receipts.rows[0].n, 1);
+        const tenant = new pg.Client({ connectionString: tenantUrl, ssl: false });
+        try {
+          await tenant.connect(); await tenant.query("BEGIN");
+          await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [otherProject]);
+          assert.equal((await tenant.query("SELECT * FROM process_scheduled_start_receipts WHERE project_id = $1", [projectId])).rowCount, 0);
+          await assert.rejects(tenant.query(`INSERT INTO process_scheduled_start_receipts(project_id, idempotency_key, request_sha256, response_json, created_at)
+            VALUES ($1, 'foreign', 'hash', '{}', 'fixture')`, [projectId]), /row-level security/);
+          await tenant.query("ROLLBACK");
+          await tenant.query("BEGIN"); await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [projectId]);
+          assert.equal((await tenant.query("SELECT * FROM process_scheduled_start_receipts WHERE project_id = $1", [projectId])).rowCount, 1);
+          await tenant.query("ROLLBACK");
+        } finally { await tenant.end(); }
+        const commitName = `${projectId}-commit`;
+        const proxy = await interceptScheduledStartCommit(systemUrl, `${commitName}-system`);
+        try {
+          const commitKey = `agat-scheduled-v1:${"b".repeat(64)}`;
+          const probe = startProbe(commitName, { processId, projectId, key: commitKey }, proxy.route(systemUrl)); probes.push(probe);
+          await within(proxy.committed, 5_000, "The scheduled-start transaction did not commit through the fault proxy");
+          const committed = first.listProcessInstances(100, projectId);
+          assert.equal(committed.length, 2, "The database has committed before its acknowledgement is lost");
+          proxy.disconnect();
+          assert.equal(await within(probe.closed, 5_000, "Commit outcome did not reach the coordinator"), 1);
+          assert.deepEqual(probe.output(), { errorCode: "AGAT_COMMIT_UNKNOWN" });
+          const recovered = first.startScheduledProcess(processId, { input: "Synthetic scheduled" }, projectId, commitKey)!;
+          assert.ok(committed.some(instance => instance.id === recovered.instanceId));
+          assert.equal(first.listProcessInstances(100, projectId).length, 2, "Retry through a healthy coordinator must reuse the committed receipt");
+          assert.deepEqual(proxy.errors, []);
+        } finally { await proxy.close(); }
+      } finally {
+        await connection.query("ROLLBACK").catch(() => {});
+        for (const probe of probes) {
+          if (probe.child.exitCode === null && probe.child.signalCode === null) probe.child.kill("SIGKILL");
+          await probe.closed.catch(() => {});
+        }
+        await connection.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
   });
 
   it("reuses the response buffer across large, short, SQL-error and oversized responses", () => {

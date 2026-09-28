@@ -1,85 +1,24 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 import { Client, Connection } from "@temporalio/client";
 import { historyToJSON } from "@temporalio/common/lib/proto-utils.js";
 import { Worker } from "@temporalio/worker";
+import { root, cleanEnv, processChild, within, eventually, listen, close } from "./helpers/temporal.js";
 import { AgatStore } from "../src/database.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import type { ProcessGraph } from "../src/types.js";
 import { decisionProfile, digest, type Fixture } from "../../../scripts/lib/decision-primary-workflow.js";
 import { verifyIngestion, verifyRetrieval } from "../../../scripts/lib/decision-rag.js";
 
-const root = fileURLToPath(new URL("../../../", import.meta.url));
 const address = process.env.AGAT_TEST_TEMPORAL_ADDRESS;
 const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
-const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-  !key.startsWith("AGAT_") && !key.startsWith("OTEL_")));
-
-async function within<T>(promise: Promise<T>, message: string, timeout = 20_000): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([promise, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeout);
-    })]);
-  } finally { clearTimeout(timer); }
-}
-
-async function eventually(check: () => boolean | Promise<boolean>, message: string): Promise<void> {
-  const until = performance.now() + 20_000;
-  while (performance.now() < until) { if (await check()) return; await delay(25); }
-  assert.fail(message);
-}
-
-function processChild(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
-  let log = "";
-  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
-  child.stdout.on("data", chunk => { log = (log + chunk).slice(-32_000); });
-  child.stderr.on("data", chunk => { log = (log + chunk).slice(-32_000); });
-  let spawnError: Error | undefined;
-  child.on("error", error => { spawnError = error; });
-  const closed = new Promise<{ code: number | null; signal: string | null }>(resolve => {
-    child.once("close", (code, signal) => resolve({ code, signal }));
-  });
-  return {
-    child, closed, log: () => log,
-    ready: async (pattern: RegExp) => {
-      let match: RegExpExecArray | null = null;
-      await eventually(() => {
-        if (spawnError) throw spawnError;
-        assert.equal(child.exitCode, null, log); assert.equal(child.signalCode, null, log);
-        match = pattern.exec(log); return Boolean(match);
-      }, `Process did not start: ${args[0]}`);
-      return match!;
-    },
-    stop: async (signal: NodeJS.Signals = "SIGTERM") => {
-      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
-      const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
-      try { return await closed; } finally { clearTimeout(timer); }
-    },
-  };
-}
-
-async function listen(server: http.Server) {
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-  const bound = server.address(); assert.ok(bound && typeof bound === "object");
-  return `http://127.0.0.1:${bound.port}`;
-}
-
-async function close(server: http.Server) {
-  server.closeAllConnections();
-  if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
-}
 
 for (const transport of ["isolated", "session"] as const) {
   test(`Temporal RAG ${transport}: retries a lost tick reply, restores a killed worker and replays without model calls`,
