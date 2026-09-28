@@ -174,6 +174,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Реальный отказ/restart shadow runtime](./qualification/local-decisions/performance/temporal-shadow-runtime-recovery.md) прошёл оба transport: SIGKILL decider сохраняет второй primary с unavailable fallback, restart восстанавливает третий shadow; четыре inference, два unavailable и три отдельных warmup явно разделены. Все primary outputs/prompts/vectors совпали с baseline, snapshots и native replay сохранены; 42 verifier tests прошли. Первый внеплановый exit 75 сохранён как отказ; добавлен немедленный журнал typed responses. Следующий gate — повторяемая диагностика доступности decider при совместно загруженных моделях; причина внепланового отказа и предметная qualification открыты.
 
+[Локальная диагностика ресурсов shadow](./qualification/local-decisions/performance/shadow-runtime-observability.md) добавляет opt-in sampling собственных процессов и системных counters с отдельной проверкой units, scope, cleanup и native CPU timebase. Resource artifacts ограничены игнорируемым `docs/private/`; публичные тесты используют явно синтетические counters. Исходные измерения сохранены локально. Причина прежнего exit 75 не установлена; следующий шаг — content-free причина backend retirement в service log с контролируемыми timeout/cancellation/child-death тестами.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

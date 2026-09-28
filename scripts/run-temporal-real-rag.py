@@ -18,6 +18,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('embedding_profile', ROOT / 'scripts/profile-embedding-rag.py')
 shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
@@ -88,16 +89,25 @@ def main():
     parser.add_argument('--shadow-python', type=Path, help='Resident MLX Python; requires --shadow-manifest')
     parser.add_argument('--shadow-manifest', type=Path, help='Verified resident decider manifest; enables the v2 shadow gate')
     parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
+    parser.add_argument('--shadow-resources', action='store_true', help='Observe owned-process and system memory during shadow recovery')
     args = parser.parse_args()
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
     shadow_enabled = args.shadow_manifest is not None
     require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
-    version_number = 3 if args.shadow_recovery else 2 if shadow_enabled else 1
+    require(not args.shadow_resources or args.shadow_recovery, 'Shadow resource diagnostics requires recovery mode')
+    version_number = 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
+    resource_sources = []
+    if args.shadow_resources:
+        from scripts.lib.shadow_resource_sample import ResourceSampler, PLAN as RESOURCE_PLAN, SOURCE_PATHS
+        resource_sources = SOURCE_PATHS
     directory = args.evidence_dir.resolve()
     require(directory.is_relative_to(ROOT / 'docs') and not directory.exists(), 'Use a new evidence directory under docs')
+    if args.shadow_resources:
+        require(directory.is_relative_to(ROOT / 'docs/private'), 'Resource diagnostics must stay under ignored docs/private')
     require(platform.system() == 'Darwin', 'This installed-model experiment requires the macOS host')
     commit = command(['git', 'rev-parse', 'HEAD'])
-    measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else [])]
+    measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else []),
+                      *resource_sources]
     snapshot = subprocess.check_output(['git', 'archive', commit, '--', *measured_paths], cwd=ROOT, timeout=15)
     sources = {}
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -149,6 +159,8 @@ def main():
     if args.shadow_recovery:
         plan['shadowRecovery'] = {'protocol': 'private-files-v1', 'signal': 'SIGKILL',
             'actions': [f'{transport}/{action}' for transport in plan['transports'] for action in ['kill', 'restart']]}
+    if args.shadow_resources:
+        plan['resources'] = RESOURCE_PLAN
     directory.mkdir(parents=True)
     write(directory / 'plan.json', plan)
     started = time.monotonic()
@@ -159,6 +171,14 @@ def main():
     decision_before = decision_after = None
     decision_warmup = None
     shadow_control = None
+    resources = None
+    def sample_resources(phase):
+        if resources is not None:
+            roots = {name: process.pid for name, process in [('shadow', shadow_runtime), ('ollama', ollama), ('workload', workload)]
+                     if process is not None and process.poll() is None}
+            row = resources.sample(phase, roots)
+            pids.update(resources.owned)
+            return row
     with tempfile.TemporaryDirectory(prefix='agat-temporal-real-rag-') as temporary:
         temporary = Path(temporary)
         shim = temporary / 'python3'
@@ -170,6 +190,12 @@ def main():
                 port = bound.getsockname()[1]
             try:
                 shadow_environment = {}
+                if args.shadow_resources:
+                    resources = ResourceSampler(started)
+                    before = sample_resources('before_models')
+                    require(not resources.errors, 'Resource counters unavailable')
+                    require(before['pressureDispatchLevel'] != 4, 'Critical memory pressure before model admission')
+                    shadow_environment['AGAT_TEMPORAL_SHADOW_RESOURCES'] = 'true'
                 if shadow_enabled:
                     with socket.socket() as shadow_bound:
                         shadow_bound.bind(('127.0.0.1', 0)); shadow_port = shadow_bound.getsockname()[1]
@@ -193,6 +219,7 @@ def main():
                         if shadow_runtime is not None:
                             pids.add(shadow_runtime.pid)
                     shadow_environment['AGAT_TEMPORAL_REAL_DECISION_URL'] = f'http://127.0.0.1:{shadow_port}'
+                    sample_resources('after_shadow_warmup')
                 ollama = subprocess.Popen(['ollama', 'serve'], cwd=ROOT, stdout=model_log, stderr=subprocess.STDOUT,
                                           start_new_session=True, env={**os.environ, **settings, 'OLLAMA_HOST': f'127.0.0.1:{port}'})
                 pids.add(ollama.pid)
@@ -216,8 +243,9 @@ def main():
                     require(result.get('model') == payload['model'], 'Warmup model mismatch')
                     warmup.append({'model': payload['model'], 'nativeTotalMs': result['total_duration'] / 1e6,
                                    'nativeLoadMs': result['load_duration'] / 1e6})
+                sample_resources('after_ollama_warmup')
                 environment = {key: value for key, value in os.environ.items() if not key.startswith(('AGAT_', 'OTEL_'))}
-                deadline, next_sample = time.monotonic() + plan['workloadBudgetSeconds'], 0
+                deadline, next_sample, next_resources = time.monotonic() + plan['workloadBudgetSeconds'], 0, 0
                 print('Owned models warmed; real PostgreSQL/Temporal RAG started', flush=True)
                 for transport in plan['transports']:
                     workload = subprocess.Popen(['bash', 'scripts/test-temporal-postgres-rag.sh',
@@ -229,6 +257,9 @@ def main():
                     pids.add(workload.pid)
                     while workload.poll() is None:
                         require(time.monotonic() < deadline, 'Workload budget exceeded')
+                        if resources is not None and time.monotonic() >= next_resources:
+                            sample_resources(transport)
+                            next_resources = time.monotonic() + RESOURCE_PLAN['intervalSeconds']
                         pids.update(shared.inventory(ollama.pid)[0]); pids.update(shared.inventory(workload.pid)[0])
                         if shadow_control is not None:
                             shadow_control.poll(transport)
@@ -254,6 +285,8 @@ def main():
                     require(decision_after == decision_before, 'Shadow runtime health/profile changed during workload')
                 if shadow_control:
                     require(shadow_control.failure is None and len(shadow_control.events) == 4, 'Incomplete shadow failure/recovery sequence')
+                if resources:
+                    require(not resources.errors, 'Resource observations incomplete')
             except Exception as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
                 # Let the integration harness persist the failed response and
@@ -262,6 +295,7 @@ def main():
                 while workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
                     time.sleep(.1)
             finally:
+                sample_resources('before_cleanup')
                 try:
                     shared.stop(workload)
                 except Exception as error:
@@ -300,6 +334,7 @@ def main():
                     require(not own_containers(pids), 'Owned containers remain')
                 except Exception as error:
                     cleanup_errors.append(type(error).__name__)
+                sample_resources('after_cleanup')
         model_log_sha = sha((temporary / 'ollama.log').read_bytes())
         decision_log_sha = sha((temporary / 'decision.log').read_bytes())
     phase_hashes = {}
@@ -311,6 +346,8 @@ def main():
     remaining = sorted(pids & shared.inventory(os.getpid())[1])
     if (cleanup_errors or remaining) and failure is None:
         failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close'}
+    if resources is not None and resources.errors and failure is None:
+        failure = {'type': 'ObservationError', 'reason': 'Resource observations incomplete'}
     report = {'schema': f'agat.temporal.real-rag-launcher.v{version_number}', 'status': 'fail' if failure else 'pass', 'failure': failure,
               'planSha256': sha((directory / 'plan.json').read_bytes()), 'phaseSha256': phase_hashes,
               'elapsedMs': (time.monotonic() - started) * 1000, 'ollamaVersion': version, 'warmup': warmup,
@@ -329,6 +366,8 @@ def main():
         report['shadowRecovery'] = shadow_control.report()
         report['shadowJournalSha256'] = {f'{transport}.shadow.jsonl': sha((directory / f'{transport}.shadow.jsonl').read_bytes())
             for transport in plan['transports'] if (directory / f'{transport}.shadow.jsonl').exists()}
+    if resources is not None:
+        report['resources'] = resources.report()
     write(directory / 'launcher.json', report)
     print(report['status'], failure, flush=True)
     return 1 if failure else 0
