@@ -12,7 +12,10 @@
     "workers/test_web_tools.py": "b66dbb9c8d7ddf512d171e4e9e153a856397d1cb94f7b4588cb497c72d4b87c4",
     "apps/coordinator/test/helpers/temporal.ts": "00691ac2c6a31d939a504c011649570e3d73261f1ff531b7c58efdba5ef3e367",
     "apps/coordinator/test/temporal-rag.integration.test.ts": "f8267ebbbc931dffc270b1102e000b9b8977dd9efaabcd39185071206a7975bf",
-    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434"
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "apps/coordinator/test/embedding-worker-probe.py": "4b672efc332f3b55f75099ee610e2a14153508234d17a6925056b3de765a4b11",
+    "scripts/embedding-rag-worker-probe.py": "c0c2823b941e4c08d76c25411ef6ad3d298f1695e4417597c6c6f7052dfd3d52",
+    "scripts/test/test_embedding_worker_probe_tracking.py": "764ff2c7503141ac83931d23aee83ced715e55c62ff606b39ecd67aa147535df"
   },
   "evidenceSha256": {
     "first-fixed/isolated-interrupt.json": "e2a255822a7dee9c6f09b10f2d273e588155bc28e6a46da741218bfeaf49c516",
@@ -80,6 +83,24 @@
       "localLinks": 1878,
       "markdownFiles": 213,
       "log": "docs.log"
+    },
+    "probeTracking": {
+      "pass": 2,
+      "fail": 0,
+      "log": "probe-tracking.log"
+    },
+    "haProbeRecheck": {
+      "pass": 12,
+      "fail": 0,
+      "log": "ha-probe-recheck.log"
+    },
+    "docsProbeRecheck": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinks": 1883,
+      "markdownFiles": 213,
+      "log": "docs-probe-recheck.log"
     }
   },
   "measurements": [
@@ -108,5 +129,10 @@
       "clientDisconnectedAfterRejectionMs": 27.384499999985565
     }
   ],
-  "scope": "Synthetic model, real lease renewal and Temporal/SQLite/PostgreSQL. HTTP disconnect and same worker reuse; no backend compute cancellation or latency SLO claim."
+  "scope": "Synthetic model, real lease renewal and Temporal/SQLite/PostgreSQL. HTTP disconnect and same worker reuse; no backend compute cancellation or latency SLO claim.",
+  "probeRepair": {
+    "initialCi": "https://github.com/Solutions-of-Security/Agat/actions/runs/36372002743/job/108770117950",
+    "initialLog": "ci-ha-initial.log",
+    "cause": "Both embedding probes observed a wrapper after subprocess ownership moved to the shared HTTP function. Updated owner code binding and excluded primary helpers from embedding counters."
+  }
 }

@@ -53,6 +53,12 @@ npm run test:temporal
 
 Следующий gate — передача cancellation в query embedding во время RAG retrieval до primary. Индексационные embedding leases уже имеют свой cancellation path; retrieval использует обычную process lease и требует отдельной проверки.
 
+## Перепроверка измерительных probe
+
+[Первый обязательный HA job](./evidence/2026-09-28/primary-http-cancellation/ci-ha-initial.log) обнаружил 12 ошибок isolated embedding assertions: probe продолжал искать локальную переменную `process` в wrapper `request_embedding_response`, хотя владелец процесса перенесён в общий `_request_response`. HTTP/state assertions до проверки transport records прошли, но измерение не могло подтвердить cleanup и правильно завершилось отказом.
+
+[Probe worker](../../../../apps/coordinator/test/embedding-worker-probe.py) и [probe RAG](../../../../scripts/embedding-rag-worker-probe.py) обновлены на функцию, владеющую subprocess. Фильтр по embedding request и активному `embed` сохраняет смысл embedding counters; primary helpers проверяются отдельно и не добавляются в эти counters. [Два новых теста](./evidence/2026-09-28/primary-http-cancellation/probe-tracking.log) выполняют настоящий embedding и primary HTTP через каждый probe, требуют один embedding process record, его правильный PID, закрытые pipes и собранный exit status. [Повтор HA isolated scenarios](./evidence/2026-09-28/primary-http-cancellation/ha-probe-recheck.log) прошёл **12/12** сценариев с настоящим worker/coordinator/PostgreSQL. [Повтор docs gate](./evidence/2026-09-28/primary-http-cancellation/docs-probe-recheck.log) включает 318 Python tests и проверку 1883 локальных ссылок.
+
 ## Основания решения
 
 [Python urllib](https://docs.python.org/3/library/urllib.request.html#urllib.request.urlopen) описывает timeout блокирующих операций; общий deadline обеспечивается владельцем запроса. [Python subprocess](https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate) требует явно завершить и собрать subprocess после timeout `communicate`; initial process creation может быть непрерываемым. [Context variables](https://docs.python.org/3/library/contextvars.html) дают раздельный контекст выполнения. Передача через настоящий закреплённый LangGraph проверена тестами; в установленном 1.2.11 `BackgroundExecutor.submit` использует `copy_context` и `ctx.run`.
