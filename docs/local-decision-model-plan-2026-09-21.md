@@ -150,6 +150,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Прерывание primary HTTP](./qualification/local-decisions/performance/primary-http-cancellation.md) устраняет воспроизведённое удержание соединения после отказа lease renewal. Управляемый helper получает отмену, завершается и собирается до освобождения слота; общий HTTP deadline и byte limits ограничивают ожидание и чтение. Тот же worker с concurrency 1 завершает новый RAG, пока прежний ответ удержан; настоящий LangGraph, параллельные leases и embeddings regression проверены. Следующий gate — cancellation query embedding при retrieval до primary; backend compute cancellation и предметная qualification остаются открытыми.
 
+[Отмена query embedding](./qualification/local-decisions/performance/rag-query-cancellation.md) закрывает воспроизведённое ожидание до primary после отказа обычной process lease. Оба embedding transport получают cancellation event; между группами и после поиска проверяется отмена. Второй primary/shadow не запускается, первый результат и provenance сохранены; тот же worker завершает следующий RAG с новым helper. Следующий gate — прерывание HTTP ожидания coordinator knowledge search; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -25,9 +25,15 @@ const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
 
-for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt"] as const) {
+for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt"] as const) {
   const cancelling = completion !== "recover";
-  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${completion === "interrupt" ? "interrupts blocked primary HTTP after lease rejection and reuses the worker slot" : cancelling
+  const queryInterrupted = completion === "query-interrupt";
+  const interrupted = completion === "interrupt" || queryInterrupted;
+  const expectedPrimaryCalls = cancelling ? (queryInterrupted ? 1 : 2) : 3;
+  const expectedRetrievals = expectedPrimaryCalls;
+  const requestName = queryInterrupted ? "Query embedding" : "Primary";
+  const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : "Model"} request cancelled`;
+  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
     { skip: !address, timeout: 120_000 }, async () => {
@@ -60,8 +66,11 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         if (req.url === "/v1/embeddings") {
           assert.equal(body.model, fixture.rag!.embeddingModel);
           embeddedItems += body.input.length;
-          res.end(JSON.stringify({ model: body.model, data: body.input.map((text: string, index: number) =>
+          const finish = () => res.end(JSON.stringify({ model: body.model, data: body.input.map((text: string, index: number) =>
             ({ index, embedding: [1, text.length % 7 + 1, 1] })) }));
+          if (queryInterrupted && embeddedItems === 4) {
+            held = finish; res.once("close", () => { heldConnectionClosed = true; });
+          } else finish();
           return;
         }
         assert.equal(req.url, "/v1/chat/completions"); assert.equal(body.model, model);
@@ -75,7 +84,7 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
         primaryOutputs.push(content);
         const finish = () => res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
           usage: { prompt_tokens: 100, completion_tokens: 20 } }));
-        if (primaryCalls === 2) {
+        if (primaryCalls === 2 && !queryInterrupted) {
           held = finish; res.once("close", () => { heldConnectionClosed = true; });
         } else finish();
       } catch (error) { serverErrors.push(error); res.writeHead(502).end(); }
@@ -186,20 +195,20 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const instance = await started.json() as { id: string; runId: string };
       assert.equal(store.getProcessInstance(instance.id)!.runtime, "temporal");
       const workflowId = `agat-process-${instance.id}`, handle = client.workflow.getHandle(workflowId);
-      await eventually(() => Boolean(held), "Second primary stage did not start");
+      await eventually(() => Boolean(held), "Second stage did not reach the held model request");
       await within(handle.query("processState"), "Workflow did not become queryable");
       await eventually(async () => {
         const history = await handle.fetchHistory();
         return Boolean(history.events?.some(event => Number(event.activityTaskStartedEventAttributes?.attempt) === 2));
       }, "The lost response must cause a real Temporal Activity retry");
       assert.equal(ticks.filter(row => row.dropped).length, 1);
-      assert.equal(primaryCalls, 2);
+      assert.equal(primaryCalls, queryInterrupted ? 1 : 2);
       assert.deepEqual(await first.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
       const second = await startTemporal(secondIdentity);
       // Query forces the replacement worker to replay the existing history before
       // releasing the still-running primary request on the independent Python worker.
       await within(handle.query("processState"), "Replacement worker did not restore workflow state");
-      assert.equal(primaryCalls, 2, "Worker restart must not re-execute the completed primary stage");
+      assert.equal(primaryCalls, queryInterrupted ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
       let cancelledLeaseId = "";
       if (cancelling) {
         cancelledLeaseId = String(store.db.prepare("SELECT lease_id FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!.lease_id);
@@ -211,14 +220,14 @@ with make_server(DecisionEngine(Backend()),0) as server:
         applicationCancelledBeforeLateResponse = true;
         assert.equal(ticks.filter(row => row.path.endsWith("/cancel")).length, 2);
       }
-      if (completion === "interrupt") {
+      if (interrupted) {
         const cancelledAt = performance.now();
         await eventually(() => worker.log().includes(`Lease renewal failed for ${cancelledLeaseId}:`),
           "Real 45-second lease renewal did not reject the cancelled lease", 60_000);
         const rejectedAt = performance.now();
-        await eventually(() => heldConnectionClosed, "Primary HTTP remained open after lease renewal rejection", 5_000);
-        await eventually(() => worker.log().includes(`[${cancelledLeaseId.slice(0, 8)}] failed: RuntimeError: Model request cancelled`),
-          "Worker did not stop the blocked primary request", 5_000);
+        await eventually(() => heldConnectionClosed, `${requestName} HTTP remained open after lease renewal rejection`, 5_000);
+        await eventually(() => worker.log().includes(`[${cancelledLeaseId.slice(0, 8)}] failed: RuntimeError: ${cancelledDiagnostic}`),
+          "Worker did not stop the blocked model request", 5_000);
         assert.ok(held, "Model fixture must not release the response to free the worker");
         interruption = { renewalRejectedAfterMs: rejectedAt - cancelledAt,
           clientDisconnectedAfterRejectionMs: performance.now() - rejectedAt, responseStillHeld: true };
@@ -229,8 +238,8 @@ with make_server(DecisionEngine(Backend()),0) as server:
         await eventually(() => worker.log().includes(`[${cancelledLeaseId.slice(0, 8)}] failed:`)
           && worker.log().includes("Could not report failure:"), "The real worker did not observe rejection of the late primary result");
         latePrimaryFailure = worker.log().split("\n").find(line => line.includes(`[${cancelledLeaseId.slice(0, 8)}] failed:`));
-        assert.ok(latePrimaryFailure?.endsWith(completion === "interrupt"
-          ? "failed: RuntimeError: Model request cancelled" : "failed: ApiError: Активная аренда не найдена"),
+        assert.ok(latePrimaryFailure?.endsWith(interrupted
+          ? `failed: RuntimeError: ${cancelledDiagnostic}` : "failed: ApiError: Активная аренда не найдена"),
           latePrimaryFailure ?? "Missing primary failure");
         latePrimaryRejected = completion === "cancel";
       } else {
@@ -239,7 +248,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       }
       const trace = store.getRunTrace(instance.runId)! as any;
       assert.equal(trace.truncated, false); assert.equal(trace.run.status, cancelling ? "cancelled" : "completed");
-      assert.equal(primaryCalls, cancelling ? 2 : 3); assert.equal(embeddedItems, cancelling ? 4 : 5);
+      assert.equal(primaryCalls, expectedPrimaryCalls); assert.equal(embeddedItems, cancelling ? 4 : 5);
       const stages = trace.run.stages.filter((stage: any) => fixture.roles.some(role => role.id === stage.processNodeId));
       assert.equal(stages.length, cancelling ? 2 : 3);
       for (const [index, stage] of stages.entries()) {
@@ -255,7 +264,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       assert.equal(trace.decisionObservations.length, cancelling ? 1 : 3);
       assert.ok(trace.decisionObservations.every((row: any) => row.observation.status === "ok"
         && row.observation.fallback === "primary"));
-      assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, cancelling ? 4 : 6);
+      assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, expectedRetrievals * 2);
       if (postgres) {
         const runtimeRole = store.db.prepare("SELECT current_user AS role").get()!.role;
         assert.equal(runtimeRole, "agat_system");
@@ -277,7 +286,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
             ];
             await tenant.query("ROLLBACK");
           }
-          assert.deepEqual(visible, { own: [1, 1, cancelling ? 2 : 3, 2], foreign: [0, 0, 0, 0] });
+          assert.deepEqual(visible, { own: [1, 1, expectedRetrievals, 2], foreign: [0, 0, 0, 0] });
           databaseEvidence = { driver: stateStoreDriver, runtimeRole, tenantRole: role, visible, releaseRegistryDenied: true,
             visibilityColumns: ["runs", "process_instances", "knowledge_retrievals", "knowledge_chunks"], retrievalExecution: "isolated" };
         } finally { await tenant.end(); }
@@ -295,7 +304,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       await Worker.runReplayHistory({ workflowBundle }, serializedHistory, workflowId);
       assert.deepEqual({ primaryCalls, embeddedItems, ticks: ticks.length, trace: JSON.stringify(store.getRunTrace(instance.runId)) }, checkpoint,
         "History replay must perform no HTTP activities, model calls or database writes");
-      if (completion === "interrupt") {
+      if (interrupted) {
         const resumed = await fetch(`${coordinatorUrl}/api/v1/processes/${process.id}/start`, { method: "POST",
           headers: { "x-agat-admin-token": "temporal-rag-admin", "content-type": "application/json" },
           body: JSON.stringify({ input: fixture.input }), signal: AbortSignal.timeout(5_000) });
@@ -304,7 +313,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const result = await within(client.workflow.getHandle(`agat-process-${next.id}`).result(),
           "The same single-slot worker did not complete another RAG process", 30_000) as { status: string };
         assert.equal(result.status, "completed");
-        assert.equal(primaryCalls, 5); assert.equal(embeddedItems, 7);
+        assert.equal(primaryCalls, expectedPrimaryCalls + 3); assert.equal(embeddedItems, 7);
         assert.ok(held && heldConnectionClosed);
         assert.equal(JSON.stringify(store.getRunTrace(instance.runId)), checkpoint.trace);
         const nextTrace = store.getRunTrace(next.runId)! as any;
@@ -329,7 +338,8 @@ with make_server(DecisionEngine(Backend()),0) as server:
             provenance: true, workersDrained: true,
             ...(cancelling ? { applicationCancelledBeforeLateResponse } : {}),
             ...(completion === "cancel" ? { latePrimaryRejected } : {}),
-            ...(completion === "interrupt" ? { primaryConnectionClosed: heldConnectionClosed, workerSlotReused: true } : {}) },
+            ...(interrupted ? { modelConnectionClosed: heldConnectionClosed, workerSlotReused: true,
+              ...(queryInterrupted ? { cancelledStageNeverCalledPrimary: true } : { primaryConnectionClosed: heldConnectionClosed }) } : {}) },
           qualification: "not_assessed" }, null, 2) + "\n", { flag: "wx" });
       }
     } finally {
