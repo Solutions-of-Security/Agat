@@ -1,0 +1,50 @@
+{
+  "schema": "agat.temporal.runtime-upgrade-attempts.v1",
+  "privateEvidence": true,
+  "attempts": [
+    {
+      "name": "recovery",
+      "status": "fail",
+      "failure": {
+        "type": "ValueError",
+        "reason": "Owned shadow runtime startup timeout"
+      },
+      "implementationCommit": "58f7e25e5d575f30e3119906f6e57285f12e4945",
+      "elapsedMs": 30575.588125007926,
+      "primaryCalls": 0,
+      "shadowCalls": 0,
+      "cleanupErrors": [],
+      "remainingOwnedPids": [],
+      "artifactSha256": {
+        "launcher.json": "c7bd58390017cc3575151fabf977f448a3610104e3fe689bbb545de8347c71e7",
+        "plan.json": "bf771d05f71cd2a69141d0f10ffc13410d3bf3d43de2fa0407628c122a6ea4ce",
+        "tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "recovery-repeat",
+      "status": "fail",
+      "failure": {
+        "type": "ValueError",
+        "reason": "Live integration tests failed; inspect tests.log"
+      },
+      "implementationCommit": "58f7e25e5d575f30e3119906f6e57285f12e4945",
+      "elapsedMs": 162338.83504099504,
+      "primaryCalls": 0,
+      "shadowCalls": 0,
+      "cleanupErrors": [],
+      "remainingOwnedPids": [],
+      "artifactSha256": {
+        "launcher.json": "f6d5fd25a4091a287333f80dcf44a7d42579c4e6ecc2204ed809eac03900ceed",
+        "plan.json": "bf771d05f71cd2a69141d0f10ffc13410d3bf3d43de2fa0407628c122a6ea4ce",
+        "isolated.shadow.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "isolated.json": "e8958b743a8965b7f89db265c886e8783aaa0e5cf6860b2c858564a2a0126bd3",
+        "tests.log": "213efd8ebc12a427528b361bce79fb06e7db7698d37436698559d5a2b322ac5a"
+      },
+      "serverErrors": [
+        "TimeoutError"
+      ],
+      "embeddingAttempts": 1
+    }
+  ]
+}
