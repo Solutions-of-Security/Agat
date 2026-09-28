@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 
+if not __debug__:
+    raise RuntimeError('Assertions must be enabled')
+
 p = argparse.ArgumentParser()
 p.add_argument('--root', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
