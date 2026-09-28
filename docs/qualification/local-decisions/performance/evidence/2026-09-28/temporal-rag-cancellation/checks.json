@@ -1,0 +1,62 @@
+{
+  "schema": "agat.temporal.rag-cancellation-checks.v1",
+  "baseCommit": "71bd4f3314a15b95fcfda9f2b0f2cefadd79944a",
+  "databaseSchema": 30,
+  "workflowCommandsChanged": false,
+  "temporalSdk": "1.24.0",
+  "sourceSha256": {
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "b32d077131bebe894fb0a5f4d936c3a9f5d84afbd821b05e05d81b4f18a00ea7",
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "workers/agat_worker.py": "d2e12e0e01dc555e88a20d4a3df939127fb619d4dc303e9b0816c035e441182e"
+  },
+  "evidenceSha256": {
+    "postgres/isolated-cancel.json": "1f3fe1a56611d38ab9205e83d825f3ad56be7173a28fa7821948b81c10351aae",
+    "postgres/session-cancel.json": "860bfb4081d1d6d94996d473f5bcce82a06e29966cf0d92645edfd866b46a545",
+    "sqlite/isolated-cancel.json": "a3f24a4b3b04e069d2409265873078eaed8c58c56ae1fdcb682c804a6a21fc7a",
+    "sqlite/session-cancel.json": "e90aeac10a02b362f5cb5162a7eeed4d6fa34167be0de9f27548a3f4da8c1c44"
+  },
+  "checks": {
+    "postgresRag": {
+      "scenarios": 4,
+      "pass": 4,
+      "fail": 0,
+      "log": "postgres.log",
+      "nonMatchingFileEntries": 6
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 14,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 34,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedTestStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "test-typecheck.log"
+      ]
+    },
+    "sqliteTemporal": {
+      "pass": 14,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1858,
+      "markdownFiles": 212,
+      "log": "docs.log"
+    }
+  },
+  "scope": "RAG cancellation while the second primary response is held, lost cleanup acknowledgement, rejected late output, retained accepted output/provenance and native replay. Primary HTTP interruption and backend computation cancellation are separate gates."
+}

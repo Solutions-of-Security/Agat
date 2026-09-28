@@ -146,6 +146,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [RAG/Temporal/PostgreSQL](./qualification/local-decisions/performance/temporal-postgres-rag.md) выявил и исправил отказ HTTP start: tenant preflight пытался читать глобальный release registry. Сервер получает project-bound readiness snapshot до tenant-транзакции; grants сохранены, lease повторно проверяет worker. Оба embedding transport прошли реальные retry/restart/replay, сохранив по три primary-ответа и шесть source references; чужой проект не видит run/retrieval/chunks. Добавлен обязательный CI suite. Следующий gate — отмена полного RAG при активном primary HTTP request в PostgreSQL runtime; предметная qualification остаётся открытой.
 
+[Отмена полного RAG](./qualification/local-decisions/performance/temporal-rag-cancellation.md) подтверждена на SQLite/PostgreSQL для обоих embedding transports. После Temporal worker restart и потерянного cleanup reply процесс отменяется до выпуска второго ответа модели; worker получает отказ завершённой lease. Первый output и provenance сохранены, второй output/новый shadow не приняты, третий stage не создан. Следующий gate — закрытие самого primary HTTP после отказа lease renewal и освобождение worker slot; сохранность state не означает прекращение backend computation.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
