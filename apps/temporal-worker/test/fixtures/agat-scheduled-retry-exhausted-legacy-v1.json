@@ -1,0 +1,299 @@
+{
+  "workflowId": "scheduled-retry-9285c1d0-5c02-485e-9383-8302e75fd3e0",
+  "description": "Legacy scheduled-start exhausts eight retries after committed create; replay retains the recorded failure",
+  "history": {
+    "events": [
+      {
+        "eventId": "1",
+        "eventTime": "2026-09-28T01:49:21.426368047Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+        "taskId": "1048587",
+        "workflowExecutionStartedEventAttributes": {
+          "workflowType": {
+            "name": "agatScheduledProcessWorkflow"
+          },
+          "taskQueue": {
+            "name": "scheduled-retry-b5e3ba78-1361-4dc4-8c1d-42778a3c6ad1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJwcm9jZXNzSWQiOiJiMjdmOTZhMC1hZGNmLTRmNjUtYmE3ZS1jYWE1ZDIwMDljNWYiLCJwcm9qZWN0SWQiOiJkZWZhdWx0IiwiaW5wdXQiOiJTeW50aGV0aWMiLCJwcmlvcml0eSI6NTAsImtub3dsZWRnZUNvbGxlY3Rpb25JZHMiOltdfQ=="
+              }
+            ]
+          },
+          "workflowTaskTimeout": "10s",
+          "originalExecutionRunId": "01a0e5b3-ce92-759b-bdb8-3905c97a96b7",
+          "identity": "retry-fixture",
+          "firstExecutionRunId": "01a0e5b3-ce92-759b-bdb8-3905c97a96b7",
+          "attempt": 1,
+          "firstWorkflowTaskBackoff": "0s",
+          "header": {},
+          "workflowId": "scheduled-retry-9285c1d0-5c02-485e-9383-8302e75fd3e0"
+        }
+      },
+      {
+        "eventId": "2",
+        "eventTime": "2026-09-28T01:49:21.426459588Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048588",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "scheduled-retry-b5e3ba78-1361-4dc4-8c1d-42778a3c6ad1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "3",
+        "eventTime": "2026-09-28T01:49:21.429493505Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048593",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "2",
+          "identity": "retry-fixture",
+          "requestId": "d347a5cc-57db-46ce-b214-bab085cbb325",
+          "historySizeBytes": "544",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.24.0+4ed7fef8be40dd9746a654a291751f6fa1bcbe5ef454d313d389b495631df20c"
+          }
+        }
+      },
+      {
+        "eventId": "4",
+        "eventTime": "2026-09-28T01:49:21.469055505Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048597",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "2",
+          "startedEventId": "3",
+          "identity": "retry-fixture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.24.0+4ed7fef8be40dd9746a654a291751f6fa1bcbe5ef454d313d389b495631df20c"
+          },
+          "sdkMetadata": {
+            "coreUsedFlags": [
+              3,
+              2,
+              1
+            ],
+            "sdkName": "temporal-typescript",
+            "sdkVersion": "1.24.0"
+          },
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "5",
+        "eventTime": "2026-09-28T01:49:21.469656672Z",
+        "eventType": "EVENT_TYPE_MARKER_RECORDED",
+        "taskId": "1048598",
+        "markerRecordedEventAttributes": {
+          "markerName": "core_patch",
+          "details": {
+            "patch-data": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJpZCI6ImFnYXQtc2NoZWR1bGVkLWNhbmNlbGxhdGlvbi1pbnRlbnQtdjEiLCJkZXByZWNhdGVkIjpmYWxzZX0="
+                }
+              ]
+            }
+          },
+          "workflowTaskCompletedEventId": "4"
+        }
+      },
+      {
+        "eventId": "6",
+        "eventTime": "2026-09-28T01:49:21.470014630Z",
+        "eventType": "EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES",
+        "taskId": "1048599",
+        "upsertWorkflowSearchAttributesEventAttributes": {
+          "workflowTaskCompletedEventId": "4",
+          "searchAttributes": {
+            "indexedFields": {
+              "TemporalChangeVersion": {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg==",
+                  "type": "S2V5d29yZExpc3Q="
+                },
+                "data": "WyJhZ2F0LXNjaGVkdWxlZC1jYW5jZWxsYXRpb24taW50ZW50LXYxIl0="
+              }
+            }
+          }
+        }
+      },
+      {
+        "eventId": "7",
+        "eventTime": "2026-09-28T01:49:21.470068880Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "taskId": "1048600",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "scheduled-start-v1",
+          "activityType": {
+            "name": "startScheduledProcess"
+          },
+          "taskQueue": {
+            "name": "scheduled-retry-b5e3ba78-1361-4dc4-8c1d-42778a3c6ad1",
+            "kind": "TASK_QUEUE_KIND_NORMAL"
+          },
+          "header": {},
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJwcm9jZXNzSWQiOiJiMjdmOTZhMC1hZGNmLTRmNjUtYmE3ZS1jYWE1ZDIwMDljNWYiLCJwcm9qZWN0SWQiOiJkZWZhdWx0IiwiaW5wdXQiOiJTeW50aGV0aWMiLCJwcmlvcml0eSI6NTAsImtub3dsZWRnZUNvbGxlY3Rpb25JZHMiOltdfQ=="
+              }
+            ]
+          },
+          "scheduleToCloseTimeout": "120s",
+          "scheduleToStartTimeout": "120s",
+          "startToCloseTimeout": "15s",
+          "heartbeatTimeout": "0s",
+          "workflowTaskCompletedEventId": "4",
+          "retryPolicy": {
+            "initialInterval": "1s",
+            "backoffCoefficient": 2,
+            "maximumInterval": "15s",
+            "maximumAttempts": 8,
+            "nonRetryableErrorTypes": [
+              "ConfigurationError",
+              "CoordinatorRequestError"
+            ]
+          },
+          "useWorkflowBuildId": true
+        }
+      },
+      {
+        "eventId": "8",
+        "eventTime": "2026-09-28T01:50:21.610343797Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "taskId": "1048629",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "7",
+          "identity": "retry-fixture",
+          "requestId": "ad336c9c-fb4b-47b5-a0cd-59c8c482f366",
+          "attempt": 8,
+          "lastFailure": {
+            "message": "Synthetic coordinator outage",
+            "source": "TypeScriptSDK",
+            "stackTrace": "Error: Synthetic coordinator outage\n    at startScheduledProcess (file:///private/tmp/agat-temporal-rag-20260928/apps/temporal-worker/dist/activities.js:98:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Activity.execute (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:104:20)\n    at async NativeConnection.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/connection.js:172:16)\n    at async Client.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/client/lib/base-client.js:65:16)\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:164:32\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/worker.js:813:30",
+            "applicationFailureInfo": {
+              "type": "Error"
+            }
+          },
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.24.0+4ed7fef8be40dd9746a654a291751f6fa1bcbe5ef454d313d389b495631df20c"
+          }
+        }
+      },
+      {
+        "eventId": "9",
+        "eventTime": "2026-09-28T01:50:21.616041047Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+        "taskId": "1048630",
+        "activityTaskFailedEventAttributes": {
+          "failure": {
+            "message": "Synthetic coordinator outage",
+            "source": "TypeScriptSDK",
+            "stackTrace": "Error: Synthetic coordinator outage\n    at startScheduledProcess (file:///private/tmp/agat-temporal-rag-20260928/apps/temporal-worker/dist/activities.js:98:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Activity.execute (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:104:20)\n    at async NativeConnection.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/connection.js:172:16)\n    at async Client.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/client/lib/base-client.js:65:16)\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:164:32\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/worker.js:813:30",
+            "applicationFailureInfo": {
+              "type": "Error"
+            }
+          },
+          "scheduledEventId": "7",
+          "startedEventId": "8",
+          "identity": "retry-fixture",
+          "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+        }
+      },
+      {
+        "eventId": "10",
+        "eventTime": "2026-09-28T01:50:21.616056672Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "taskId": "1048631",
+        "workflowTaskScheduledEventAttributes": {
+          "taskQueue": {
+            "name": "retry-fixture-worker-30c8252825594cf9a12c0f6070dfbe9f",
+            "kind": "TASK_QUEUE_KIND_STICKY",
+            "normalName": "scheduled-retry-b5e3ba78-1361-4dc4-8c1d-42778a3c6ad1"
+          },
+          "startToCloseTimeout": "10s",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "11",
+        "eventTime": "2026-09-28T01:50:21.617910047Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "taskId": "1048635",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "10",
+          "identity": "retry-fixture",
+          "requestId": "95d35e31-8908-40aa-96fb-d10d19bec07b",
+          "historySizeBytes": "3837",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.24.0+4ed7fef8be40dd9746a654a291751f6fa1bcbe5ef454d313d389b495631df20c"
+          }
+        }
+      },
+      {
+        "eventId": "12",
+        "eventTime": "2026-09-28T01:50:21.630271463Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "taskId": "1048639",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "10",
+          "startedEventId": "11",
+          "identity": "retry-fixture",
+          "workerVersion": {
+            "buildId": "@temporalio/worker@1.24.0+4ed7fef8be40dd9746a654a291751f6fa1bcbe5ef454d313d389b495631df20c"
+          },
+          "sdkMetadata": {},
+          "meteringMetadata": {}
+        }
+      },
+      {
+        "eventId": "13",
+        "eventTime": "2026-09-28T01:50:21.630342797Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+        "taskId": "1048640",
+        "workflowExecutionFailedEventAttributes": {
+          "failure": {
+            "message": "Activity task failed",
+            "cause": {
+              "message": "Synthetic coordinator outage",
+              "source": "TypeScriptSDK",
+              "stackTrace": "Error: Synthetic coordinator outage\n    at startScheduledProcess (file:///private/tmp/agat-temporal-rag-20260928/apps/temporal-worker/dist/activities.js:98:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Activity.execute (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:104:20)\n    at async NativeConnection.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/connection.js:172:16)\n    at async Client.withAbortSignal (/private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/client/lib/base-client.js:65:16)\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/activity.js:164:32\n    at async /private/tmp/agat-temporal-rag-20260928/node_modules/@temporalio/worker/lib/worker.js:813:30",
+              "applicationFailureInfo": {
+                "type": "Error"
+              }
+            },
+            "activityFailureInfo": {
+              "scheduledEventId": "7",
+              "startedEventId": "8",
+              "identity": "retry-fixture",
+              "activityType": {
+                "name": "startScheduledProcess"
+              },
+              "activityId": "scheduled-start-v1",
+              "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+            }
+          },
+          "retryState": "RETRY_STATE_RETRY_POLICY_NOT_SET",
+          "workflowTaskCompletedEventId": "12"
+        }
+      }
+    ]
+  }
+}
