@@ -31,6 +31,7 @@ SOURCES = ['apps/coordinator/src', 'apps/coordinator/test', 'apps/coordinator/pa
 SHADOW_POLICY = 'docs/qualification/local-decisions/policy.shadow.v1.json'
 SHADOW_REFERENCE = 'docs/qualification/local-decisions/performance/evidence/2026-09-28/rag-http-isolation/resident-isolated/rag-workflow-plan.json'
 SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
+SHADOW_RECOVERY_SOURCES = ['scripts/lib/temporal_shadow_control.py', 'scripts/test/test_temporal_shadow_control.py']
 
 
 def request(port, path, body=None, timeout=5, capture_status=False):
@@ -53,6 +54,32 @@ def own_containers(pids):
             and int(match[1]) in pids}
 
 
+def start_shadow_runtime(state, args, port, decision, warmup_request, log):
+    process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
+        '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
+        '--max-tokens', '2048', '--cache-limit-mib', '128', '--inference-timeout-ms', '5000',
+        '--exit-on-backend-unavailable', '--port', str(port)], cwd=ROOT,
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+        env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'})
+    state['process'] = process
+    deadline = time.monotonic() + 30
+    while True:
+        require(process.poll() is None, 'Owned shadow runtime exited during startup')
+        try:
+            state['health'] = request(port, '/health')
+            break
+        except (OSError, ValueError, http.client.HTTPException):
+            require(time.monotonic() < deadline, 'Owned shadow runtime startup timeout')
+            time.sleep(.1)
+    health = state['health']
+    require(health.get('status') == 'ready' and health.get('mode') == 'shadow', 'Shadow runtime not ready')
+    require(all(health[key] == decision['profile'][key] for key in ['profileJson', 'profileSha256']), 'Live shadow profile changed')
+    state['warmup'] = request(port, '/v1/decisions', warmup_request, 12, capture_status=True)
+    warmup = state['warmup']
+    require(warmup['httpStatus'] == 200 and warmup['result'].get('status') in ['ok', 'abstain'],
+            'Shadow warmup failed: ' + str(warmup['result'].get('reason')))
+
+
 def main():
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
@@ -60,14 +87,17 @@ def main():
     parser.add_argument('--evidence-dir', type=Path, required=True)
     parser.add_argument('--shadow-python', type=Path, help='Resident MLX Python; requires --shadow-manifest')
     parser.add_argument('--shadow-manifest', type=Path, help='Verified resident decider manifest; enables the v2 shadow gate')
+    parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
     args = parser.parse_args()
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
     shadow_enabled = args.shadow_manifest is not None
+    require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
+    version_number = 3 if args.shadow_recovery else 2 if shadow_enabled else 1
     directory = args.evidence_dir.resolve()
     require(directory.is_relative_to(ROOT / 'docs') and not directory.exists(), 'Use a new evidence directory under docs')
     require(platform.system() == 'Darwin', 'This installed-model experiment requires the macOS host')
     commit = command(['git', 'rev-parse', 'HEAD'])
-    measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else [])]
+    measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else [])]
     snapshot = subprocess.check_output(['git', 'archive', commit, '--', *measured_paths], cwd=ROOT, timeout=15)
     sources = {}
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -94,7 +124,7 @@ def main():
         require(runtime['packages'] == requirements, 'Shadow dependencies differ from the pinned requirements')
         decision = {'profile': expected, 'manifest': {key: value for key, value in manifest.items() if key != 'snapshot'},
                     'policy': json.loads((ROOT / SHADOW_POLICY).read_text()), 'runtime': runtime,
-                    'referencePath': SHADOW_REFERENCE, 'policyPath': SHADOW_POLICY, 'warmupCalls': 1}
+                    'referencePath': SHADOW_REFERENCE, 'policyPath': SHADOW_POLICY, 'warmupCalls': 3 if args.shadow_recovery else 1}
     model_root = Path(os.environ.get('OLLAMA_MODELS', str(Path.home() / '.ollama/models')))
     for name, digest in shared.MODELS.items():
         require(sha((model_root / 'manifests/registry.ollama.ai/library' / name.replace(':', '/')).read_bytes()) == digest,
@@ -107,7 +137,7 @@ def main():
     require(host['memoryBytes'] >= 24 * 1024**3, 'At least 24 GiB unified memory required')
     settings = {'OLLAMA_NO_CLOUD': '1', 'OLLAMA_MAX_LOADED_MODELS': '2', 'OLLAMA_NUM_PARALLEL': '1',
                 'OLLAMA_CONTEXT_LENGTH': '8192', 'OLLAMA_KEEP_ALIVE': '5m'}
-    plan = {'schema': 'agat.temporal.real-rag-plan.v2' if shadow_enabled else 'agat.temporal.real-rag-plan.v1', 'implementationCommit': commit, 'sourceSha256': sources,
+    plan = {'schema': f'agat.temporal.real-rag-plan.v{version_number}', 'implementationCommit': commit, 'sourceSha256': sources,
             'host': host, 'models': shared.MODELS, 'ollamaSettings': settings, 'fixturePath': shared.FIXTURE,
             'fixture': json.loads((ROOT / shared.FIXTURE).read_text()), 'shadow': shadow_enabled,
             'transports': ['isolated', 'session'], 'concurrency': 1, 'workloadBudgetSeconds': 600,
@@ -116,6 +146,9 @@ def main():
             'qualification': 'not_assessed', 'routingEnabled': False}
     if decision:
         plan['decision'] = decision
+    if args.shadow_recovery:
+        plan['shadowRecovery'] = {'protocol': 'private-files-v1', 'signal': 'SIGKILL',
+            'actions': [f'{transport}/{action}' for transport in plan['transports'] for action in ['kill', 'restart']]}
     directory.mkdir(parents=True)
     write(directory / 'plan.json', plan)
     started = time.monotonic()
@@ -125,6 +158,7 @@ def main():
     version = initial = unloaded = failure = None
     decision_before = decision_after = None
     decision_warmup = None
+    shadow_control = None
     with tempfile.TemporaryDirectory(prefix='agat-temporal-real-rag-') as temporary:
         temporary = Path(temporary)
         shim = temporary / 'python3'
@@ -139,29 +173,25 @@ def main():
                 if shadow_enabled:
                     with socket.socket() as shadow_bound:
                         shadow_bound.bind(('127.0.0.1', 0)); shadow_port = shadow_bound.getsockname()[1]
-                    shadow_runtime = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
-                        '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
-                        '--max-tokens', '2048', '--cache-limit-mib', '128', '--inference-timeout-ms', '5000',
-                        '--exit-on-backend-unavailable', '--port', str(shadow_port)], cwd=ROOT,
-                        stdout=decision_log, stderr=subprocess.STDOUT, start_new_session=True,
-                        env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'})
-                    pids.add(shadow_runtime.pid)
-                    shadow_deadline = time.monotonic() + 30
-                    while True:
-                        require(shadow_runtime.poll() is None, 'Owned shadow runtime exited during startup')
-                        try:
-                            decision_before = request(shadow_port, '/health')
-                            break
-                        except (OSError, ValueError, http.client.HTTPException):
-                            require(time.monotonic() < shadow_deadline, 'Owned shadow runtime startup timeout')
-                            time.sleep(.1)
-                    require(decision_before.get('status') == 'ready' and decision_before.get('mode') == 'shadow', 'Shadow runtime not ready')
-                    require(all(decision_before[key] == decision['profile'][key] for key in ['profileJson', 'profileSha256']), 'Live shadow profile changed')
                     warmup_request = {'schemaVersion': 'agat.decision.v1', 'id': 'temporal-shadow-warmup',
                                       'state': plan['fixture']['input'], **plan['fixture']['shadow']}
-                    decision_warmup = request(shadow_port, '/v1/decisions', warmup_request, 12, capture_status=True)
-                    require(decision_warmup['httpStatus'] == 200 and decision_warmup['result'].get('status') in ['ok', 'abstain'],
-                            'Shadow warmup failed: ' + str(decision_warmup['result'].get('reason')))
+                    initial_state = {}
+                    try:
+                        if args.shadow_recovery:
+                            from scripts.lib.temporal_shadow_control import ShadowRecoveryControl
+                            shadow_control = ShadowRecoveryControl(temporary / 'control',
+                                lambda state: start_shadow_runtime(state, args, shadow_port, decision, warmup_request, decision_log),
+                                shared.inventory, shared.stop, started)
+                            shadow_control.start()
+                            shadow_environment['AGAT_TEMPORAL_SHADOW_CONTROL'] = str(shadow_control.directory)
+                        else:
+                            start_shadow_runtime(initial_state, args, shadow_port, decision, warmup_request, decision_log)
+                    finally:
+                        initial_state = shadow_control.state if shadow_control else initial_state
+                        shadow_runtime = initial_state.get('process')
+                        decision_before, decision_warmup = initial_state.get('health'), initial_state.get('warmup')
+                        if shadow_runtime is not None:
+                            pids.add(shadow_runtime.pid)
                     shadow_environment['AGAT_TEMPORAL_REAL_DECISION_URL'] = f'http://127.0.0.1:{shadow_port}'
                 ollama = subprocess.Popen(['ollama', 'serve'], cwd=ROOT, stdout=model_log, stderr=subprocess.STDOUT,
                                           start_new_session=True, env={**os.environ, **settings, 'OLLAMA_HOST': f'127.0.0.1:{port}'})
@@ -200,7 +230,11 @@ def main():
                     while workload.poll() is None:
                         require(time.monotonic() < deadline, 'Workload budget exceeded')
                         pids.update(shared.inventory(ollama.pid)[0]); pids.update(shared.inventory(workload.pid)[0])
-                        if shadow_runtime is not None:
+                        if shadow_control is not None:
+                            shadow_control.poll(transport)
+                            pids.update(shadow_control.sample())
+                            shadow_runtime = shadow_control.state['process']
+                        elif shadow_runtime is not None:
                             require(shadow_runtime.poll() is None, 'Owned shadow runtime exited')
                             pids.update(shared.inventory(shadow_runtime.pid)[0])
                         containers.update(own_containers(pids))
@@ -218,6 +252,8 @@ def main():
                 if shadow_enabled:
                     decision_after = request(shadow_port, '/health')
                     require(decision_after == decision_before, 'Shadow runtime health/profile changed during workload')
+                if shadow_control:
+                    require(shadow_control.failure is None and len(shadow_control.events) == 4, 'Incomplete shadow failure/recovery sequence')
             except Exception as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
             finally:
@@ -234,7 +270,12 @@ def main():
                     except Exception as error:
                         cleanup_errors.append(type(error).__name__)
                 try:
-                    if shadow_runtime is not None:
+                    if shadow_control is not None:
+                        shadow_control.close()
+                        pids.update(shadow_control.owned)
+                        if shadow_control.state and 'process' in shadow_control.state:
+                            shadow_runtime = shadow_control.state['process']
+                    elif shadow_runtime is not None:
                         pids.update(shared.inventory(shadow_runtime.pid)[0])
                         was_running = shadow_runtime.poll() is None
                         shared.stop(shadow_runtime)
@@ -265,7 +306,7 @@ def main():
     remaining = sorted(pids & shared.inventory(os.getpid())[1])
     if (cleanup_errors or remaining) and failure is None:
         failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close'}
-    report = {'schema': 'agat.temporal.real-rag-launcher.v2' if shadow_enabled else 'agat.temporal.real-rag-launcher.v1', 'status': 'fail' if failure else 'pass', 'failure': failure,
+    report = {'schema': f'agat.temporal.real-rag-launcher.v{version_number}', 'status': 'fail' if failure else 'pass', 'failure': failure,
               'planSha256': sha((directory / 'plan.json').read_bytes()), 'phaseSha256': phase_hashes,
               'elapsedMs': (time.monotonic() - started) * 1000, 'ollamaVersion': version, 'warmup': warmup,
               'modelsBefore': initial, 'modelsAfterUnload': unloaded, 'ownedPids': sorted(pids), 'remainingOwnedPids': remaining,
@@ -279,6 +320,8 @@ def main():
             'exitCode': shadow_runtime.returncode if shadow_runtime else None, 'before': decision_before, 'after': decision_after,
             'warmup': decision_warmup}
         report['logSha256']['decision.log'] = decision_log_sha
+    if shadow_control:
+        report['shadowRecovery'] = shadow_control.report()
     write(directory / 'launcher.json', report)
     print(report['status'], failure, flush=True)
     return 1 if failure else 0
