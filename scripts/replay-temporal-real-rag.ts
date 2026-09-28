@@ -12,7 +12,7 @@ assert.ok(directory.startsWith(path.join(root, "docs") + path.sep));
 const sha = (value: Buffer) => createHash("sha256").update(value).digest("hex");
 const planBytes = fs.readFileSync(path.join(directory, "plan.json"));
 const plan = JSON.parse(planBytes.toString());
-assert.ok(["agat.temporal.real-rag-plan.v1", "agat.temporal.real-rag-plan.v2", "agat.temporal.real-rag-plan.v3"].includes(plan.schema));
+assert.ok([1, 2, 3, 4].map(version => `agat.temporal.real-rag-plan.v${version}`).includes(plan.schema));
 const launcher = JSON.parse(fs.readFileSync(path.join(directory, "launcher.json"), "utf8"));
 assert.equal(launcher.status, "pass"); assert.equal(launcher.planSha256, sha(planBytes));
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };

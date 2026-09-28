@@ -109,19 +109,82 @@ def verify_runtime_phase(phase, launcher, stages, observations, decision_calls):
     assert snapshot['restartFinishedMs'] <= snapshot['thirdResponseReleasedMs'] <= calls[2]['finishedMs']
 
 
+def verify_resources(plan, launcher, owned, elapsed):
+    from scripts.lib.shadow_resource_sample import PLAN
+    assert plan['resources'] == PLAN
+    resources = launcher['resources']
+    assert resources['schema'] == 'agat.shadow.resources.v1' and resources['errors'] == []
+    assert set(resources['timebase']) == {'numer', 'denom'}
+    assert all(type(value) is int and value > 0 for value in resources['timebase'].values())
+    sampled = set(resources['ownedPids'])
+    assert len(sampled) == len(resources['ownedPids']) and sampled <= owned
+    rows = resources['samples']
+    assert 10 <= len(rows) <= 1000
+    assert [row['phase'] for row in rows[:3]] == ['before_models', 'after_shadow_warmup', 'after_ollama_warmup']
+    assert [row['phase'] for row in rows[-2:]] == ['before_cleanup', 'after_cleanup']
+    assert {row['phase'] for row in rows[3:-2]} == {'isolated', 'session'}
+    assert rows[0]['groups'] == rows[-1]['groups'] == {}
+    assert rows[0]['pressureDispatchLevel'] != 4
+    last, all_sampled, previous = 0, set(), {}
+    for row in rows:
+        assert 'error' not in row and last < row['startedMs'] < row['finishedMs'] < elapsed
+        last = row['finishedMs']
+        groups = row['groups']; assert set(groups) <= {'shadow', 'ollama', 'workload'}
+        joined = set()
+        for name, values in groups.items():
+            assert len(values) == len(set(values)) and not joined.intersection(values)
+            joined.update(values)
+            roots = {launcher['ollamaPid']} if name == 'ollama' else {r['pid'] for r in launcher['workloads']} if name == 'workload' else {
+                r['pid'] for r in launcher['shadowRecovery']['runtimes']}
+            assert not values or len(set(values) & roots) == 1
+        assert joined <= sampled; all_sampled.update(joined)
+        processes = row['processes']; ids = {process['pid'] for process in processes}
+        exited = set(row['exitedDuringSample'])
+        assert len(ids) == len(processes) and len(exited) == len(row['exitedDuringSample'])
+        assert ids.isdisjoint(exited) and ids | exited == joined
+        for process in processes:
+            assert set(process) == {'pid', 'startTicks', 'userTicks', 'systemTicks', 'rssBytes', 'footprintBytes'}
+            assert all(type(value) is int and value >= 0 for value in process.values())
+            assert process['pid'] > 0 and process['startTicks'] > 0
+            identity = process['pid'], process['startTicks']
+            if identity in previous:
+                assert all(process[key] >= previous[identity][key] for key in ('userTicks', 'systemTicks'))
+            previous[identity] = process
+        assert row['pressureDispatchLevel'] in (1, 2, 4)
+        assert row['vm']['pageSizeBytes'] in (4096, 16384)
+        assert set(row['vm']['pages']) == {'Pages free', 'Pages active', 'Pages inactive', 'Pages wired down', 'Pages occupied by compressor',
+            'Pages stored in compressor', 'Pageins', 'Pageouts', 'Swapins', 'Swapouts', 'Compressions', 'Decompressions'}
+        assert all(type(value) is int and value >= 0 for value in row['vm']['pages'].values())
+        swap = row['swap']; assert set(swap) == {'totalBytes', 'usedBytes', 'freeBytes'}
+        assert all(type(value) is int and value >= 0 for value in swap.values())
+        assert abs(swap['totalBytes'] - swap['usedBytes'] - swap['freeBytes']) <= 20972
+        assert max(swap['usedBytes'], swap['freeBytes']) <= swap['totalBytes']
+    assert all_sampled == sampled
+    return {'samples': len(rows), 'ownedSampledPids': len(sampled),
+            'pressureDispatchLevels': sorted({row['pressureDispatchLevel'] for row in rows}),
+            'swapUsedBytesRange': [min(row['swap']['usedBytes'] for row in rows), max(row['swap']['usedBytes'] for row in rows)],
+            'maxObservedShadowRssBytes': max(sum(process['rssBytes'] for process in row['processes']
+                if process['pid'] in row['groups'].get('shadow', [])) for row in rows),
+            'measurement': 'sampled_not_peak', 'causalConclusion': 'not_established'}
+
+
 def verify(directory):
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
     directory = directory.resolve()
     assert directory.is_relative_to(ROOT / 'docs')
     plan, launcher = [json.loads((directory / f'{name}.json').read_text()) for name in ('plan', 'launcher')]
-    assert plan['schema'] in [f'agat.temporal.real-rag-plan.v{v}' for v in (1, 2, 3)]
+    assert plan['schema'] in [f'agat.temporal.real-rag-plan.v{v}' for v in (1, 2, 3, 4)]
     version = int(plan['schema'][-1])
-    shadow, runtime_recovery = version >= 2, version == 3
+    shadow, runtime_recovery = version >= 2, version >= 3
+    resource_sources = []
+    if version == 4:
+        from scripts.lib.shadow_resource_sample import SOURCE_PATHS
+        resource_sources = SOURCE_PATHS
     assert plan['schema'] == f'agat.temporal.real-rag-plan.v{version}'
     assert re.fullmatch('[0-9a-f]{40}', plan['implementationCommit'])
     paths = [*SOURCES, *(launcher_module.SHADOW_SOURCES if shadow else []),
-             *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else [])]
+             *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else []), *resource_sources]
     archived = subprocess.check_output(['git', 'archive', plan['implementationCommit'], '--', *paths], cwd=ROOT, timeout=15)
     with tarfile.open(fileobj=io.BytesIO(archived)) as archive:
         sources = {member.name: archive.extractfile(member).read() for member in archive if member.isfile()}
@@ -371,7 +434,8 @@ def verify(directory):
             'ownedObservedPids': len(owned), 'ownedContainers': 4, 'qualification': 'not_assessed',
             **({'shadowCalls': 6, 'profileSha256': plan['decision']['profile']['profileSha256']} if shadow else {}),
             **({'shadowInferenceCalls': 4, 'unavailableObservations': 2, 'separateWarmupCalls': 3, 'runtimeRestarts': 2}
-               if runtime_recovery else {})}
+               if runtime_recovery else {}),
+            **({'resources': verify_resources(plan, launcher, owned, elapsed)} if version == 4 else {})}
 
 
 if __name__ == '__main__':
@@ -382,6 +446,8 @@ if __name__ == '__main__':
     result = verify(args.directory)
     if args.output:
         assert args.output.resolve().is_relative_to(ROOT / 'docs')
+        if result['schema'] == 'agat.temporal.real-rag-verification.v4':
+            assert args.output.resolve().is_relative_to(ROOT / 'docs/private')
         with args.output.open('x') as stream:
             json.dump(result, stream, ensure_ascii=False, indent=2, allow_nan=False); stream.write('\n')
     print(compact(result))
