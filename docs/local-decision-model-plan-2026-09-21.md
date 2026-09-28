@@ -170,6 +170,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Реальные модели с Temporal/PostgreSQL](./qualification/local-decisions/performance/temporal-real-rag.md) завершили оба embedding transport: 6 primary calls и 10 embedding items, одинаковые prompts/outputs/vectors. Потерянный tick reply и SIGKILL Temporal worker сохранили Run ID, принятый stage и все citations; RLS изоляция и два независимых native replay прошли. Все четыре контейнера удалены, модели выгружены. Сохранён первый отказ из-за общей тестовой БД, затем весь опыт повторён с отдельными БД. Следующий gate — настоящий локальный shadow decider в том же сценарии; предметная qualification остаётся открытой.
 
+[Реальный shadow в Temporal/PostgreSQL](./qualification/local-decisions/performance/temporal-real-shadow.md) прошёл оба transport с явно прогретым pinned decider: 6 primary, 10 embedding items и 6 accepted shadow observations. Snapshot первого наблюдения, primary fallback и все входы/ответы сохранены через restart; два native replay и 22 verifier tests прошли. Первый запуск без отдельного warmup завершился backend-unavailable и сохранён как отказ; точный typed reason тогда не записывался, наблюдаемость исправлена. Следующий gate — реальный отказ/restart decider и fallback полного процесса; cold-start причина и предметная qualification открыты.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
