@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independently verify frozen sources, real RAG provenance and recovery evidence."""
 import argparse
+import ast
 import base64
 from collections import Counter, defaultdict
 import hashlib
@@ -47,6 +48,32 @@ def payload(value):
     item = value['payloads'][0]
     assert base64.b64decode(item['metadata']['encoding'], validate=True) == b'json/plain'
     return json.loads(base64.b64decode(item['data'], validate=True))
+
+
+def verify_shadow_profile(decision, sources):
+    """Rebuild the selected identity from archived bytes, never today's runtime."""
+    reference = launcher_module.SHADOW_REFERENCE
+    historical = json.loads(sources[reference])['decision']
+    if 'referenceFormat' not in decision:
+        assert decision['referencePath'] == reference and decision['profile'] == historical
+        assert historical['profileSha256'] == '4bd6e0de2bfde982d8d5fbdfc4d5e7ef36ccd1d8bb69356cd558a33934cb7a2a'
+    else:
+        assert decision['referenceFormat'] == 'runtime-profile-v1'
+        expected = json.loads(historical['profileJson'])
+        tree = ast.parse(sources['decision_runtime/__init__.py'])
+        versions = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == 'VERSION' for target in node.targets)]
+        assert len(versions) == 1 and isinstance(versions[0], str)
+        expected['runtimeVersion'] = versions[0]
+        runtime_sources = sorted(name for name in sources if re.fullmatch(r'decision_runtime/[^/]+\.py', name))
+        assert runtime_sources
+        implementation = b''.join(Path(name).name.encode() + b'\0' + sources[name] + b'\0' for name in runtime_sources)
+        expected['model']['implementationSha256'] = sha(implementation)
+        assert json.loads(sources[decision['referencePath']]) == expected
+        raw = json.dumps(expected, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        assert decision['profile'] == {'profileJson': raw, 'profileSha256': sha(raw)}
+    assert sha(decision['profile']['profileJson']) == decision['profile']['profileSha256']
+    return json.loads(decision['profile']['profileJson'])
 
 
 def verify_runtime_control(plan, launcher, profile, warmup_request, owned, elapsed):
@@ -185,6 +212,12 @@ def verify(directory):
     assert re.fullmatch('[0-9a-f]{40}', plan['implementationCommit'])
     paths = [*SOURCES, *(launcher_module.SHADOW_SOURCES if shadow else []),
              *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else []), *resource_sources]
+    if shadow and 'referenceFormat' in plan['decision']:
+        reference = plan['decision']['referencePath']
+        assert isinstance(reference, str) and reference.startswith('docs/')
+        assert Path(reference).as_posix() == reference and '..' not in Path(reference).parts
+        assert (ROOT / reference).resolve().is_relative_to(ROOT / 'docs')
+        paths.append(reference)
     archived = subprocess.check_output(['git', 'archive', plan['implementationCommit'], '--', *paths], cwd=ROOT, timeout=15)
     with tarfile.open(fileobj=io.BytesIO(archived)) as archive:
         sources = {member.name: archive.extractfile(member).read() for member in archive if member.isfile()}
@@ -196,11 +229,9 @@ def verify(directory):
     profile = None
     if shadow:
         decision = plan['decision']
-        assert decision['referencePath'] == launcher_module.SHADOW_REFERENCE and decision['policyPath'] == launcher_module.SHADOW_POLICY
-        assert decision['profile'] == json.loads(sources[decision['referencePath']])['decision']
+        assert decision['policyPath'] == launcher_module.SHADOW_POLICY
+        profile = verify_shadow_profile(decision, sources)
         assert decision['warmupCalls'] == (3 if runtime_recovery else 1)
-        assert sha(decision['profile']['profileJson']) == decision['profile']['profileSha256'] == '4bd6e0de2bfde982d8d5fbdfc4d5e7ef36ccd1d8bb69356cd558a33934cb7a2a'
-        profile = json.loads(decision['profile']['profileJson'])
         assert decision['policy'] == json.loads(sources[decision['policyPath']])
         assert all(decision['manifest'][key] == profile['model'][key] for key in ['repository', 'revision', 'artifactSha256'])
         assert sha(json.dumps(decision['manifest']['files'], sort_keys=True, separators=(',', ':'))) == decision['manifest']['artifactSha256']
