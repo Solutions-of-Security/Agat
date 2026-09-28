@@ -122,6 +122,15 @@ def remaining_owned_processes(owned, errors):
         return None  # Unknown is not evidence that every child has exited.
 
 
+def open_private_log(path):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        return os.fdopen(descriptor, 'wb')
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
 def start_shadow_runtime(state, args, port, decision, warmup_request, log):
     process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
         '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
@@ -251,12 +260,16 @@ def main():
             row = resources.sample(phase, roots)
             pids.update(resources.owned)
             return row
+    # Allocate private destinations before any owned process starts. Writing
+    # directly avoids a late copy that can fail and lose temporary diagnostics.
+    private_logs = ROOT / 'docs/private/temporal-real-rag' / directory.relative_to(ROOT / 'docs')
+    private_logs.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.TemporaryDirectory(prefix='agat-temporal-real-rag-') as temporary:
         temporary = Path(temporary)
         shim = temporary / 'python3'
         shim.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
         shim.chmod(0o700)
-        with (temporary / 'ollama.log').open('wb') as model_log, (temporary / 'decision.log').open('wb') as decision_log, (directory / 'tests.log').open('xb') as test_log:
+        with open_private_log(private_logs / 'ollama.log') as model_log, open_private_log(private_logs / 'decision.log') as decision_log, (directory / 'tests.log').open('xb') as test_log:
             with socket.socket() as bound:
                 bound.bind(('127.0.0.1', 0))
                 port = bound.getsockname()[1]
@@ -397,16 +410,8 @@ def main():
                 stop_owned_process(ollama, pids, cleanup_errors)
                 cleanup_owned_containers(pids, containers, cleanup_errors)
                 sample_resources('after_cleanup')
-        model_log_sha = sha((temporary / 'ollama.log').read_bytes())
-        decision_log_sha = sha((temporary / 'decision.log').read_bytes())
-        # Keep model/retirement diagnostics even when a workload fails before
-        # phase evidence is written. Raw process output is always private.
-        private_logs = ROOT / 'docs/private/temporal-real-rag' / directory.relative_to(ROOT / 'docs')
-        private_logs.mkdir(parents=True, exist_ok=True, mode=0o700)
-        for name in ['ollama.log', *(['decision.log'] if shadow_enabled else [])]:
-            descriptor = os.open(private_logs / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, 'wb') as stream:
-                stream.write((temporary / name).read_bytes())
+        model_log_sha = sha((private_logs / 'ollama.log').read_bytes())
+        decision_log_sha = sha((private_logs / 'decision.log').read_bytes())
     phase_hashes = {}
     for transport in plan['transports']:
         phase_path = directory / f'{transport}.json'
