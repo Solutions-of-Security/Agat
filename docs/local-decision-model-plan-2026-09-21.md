@@ -164,6 +164,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Повтор реального RAG после HTTP isolation](./qualification/local-decisions/performance/rag-http-isolation.md) завершил 12 workflows / 36 primary / 44 embedding items / 18 accepted shadow calls с прежним model profile и одинаковыми наборами prompts/outputs. Арифметика всех 12 повторных итогов верна; модели выгружены, 71 наблюдавшийся собственный PID отсутствует. Workload 164,092 с не даёт причинной оценки overhead относительно прежних 112,036 с. Первый startup timeout на dataless-файлах сохранён; окружение и pinned weights восстановлены вне Documents без смены версий. Следующий gate — времена запросов и sampled RSS всех трёх типов HTTP helpers.
 
+[Все HTTP helpers в реальном RAG](./qualification/local-decisions/performance/http-helper-observability.md) наблюдает 116 запросов и 98 закрытых/reaped процессов: embedding, primary и knowledge. Четыре ABBA-блока сохранили все 36 ответов и одинаковые векторы; независимый replay и 31 mutation/replay test прошли. Session уменьшает число embedding helpers с 11 до 2 на блок, с дополнительными примерно 44 МиБ sampled RSS; причинное ускорение всего workflow не заявляется. Следующий шаг — ранее незавершённая Linux deployment-проверка после Docker ENOSPC.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
