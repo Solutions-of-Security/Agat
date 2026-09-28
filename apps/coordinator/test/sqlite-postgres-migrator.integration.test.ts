@@ -74,6 +74,7 @@ describe("SQLite to PostgreSQL migration integration", {
       source.publishProcess(String(process.id));
       scheduledReceipt = source.startScheduledProcess(String(process.id), { input: "Scheduled migration" }, "default", scheduledKey);
       assert.ok(scheduledReceipt);
+      source.cancelScheduledProcess(String(process.id), { input: "Cancelled before creation" }, "default", `agat-scheduled-v1:${"b".repeat(64)}`);
       const instance = source.startProcess(String(process.id), { input: "dependency order" });
       assert.ok(instance);
       const insertToken = source.db.prepare(`
@@ -134,6 +135,9 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.match(receipt.rows[0].request_sha256, /^[a-f0-9]{64}$/);
         const ownership = await client.query("SELECT workflow_start_owner FROM process_instances WHERE id = $1", [scheduledReceipt!.instanceId]);
         assert.equal(ownership.rows[0].workflow_start_owner, "temporal_parent");
+        const cancellation = await client.query("SELECT response_json, cancel_requested_at FROM process_scheduled_start_receipts WHERE project_id = 'default' AND idempotency_key = $1", [`agat-scheduled-v1:${"b".repeat(64)}`]);
+        assert.equal(cancellation.rowCount, 1); assert.equal(cancellation.rows[0].response_json, "null");
+        assert.equal(typeof cancellation.rows[0].cancel_requested_at, "string");
       } finally {
         await client.end();
       }

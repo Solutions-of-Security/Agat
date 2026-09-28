@@ -1,0 +1,42 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh --test-name-pattern=upgrades scheduled cancellation|serializes Temporal cancellation|deduplicates scheduled-start
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:23555) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ upgrades scheduled cancellation receipts and fences concurrent starts plus lost COMMIT acknowledgements (2538.966916ms)
+  ✖ serializes Temporal cancellation retries across replicas without duplicate terminal events (197.288459ms)
+  ✔ deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS (1066.249ms)
+✖ PostgreSQL Fleet/HA integration (5240.745541ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5779.555792
+
+✖ failing tests:
+
+test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:18:2287
+✖ serializes Temporal cancellation retries across replicas without duplicate terminal events (197.288459ms)
+  error: duplicate key value violates unique constraint "projects_name_key"
+      at PostgresDatabaseSync.call (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/src/postgres-database.ts:220:21)
+      at PostgresDatabaseSync.request (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/src/postgres-database.ts:195:17)
+      at PostgresStatement.run (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/src/postgres-database.ts:129:26)
+      at AgatStore.createProject (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/src/database.ts:3736:10)
+      at <anonymous> (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:503:77)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (/private/tmp/agat-temporal-rag-20260928/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:495:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    code: '23505',
+    detail: 'Key (name)=(Foreign) already exists.',
+    constraint: 'projects_name_key'
+  }

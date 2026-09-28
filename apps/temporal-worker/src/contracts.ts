@@ -1,3 +1,5 @@
+export const SCHEDULED_START_ACTIVITY_ID = "scheduled-start-v1";
+
 export type DurableProcessStatus =
   | "queued"
   | "running"

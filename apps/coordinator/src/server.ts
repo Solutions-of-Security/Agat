@@ -27,7 +27,7 @@ import {
   type AgatRole,
   type AuthContext,
 } from "./auth.js";
-import { AgatStore, ScheduledStartConflictError, type StoreOptions } from "./database.js";
+import { AgatStore, ScheduledStartConflictError, ScheduledStartCancelledError, type StoreOptions } from "./database.js";
 import { validateProcessFormData } from "./process-forms.js";
 import type { ProcessApprovalForm } from "./types.js";
 import { enterPostgresTenantScope, runWithPostgresSystemScope } from "./postgres-database.js";
@@ -997,7 +997,7 @@ export function createCoordinatorServer(
 
       const scheduledProcessId = routeParam(
         pathname,
-        /^\/api\/v1\/internal\/processes\/([^/]+)\/scheduled-start$/,
+        /^\/api\/v1\/internal\/processes\/([^/]+)\/scheduled-(?:start|cancel)$/,
       );
       if (request.method === "POST" && scheduledProcessId) {
         if (!config.temporalEnabled || !config.temporalInternalToken) throw new HttpError(404, "Маршрут API не найден");
@@ -1008,6 +1008,10 @@ export function createCoordinatorServer(
         const body = await readJson<StartProcessInput & { projectId?: unknown }>(request);
         if (typeof body.projectId !== "string") throw new HttpError(400, "projectId обязателен");
         const { projectId, ...input } = body;
+        if (pathname.endsWith("/scheduled-cancel")) {
+          json(response, 200, store.cancelScheduledProcess(scheduledProcessId, input, projectId, request.headers["idempotency-key"]));
+          return;
+        }
         const result = store.startScheduledProcess(scheduledProcessId, input, projectId,
           request.headers["idempotency-key"], scenarioContext());
         if (!result) throw new HttpError(404, "Процесс расписания не найден");
@@ -2745,6 +2749,10 @@ export function createCoordinatorServer(
       }
       if (error instanceof ScheduledStartConflictError) {
         json(response, 409, { error: safeMessage(error), code: "SCHEDULED_START_IDEMPOTENCY_CONFLICT" });
+        return;
+      }
+      if (error instanceof ScheduledStartCancelledError) {
+        json(response, 409, { error: safeMessage(error), code: "SCHEDULED_START_CANCELLED" });
         return;
       }
       const status = error instanceof HttpError

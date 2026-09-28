@@ -1,4 +1,5 @@
 import {
+  ActivityCancellationType,
   CancellationScope,
   condition,
   continueAsNew,
@@ -13,9 +14,13 @@ import {
   patched,
   proxyActivities,
   setHandler,
+  sleep,
+  startChild,
   workflowInfo,
 } from "@temporalio/workflow";
 
+import type { ActivityOptions } from "@temporalio/common";
+import { SCHEDULED_START_ACTIVITY_ID } from "./contracts.js";
 import type * as activities from "./activities.js";
 import type {
   DurableProcessState,
@@ -24,7 +29,7 @@ import type {
   ScheduledProcessWorkflowInput,
 } from "./contracts.js";
 
-const { tickProcess, startScheduledProcess } = proxyActivities<typeof activities>({
+const processActivityOptions = {
   startToCloseTimeout: "15 seconds",
   scheduleToCloseTimeout: "2 minutes",
   retry: {
@@ -34,11 +39,17 @@ const { tickProcess, startScheduledProcess } = proxyActivities<typeof activities
     maximumAttempts: 8,
     nonRetryableErrorTypes: ["ConfigurationError", "CoordinatorRequestError"],
   },
+} satisfies ActivityOptions;
+const { tickProcess, startScheduledProcess } = proxyActivities<typeof activities>(processActivityOptions);
+const { startScheduledProcess: startCancellableScheduledProcess } = proxyActivities<typeof activities>({
+  ...processActivityOptions,
+  activityId: SCHEDULED_START_ACTIVITY_ID,
+  cancellationType: ActivityCancellationType.TRY_CANCEL,
 });
 
 // Cancellation remains pending during a coordinator outage. The application
 // cancellation endpoint is idempotent, including its compensation transition.
-const { cancelProcess, tickProcess: tickCancelledProcess } = proxyActivities<typeof activities>({
+const { cancelProcess, cancelScheduledProcess, tickProcess: tickCancelledProcess } = proxyActivities<typeof activities>({
   startToCloseTimeout: "15 seconds",
   retry: {
     initialInterval: "1 second",
@@ -146,15 +157,37 @@ export async function agatProcessWorkflow(input: ProcessWorkflowInput): Promise<
 export async function agatScheduledProcessWorkflow(
   input: ScheduledProcessWorkflowInput,
 ): Promise<DurableProcessState> {
-  const childInput = await startScheduledProcess(input);
-  log.info("Scheduled process instance created", {
-    instanceId: childInput.instanceId,
-    processId: childInput.processId,
-    projectId: childInput.projectId,
-  });
-  return await executeChild(agatProcessWorkflow, {
-    args: [childInput],
-    workflowId: `agat-process-${childInput.instanceId}`,
-    parentClosePolicy: ParentClosePolicy.REQUEST_CANCEL,
-  });
+  const cancellationIntent = patched("agat-scheduled-cancellation-intent-v1");
+  let childStarted = false;
+  try {
+    const childInput = await (cancellationIntent ? startCancellableScheduledProcess : startScheduledProcess)(input);
+    log.info("Scheduled process instance created", {
+      instanceId: childInput.instanceId,
+      processId: childInput.processId,
+      projectId: childInput.projectId,
+    });
+    const options = {
+      args: [childInput] as [ProcessWorkflowInput],
+      workflowId: `agat-process-${childInput.instanceId}`,
+      parentClosePolicy: ParentClosePolicy.REQUEST_CANCEL,
+    };
+    if (!cancellationIntent) return await executeChild(agatProcessWorkflow, options);
+    const child = await startChild(agatProcessWorkflow, options);
+    childStarted = true;
+    return await child.result();
+  } catch (error) {
+    if (cancellationIntent && !childStarted && isCancellation(error)) {
+      await CancellationScope.nonCancellable(async () => {
+        // The creation Activity can still reach HTTP/COMMIT after it is cancelled.
+        // Use its explicit identity, not this cleanup Activity's identity, to
+        // durably fence that request even when we never received an instance ID.
+        let state = await cancelScheduledProcess(input);
+        while (state && !terminalStatuses.has(state.status)) {
+          await sleep(nextCheckDelay(state));
+          state = await tickCancelledProcess({ instanceId: state.instanceId, processId: input.processId, projectId: input.projectId });
+        }
+      });
+    }
+    throw error;
+  }
 }
