@@ -1,0 +1,66 @@
+{
+  "schema": "agat.temporal.process-retry-checks.v1",
+  "baseCommit": "a2e6a39e024d2ef068901dcb17c663ea5d91749c",
+  "databaseSchema": 30,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": true,
+  "patch": "agat-process-durable-tick-retry-v1",
+  "sourceSha256": {
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "apps/temporal-worker/src/activities.ts": "b288ef4ae40b8ee7b96b7da486b6e5d51c1bbf44fe536093066533d54e01ee9d",
+    "apps/coordinator/test/temporal-process-retry.integration.test.ts": "0e1ceca81273183e69d863f450ee7e796bb5fa50f9bb1a0938a3a715ffe51473"
+  },
+  "evidenceSha256": {
+    "baseline/recover.json": "ebbebcdd4144a2862f9e0638a1fcf34c127d0fdf7cfbcfe083b0589bbecd89aa",
+    "baseline/cancel.json": "abd16a4bf2981976b4b4f8ff89194bb6d3059a423b32a98388172033a8b52c29",
+    "verified/recover.json": "480fc054ade27710c107e9c60165b3dcb348541f3b73d7c906baaaf0c8fadf92",
+    "verified/cancel.json": "755771971736d2c0655dd579adc84ea6d9cca998e8bc44a77642f673eeb70010"
+  },
+  "checks": {
+    "baselineRecovery": {
+      "pass": 0,
+      "fail": 1,
+      "log": "baseline/integration.log"
+    },
+    "baselineCancellation": {
+      "pass": 1,
+      "fail": 0,
+      "log": "baseline/integration.log"
+    },
+    "liveTemporal": {
+      "scenarios": 12,
+      "pass": 12,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "coordinator": {
+      "pass": 292,
+      "skip": 12,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 28,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "newTestStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "new-test-typecheck.log"
+      ]
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1827,
+      "markdownFiles": 210,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Ordinary process tick survives a transient outage beyond the previous retry/time budget, worker SIGKILL/restart and explicit cancellation. Legacy policies replay unchanged; PostgreSQL with end-to-end Temporal RAG remains a separate gate."
+}
