@@ -1,4 +1,4 @@
-"""One bounded urllib request per disposable process; no shared transport state."""
+"""Bounded embedding and primary model HTTP in disposable owned processes."""
 from __future__ import annotations
 
 import json
@@ -47,34 +47,56 @@ def watch_parent(arguments: list[str]) -> None:
     threading.Thread(target=guard, name="embedding-parent-watch", daemon=True).start()
 
 
-def validate_timeout(timeout: float) -> None:
+class HttpResponseError(RuntimeError):
+    def __init__(self, status: int, detail: str, endpoint_name: str) -> None:
+        super().__init__(f"{endpoint_name} endpoint returned HTTP {status}: {detail}")
+        self.status, self.detail = status, detail
+
+
+def validate_timeout(timeout: float, *, endpoint_name: str = "Embedding") -> None:
     if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
             or not math.isfinite(timeout) or not 0 < timeout <= 900):
-        raise ValueError("Embedding timeout must be finite, positive and at most 900 seconds")
+        raise ValueError(f"{endpoint_name} timeout must be finite, positive and at most 900 seconds")
 
 
 def request_embedding_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
                                cancelled: threading.Event | None, max_response_bytes: int,
                                max_error_bytes: int) -> bytes:
+    return _request_response(url, payload, headers, timeout=timeout, cancelled=cancelled,
+                             max_response_bytes=max_response_bytes, max_error_bytes=max_error_bytes,
+                             endpoint_name="Embedding")
+
+
+def request_model_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
+                           cancelled: threading.Event | None, max_response_bytes: int,
+                           max_error_bytes: int) -> bytes:
+    return _request_response(url, payload, headers, timeout=timeout, cancelled=cancelled,
+                             max_response_bytes=max_response_bytes, max_error_bytes=max_error_bytes,
+                             endpoint_name="Model")
+
+
+def _request_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
+                      cancelled: threading.Event | None, max_response_bytes: int,
+                      max_error_bytes: int, endpoint_name: str) -> bytes:
     """Bound DNS, connect, redirects and response reads without orphaning a thread.
 
     Only the helper's private pipes are discarded on cancellation. No request is
     retried here, and disconnect does not promise cancellation of backend compute.
     """
-    validate_timeout(timeout)
+    validate_timeout(timeout, endpoint_name=endpoint_name)
     deadline = time.monotonic() + timeout
 
     def check_deadline() -> None:
         if cancelled is not None and cancelled.is_set():
-            raise RuntimeError("Embedding request cancelled")
+            raise RuntimeError(f"{endpoint_name} request cancelled")
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"Embedding endpoint exceeded its {timeout:g}s deadline")
+            raise RuntimeError(f"{endpoint_name} endpoint exceeded its {timeout:g}s deadline")
 
     check_deadline()
     # Credentials and source text stay off the command line and filesystem.
     pending = json.dumps({"url": url, "payload": payload, "headers": headers,
                           "timeout": timeout, "maxResponseBytes": max_response_bytes,
-                          "maxErrorBytes": max_error_bytes}, ensure_ascii=False).encode("utf-8")
+                          "maxErrorBytes": max_error_bytes, "endpointName": endpoint_name}, ensure_ascii=False).encode("utf-8")
     check_deadline()
     with subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve()), *parent_watch_arguments()],
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -89,8 +111,11 @@ def request_embedding_response(url: str, payload: dict, headers: dict[str, str],
                     pending = None
                     continue
                 check_deadline()
-                if process.returncode != 0 or output[:1] not in (b"S", b"E"):
-                    raise RuntimeError("Embedding transport subprocess failed")
+                if process.returncode != 0 or output[:1] not in (b"S", b"E", b"H"):
+                    raise RuntimeError(f"{endpoint_name} transport subprocess failed")
+                if output[:1] == b"H":
+                    error = json.loads(output[1:])
+                    raise HttpResponseError(error["status"], error["detail"], endpoint_name)
                 if output[:1] == b"E":
                     raise RuntimeError(output[1:].decode("utf-8", errors="replace"))
                 return output[1:]
@@ -104,6 +129,7 @@ def request_embedding_response(url: str, payload: dict, headers: dict[str, str],
 
 
 def _fetch(request: dict) -> bytes:
+    endpoint_name = request.get("endpointName", "Embedding")
     http_request = urllib.request.Request(request["url"],
         data=json.dumps(request["payload"], ensure_ascii=False).encode("utf-8"),
         headers=request["headers"], method="POST")
@@ -111,19 +137,26 @@ def _fetch(request: dict) -> bytes:
         with urllib.request.urlopen(http_request, timeout=request["timeout"]) as response:
             body = response.read(request["maxResponseBytes"] + 1)
         if len(body) > request["maxResponseBytes"]:
-            raise RuntimeError(f"Embedding endpoint response exceeds {request['maxResponseBytes']} bytes")
+            raise RuntimeError(f"{endpoint_name} endpoint response exceeds {request['maxResponseBytes']} bytes")
         return body
     except urllib.error.HTTPError as error:
         with error:
             detail = error.read(request["maxErrorBytes"]).decode("utf-8", errors="replace")
-        raise RuntimeError(f"Embedding endpoint returned HTTP {error.code}: {detail[:1000]}") from error
+        raise HttpResponseError(error.code, detail[:1000], endpoint_name) from error
     except urllib.error.URLError as error:
-        raise RuntimeError(f"Embedding endpoint unavailable: {error.reason}") from error
+        raise RuntimeError(f"{endpoint_name} endpoint unavailable: {error.reason}") from error
 
 
 def main() -> None:
     try:
-        output = b"S" + _fetch(json.load(sys.stdin))
+        request = json.load(sys.stdin)
+        output = b"S" + _fetch(request)
+    except HttpResponseError as error:
+        # Keep the embedding/session string protocol stable. Primary tools need
+        # the HTTP status without parsing a human-readable error message.
+        output = (b"H" + json.dumps({"status": error.status, "detail": error.detail}).encode("utf-8")
+                  if request.get("endpointName") == "Model"
+                  else b"E" + str(error)[:1200].encode("utf-8", errors="replace"))
     except Exception as error:
         output = b"E" + str(error)[:1200].encode("utf-8", errors="replace")
     sys.stdout.buffer.write(output)

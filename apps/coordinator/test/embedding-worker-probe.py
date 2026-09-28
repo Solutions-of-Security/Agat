@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "workers"))
 import agat_worker  # noqa: E402
 import embedding_transport  # noqa: E402
+import embedding_http  # noqa: E402
 
 
 def main() -> int:
@@ -52,7 +53,7 @@ def main() -> int:
     renew_code = agat_worker.knowledge_lease_renewer.__code__
     request_code = agat_worker.CoordinatorClient.request.__code__
     error_code = agat_worker.ApiError.__init__.__code__
-    transport_code = agat_worker.request_embedding_response.__code__
+    transport_code = embedding_http._request_response.__code__
     session_code = embedding_transport.EmbeddingSession._exchange.__code__
     retire_code = embedding_transport.EmbeddingSession._retire.__code__
     spawn_code = subprocess.Popen.__init__.__code__
@@ -63,6 +64,8 @@ def main() -> int:
         is_stop = code.co_name == "request_stop" and code.co_filename == agat_worker.__file__
         if event not in {"call", "return"} or (not is_stop and code not in {execute_code, renew_code, request_code, error_code, transport_code, session_code, retire_code, spawn_code}):
             return
+        if code is transport_code and frame.f_locals.get("endpoint_name") != "Embedding":
+            return
         thread_id = threading.get_native_id()
         with lock:
             if is_stop and event == "return":
@@ -72,7 +75,9 @@ def main() -> int:
             elif code is spawn_code and event == "return":
                 process = frame.f_locals["self"]
                 command = frame.f_locals.get("args")
-                if isinstance(command, list) and any(item in helper_paths for item in command):
+                parent = frame.f_back
+                primary = parent is not None and parent.f_code is transport_code and parent.f_locals.get("endpoint_name") != "Embedding"
+                if not primary and isinstance(command, list) and any(item in helper_paths for item in command):
                     record = {"pid": process.pid, "atNs": time.monotonic_ns()}
                     helpers.append(record)
                     print("AGAT_EMBEDDING_WORKER_HELPER " + json.dumps(record), flush=True)

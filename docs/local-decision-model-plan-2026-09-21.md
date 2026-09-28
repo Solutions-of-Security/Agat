@@ -148,6 +148,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Отмена полного RAG](./qualification/local-decisions/performance/temporal-rag-cancellation.md) подтверждена на SQLite/PostgreSQL для обоих embedding transports. После Temporal worker restart и потерянного cleanup reply процесс отменяется до выпуска второго ответа модели; worker получает отказ завершённой lease. Первый output и provenance сохранены, второй output/новый shadow не приняты, третий stage не создан. Следующий gate — закрытие самого primary HTTP после отказа lease renewal и освобождение worker slot; сохранность state не означает прекращение backend computation.
 
+[Прерывание primary HTTP](./qualification/local-decisions/performance/primary-http-cancellation.md) устраняет воспроизведённое удержание соединения после отказа lease renewal. Управляемый helper получает отмену, завершается и собирается до освобождения слота; общий HTTP deadline и byte limits ограничивают ожидание и чтение. Тот же worker с concurrency 1 завершает новый RAG, пока прежний ответ удержан; настоящий LangGraph, параллельные leases и embeddings regression проверены. Следующий gate — cancellation query embedding при retrieval до primary; backend compute cancellation и предметная qualification остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -39,7 +39,7 @@ def main():
     calls, requests, retired, children, samples, errors = [], [], [], [], [], []
     active = {}
     embed_code = agat_worker.LocalModelClient.embed.__code__
-    isolated_code = embedding_http.request_embedding_response.__code__
+    isolated_code = embedding_http._request_response.__code__
     session_code = embedding_transport.EmbeddingSession._exchange.__code__
     retire_code = embedding_transport.EmbeddingSession._retire.__code__
     spawn_code = subprocess.Popen.__init__.__code__
@@ -50,6 +50,8 @@ def main():
         if event not in {'call', 'return'} or frame.f_code not in codes:
             return
         code = frame.f_code
+        if code is isolated_code and frame.f_locals.get("endpoint_name") != "Embedding":
+            return
         thread = threading.get_native_id()
         now = time.monotonic_ns()
         with lock:
@@ -67,7 +69,7 @@ def main():
             elif code is spawn_code and event == 'return':
                 child = frame.f_locals['self']
                 command = frame.f_locals.get('args')
-                if isinstance(command, list) and any(arg in paths for arg in command):
+                if thread in active and isinstance(command, list) and any(arg in paths for arg in command):
                     children.append({'pid': child.pid, 'startedNs': now, 'process': child,
                                      'callerStartedNs': active.get(thread, {}).get('startedNs')})
             elif code in {isolated_code, session_code, retire_code} and event == 'return':
@@ -92,7 +94,8 @@ def main():
             done.wait(.1)
 
     # Sampling uses its own short-lived ps child; those are excluded from the
-    # helper inventory. Every transport helper is observed at Popen return.
+    # helper inventory. Embedding helpers are observed at Popen return inside
+    # their embed call; primary HTTP helpers are outside embedding resource totals.
     before = len(os.listdir('/dev/fd'))
     sampler = threading.Thread(target=sample, name='embedding-rag-rss')
     began = time.monotonic_ns()

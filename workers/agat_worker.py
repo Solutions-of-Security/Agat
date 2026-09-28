@@ -22,12 +22,13 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from contextlib import ExitStack
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
-from embedding_http import request_embedding_response, validate_timeout as validate_embedding_timeout
+from embedding_http import HttpResponseError, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
 from embedding_transport import validate_idle_timeout as validate_embedding_idle_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
@@ -51,6 +52,13 @@ TOOL_SCHEMA_VERSION = "agat.tools.v2"
 # Covers the supported 32 x 4096 finite-float batch with JSON overhead.
 MAX_EMBEDDING_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_EMBEDDING_ERROR_BYTES = 4096
+# Non-streaming primary JSON includes both content and function-call arguments.
+MAX_MODEL_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_MODEL_ERROR_BYTES = 4096
+MODEL_HTTP_TIMEOUT = 900
+# LangGraph copies context into its node execution; thread-local state alone
+# would lose cancellation when a graph runs a node on another thread.
+_PRIMARY_CANCELLED: ContextVar[threading.Event | None] = ContextVar("agat_primary_cancelled", default=None)
 
 WEB_SYSTEM_PROMPT = """
 У тебя есть управляемые инструменты web_search и web_fetch. Используй их, когда
@@ -686,6 +694,21 @@ class LocalModelClient:
         fallback_model: str,
         tool_observer: ToolObserver | None = None,
         knowledge_context: str | None = None,
+        *,
+        cancelled: threading.Event | None = None,
+    ) -> str:
+        token = _PRIMARY_CANCELLED.set(cancelled)
+        try:
+            return self._complete(lease, fallback_model, tool_observer, knowledge_context)
+        finally:
+            _PRIMARY_CANCELLED.reset(token)
+
+    def _complete(
+        self,
+        lease: dict[str, Any],
+        fallback_model: str,
+        tool_observer: ToolObserver | None,
+        knowledge_context: str | None,
     ) -> str:
         agent = lease["agent"]
         run = lease["run"]
@@ -1767,29 +1790,22 @@ class LocalModelClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         with self.telemetry.model_span(model, self.base_url) as model_span:
             self.telemetry.inject(headers)
-            request = urllib.request.Request(
-                f"{self.base_url}/chat/completions",
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
             model_started_at = time.monotonic()
             try:
-                with urllib.request.urlopen(request, timeout=900) as response:
-                    result = json.loads(response.read().decode("utf-8"))
-            except urllib.error.HTTPError as error:
-                detail = error.read().decode("utf-8", errors="replace")
-                if with_tools and error.code in {400, 404, 422}:
+                response = request_model_response(
+                    f"{self.base_url}/chat/completions", payload, headers,
+                    timeout=MODEL_HTTP_TIMEOUT, cancelled=_PRIMARY_CANCELLED.get(),
+                    max_response_bytes=MAX_MODEL_RESPONSE_BYTES, max_error_bytes=MAX_MODEL_ERROR_BYTES,
+                )
+                result = json.loads(response.decode("utf-8"))
+            except HttpResponseError as error:
+                if with_tools and error.status in {400, 404, 422}:
                     raise RuntimeError(
                         "Model endpoint rejected OpenAI-compatible tools. "
                         "Выберите модель/server с function calling либо отключите tools. "
-                        f"HTTP {error.code}: {detail[:700]}"
+                        f"HTTP {error.status}: {error.detail[:700]}"
                     ) from error
-                raise RuntimeError(
-                    f"Model endpoint returned HTTP {error.code}: {detail[:1000]}"
-                ) from error
-            except urllib.error.URLError as error:
-                raise RuntimeError(f"Model endpoint unavailable: {error.reason}") from error
+                raise RuntimeError(str(error)) from error
 
             try:
                 message = result["choices"][0]["message"]
@@ -2836,6 +2852,7 @@ def _execute_lease_body(
                 fallback_model,
                 report_tool,
                 knowledge_context=knowledge_context,
+                cancelled=cancelled,
             )
             current_metrics = metrics.payload()
             client.event(
