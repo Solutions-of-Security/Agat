@@ -120,13 +120,21 @@ class ShadowRecoveryControl:
             process = state.get('process')
             if process is None:
                 continue
+            self.owned.add(process.pid)
             try:
                 self.owned.update(self.inventory(process.pid)[0])
-                self.stop_group(process)
             except Exception as error:
-                errors.append(type(error).__name__)
-        self.closed = True
+                errors.append('inventory:' + type(error).__name__)
+            try:
+                self.stop_group(process)
+                if process.poll() is None:
+                    errors.append('stop:ProcessStillRunning')
+            except Exception as error:
+                errors.append('stop:' + type(error).__name__)
+        self.closed = all(state['process'].poll() is not None for state in self.states if 'process' in state)
         if errors:
+            if self.failure is None:
+                self.failure = {'type': 'CleanupError', 'reason': ','.join(errors)[:300]}
             raise RuntimeError('Owned shadow cleanup failed: ' + ','.join(errors))
 
     def report(self):

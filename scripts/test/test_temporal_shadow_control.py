@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,11 +59,17 @@ class ShadowControlTests(unittest.TestCase):
         state.update(health={'profileSha256': 'a' * 64}, warmup={'status': 'fixture'}, childPid=int(ready.read_text()))
 
     def tearDown(self):
-        self.control.close()
-        alive = shared.inventory(os.getpid())[1]
-        self.assertFalse(self.control.owned & alive)
-        self.assertTrue(all(process.poll() is not None for process in self.processes))
-        self.temporary.cleanup()
+        try:
+            self.control.close()
+            alive = shared.inventory(os.getpid())[1]
+            self.assertFalse(self.control.owned & alive)
+            self.assertTrue(all(process.poll() is not None for process in self.processes))
+        finally:
+            # A regression assertion must not leave its real fixture running.
+            for process in self.processes:
+                if process.poll() is None:
+                    shared.stop(process)
+            self.temporary.cleanup()
 
     def request(self, transport, action, instance, **extra):
         payload = {'schema': 'agat.shadow.control.v1', 'transport': transport, 'action': action, 'instanceId': instance, **extra}
@@ -107,6 +114,62 @@ class ShadowControlTests(unittest.TestCase):
             self.control.start()
         self.control.close()
         self.assertIsNotNone(self.processes[0].poll())
+
+    def test_inventory_failure_does_not_prevent_stopping_a_ready_runtime(self):
+        state = self.control.start()
+        with patch.object(self.control, 'inventory', side_effect=PermissionError('private diagnostic')):
+            with self.assertRaisesRegex(RuntimeError, 'PermissionError'):
+                self.control.close()
+        self.assertIsNotNone(state['process'].poll())
+        self.assertNotIn(state['childPid'], shared.inventory(os.getpid())[1])
+        report = self.control.report()
+        self.assertTrue(report['closed'])
+        self.assertEqual(report['failure']['type'], 'CleanupError')
+        self.assertNotIn('private diagnostic', json.dumps(report))
+
+    def test_inventory_failure_during_partial_startup_still_stops_owned_parent(self):
+        self.fail_start = True
+        with self.assertRaisesRegex(RuntimeError, 'Injected startup failure'):
+            self.control.start()
+        process = self.processes[0]
+        with patch.object(self.control, 'inventory', side_effect=PermissionError):
+            with self.assertRaisesRegex(RuntimeError, 'PermissionError'):
+                self.control.close()
+        self.assertIsNotNone(process.poll())
+        self.assertIn(process.pid, self.control.owned)
+        self.assertEqual(self.control.report()['failure']['type'], 'CleanupError')
+
+    def test_stop_error_does_not_skip_other_roots_and_cleanup_can_retry(self):
+        older = self.control.start()['process']; newer = self.control.start()['process']
+        def stop(process):
+            if process is newer:
+                raise OSError('private stop diagnostic')
+            shared.stop(process)
+        with patch.object(self.control, 'stop_group', side_effect=stop):
+            with self.assertRaisesRegex(RuntimeError, 'OSError'):
+                self.control.close()
+        self.assertIsNotNone(older.poll())
+        self.assertIsNone(newer.poll())
+        self.assertFalse(self.control.closed)
+        failure = self.control.report()['failure']
+        self.assertEqual(failure['type'], 'CleanupError')
+        self.assertNotIn('private stop diagnostic', json.dumps(failure))
+        self.control.close()
+        self.assertIsNotNone(newer.poll())
+        self.assertTrue(self.control.closed)
+        # Retrying cleanup must not turn the failed experiment into a pass.
+        self.assertEqual(self.control.report()['failure'], failure)
+
+    def test_successful_stop_callback_must_really_finish_the_process(self):
+        process = self.control.start()['process']
+        with patch.object(self.control, 'stop_group'):
+            with self.assertRaisesRegex(RuntimeError, 'ProcessStillRunning'):
+                self.control.close()
+        self.assertFalse(self.control.closed)
+        self.assertIsNone(process.poll())
+        self.control.close()
+        self.assertTrue(self.control.closed)
+        self.assertIsNotNone(process.poll())
 
 
 if __name__ == '__main__':

@@ -70,6 +70,31 @@ def own_containers(pids):
             and int(match[1]) in pids}
 
 
+def stop_owned_process(process, owned, errors):
+    """Observation failures must not skip teardown of an already-owned handle."""
+    if process is None:
+        return
+    owned.add(process.pid)
+    try:
+        owned.update(shared.inventory(process.pid)[0])
+    except Exception as error:
+        errors.append('inventory:' + type(error).__name__)
+    try:
+        shared.stop(process)
+        if process.poll() is None:
+            errors.append('stop:ProcessStillRunning')
+    except Exception as error:
+        errors.append('stop:' + type(error).__name__)
+
+
+def remaining_owned_processes(owned, errors):
+    try:
+        return sorted(owned & shared.inventory(os.getpid())[1])
+    except Exception as error:
+        errors.append('inventory:' + type(error).__name__)
+        return None  # Unknown is not evidence that every child has exited.
+
+
 def start_shadow_runtime(state, args, port, decision, warmup_request, log):
     process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
         '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
@@ -330,21 +355,20 @@ def main():
                         cleanup_errors.append(type(error).__name__)
                 try:
                     if shadow_control is not None:
-                        shadow_control.close()
-                        pids.update(shadow_control.owned)
-                        if shadow_control.state and 'process' in shadow_control.state:
-                            shadow_runtime = shadow_control.state['process']
+                        try:
+                            shadow_control.close()
+                        finally:
+                            pids.update(shadow_control.owned)
+                            if shadow_control.state and 'process' in shadow_control.state:
+                                shadow_runtime = shadow_control.state['process']
                     elif shadow_runtime is not None:
-                        pids.update(shared.inventory(shadow_runtime.pid)[0])
                         was_running = shadow_runtime.poll() is None
-                        shared.stop(shadow_runtime)
+                        stop_owned_process(shadow_runtime, pids, cleanup_errors)
                         require(not was_running or shadow_runtime.returncode == 130, 'Shadow runtime did not drain on SIGTERM')
                 except Exception as error:
                     cleanup_errors.append(type(error).__name__)
+                stop_owned_process(ollama, pids, cleanup_errors)
                 try:
-                    if ollama is not None:
-                        pids.update(shared.inventory(ollama.pid)[0])
-                    shared.stop(ollama)
                     # Names are admitted only when their embedded owner PID was
                     # observed in this launcher's process tree.
                     remaining_containers = own_containers(pids)
@@ -371,9 +395,9 @@ def main():
         if phase_path.exists():
             phase_hashes[phase_path.name] = sha(phase_path.read_bytes())
             pids.update(child['pid'] for child in json.loads(phase_path.read_text()).get('children', []))
-    remaining = sorted(pids & shared.inventory(os.getpid())[1])
+    remaining = remaining_owned_processes(pids, cleanup_errors)
     if (cleanup_errors or remaining) and failure is None:
-        failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close'}
+        failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close or could not be verified'}
     if resources is not None and resources.errors and failure is None:
         failure = {'type': 'ObservationError', 'reason': 'Resource observations incomplete'}
     report = {'schema': f'agat.temporal.real-rag-launcher.v{version_number}', 'status': 'fail' if failure else 'pass', 'failure': failure,
