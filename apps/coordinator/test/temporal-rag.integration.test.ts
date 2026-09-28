@@ -324,7 +324,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         }
         await eventually(() => primaryCalls >= 3, "Replacement worker did not continue the RAG process");
         const credentials = JSON.parse(fs.readFileSync(path.join(directory, "worker.json"), "utf8"));
-        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${crashedLeaseId}/complete`, { method: "POST",
+        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${encodeURIComponent(crashedLeaseId)}/complete`, { method: "POST",
           headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
           body: JSON.stringify({ output: "stale abandoned primary" }), signal: AbortSignal.timeout(5_000) });
         assert.equal(stale.status, 400); assert.match(await stale.text(), /Активная аренда не найдена/);
@@ -350,7 +350,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         assert.equal(worker.child.pid, pythonPid); assert.equal(worker.child.exitCode, null, worker.log());
         assert.equal(primaryCalls, 2, "Worker must still wait for the held completion acknowledgement");
         assert.ok(held && !heldConnectionClosed);
-        const restored = await fetch(`${coordinatorUrl}/api/v1/runs/${instance.runId}/trace`, {
+        const restored = await fetch(`${coordinatorUrl}/api/v1/runs/${encodeURIComponent(instance.runId)}/trace`, {
           headers: { "x-agat-admin-token": "temporal-rag-admin" }, signal: AbortSignal.timeout(5_000) });
         assert.equal(restored.status, 200, await restored.clone().text());
         const restoredTrace = await restored.json() as any;
@@ -358,7 +358,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         for (const [id, snapshot] of acceptedShadowsBeforeCrash) assert.equal(JSON.stringify(restoredTrace.decisionObservations.find((row: any) => row.stageId === id)), snapshot);
         assert.equal(JSON.stringify(store.getRunKnowledgeSources(instance.runId)), sourcesBefore);
         const credentials = JSON.parse(fs.readFileSync(path.join(directory, "worker.json"), "utf8"));
-        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${crashedLeaseId}/complete`, { method: "POST",
+        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${encodeURIComponent(crashedLeaseId)}/complete`, { method: "POST",
           headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
           body: JSON.stringify({ output: "stale completion after coordinator restart" }), signal: AbortSignal.timeout(5_000) });
         assert.equal(stale.status, 400); assert.match(await stale.text(), /Активная аренда не найдена/);
