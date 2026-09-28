@@ -144,6 +144,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Process tick при длительном outage](./qualification/local-decisions/performance/temporal-process-retry.md) устраняет такой же подтверждённый отказ child после 8 попыток при активном application state. Новый tick пережил 125-секундный outage и SIGKILL worker, восстановился на 13-й попытке без смены Run ID и завершил instance. Отмена во время retry согласована с application cleanup; 12 live сценариев и 28 replay histories прошли. Следующий gate — совместный RAG/Temporal/PostgreSQL runtime после штатной migration/admission; предметная qualification остаётся открытой.
 
+[RAG/Temporal/PostgreSQL](./qualification/local-decisions/performance/temporal-postgres-rag.md) выявил и исправил отказ HTTP start: tenant preflight пытался читать глобальный release registry. Сервер получает project-bound readiness snapshot до tenant-транзакции; grants сохранены, lease повторно проверяет worker. Оба embedding transport прошли реальные retry/restart/replay, сохранив по три primary-ответа и шесть source references; чужой проект не видит run/retrieval/chunks. Добавлен обязательный CI suite. Следующий gate — отмена полного RAG при активном primary HTTP request в PostgreSQL runtime; предметная qualification остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

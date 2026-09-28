@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ha-postgres, state-migration, artifact-store, region-loss-dr, temporal-rag]
+        suite: [ha-postgres, state-migration, artifact-store, region-loss-dr, temporal-rag, temporal-postgres-rag]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -90,7 +90,7 @@ jobs:
           cache: npm
       - run: npm ci
       - uses: actions/setup-python@v7
-        if: matrix.suite == 'temporal-rag'
+        if: startsWith(matrix.suite, 'temporal-')
         with:
           python-version: "3.13"
       - name: Run against disposable integration services

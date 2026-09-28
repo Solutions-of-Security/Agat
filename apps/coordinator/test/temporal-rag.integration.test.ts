@@ -8,6 +8,7 @@ import test from "node:test";
 import { Client, Connection } from "@temporalio/client";
 import { historyToJSON } from "@temporalio/common/lib/proto-utils.js";
 import { Worker } from "@temporalio/worker";
+import pg from "pg";
 import { root, cleanEnv, processChild, within, eventually, listen, close } from "./helpers/temporal.js";
 import { AgatStore } from "../src/database.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
@@ -16,18 +17,29 @@ import { decisionProfile, digest, type Fixture } from "../../../scripts/lib/deci
 import { verifyIngestion, verifyRetrieval } from "../../../scripts/lib/decision-rag.js";
 
 const address = process.env.AGAT_TEST_TEMPORAL_ADDRESS;
+const stateStoreDriver = process.env.AGAT_TEST_TEMPORAL_STATE_STORE ?? "sqlite";
+assert.ok(stateStoreDriver === "sqlite" || stateStoreDriver === "postgresql");
+const postgres = stateStoreDriver === "postgresql";
+const region = postgres ? "eu-test-1" : "local", residencyDomain = postgres ? "eu-test" : "local";
 const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
 
 for (const transport of ["isolated", "session"] as const) {
-  test(`Temporal RAG ${transport}: retries a lost tick reply, restores a killed worker and replays without model calls`,
+  test(`Temporal RAG ${stateStoreDriver}/${transport}: retries a lost tick reply, restores a killed worker and replays without model calls`,
     { skip: !address, timeout: 90_000 }, async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-temporal-rag-"));
     const dbPath = path.join(directory, "state.sqlite"), artifacts = path.join(directory, "artifacts");
-    const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: true, artifactsDir: artifacts });
+    const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: true, artifactsDir: artifacts,
+      stateStoreDriver, region, residencyDomain,
+      ...(postgres ? { postgresSchemaMode: "runtime", coordinatorInstanceId: `rag-observer-${randomUUID()}`,
+        postgres: { systemUrl: process.env.AGAT_POSTGRES_URL!, tenantUrl: process.env.AGAT_POSTGRES_TENANT_URL!,
+          roleMode: "runtime", applicationName: "temporal-rag-observer", poolMax: 1, connectTimeoutMs: 5_000,
+          idleTimeoutMs: 30_000, statementTimeoutMs: 30_000, sslMode: "disable" } } : {}),
+    });
     const children: ReturnType<typeof processChild>[] = [];
-    const taskQueue = `rag-${randomUUID()}`, model = "temporal-rag-primary";
+    const taskQueue = `rag-${randomUUID()}`, model = `temporal-rag-primary-${randomUUID()}`;
+    let databaseEvidence: Record<string, unknown> = { driver: stateStoreDriver };
     let connection: Connection | undefined, coordinatorUrl = "";
     let primaryCalls = 0, embeddedItems = 0, held: (() => void) | undefined;
     const modelInputs: string[] = [], primaryOutputs: string[] = [], serverErrors: unknown[] = [];
@@ -91,11 +103,11 @@ with make_server(DecisionEngine(Backend()),0) as server:
       children.push(decision);
       const decisionUrl = `http://127.0.0.1:${(await decision.ready(/DECISION_PORT=(\d+)/))[1]}`;
       const { profileJson } = await decisionProfile(decisionUrl);
-      const collection = store.createKnowledgeCollection({ name: "Temporal source snapshots", embeddingModel: fixture.rag!.embeddingModel,
+      const collection = store.createKnowledgeCollection({ name: `${taskQueue} sources`, embeddingModel: fixture.rag!.embeddingModel,
         chunkSize: 4000, chunkOverlap: 0, topK: 2 });
       for (const source of fixture.rag!.sources) store.ingestKnowledgeDocument(String(collection.id),
         { name: source.name, sourceUri: source.sourceUri, mediaType: "text/markdown", content: source.content });
-      const agents = fixture.roles.map(role => store.createAgent({ name: role.name, role: role.id, systemPrompt: role.instruction,
+      const agents = fixture.roles.map(role => store.createAgent({ name: `${taskQueue} ${role.name}`, role: role.id, systemPrompt: role.instruction,
         model, runtime: "single", runtimeConfig: { profile: "tool_loop_v1", maxIterations: 1 } }));
       const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson, timeoutMs: 5_000, ...fixture.shadow });
       // Exercise the timer before any lease-completed Updates can race its due time.
@@ -108,7 +120,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         { id: "end", name: "End", type: "end", position: { x: 800, y: 0 }, config: {} },
       ], edges: ids.slice(1).map((id, index) => ({ id: `edge-${index}`, source: ids[index]!, target: id, branch: "default" })),
       requiredKnowledgeCollectionIds: [String(collection.id)] };
-      const process = store.createProcess({ name: "Temporal RAG recovery", graph }); store.publishProcess(String(process.id));
+      const process = store.createProcess({ name: `${taskQueue} recovery`, graph }); store.publishProcess(String(process.id));
       const env = { ...cleanEnv(), AGAT_HOST: "127.0.0.1", AGAT_PORT: "0", AGAT_DB_PATH: dbPath,
         AGAT_ARTIFACTS_DIR: artifacts, AGAT_SEED_DEMO: "false", AGAT_SERVE_WEB: "false", AGAT_MCP_ENABLED: "false",
         AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false",
@@ -116,7 +128,13 @@ with make_server(DecisionEngine(Backend()),0) as server:
         AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false",
         AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_DECISION_SHADOW_ENABLED: "true",
         AGAT_TEMPORAL_ENABLED: "true", AGAT_TEMPORAL_ADDRESS: address!, AGAT_TEMPORAL_NAMESPACE: "default",
-        AGAT_TEMPORAL_TASK_QUEUE: taskQueue, AGAT_TEMPORAL_INTERNAL_TOKEN: "temporal-rag-internal" };
+        AGAT_TEMPORAL_TASK_QUEUE: taskQueue, AGAT_TEMPORAL_INTERNAL_TOKEN: "temporal-rag-internal",
+        ...(postgres ? { AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql",
+          AGAT_POSTGRES_URL: globalThis.process.env.AGAT_POSTGRES_URL, AGAT_POSTGRES_TENANT_URL: globalThis.process.env.AGAT_POSTGRES_TENANT_URL,
+          AGAT_POSTGRES_SSL_MODE: "disable", AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: region, AGAT_RESIDENCY_DOMAIN: residencyDomain,
+          AGAT_COORDINATOR_INSTANCE_ID: `${taskQueue}-coordinator`, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
+          AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000" } : {}),
+      };
       const coordinator = processChild(globalThis.process.execPath, ["apps/coordinator/dist/server.js"], env);
       children.push(coordinator);
       coordinatorUrl = `http://127.0.0.1:${(await coordinator.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
@@ -133,17 +151,23 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const client = new Client({ connection, namespace: "default" });
       const worker = processChild("python3", ["workers/agat_worker.py", "--coordinator", coordinatorUrl,
         "--enrollment-token", "temporal-rag-enroll", "--credentials", path.join(directory, "worker.json"),
-        "--name", "temporal-rag-worker", "--models", model, "--embedding-models", fixture.rag!.embeddingModel,
+        "--name", `${taskQueue}-worker`, "--models", model, "--embedding-models", fixture.rag!.embeddingModel,
+        "--region", region, "--residency-domain", residencyDomain,
         "--model-url", `${modelUrl}/v1`, "--model-api-key", "test-local", "--model-discovery", "off", "--no-web",
         "--poll-interval", "0.2", "--concurrency", "1", "--decision-url", decisionUrl], {
         ...cleanEnv(), AGAT_EMBEDDING_TRANSPORT: transport, OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" });
       children.push(worker);
       await eventually(() => {
         assert.equal(worker.child.exitCode, null, worker.log());
-        const docs = (store.exportKnowledge() as any).collections[0]?.documents;
+        const docs = (store.exportKnowledge() as any).collections.find((row: any) => row.id === collection.id)?.documents;
         return docs?.length === 2 && docs.every((doc: any) => doc.status === "ready");
       }, "Worker did not index the source documents");
       const ingestion = verifyIngestion(store.exportKnowledge(), String(collection.id), fixture.rag!);
+      const readiness = await fetch(`${coordinatorUrl}/api/v1/processes/${process.id}/preflight`, { method: "POST",
+        headers: { "x-agat-admin-token": "temporal-rag-admin", "content-type": "application/json" },
+        body: JSON.stringify({ version: 1 }), signal: AbortSignal.timeout(5_000) });
+      assert.equal(readiness.status, 200, await readiness.clone().text());
+      assert.equal((await readiness.json() as { runnableNow: boolean }).runnableNow, true);
       const started = await fetch(`${coordinatorUrl}/api/v1/processes/${process.id}/start`, { method: "POST",
         headers: { "x-agat-admin-token": "temporal-rag-admin", "content-type": "application/json" },
         body: JSON.stringify({ input: fixture.input }), signal: AbortSignal.timeout(5_000) });
@@ -183,6 +207,32 @@ with make_server(DecisionEngine(Backend()),0) as server:
       assert.ok(trace.decisionObservations.every((row: any) => row.observation.status === "ok"
         && row.observation.fallback === "primary"));
       assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, 6);
+      if (postgres) {
+        const runtimeRole = store.db.prepare("SELECT current_user AS role").get()!.role;
+        assert.equal(runtimeRole, "agat_system");
+        const foreign = `rag-foreign-${randomUUID()}`; store.createProject({ id: foreign, name: foreign });
+        const tenant = new pg.Client({ connectionString: globalThis.process.env.AGAT_POSTGRES_TENANT_URL, ssl: false });
+        try {
+          await tenant.connect();
+          const role = (await tenant.query("SELECT current_user AS role, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows[0];
+          assert.deepEqual(role, { role: "agat_tenant", rolsuper: false, rolbypassrls: false });
+          await assert.rejects(tenant.query("SELECT id FROM worker_releases"), { code: "42501" });
+          const visible: Record<string, number[]> = {};
+          for (const project of ["default", foreign]) {
+            await tenant.query("BEGIN"); await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+            visible[project === "default" ? "own" : "foreign"] = [
+              (await tenant.query("SELECT id FROM runs WHERE id = $1", [instance.runId])).rowCount!,
+              (await tenant.query("SELECT id FROM process_instances WHERE id = $1", [instance.id])).rowCount!,
+              (await tenant.query("SELECT id FROM knowledge_retrievals WHERE run_id = $1", [instance.runId])).rowCount!,
+              (await tenant.query("SELECT id FROM knowledge_chunks WHERE collection_id = $1", [collection.id])).rowCount!,
+            ];
+            await tenant.query("ROLLBACK");
+          }
+          assert.deepEqual(visible, { own: [1, 1, 3, 2], foreign: [0, 0, 0, 0] });
+          databaseEvidence = { driver: stateStoreDriver, runtimeRole, tenantRole: role, visible, releaseRegistryDenied: true,
+            visibilityColumns: ["runs", "process_instances", "knowledge_retrievals", "knowledge_chunks"], retrievalExecution: "isolated" };
+        } finally { await tenant.end(); }
+      }
       assert.deepEqual(serverErrors, []);
       const history = await handle.fetchHistory();
       assert.ok(history.events?.some(event => event.timerFiredEventAttributes),
@@ -204,7 +254,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const target = path.resolve(evidenceRoot);
         assert.ok(target.startsWith(path.join(root, "docs") + path.sep));
         fs.mkdirSync(target, { recursive: true });
-        fs.writeFileSync(path.join(target, `${transport}.json`), JSON.stringify({ transport, workflowId,
+        fs.writeFileSync(path.join(target, `${transport}.json`), JSON.stringify({ transport, workflowId, database: databaseEvidence,
           primaryCalls, embeddedItems, modelInputs, primaryOutputs, ingestion, ticks, history: serializedHistory, trace,
           assertions: { activityRetry: true, workerRestart: true, nativeReplay: true, primaryPreserved: true,
             provenance: true, workersDrained: true }, qualification: "not_assessed" }, null, 2) + "\n", { flag: "wx" });

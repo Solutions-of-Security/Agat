@@ -10098,8 +10098,21 @@ export class AgatStore {
     return this.evaluateScenario(processId, document ? version : null, (document?.graph ?? process.draftGraph) as ProcessGraph, input, project, context);
   }
 
+  scenarioFleetReadiness(projectId: string): NonNullable<ScenarioPreflightContext["fleet"]> {
+    const project = this.requireProject(projectId);
+    // Global release trust and rollout metadata stay inaccessible to tenant SQL.
+    // Dispatch still rechecks eligibility when it grants the actual worker lease.
+    const eligibleWorkerIds = this.availableRoutingNodes()
+      .filter((node) => this.workerEligibleForRollout(node.row, project))
+      .map((node) => String(node.row.id));
+    const active = this.db.prepare(`SELECT (SELECT COUNT(*) FROM stages WHERE status = 'running')
+      + (SELECT COUNT(*) FROM knowledge_embedding_jobs WHERE status = 'running') AS count`).get() as Row;
+    return { projectId: project, eligibleWorkerIds, activeTasks: Number(active.count) };
+  }
+
   private evaluateScenario(processId: string | null, version: number | null, graph: ProcessGraph, input: ScenarioPreflightInput, project: string, suppliedContext?: ScenarioPreflightContext, previewAgents: Row[] = []): ScenarioPreflight {
     const context: ScenarioPreflightContext = suppliedContext ?? { runtime: { mode: this.temporalProcesses ? "temporal" : "database", connected: true }, mcpEnabled: true };
+    if (context.fleet && context.fleet.projectId !== project) throw new Error("Fleet readiness snapshot принадлежит другому проекту");
     const trigger = scenarioTrigger(input.trigger);
     const selectedIds = normalizeKnowledgeCollectionIds(input.knowledgeCollectionIds ?? graph.requiredKnowledgeCollectionIds).sort();
     const ids = trigger.kind === "schedule" && context.schedule
@@ -10151,8 +10164,9 @@ export class AgatStore {
     const httpCredentials: unknown[] = [];
     const projectRow = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(project) as Row;
     const schedulerMode = this.getSetting("scheduler_mode") ?? "sequential";
-    const nodes = this.availableRoutingNodes().filter((node) => String(node.row.credential_state ?? "active") === "active"
-      && this.workerEligibleForRollout(node.row, project)
+    const verifiedNodeIds = context.fleet ? new Set(context.fleet.eligibleWorkerIds) : undefined;
+    const nodes = this.availableRoutingNodes(verifiedNodeIds).filter((node) => String(node.row.credential_state ?? "active") === "active"
+      && (verifiedNodeIds ? verifiedNodeIds.has(String(node.row.id)) : this.workerEligibleForRollout(node.row, project))
       && parseJson<string[]>(projectRow.allowed_regions_json, []).includes(String(node.row.region))
       && (schedulerMode !== "auto" || ((node.metrics.cpuPercent ?? 0) < 90 && (node.metrics.memoryPercent ?? 0) < 92 && !(node.metrics.onBattery && (node.metrics.batteryPercent ?? 100) < 30))));
     const embeddingModels = [...new Set(knowledge.map((row) => String(row.embedding_model)))];
@@ -10226,7 +10240,7 @@ export class AgatStore {
     catch (error) { add("queue_capacity", "capacity", "queue", (error as Error).message, "fleet", { projectId: project, section: "policy" }, "Проверить квоту и размещение проекта"); }
     const active = this.db.prepare(`SELECT (SELECT COUNT(*) FROM stages WHERE status = 'running') + (SELECT COUNT(*) FROM knowledge_embedding_jobs WHERE status = 'running') AS global_count,
       (SELECT COUNT(*) FROM stages s JOIN runs r ON r.id = s.run_id WHERE s.status = 'running' AND r.project_id = ?) + (SELECT COUNT(*) FROM knowledge_embedding_jobs WHERE status = 'running' AND project_id = ?) AS project_count`).get(project, project) as Row;
-    if ((schedulerMode === "sequential" && Number(active.global_count) >= Number(this.getSetting("global_max_concurrency") ?? 1)) || Number(active.project_count) >= Number(projectRow.max_running_tasks)) add("scheduler_capacity", "capacity", "run", "Лимит одновременно выполняемых задач занят.", "runs", {}, "Открыть выполняемые задачи");
+    if ((schedulerMode === "sequential" && (context.fleet?.activeTasks ?? Number(active.global_count)) >= Number(this.getSetting("global_max_concurrency") ?? 1)) || Number(active.project_count) >= Number(projectRow.max_running_tasks)) add("scheduler_capacity", "capacity", "run", "Лимит одновременно выполняемых задач занят.", "runs", {}, "Открыть выполняемые задачи");
     if (trigger.kind === "schedule") {
       if (context.runtime.mode !== "temporal") add("trigger_runtime", "trigger", "queue", "Расписание требует включённого Temporal runtime.", "processes", { ...processTarget, tab: "triggers" }, "Настроить runtime и расписание");
       else if (context.scheduleError || !context.schedule || context.schedule.paused || !context.schedule.nextActionTimes.length) add("trigger_schedule", "trigger", "queue", "Расписание отсутствует, приостановлено или не имеет следующего запуска.", "processes", { ...processTarget, tab: "triggers" }, "Проверить расписание");
@@ -11584,7 +11598,7 @@ export class AgatStore {
       .run(JSON.stringify(metrics ?? {}), timestamp, timestamp, nodeId);
   }
 
-  private availableRoutingNodes(): RoutingNode[] {
+  private availableRoutingNodes(verifiedNodeIds?: ReadonlySet<string>): RoutingNode[] {
     const rows = this.db.prepare(`
       SELECT n.*,
         (SELECT COUNT(*) FROM stages s WHERE s.node_id = n.id AND s.status = 'running')
@@ -11596,7 +11610,8 @@ export class AgatStore {
           : ""}
     `).all(this.region, this.residencyDomain) as Row[];
     return rows.flatMap((row): RoutingNode[] => {
-      if (!this.workerStoredReleaseFresh(row) || !this.workerRuntimeAttestationFresh(row)) return [];
+      if (verifiedNodeIds ? !verifiedNodeIds.has(String(row.id))
+        : !this.workerStoredReleaseFresh(row) || !this.workerRuntimeAttestationFresh(row)) return [];
       const ageMs = Date.now() - new Date(String(row.last_seen)).getTime();
       const freeSlots = Number(row.max_concurrency) - Number(row.used_concurrency);
       if (!Number.isFinite(ageMs) || ageMs > 90_000 || freeSlots <= 0 || String(row.id).startsWith("demo-")) return [];
