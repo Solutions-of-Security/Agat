@@ -10709,6 +10709,21 @@ export class AgatStore {
     });
   }
 
+  temporalProcessCancel(instanceId: string, projectId: string): DurableProcessState | null {
+    const project = this.requireProject(projectId);
+    const lockClause = this.stateStoreDriver === "postgresql" ? " FOR UPDATE OF pi" : "";
+    return this.transaction(() => {
+      const owned = this.db.prepare(`
+        SELECT pi.id FROM process_instances pi
+        JOIN processes p ON p.id = pi.process_id
+        WHERE pi.id = ? AND p.project_id = ? AND pi.runtime = 'temporal'${lockClause}
+      `).get(instanceId, project) as Row | undefined;
+      if (!owned) return null;
+      this.cancelProcessInstance(instanceId, project);
+      return this.durableProcessState(instanceId, project);
+    });
+  }
+
   cancelProcessInstance(instanceId: string, projectId = "default"): boolean {
     const project = this.requireProject(projectId);
     return this.transaction(() => {

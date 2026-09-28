@@ -1,13 +1,16 @@
 import {
+  CancellationScope,
   condition,
   continueAsNew,
   defineQuery,
   defineSignal,
   defineUpdate,
   executeChild,
+  isCancellation,
   log,
   makeContinueAsNewFunc,
   ParentClosePolicy,
+  patched,
   proxyActivities,
   setHandler,
   workflowInfo,
@@ -29,6 +32,18 @@ const { tickProcess, startScheduledProcess } = proxyActivities<typeof activities
     backoffCoefficient: 2,
     maximumInterval: "15 seconds",
     maximumAttempts: 8,
+    nonRetryableErrorTypes: ["ConfigurationError", "CoordinatorRequestError"],
+  },
+});
+
+// Cancellation remains pending during a coordinator outage. The application
+// cancellation endpoint is idempotent, including its compensation transition.
+const { cancelProcess, tickProcess: tickCancelledProcess } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "15 seconds",
+  retry: {
+    initialInterval: "1 second",
+    backoffCoefficient: 2,
+    maximumInterval: "30 seconds",
     nonRetryableErrorTypes: ["ConfigurationError", "CoordinatorRequestError"],
   },
 });
@@ -82,29 +97,49 @@ export async function agatProcessWorkflow(input: ProcessWorkflowInput): Promise<
     projectId: input.projectId,
   });
 
-  while (true) {
-    const observedRevision = revision;
-    state = await tickProcess(input);
-    if (terminalStatuses.has(state.status)) {
-      log.info("Durable process workflow completed", {
-        instanceId: input.instanceId,
-        status: state.status,
-        transitionCount: state.transitionCount,
+  try {
+    return await driveProcess();
+  } catch (error) {
+    if (isCancellation(error) && patched("agat-process-cancellation-cleanup-v1")) {
+      await CancellationScope.nonCancellable(async () => {
+        state = await cancelProcess(input);
+        // Cancellation can arm compensations. Keep the workflow alive until
+        // the existing application state machine reaches a terminal state.
+        while (!terminalStatuses.has(state.status)) {
+          const observedRevision = revision;
+          await condition(() => revision !== observedRevision, nextCheckDelay(state));
+          state = await tickCancelledProcess(input);
+        }
       });
-      return state;
     }
+    throw error;
+  }
 
-    const info = workflowInfo();
-    if (info.continueAsNewSuggested || info.targetWorkerDeploymentVersionChanged) {
-      if (info.targetWorkerDeploymentVersionChanged) {
-        await makeContinueAsNewFunc<typeof agatProcessWorkflow>({
-          initialVersioningBehavior: "AUTO_UPGRADE",
-        })(input);
+  async function driveProcess(): Promise<DurableProcessState> {
+    while (true) {
+      const observedRevision = revision;
+      state = await tickProcess(input);
+      if (terminalStatuses.has(state.status)) {
+        log.info("Durable process workflow completed", {
+          instanceId: input.instanceId,
+          status: state.status,
+          transitionCount: state.transitionCount,
+        });
+        return state;
       }
-      await continueAsNew<typeof agatProcessWorkflow>(input);
-    }
 
-    await condition(() => revision !== observedRevision, nextCheckDelay(state));
+      const info = workflowInfo();
+      if (info.continueAsNewSuggested || info.targetWorkerDeploymentVersionChanged) {
+        if (info.targetWorkerDeploymentVersionChanged) {
+          await makeContinueAsNewFunc<typeof agatProcessWorkflow>({
+            initialVersioningBehavior: "AUTO_UPGRADE",
+          })(input);
+        }
+        await continueAsNew<typeof agatProcessWorkflow>(input);
+      }
+
+      await condition(() => revision !== observedRevision, nextCheckDelay(state));
+    }
   }
 }
 

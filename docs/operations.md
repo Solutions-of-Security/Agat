@@ -119,6 +119,8 @@ Team нельзя распределить между несколькими у�
 
 ## Temporal rollout и replay
 
+Отмена уже запущенного process workflow через Temporal выполняет durable application cleanup и ожидает компенсаций. Сначала обновите coordinator с internal `/cancel`, затем worker с replay-совместимым patch; transient outage сохраняет cancellation pending. [Проверки отмены, restart и ограничения](./qualification/local-decisions/performance/temporal-cancellation.md). Отмена scheduled parent во время Activity создания до child start пока остаётся отдельным recovery gate.
+
 Создание процесса по расписанию использует обязательный Idempotency-Key и transactional receipt, добавленную в schema **28**; текущая schema **29** сохраняет владельца запуска workflow. Порядок обновления coordinator/worker, запрет смешанных версий и recovery при неизвестном исходе старого запроса: [scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md). Сначала приостановите расписания и завершите старые Activities; затем выполните штатную schema migration и обновите оба компонента.
 
 Сквозная проверка RAG с Activity retry, аварийным restart worker и replay: `npm run fleet:test-temporal-rag`. Она запускает отдельный Temporal dev server и тестовые coordinator/worker; [протокол и границы проверки](./qualification/local-decisions/performance/temporal-rag-recovery.md) сохранены вместе с evidence. Две полученные history входят в обычный `npm run test:temporal`.

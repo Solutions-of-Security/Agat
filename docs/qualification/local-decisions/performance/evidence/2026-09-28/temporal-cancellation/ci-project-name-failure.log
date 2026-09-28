@@ -1,0 +1,17 @@
+2026-09-28T01:32:48.0869549Z test at apps/coordinator/test/fleet-ha-postgres.integration.test.ts:3:1341
+2026-09-28T01:32:48.0871565Z ✖ serializes Temporal cancellation retries across replicas without duplicate terminal events (313.589301ms)
+2026-09-28T01:32:48.0872655Z   error: duplicate key value violates unique constraint "projects_name_key"
+2026-09-28T01:32:48.0873426Z       at PostgresDatabaseSync.call (/home/runner/work/Agat/Agat/apps/coordinator/src/postgres-database.ts:220:21)
+2026-09-28T01:32:48.0874340Z       at PostgresDatabaseSync.request (/home/runner/work/Agat/Agat/apps/coordinator/src/postgres-database.ts:195:17)
+2026-09-28T01:32:48.0875202Z       at PostgresStatement.run (/home/runner/work/Agat/Agat/apps/coordinator/src/postgres-database.ts:129:26)
+2026-09-28T01:32:48.0876371Z       at AgatStore.createProject (/home/runner/work/Agat/Agat/apps/coordinator/src/database.ts:3730:10)
+2026-09-28T01:32:48.0877252Z       at <anonymous> (/home/runner/work/Agat/Agat/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:405:77)
+2026-09-28T01:32:48.0878039Z       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+2026-09-28T01:32:48.0878920Z       at async TestContext.<anonymous> (/home/runner/work/Agat/Agat/apps/coordinator/test/fleet-ha-postgres.integration.test.ts:397:5)
+2026-09-28T01:32:48.0879655Z       at async Test.run (node:internal/test_runner/test:1409:7)
+2026-09-28T01:32:48.0880190Z       at async Suite.processPendingSubtests (node:internal/test_runner/test:974:7) {
+2026-09-28T01:32:48.0880635Z     code: '23505',
+2026-09-28T01:32:48.0880926Z     detail: 'Key (name)=(Foreign) already exists.',
+2026-09-28T01:32:48.0881274Z     constraint: 'projects_name_key'
+2026-09-28T01:32:48.0881532Z   }
+2026-09-28T01:32:48.2445873Z ##[error]Process completed with exit code 1.
