@@ -25,6 +25,19 @@ test("citation aliases are bound to earlier/current stages of the same trace and
   const evidence = verifyRetrieval(trace, stages[1], ingestion);
   assert.deepEqual(evidence.unknownMarkers, ["K5"]);assert.ok(evidence.bothSourcesCited);
   assert.deepEqual(evidence.knownCitations.map(hit => hit.marker), ["K1", "K2", "K3", "K4"]);
+  const repeated = structuredClone(trace);
+  repeated.events.push(structuredClone(repeated.events[1]!));
+  assert.throws(() => verifyRetrieval(repeated, stages[1], ingestion), /retrieval event count/);
+  assert.equal(verifyRetrieval(repeated, stages[1], ingestion, 2).queries.length, 2);
+  for (const attempt of [1, 3]) {
+    const wrongQuery = structuredClone(repeated);
+    wrongQuery.events[attempt]!.data.queries[0]!.dimensions = 4;
+    assert.throws(() => verifyRetrieval(wrongQuery, stages[1], ingestion, 2));
+    const wrongSource = structuredClone(repeated);
+    wrongSource.events[attempt]!.data.hits[0]!.content = "corrupt";
+    assert.throws(() => verifyRetrieval(wrongSource, stages[1], ingestion, 2), /provenance mismatch/);
+  }
+  for (const count of [0, -1, 1.5, 3]) assert.throws(() => verifyRetrieval(repeated, stages[1], ingestion, count));
   events[0]!.data.hits[0]!.provenance.documentSha256 = "b".repeat(64);
   assert.throws(() => verifyRetrieval(trace, stages[1], ingestion), /provenance mismatch/);
 });

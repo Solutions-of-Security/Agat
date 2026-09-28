@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -25,20 +26,29 @@ const fixture = JSON.parse(fs.readFileSync(path.join(root,
   "docs/qualification/local-decisions/performance/rag-workflow.fixture.json"), "utf8")) as Fixture;
 const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
 
-for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt"] as const) {
-  const cancelling = completion !== "recover";
+function processInventory() {
+  // Numeric process metadata only; do not collect unrelated process arguments.
+  return execFileSync("ps", ["-axo", "pid=,ppid=,stat="], { encoding: "utf8", timeout: 2_000 }).trim().split("\n").map(line => {
+    const parts = /^\s*(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line); assert.ok(parts);
+    return { pid: Number(parts[1]), parent: Number(parts[2]), state: parts[3]! };
+  });
+}
+
+for (const transport of ["isolated", "session"] as const) for (const completion of ["recover", "cancel", "interrupt", "query-interrupt", "search-interrupt", "worker-crash"] as const) {
+  const workerCrash = completion === "worker-crash";
+  const cancelling = completion !== "recover" && !workerCrash;
   const queryInterrupted = completion === "query-interrupt";
   const searchInterrupted = completion === "search-interrupt";
   const beforePrimary = queryInterrupted || searchInterrupted;
   const interrupted = completion === "interrupt" || beforePrimary;
-  const expectedPrimaryCalls = cancelling ? (beforePrimary ? 1 : 2) : 3;
+  const expectedPrimaryCalls = cancelling ? (beforePrimary ? 1 : 2) : workerCrash ? 4 : 3;
   const expectedRetrievals = searchInterrupted ? 2 : expectedPrimaryCalls;
   const requestName = queryInterrupted ? "Query embedding" : searchInterrupted ? "Coordinator search" : "Primary";
   const cancelledDiagnostic = `${queryInterrupted ? "Embedding" : searchInterrupted ? "Knowledge" : "Model"} request cancelled`;
-  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
+  test(`Temporal RAG ${stateStoreDriver}/${transport}/${completion}: ${workerCrash ? "exits owned HTTP helpers after Python SIGKILL and recovers on real lease expiry" : interrupted ? `interrupts blocked ${requestName.toLowerCase()} HTTP after lease rejection and reuses the worker slot` : cancelling
     ? "cancels an active primary call and rejects its late output"
     : "retries a lost tick reply, restores a killed worker and replays without model calls"}`,
-    { skip: !address, timeout: 120_000 }, async () => {
+    { skip: !address || (workerCrash && globalThis.process.platform === "win32"), timeout: 120_000 }, async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-temporal-rag-"));
     const dbPath = path.join(directory, "state.sqlite"), artifacts = path.join(directory, "artifacts");
     const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: true, artifactsDir: artifacts,
@@ -60,6 +70,9 @@ for (const transport of ["isolated", "session"] as const) for (const completion 
     let latePrimaryFailure: string | undefined;
     let heldConnectionClosed = false;
     let interruption: Record<string, unknown> | undefined;
+    let recovery: Record<string, unknown> | undefined;
+    let acceptedStageBeforeCrash: string | undefined;
+    let crashedLeaseId = "", workflowRunId = "";
     const modelServer = http.createServer(async (req, res) => {
       try {
         assert.equal(req.method, "POST");
@@ -175,6 +188,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_DECISION_SHADOW_ENABLED: "true",
         AGAT_TEMPORAL_ENABLED: "true", AGAT_TEMPORAL_ADDRESS: address!, AGAT_TEMPORAL_NAMESPACE: "default",
         AGAT_TEMPORAL_TASK_QUEUE: taskQueue, AGAT_TEMPORAL_INTERNAL_TOKEN: "temporal-rag-internal",
+        ...(workerCrash ? { AGAT_LEASE_TTL_SECONDS: "30" } : {}),
         ...(postgres ? { AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql",
           AGAT_POSTGRES_URL: globalThis.process.env.AGAT_POSTGRES_URL, AGAT_POSTGRES_TENANT_URL: globalThis.process.env.AGAT_POSTGRES_TENANT_URL,
           AGAT_POSTGRES_SSL_MODE: "disable", AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: region, AGAT_RESIDENCY_DOMAIN: residencyDomain,
@@ -196,14 +210,17 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const first = await startTemporal(firstIdentity);
       connection = await Connection.connect({ address, connectTimeout: 5_000 });
       const client = new Client({ connection, namespace: "default" });
-      const worker = processChild("python3", ["workers/agat_worker.py", "--coordinator", workerCoordinatorUrl,
-        "--enrollment-token", "temporal-rag-enroll", "--credentials", path.join(directory, "worker.json"),
-        "--name", `${taskQueue}-worker`, "--models", model, "--embedding-models", fixture.rag!.embeddingModel,
-        "--region", region, "--residency-domain", residencyDomain,
-        "--model-url", `${modelUrl}/v1`, "--model-api-key", "test-local", "--model-discovery", "off", "--no-web",
-        "--poll-interval", "0.2", "--concurrency", "1", "--decision-url", decisionUrl], {
-        ...cleanEnv(), AGAT_EMBEDDING_TRANSPORT: transport, OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" });
-      children.push(worker);
+      const startWorker = () => {
+        const child = processChild("python3", ["workers/agat_worker.py", "--coordinator", workerCoordinatorUrl,
+          "--enrollment-token", "temporal-rag-enroll", "--credentials", path.join(directory, "worker.json"),
+          "--name", `${taskQueue}-worker`, "--models", model, "--embedding-models", fixture.rag!.embeddingModel,
+          "--region", region, "--residency-domain", residencyDomain,
+          "--model-url", `${modelUrl}/v1`, "--model-api-key", "test-local", "--model-discovery", "off", "--no-web",
+          "--poll-interval", "0.2", "--concurrency", "1", "--decision-url", decisionUrl], {
+          ...cleanEnv(), AGAT_EMBEDDING_TRANSPORT: transport, OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" });
+        children.push(child); return child;
+      };
+      let worker = startWorker();
       await eventually(() => {
         assert.equal(worker.child.exitCode, null, worker.log());
         const docs = (store.exportKnowledge() as any).collections.find((row: any) => row.id === collection.id)?.documents;
@@ -222,6 +239,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       const instance = await started.json() as { id: string; runId: string };
       assert.equal(store.getProcessInstance(instance.id)!.runtime, "temporal");
       const workflowId = `agat-process-${instance.id}`, handle = client.workflow.getHandle(workflowId);
+      if (workerCrash) workflowRunId = (await handle.describe()).runId;
       await eventually(() => Boolean(held), "Second stage did not reach the held model request");
       await within(handle.query("processState"), "Workflow did not become queryable");
       await eventually(async () => {
@@ -236,6 +254,41 @@ with make_server(DecisionEngine(Backend()),0) as server:
       // releasing the still-running primary request on the independent Python worker.
       await within(handle.query("processState"), "Replacement worker did not restore workflow state");
       assert.equal(primaryCalls, beforePrimary ? 1 : 2, "Worker restart must not re-execute the completed primary stage");
+      if (workerCrash) {
+        const before = store.getRunTrace(instance.runId)! as any;
+        const accepted = before.run.stages.find((stage: any) => stage.processNodeId === fixture.roles[0]!.id);
+        assert.equal(accepted.status, "completed"); assert.equal(accepted.output, primaryOutputs[0]);
+        acceptedStageBeforeCrash = JSON.stringify(accepted);
+        const active = store.db.prepare("SELECT id, lease_id, lease_expires_at, attempt FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!;
+        crashedLeaseId = String(active.lease_id);
+        const expiry = Date.parse(String(active.lease_expires_at));
+        assert.ok(expiry > Date.now(), "Worker must die before its active lease expires");
+        const helperPids = processInventory().filter(row => row.parent === worker.child.pid).map(row => row.pid);
+        assert.ok(helperPids.length >= 1, "No owned helper observed during primary HTTP");
+        const killedAt = performance.now();
+        assert.deepEqual(await worker.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
+        await eventually(() => heldConnectionClosed, "Primary helper retained HTTP after Python worker SIGKILL", 5_000);
+        await eventually(() => processInventory().every(row => !helperPids.includes(row.pid) || row.state.startsWith("Z")),
+          "Owned helper remained executing after Python worker SIGKILL", 5_000);
+        const helpersExitedAfterMs = performance.now() - killedAt;
+        assert.ok(held, "The primary response must remain held throughout recovery");
+        worker = startWorker();
+        await eventually(() => {
+          const trace = store.getRunTrace(instance.runId)! as any;
+          return trace.events.some((event: any) => event.type === "lease.expired" && event.stageId === active.id);
+        }, "The real lease deadline did not requeue the interrupted stage", 40_000);
+        assert.ok(Date.now() >= expiry);
+        await eventually(() => primaryCalls >= 3, "Replacement worker did not retry primary after lease expiry");
+        const credentials = JSON.parse(fs.readFileSync(path.join(directory, "worker.json"), "utf8"));
+        const stale = await fetch(`${coordinatorUrl}/api/v1/leases/${crashedLeaseId}/complete`, { method: "POST",
+          headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ output: "stale abandoned primary" }), signal: AbortSignal.timeout(5_000) });
+        assert.equal(stale.status, 400); assert.match(await stale.text(), /Активная аренда не найдена/);
+        recovery = { signal: "SIGKILL", leaseTtlSeconds: 30, leaseId: crashedLeaseId,
+          helpersObserved: helperPids.length, helpersExitedAfterMs, helperProcessesExited: true,
+          primaryConnectionClosed: heldConnectionClosed, responseStillHeld: true, staleCompletionRejected: true,
+          expiredStageId: active.id, originalAttempt: active.attempt };
+      }
       let cancelledLeaseId = "";
       if (cancelling) {
         cancelledLeaseId = String(store.db.prepare("SELECT lease_id FROM stages WHERE run_id = ? AND status = 'running'").get(instance.runId)!.lease_id);
@@ -258,7 +311,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
         assert.ok(held, "Model fixture must not release the response to free the worker");
         interruption = { renewalRejectedAfterMs: rejectedAt - cancelledAt,
           clientDisconnectedAfterRejectionMs: performance.now() - rejectedAt, responseStillHeld: true };
-      } else {
+      } else if (!workerCrash) {
         held!(); held = undefined;
       }
       if (cancelling) {
@@ -275,7 +328,7 @@ with make_server(DecisionEngine(Backend()),0) as server:
       }
       const trace = store.getRunTrace(instance.runId)! as any;
       assert.equal(trace.truncated, false); assert.equal(trace.run.status, cancelling ? "cancelled" : "completed");
-      assert.equal(primaryCalls, expectedPrimaryCalls); assert.equal(embeddedItems, cancelling ? 4 : 5);
+      assert.equal(primaryCalls, expectedPrimaryCalls); assert.equal(embeddedItems, cancelling ? 4 : workerCrash ? 6 : 5);
       const stages = trace.run.stages.filter((stage: any) => fixture.roles.some(role => role.id === stage.processNodeId));
       assert.equal(stages.length, cancelling ? 2 : 3);
       for (const [index, stage] of stages.entries()) {
@@ -283,10 +336,23 @@ with make_server(DecisionEngine(Backend()),0) as server:
           assert.equal(stage.status, "cancelled"); assert.equal(stage.output, null);
           continue;
         }
-        assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryOutputs[index]);
+        const outputIndex = workerCrash && index > 0 ? index + 1 : index;
+        assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryOutputs[outputIndex]);
         assert.equal(stage.metrics.modelCalls, 1);
-        const retrieval = verifyRetrieval(trace, stage, ingestion);
+        const retrieval = verifyRetrieval(trace, stage, ingestion, workerCrash && index === 1 ? 2 : 1);
         assert.ok(retrieval.bothSourcesCited); assert.deepEqual(retrieval.unknownMarkers, []);
+      }
+      if (workerCrash) {
+        assert.equal(JSON.stringify(stages[0]), acceptedStageBeforeCrash);
+        assert.equal(stages[1].attempt, 2); assert.equal(stages[2].attempt, 1);
+        const replacementLeaseId = store.db.prepare("SELECT lease_id FROM stages WHERE id = ?").get(stages[1].id)!.lease_id;
+        assert.equal(typeof replacementLeaseId, "string"); assert.notEqual(replacementLeaseId, crashedLeaseId);
+        assert.notEqual(stages[1].output, primaryOutputs[1], "The abandoned primary output must not be accepted");
+        assert.equal(trace.events.filter((event: any) => event.type === "lease.expired").length, 1);
+        assert.equal((await handle.describe()).runId, workflowRunId);
+        assert.ok(held && heldConnectionClosed);
+        recovery = { ...recovery, sameWorkflowRun: true, replacementAttempt: stages[1].attempt,
+          firstAcceptedStageUnchanged: true, replacementLeaseId };
       }
       assert.equal(trace.decisionObservations.length, cancelling ? 1 : 3);
       assert.ok(trace.decisionObservations.every((row: any) => row.observation.status === "ok"
@@ -357,10 +423,10 @@ with make_server(DecisionEngine(Backend()),0) as server:
         const target = path.resolve(evidenceRoot);
         assert.ok(target.startsWith(path.join(root, "docs") + path.sep));
         fs.mkdirSync(target, { recursive: true });
-        fs.writeFileSync(path.join(target, `${transport}${cancelling ? `-${completion}` : ""}.json`), JSON.stringify({ transport, completion, workflowId, database: databaseEvidence,
+        fs.writeFileSync(path.join(target, `${transport}${completion !== "recover" ? `-${completion}` : ""}.json`), JSON.stringify({ transport, completion, workflowId, database: databaseEvidence,
           primaryCalls: checkpoint.primaryCalls, embeddedItems: checkpoint.embeddedItems,
           modelInputs: modelInputs.slice(0, checkpoint.primaryCalls), primaryOutputs: primaryOutputs.slice(0, checkpoint.primaryCalls),
-          ingestion, ticks: ticks.slice(0, checkpoint.ticks), history: serializedHistory, trace, latePrimaryFailure, interruption,
+          ingestion, ticks: ticks.slice(0, checkpoint.ticks), history: serializedHistory, trace, latePrimaryFailure, interruption, recovery,
           assertions: { activityRetry: true, workerRestart: true, nativeReplay: true, primaryPreserved: true,
             provenance: true, workersDrained: true,
             ...(cancelling ? { applicationCancelledBeforeLateResponse } : {}),
