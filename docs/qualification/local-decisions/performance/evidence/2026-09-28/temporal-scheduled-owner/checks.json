@@ -1,0 +1,75 @@
+{
+  "schema": "agat.temporal.scheduled-ownership-checks.v1",
+  "baseCommit": "36c912734052b69b2e01fbecbd22ed45e9ff6b97",
+  "databaseSchema": 29,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": false,
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "5e0bb57d9c515bcfb431d371fd6873b42b7a09206ae001d19fe82d44564812e5",
+    "apps/temporal-worker/src/workflows.ts": "bae603846cd95b5376fd2e9487437c74cb853424ac88abcd4449cb3793b9b7d2",
+    "apps/coordinator/test/temporal-scheduled-reconciliation.integration.test.ts": "9966a5ced6961507976eab5d13b8139f1c259f84babee493c322831d2ad54a30",
+    "apps/coordinator/test/scheduled-start.test.ts": "c47867e57988934603e4c26baeaf2dac1957e949a8ca67119b4fc56fe8a32fe8",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "c1a42afad6b6f7aa2c5d03bfcdb515f99a4a14d92fc3682d190afe467c0597b8",
+    "apps/coordinator/test/sqlite-postgres-migrator.integration.test.ts": "6ec7f24a0b664aea8a87a6342f5a218542e4e47f595cdbd4b1a5df63a9c71f3d"
+  },
+  "evidenceSha256": {
+    "baseline/recovery.json": "c15f1b139b2c85e067f4155244e43363053dd0d7ecc4c232ebf5ca2e897f211c",
+    "verified/recovery.json": "a5e5e9aab34c3d3d939b90c14e7f54a012fbaf99cbbb9ebcfa238e0378ff89b3"
+  },
+  "checks": {
+    "sqlite": {
+      "pass": 4,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "temporalIntegration": {
+      "pass": 4,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "postgresOwnershipAndScheduledStart": {
+      "pass": 2,
+      "fail": 0,
+      "log": "postgres.log"
+    },
+    "offlineMigration": {
+      "pass": 2,
+      "fail": 0,
+      "log": "migration.log"
+    },
+    "coordinator": {
+      "pass": 288,
+      "skip": 4,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 7,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "newTestsStrict": "pass",
+      "log": "typecheck.log"
+    },
+    "initialPostgresFixtureFailure": {
+      "log": "postgres-fixture-limit.log",
+      "cause": "Extra fixture migration connection exceeded existing role connection limit; released before starting migration Job. Corrected rerun passed."
+    },
+    "initialDocsSandboxFailure": {
+      "log": "docs-sandbox-denied.log",
+      "cause": "Local HTTP fixtures could not bind loopback inside the filesystem sandbox; rerun with loopback access."
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1755,
+      "markdownFiles": 206,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Scheduled child ownership across coordinator restart; database backfill project isolation; synthetic workflows; terminal cancellation remains a separate gate."
+}

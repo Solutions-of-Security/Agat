@@ -347,6 +347,52 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     await migratePostgresSchemaAndAdmit();
   });
 
+  it("backfills scheduled workflow ownership from the schema 28 column layout with project isolation", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-owner-upgrade-"));
+      let database: AgatStore | undefined = new AgatStore(":postgresql:", {
+        ...storeOptions("owner-upgrade", artifacts), temporalProcesses: true,
+      });
+      const migration = new pg.Client({ connectionString: migrationUrl, ssl: false });
+      let migrationClosed = false;
+      try {
+        const projectId = `owner-${randomUUID().slice(0, 8)}`, foreignProject = `foreign-${randomUUID().slice(0, 8)}`;
+        database.createProject({ id: projectId, name: "Owner migration" }); database.createProject({ id: foreignProject, name: "Foreign" });
+        const activeGraph: ProcessGraph = {
+          nodes: [
+            { id: "start", type: "start", name: "Start", position: { x: 0, y: 0 }, config: {} },
+            { id: "signal", type: "signal", name: "Hold", position: { x: 100, y: 0 }, config: { signalName: "resume", signalTimeoutSeconds: 3600 } },
+            { id: "end", type: "end", name: "End", position: { x: 200, y: 0 }, config: {} },
+          ], edges: [{ id: "a", source: "start", target: "signal", branch: "default" }, { id: "b", source: "signal", target: "end", branch: "default" }],
+        };
+        const processId = String(database.createProcess({ name: projectId, graph: activeGraph }, projectId).id); database.publishProcess(processId, projectId);
+        const foreignProcessId = String(database.createProcess({ name: foreignProject, graph: activeGraph }, foreignProject).id); database.publishProcess(foreignProcessId, foreignProject);
+        const scheduled = database.startScheduledProcess(processId, { input: "Synthetic" }, projectId, `agat-scheduled-v1:${"e".repeat(64)}`)!;
+        const manual = database.startProcess(processId, { input: "Manual" }, projectId)!;
+        const foreign = database.startProcess(foreignProcessId, { input: "Foreign" }, foreignProject)!;
+        database.db.prepare(`INSERT INTO process_scheduled_start_receipts(project_id, idempotency_key, request_sha256, response_json, created_at)
+          VALUES (?, ?, ?, ?, ?)`).run(projectId, `agat-scheduled-v1:${"f".repeat(64)}`, "0".repeat(64),
+          JSON.stringify({ instanceId: foreign.id, processId: foreignProcessId, projectId }), new Date().toISOString());
+        database.close(); database = undefined;
+        await migration.connect();
+        // Reproduce the previous physical column layout while retaining its
+        // real receipts and active rows. Only the migration role may do DDL.
+        await migration.query("ALTER TABLE process_instances DROP COLUMN workflow_start_owner");
+        // The migration role is deliberately connection-limited; release the
+        // fixture's DDL connection before the Job opens its gate and builder.
+        await migration.end(); migrationClosed = true;
+        await migratePostgresSchemaAndAdmit();
+        database = new AgatStore(":postgresql:", { ...storeOptions("owner-upgraded", artifacts), temporalProcesses: true });
+        const owner = (id: string) => database!.db.prepare("SELECT workflow_start_owner FROM process_instances WHERE id = ?").get(id)!.workflow_start_owner;
+        assert.equal(owner(scheduled.instanceId), "temporal_parent");
+        assert.equal(owner(String(manual.id)), "coordinator"); assert.equal(owner(String(foreign.id)), "coordinator");
+        const recovered = database.listActiveDurableProcesses().filter(row => [projectId, foreignProject].includes(row.projectId));
+        assert.deepEqual(recovered.map(row => row.instanceId).sort(), [String(manual.id), String(foreign.id)].sort());
+        assert.deepEqual(database.startScheduledProcess(processId, { input: "Synthetic" }, projectId, `agat-scheduled-v1:${"e".repeat(64)}`), scheduled);
+      } finally { database?.close(); if (!migrationClosed) await migration.end(); fs.rmSync(artifacts, { recursive: true, force: true }); }
+    });
+  });
+
   it("deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS", async () => {
     await runWithPostgresSystemScope(async () => {
       const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-scheduled-"));

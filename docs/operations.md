@@ -11,15 +11,15 @@ npm run k8s:status
 
 Узел считается `sleeping` после 90 секунд без heartbeat и `offline` после 300 секунд. Активный lease продлевается worker каждые 45 секунд; стандартный TTL — 180 секунд.
 
-Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v25 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Нечувствительные policy-поля показывают, включены ли release/provenance/runtime-attestation и SIEM ack/DLQ gates; public keys, broker/sink tokens и evidence в health не возвращаются. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают отдельную native edge boundary без broker token/URL.
+Health содержит `stateStore.driver`, cell/replica readiness, а для PostgreSQL — текущий schema v29 contract, admission status/report hash/checked-at. `haReady=true` подтверждает PostgreSQL и минимум две живые coordinator replicas, но не HA самой database: managed topology/PITR подтверждает отдельный resilience report. Нечувствительные policy-поля показывают, включены ли release/provenance/runtime-attestation и SIEM ack/DLQ gates; public keys, broker/sink tokens и evidence в health не возвращаются. Поля `edge.enabled`, `edge.attestationAvailable`, `edge.attestationMode` по-прежнему показывают отдельную native edge boundary без broker token/URL.
 
 ## Rollout 1.7 Fleet и HA
 
-Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, v24 добавила immutable region-loss activation ledger и monotonic cell write epoch, v25 — OCI provenance/runtime-attestation evidence и SIEM DLQ/retention state, а текущая v28 добавляет durable receipts для scheduled-start. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
+Исходная schema `19 → 20` добавила regional project policy, queue/quota state, coordinator heartbeats, signed worker release/rollout registry, PostgreSQL artifact bytes, SIEM outbox и RLS policies. Schema v23 вынесла новые artifact payloads в versioned S3-compatible authority, v24 добавила immutable region-loss activation ledger и monotonic cell write epoch, v25 — OCI provenance/runtime-attestation evidence и SIEM DLQ/retention state, v28 — durable receipts для scheduled-start, а текущая v29 закрепляет владельца запуска Temporal workflow. SQLite остаётся совместимым single-coordinator developer backend; PostgreSQL является единственным metadata authority в Fleet/HA mode. Dual-write отсутствует.
 
 1. Снимите согласованный backup текущего state store, Artifact Store, Temporal/Keycloak state и application secrets. Проверьте restore до cutover.
 2. Для существующего SQLite-контура остановите writes и выполните canonical offline migration с reconciliation количества строк/hashes, foreign keys и artifact bytes по [migration runbook](./sqlite-postgresql-migration.md). В релизе 1.7 migrator отсутствовал; post-1.7 production-readiness этап закрыл этот gate.
-3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v28 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
+3. Поднимите PostgreSQL с раздельными admin/migration/runtime/tenant credentials и TLS `verify-full`; примените текущую schema v29 отдельной Job при нуле replicas, получите успешный admission report. Runtime role не должна владеть objects или иметь DDL. Выполните cross-project RLS negative test tenant credential.
 4. Для production endpoint выполните multi-AZ/PITR preflight, actual failover и isolated restore по [managed PostgreSQL runbook](./managed-postgresql-resilience.md). Сохраните HMAC reports и exact SLO policy approval; application `haReady` этот gate не заменяет.
 5. Подготовьте versioned S3-compatible bucket, примените Agat lifecycle rule без current-version expiration, выполните BYTEA backfill/reconciliation и только затем включите `AGAT_ARTIFACT_STORE_DRIVER=s3`; подробный порядок — в [artifact store runbook](./s3-artifact-store-lifecycle.md).
 6. Подготовьте dormant target в разрешённом residency domain, внешний source fencing и односторонние PostgreSQL/S3/Temporal recovery paths; выполните rehearsal по [region-loss runbook](./region-loss-dr.md). Не запускайте target runtime без exact activation ID/write epoch.
@@ -119,7 +119,7 @@ Team нельзя распределить между несколькими у�
 
 ## Temporal rollout и replay
 
-Создание процесса по расписанию использует обязательный Idempotency-Key и transactional receipt в schema **28**. Порядок обновления coordinator/worker, запрет смешанных версий и recovery при неизвестном исходе старого запроса: [scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md). Сначала приостановите расписания и завершите старые Activities; затем выполните штатную schema migration и обновите оба компонента.
+Создание процесса по расписанию использует обязательный Idempotency-Key и transactional receipt, добавленную в schema **28**; текущая schema **29** сохраняет владельца запуска workflow. Порядок обновления coordinator/worker, запрет смешанных версий и recovery при неизвестном исходе старого запроса: [scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md). Сначала приостановите расписания и завершите старые Activities; затем выполните штатную schema migration и обновите оба компонента.
 
 Сквозная проверка RAG с Activity retry, аварийным restart worker и replay: `npm run fleet:test-temporal-rag`. Она запускает отдельный Temporal dev server и тестовые coordinator/worker; [протокол и границы проверки](./qualification/local-decisions/performance/temporal-rag-recovery.md) сохранены вместе с evidence. Две полученные history входят в обычный `npm run test:temporal`.
 
@@ -150,7 +150,7 @@ SQLite developer mode использует WAL. Для согласованно�
 
 В PostgreSQL Fleet/HA mode metadata, knowledge vectors, encrypted A2A/MCP state, queue/leases, audit outbox и artifact storage intents находятся в database authority HA-cell. Payload authority находится в versioned S3-compatible bucket той же residency cell; coordinator file cache не является источником истины и не входит в restore set. PostgreSQL PITR и bucket version/lifecycle retention должны иметь согласованный recovery window. Проверка restore должна включать:
 
-1. PostgreSQL schema version `25`, catalog manifest, admission marker, cell activation/write-epoch marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
+1. PostgreSQL schema version `29`, catalog manifest, admission marker, cell activation/write-epoch marker, constraints, RLS policies и privileges migration/runtime/tenant roles;
 2. counts/foreign keys и выборочные content hashes для runs, knowledge, A2A/MCP и artifacts, включая exact bucket/key/version references;
 3. отсутствие cross-project read/write под tenant role;
 4. reconciliation активных Temporal instances с application rows;
@@ -174,7 +174,7 @@ SQLite developer mode использует WAL. Для согласованно�
 
 ## Восстановление durable process
 
-После рестарта coordinator перечитывает активные `runtime=temporal` instances и идемпотентно получает/запускает соответствующие Workflow IDs. Temporal worker replay-ит историю, а authoritative state store восстанавливает execution tokens, join arrivals, external signal waits, embedded subprocess links и compensation stack. Durable `wait` не превращается в polling-таймер coordinator. Завершение lease, approval, внешний signal и cancel отправляют подтверждаемый Update с Signal fallback; периодическая сверка остаётся fallback на случай краткого сбоя transport.
+После рестарта coordinator перечитывает активные `runtime=temporal` instances с `workflow_start_owner=coordinator` и идемпотентно получает/запускает соответствующие Workflow IDs. Scheduled instances имеют владельца `temporal_parent`: их child запускает родительский workflow, включая retry после потерянного ответа. Schema 29 восстанавливает это значение из project-scoped receipts schema 28; [проверка двух аварийных рестартов и порядок обновления](./qualification/local-decisions/performance/temporal-scheduled-ownership.md). Temporal worker replay-ит историю, а authoritative state store восстанавливает execution tokens, join arrivals, external signal waits, embedded subprocess links и compensation stack. Durable `wait` не превращается в polling-таймер coordinator. Завершение lease, approval, внешний signal и cancel отправляют подтверждаемый Update с Signal fallback; периодическая сверка остаётся fallback на случай краткого сбоя transport.
 
 Проверка runtime:
 

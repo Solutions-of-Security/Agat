@@ -132,6 +132,8 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.equal(receipt.rowCount, 1);
         assert.deepEqual(JSON.parse(receipt.rows[0].response_json), scheduledReceipt);
         assert.match(receipt.rows[0].request_sha256, /^[a-f0-9]{64}$/);
+        const ownership = await client.query("SELECT workflow_start_owner FROM process_instances WHERE id = $1", [scheduledReceipt!.instanceId]);
+        assert.equal(ownership.rows[0].workflow_start_owner, "temporal_parent");
       } finally {
         await client.end();
       }

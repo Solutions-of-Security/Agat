@@ -134,6 +134,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Идемпотентный scheduled-start](./qualification/local-decisions/performance/temporal-scheduled-start.md) устраняет подтверждённое создание двух instance при повторе Activity. Ключ Run/Activity ID, транзакционная receipt в schema 28, конфликт payload и FORCE RLS проверяются на SQLite/PostgreSQL; настоящий Temporal повторяет потерянный HTTP reply с одним instance и одним child. Следующий gate — конкуренция startup reconciliation coordinator с parent workflow за запуск того же child; предметная qualification остаётся открытой.
 
+[Владелец scheduled child](./qualification/local-decisions/performance/temporal-scheduled-ownership.md) устраняет воспроизведённый конфликт: startup reconciliation запускал standalone workflow до parent и завершал parent ошибкой. Schema 29 сохраняет владельца запуска, backfill receipts ограничен проектом. Настоящий Temporal прошёл два SIGKILL/restart coordinator до и после child start; обычный запуск продолжает восстанавливаться. SQLite/PostgreSQL upgrade, offline import, четыре интеграционных сценария и семь replay histories прошли. Следующий gate — отмена scheduled parent/child и согласованное terminal state в application database.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
