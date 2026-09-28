@@ -44,6 +44,11 @@ class EmbeddingRagEvidenceTests(unittest.TestCase):
     def test_real_evidence_replays_exactly(self):
         self.assertEqual(verifier.verify(EVIDENCE), json.loads((EVIDENCE / 'replay.json').read_text()))
 
+    def test_http_helper_scope_must_be_frozen_and_present_in_every_probe(self):
+        self.rejects(lambda f: f['plan.json'].update(ownedHttpProbe='unknown'))
+        self.rejects(lambda f: f['plan.json'].update(ownedHttpProbe='agat.worker.owned-http.v1'))
+        self.rejects(lambda f: f['0_isolated.worker.json'].update(ownedHttp={}))
+
     def test_frozen_runtime_source_cannot_be_omitted_or_rehashed(self):
         self.rejects(lambda f: f['plan.json']['sourceSha256'].pop('workers/embedding_transport.py'))
         self.rejects(lambda f: f['plan.json']['sourceSha256'].update({'workers/embedding_transport.py': '0' * 64}))

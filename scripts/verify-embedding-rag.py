@@ -55,6 +55,85 @@ def peak(intervals):
     return highest
 
 
+def verify_owned_http(probe, counts, owned):
+    """Cross-check owner lifetimes without interpreting their time as spawn cost."""
+    http = probe['ownedHttp']
+    assert http['schema'] == 'agat.worker.owned-http.v1'
+    assert http['activeCalls'] == 0 and http['errors'] == []
+    calls = {call['id']: call for call in http['calls']}
+    assert list(calls) == list(range(1, len(http['calls']) + 1))
+    assert Counter(call['kind'] for call in calls.values()) == Counter(counts)
+    children = {child['pid']: child for child in http['children']}
+    assert len(children) == len(http['children']) and set(children) <= owned
+    assert probe['pid'] not in children and all(type(pid) is int and pid > 0 for pid in children)
+    per_child = defaultdict(list)
+    for call in calls.values():
+        assert probe['startedNs'] < call['startedNs'] < call['finishedNs'] < probe['finishedNs']
+        assert type(call['threadId']) is int and call['threadId'] > 0
+        assert call['completed'] is True and type(call['responseBytes']) is int and call['responseBytes'] > 0
+        child = children[call['pid']]
+        mode = probe['transport'] if call['kind'] == 'Embedding' else 'isolated'
+        assert call['transport'] == child['transport'] == mode and call['kind'] == child['kind']
+        assert child['startedNs'] < call['finishedNs']
+        assert call['returncode'] == (0 if mode == 'isolated' else None)
+        assert call['stdinClosed'] is (mode == 'isolated') and call['stdoutClosed'] is (mode == 'isolated')
+        per_child[call['pid']].append(call)
+    assert set(per_child) == set(children)
+    deaths = {}
+    retired = {row['pid']: row['atNs'] for row in probe['retired']}
+    for pid, child in children.items():
+        assert child['returncode'] == 0 and child['stdinClosed'] is True and child['stdoutClosed'] is True
+        creator = calls[child['createdByCallId']]
+        assert creator['pid'] == pid and creator['startedNs'] < child['startedNs'] < creator['finishedNs']
+        intervals = [(call['startedNs'], call['finishedNs']) for call in per_child[pid]]
+        assert peak(intervals) == 1
+        if child['transport'] == 'isolated':
+            assert len(intervals) == 1
+            deaths[pid] = creator['finishedNs']
+        else:
+            assert child['kind'] == 'Embedding' and probe['transport'] == 'session'
+            deaths[pid] = retired[pid]
+            assert max(end for _start, end in intervals) < deaths[pid] < probe['finishedNs']
+    # The legacy embedding-only rows must describe exactly the same owners.
+    embedding = [call for call in calls.values() if call['kind'] == 'Embedding']
+    assert Counter((call['pid'], call['finishedNs']) for call in embedding) == Counter(
+        (row['pid'], row['atNs']) for row in probe['requests'])
+    for call in embedding:
+        enclosing = [row for row in probe['calls'] if row['threadId'] == call['threadId']
+                     and row['startedNs'] < call['startedNs'] < call['finishedNs'] <= row['finishedNs']]
+        assert len(enclosing) == 1
+    legacy_pids = {child['pid'] for child in probe['children']}
+    assert legacy_pids == {pid for pid, child in children.items() if child['kind'] == 'Embedding'}
+    for child in probe['children']:
+        assert all(children[child['pid']][key] == child[key] for key in ('startedNs', 'returncode', 'stdinClosed', 'stdoutClosed'))
+    samples = http['samples']
+    assert len(samples) == len(probe['samples']) >= 1
+    assert [row['atNs'] for row in samples] == sorted(set(row['atNs'] for row in samples))
+    sampled = set()
+    for row, legacy in zip(samples, probe['samples']):
+        assert row['atNs'] == legacy['atNs'] and row['workerRssBytes'] == legacy['workerRssBytes']
+        assert probe['startedNs'] < row['atNs'] < probe['finishedNs']
+        positive(row['workerRssBytes'])
+        assert legacy['helperRssBytes'] == {pid: rss for pid, rss in row['helperRssBytes'].items() if int(pid) in legacy_pids}
+        for pid, rss in row['helperRssBytes'].items():
+            assert str(int(pid)) == pid and int(pid) in children and type(rss) is int and rss >= 0
+            assert children[int(pid)]['startedNs'] < row['atNs'] <= deaths[int(pid)] + 2_000_000_000
+            sampled.add(int(pid))
+    kinds = {}
+    for kind, count in counts.items():
+        selected = [call for call in calls.values() if call['kind'] == kind]
+        pids = {call['pid'] for call in selected}
+        assert 1 <= peak([(call['startedNs'], call['finishedNs']) for call in selected]) <= 2
+        duration = [(call['finishedNs'] - call['startedNs']) / 1e6 for call in selected]
+        kinds[kind] = {'requestCount': count, 'helperCount': len(pids), 'sampledHelperCount': len(pids & sampled),
+                       'unsampledHelperCount': len(pids - sampled), 'ownerMs': stats(duration),
+                       'ownerTotalMs': round(sum(duration), 3),
+                       'helperTotalRssMiB': stats([sum(rss for pid, rss in row['helperRssBytes'].items()
+                                                    if int(pid) in pids) / 1024**2 for row in samples])}
+    return {'kinds': kinds, 'helperCount': len(children), 'sampleCount': len(samples),
+            'helperTotalRssMiB': stats([sum(row['helperRssBytes'].values()) / 1024**2 for row in samples])}, set(children)
+
+
 def verify(directory):
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
@@ -62,6 +141,8 @@ def verify(directory):
     assert directory.is_relative_to(ROOT / 'docs')
     plan, result, launcher = [load(directory / name) for name in ('plan.json', 'workflow.json', 'launcher.json')]
     assert plan['schema'] == 'agat.embedding.rag-plan.v1'
+    assert plan.get('ownedHttpProbe') in (None, 'agat.worker.owned-http.v1')
+    http_scope = plan.get('ownedHttpProbe') is not None
     assert re.fullmatch('[0-9a-f]{40}', plan['implementationCommit'])
     snapshot = subprocess.check_output(['git', 'archive', plan['implementationCommit'], '--', *PATHS], cwd=ROOT, timeout=15)
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -123,7 +204,7 @@ def verify(directory):
         vectors_by_input[key].add(digest(vector))
     assert len(result['blocks']) == 4
     reports, prompt_sets, output_sets, first_prompts = [], [], [], []
-    all_workers, all_helpers = set(), set()
+    all_workers, all_helpers, all_http_helpers = set(), set(), set()
     for expected, block in zip(blocks, result['blocks']):
         mode, workflow = block['transport'], block['workflow']
         assert mode == expected['transport'] and workflow['phase'] == expected['phase']
@@ -285,14 +366,30 @@ def verify(directory):
                         'embeddingItems': sum(call['items'] for call in calls.values()),
                         'bothSourcesCitedStages': cited, 'unknownCitationCount': unknown,
                         'inputTokens': sum(call['inputTokens'] for call in primary), 'outputTokens': sum(call['outputTokens'] for call in primary)})
+        assert ('ownedHttp' in probe) is http_scope
+        if http_scope:
+            http_report, http_pids = verify_owned_http(probe, {'Embedding': len(embedding), 'Model': len(primary),
+                                                               'Knowledge': len(persisted_queries)}, owned)
+            assert not (http_pids & (all_http_helpers | all_workers))
+            all_http_helpers.update(http_pids)
+            for kind, proxy in (('Embedding', embedding), ('Model', primary)):
+                values = [call['finishedMs'] - call['startedMs'] for call in proxy]
+                row = http_report['kinds'][kind]
+                row['proxyMs'] = stats(values)
+                row['proxyTotalMs'] = round(sum(values), 3)
+                row['ownerMinusProxyTotalMs'] = round(row['ownerTotalMs'] - sum(values), 3)
+            reports[-1]['ownedHttp'] = http_report
     assert len(set(first_prompts)) == 1
     assert all(len(values) == 1 for values in vectors_by_input.values())
     comparison = {'firstPrimaryPromptsIdentical': True, 'allPromptMultisetsIdentical': all(values == prompt_sets[0] for values in prompt_sets),
                   'allOutputMultisetsIdentical': all(values == output_sets[0] for values in output_sets),
                   'uniqueEmbeddingInputs': len(vectors_by_input),
                   'inputsWithDifferingVectors': sum(len(values) > 1 for values in vectors_by_input.values())}
-    return {'status': 'pass', 'blocks': reports, 'comparison': comparison, 'workers': len(all_workers),
+    report = {'status': 'pass', 'blocks': reports, 'comparison': comparison, 'workers': len(all_workers),
             'helpers': len(all_helpers), 'sourceFiles': len(source), 'qualification': 'not_assessed', 'routingEnabled': False}
+    if http_scope:
+        report['ownedHttpHelpers'] = len(all_http_helpers)
+    return report
 
 
 if __name__ == '__main__':
