@@ -68,6 +68,8 @@ class RetirementProbeTest(unittest.TestCase):
                 module["main"]()
             result = json.loads(output.read_text())
             self.assertEqual((result["status"], result["failureType"]), ("fail", "RuntimeError"))
+            self.assertIsNone(result["allOwnedProcessesStopped"])
+            self.assertTrue(result["knownOwnedProcessesStopped"])
             self.assertEqual((root / "docs/private/probe.runtime-logs/failure.stderr").read_text(), "synthetic diagnostic")
 
 

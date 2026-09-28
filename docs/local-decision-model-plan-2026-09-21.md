@@ -176,6 +176,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Локальная диагностика ресурсов shadow](./qualification/local-decisions/performance/shadow-runtime-observability.md) добавляет opt-in sampling собственных процессов и системных counters с отдельной проверкой units, scope, cleanup и native CPU timebase. Resource artifacts ограничены игнорируемым `docs/private/`; публичные тесты используют явно синтетические counters. Исходные измерения сохранены локально. Причина прежнего exit 75 не установлена; следующий шаг — content-free причина backend retirement в service log с контролируемыми timeout/cancellation/child-death тестами.
 
+[Диагностика exit 75](./qualification/local-decisions/performance/decision-exit-diagnostics.md) в runtime `0.12.1` сохраняет ограниченное retirement-событие после drain HTTP и cleanup backend. Проверены реальные CLI/процессы и четыре MLX-runtime: смерть ребёнка в простое, одинаковое решение после restart, полный timeout/cancellation response и три корректные причины завершения; все собственные процессы остановлены. Новый профиль не наследует старую qualification. Следующий gate — полный Temporal/RAG с явно закреплённым новым профилем. По запросу пользователя дальнейшая работа приостановлена после завершения текущего этапа и merge.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

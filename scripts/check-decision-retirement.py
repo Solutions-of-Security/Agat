@@ -154,7 +154,9 @@ def main():
         report = sealed({"schemaVersion": "agat.decision.retirement-probe.v1",
                          "status": "pass" if succeeded and stopped else "fail", "failureType": failure_type,
                          "sourceCommit": commit, "sourceSha256": sources, "inputSha256": request.input_sha256,
-                         "runs": [runtime.record for runtime in owned], "allOwnedProcessesStopped": stopped,
+                         "runs": [runtime.record for runtime in owned], "knownOwnedProcessesStopped": stopped,
+                         # A failed constructor may not have returned its child inventory.
+                         "allOwnedProcessesStopped": stopped if succeeded else None,
                          "cleanupErrors": cleanup_errors, "qualification": "not_assessed", "routingEnabled": False,
                          "limitations": ["Controlled foreground faults; no diagnosis of prior unplanned failures.",
                                          "Fresh runtime fingerprints; earlier qualification does not transfer.",
