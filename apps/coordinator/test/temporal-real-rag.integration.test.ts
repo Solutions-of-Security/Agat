@@ -54,6 +54,8 @@ for (const transport of ["isolated", "session"] as const) {
     assert.ok(planFile.startsWith(path.join(root, "docs") + path.sep));
     const directory = path.dirname(planFile), output = path.join(directory, `${transport}.json`);
     assert.ok(!fs.existsSync(output));
+    const shadowJournal = path.join(directory, `${transport}.shadow.jsonl`);
+    if (shadowRecoveryEnabled) fs.writeFileSync(shadowJournal, "", { flag: "wx", mode: 0o600 });
     const planBytes = fs.readFileSync(planFile), plan = JSON.parse(planBytes.toString());
     assert.equal(plan.schema, `agat.temporal.real-rag-plan.v${schemaVersion}`);
     assert.equal(plan.sourceSha256[fixturePath], digest(fs.readFileSync(path.join(root, fixturePath))));
@@ -173,6 +175,12 @@ for (const transport of ["isolated", "session"] as const) {
         }
         serverErrors.push(error instanceof Error ? error.name : "shadow_proxy_failure");
         if (!res.destroyed) res.writeHead(502).end();
+      } finally {
+        // Preserve the typed response even if the supervising launcher sees
+        // exit 75 and stops this test before its final trace is written.
+        if (shadowRecoveryEnabled && decisionCalls.includes(row)) {
+          fs.appendFileSync(shadowJournal, JSON.stringify(row) + "\n");
+        }
       }
     });
     const control = async (action: "kill" | "restart", instanceId: string) => {

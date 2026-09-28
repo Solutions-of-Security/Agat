@@ -49,17 +49,79 @@ def payload(value):
     return json.loads(base64.b64decode(item['data'], validate=True))
 
 
+def verify_runtime_control(plan, launcher, profile, warmup_request, owned, elapsed):
+    control = launcher['shadowRecovery']
+    assert control['schema'] == 'agat.shadow.control-result.v1'
+    assert control['closed'] is True and control['failure'] is None
+    observed = set(control['ownedPids'])
+    assert len(observed) == len(control['ownedPids']) and observed <= owned
+    states, events = control['runtimes'], control['events']
+    assert len(states) == 3 and len({row['pid'] for row in states}) == 3
+    assert [row['exitCode'] for row in states] == [-9, -9, 130]
+    for state in states:
+        assert state['pid'] in observed and 0 < state['startedMs'] < state['readyMs'] < elapsed
+        assert state['health'] == launcher['shadowRuntime']['before']
+        assert state['warmup']['httpStatus'] == 200 and state['warmup']['result']['status'] in ['ok', 'abstain']
+        validate_result(state['warmup']['result'], warmup_request, profile)
+    assert states[0]['warmup'] == launcher['shadowRuntime']['warmup']
+    assert states[-1]['pid'] == launcher['shadowRuntime']['pid']
+    assert [f"{row['transport']}/{row['action']}" for row in events] == plan['shadowRecovery']['actions']
+    previous = states[0]['readyMs']
+    for index, event in enumerate(events):
+        assert event['status'] == 'pass' and 'failure' not in event
+        assert previous < event['startedMs'] < event['finishedMs'] < elapsed
+        previous = event['finishedMs']
+        state = states[index // 2]
+        assert event['oldPid'] == state['pid']
+        if event['action'] == 'kill':
+            before = set(event['ownedBeforeKill'])
+            assert len(before) == len(event['ownedBeforeKill']) and len(before) >= 2
+            assert state['pid'] in before and before <= observed
+            assert event['exitCode'] == -9 and event['remainingAfterKill'] == []
+        else:
+            next_state = states[index // 2 + 1]
+            assert event['newPid'] == next_state['pid'] and event['runtimeIndex'] == index // 2 + 1
+            assert event['startedMs'] <= next_state['startedMs'] < next_state['readyMs'] <= event['finishedMs']
+            assert event['profileSha256'] == plan['decision']['profile']['profileSha256']
+            assert event['instanceId'] == events[index - 1]['instanceId']
+
+
+def verify_runtime_phase(phase, launcher, stages, observations, decision_calls):
+    runtime = phase['runtimeRecovery']
+    controls = runtime['controlCalls']
+    expected = [row for row in launcher['shadowRecovery']['events'] if row['transport'] == phase['transport']]
+    assert [row['action'] for row in controls] == ['kill', 'restart']
+    for row, event in zip(controls, expected, strict=True):
+        assert row['response'] == event and event['instanceId'] == phase['instanceId']
+        assert 0 < row['startedMs'] < row['finishedMs'] < phase['elapsedMs']
+        # Launcher and integration clocks have different origins; compare
+        # durations, then use each clock only within its own timeline.
+        assert event['finishedMs'] - event['startedMs'] <= row['finishedMs'] - row['startedMs'] + 1
+    kill, restart = controls
+    calls, recovery = phase['primaryCalls'], phase['recovery']
+    assert recovery['restoredAtMs'] <= kill['startedMs'] < kill['finishedMs'] <= recovery['releasedAtMs']
+    snapshot = runtime['fallbackSnapshot']
+    stage = stages[1]; observation = observations[stage['id']]
+    assert snapshot['stageId'] == stage['id']
+    assert snapshot['stageSha256'] == sha(compact(stage)) and snapshot['observationSha256'] == sha(compact(observation))
+    assert decision_calls[stage['id']]['finishedMs'] < calls[2]['modelFinishedMs'] <= snapshot['recordedMs']
+    assert snapshot['recordedMs'] <= restart['startedMs'] < restart['finishedMs'] <= snapshot['restartFinishedMs']
+    assert snapshot['restartFinishedMs'] <= snapshot['thirdResponseReleasedMs'] <= calls[2]['finishedMs']
+
+
 def verify(directory):
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
     directory = directory.resolve()
     assert directory.is_relative_to(ROOT / 'docs')
     plan, launcher = [json.loads((directory / f'{name}.json').read_text()) for name in ('plan', 'launcher')]
-    shadow = plan['schema'] == 'agat.temporal.real-rag-plan.v2'
-    version = 2 if shadow else 1
+    assert plan['schema'] in [f'agat.temporal.real-rag-plan.v{v}' for v in (1, 2, 3)]
+    version = int(plan['schema'][-1])
+    shadow, runtime_recovery = version >= 2, version == 3
     assert plan['schema'] == f'agat.temporal.real-rag-plan.v{version}'
     assert re.fullmatch('[0-9a-f]{40}', plan['implementationCommit'])
-    paths = [*SOURCES, *(launcher_module.SHADOW_SOURCES if shadow else [])]
+    paths = [*SOURCES, *(launcher_module.SHADOW_SOURCES if shadow else []),
+             *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else [])]
     archived = subprocess.check_output(['git', 'archive', plan['implementationCommit'], '--', *paths], cwd=ROOT, timeout=15)
     with tarfile.open(fileobj=io.BytesIO(archived)) as archive:
         sources = {member.name: archive.extractfile(member).read() for member in archive if member.isfile()}
@@ -73,7 +135,7 @@ def verify(directory):
         decision = plan['decision']
         assert decision['referencePath'] == launcher_module.SHADOW_REFERENCE and decision['policyPath'] == launcher_module.SHADOW_POLICY
         assert decision['profile'] == json.loads(sources[decision['referencePath']])['decision']
-        assert decision['warmupCalls'] == 1
+        assert decision['warmupCalls'] == (3 if runtime_recovery else 1)
         assert sha(decision['profile']['profileJson']) == decision['profile']['profileSha256'] == '4bd6e0de2bfde982d8d5fbdfc4d5e7ef36ccd1d8bb69356cd558a33934cb7a2a'
         profile = json.loads(decision['profile']['profileJson'])
         assert decision['policy'] == json.loads(sources[decision['policyPath']])
@@ -81,6 +143,9 @@ def verify(directory):
         assert sha(json.dumps(decision['manifest']['files'], sort_keys=True, separators=(',', ':'))) == decision['manifest']['artifactSha256']
         assert decision['runtime']['packages'] == dict(line.split('==') for line in sources['decision_runtime/requirements-mlx.txt'].decode().splitlines()
                                                       if line and not line.startswith('#'))
+    if runtime_recovery:
+        assert plan['shadowRecovery'] == {'protocol': 'private-files-v1', 'signal': 'SIGKILL',
+            'actions': ['isolated/kill', 'isolated/restart', 'session/kill', 'session/restart']}
     assert plan['concurrency'] == 1 and plan['workloadBudgetSeconds'] == 600
     assert plan['databaseIsolation'] == 'one_owned_server_per_transport'
     assert plan['ollamaSettings'] == {'OLLAMA_NO_CLOUD': '1', 'OLLAMA_MAX_LOADED_MODELS': '2', 'OLLAMA_NUM_PARALLEL': '1',
@@ -109,6 +174,8 @@ def verify(directory):
         warmup_request = Request.from_dict({'schemaVersion': 'agat.decision.v1', 'id': 'temporal-shadow-warmup',
                                            'state': plan['fixture']['input'], **plan['fixture']['shadow']})
         validate_result(runtime['warmup']['result'], warmup_request, profile)
+        if runtime_recovery:
+            verify_runtime_control(plan, launcher, profile, warmup_request, owned, elapsed)
     assert [row['transport'] for row in launcher['workloads']] == plan['transports']
     assert all(row['exitCode'] == 0 and row['pid'] in owned for row in launcher['workloads'])
     assert len({row['pid'] for row in launcher['workloads']}) == 2
@@ -135,15 +202,22 @@ def verify(directory):
     source_hashes = {key: sha(row['content']) for key, row in source_by_id.items()}
     vectors, prompt_sets, output_sets, summaries = defaultdict(set), [], [], []
     assert set(launcher['phaseSha256']) == {'isolated.json', 'session.json'}
+    if runtime_recovery:
+        assert set(launcher['shadowJournalSha256']) == {'isolated.shadow.jsonl', 'session.shadow.jsonl'}
     for transport in plan['transports']:
         phase_path = directory / f'{transport}.json'
         assert launcher['phaseSha256'][phase_path.name] == sha(phase_path.read_bytes())
         phase = json.loads(phase_path.read_text())
+        if runtime_recovery:
+            journal = directory / f'{transport}.shadow.jsonl'
+            assert sha(journal.read_bytes()) == launcher['shadowJournalSha256'][journal.name]
+            assert [json.loads(line) for line in journal.read_text().splitlines()] == phase['decisionCalls']
         assert phase['schema'] == f'agat.temporal.real-rag.v{version}' and phase['status'] == 'pass' and phase['failure'] is None
         assert phase['transport'] == transport and phase['planSha256'] == plan_sha and phase['qualification'] == 'not_assessed'
         assert set(phase['checks']) == {'activityRetried', 'temporalWorkerKilledAndReplaced', 'sameWorkflowRun',
             'firstAcceptedStageUnchanged', 'realModelOutputsPreserved', 'durableTimerFired', 'nativeReplayWithoutSideEffects',
-            'shadowObservationsPreserved' if shadow else 'shadowDisabled', 'childrenDrained'} and all(value is True for value in phase['checks'].values())
+            'shadowObservationsPreserved' if shadow else 'shadowDisabled', 'childrenDrained',
+            *(['shadowRuntimeFailureAndRecovery'] if runtime_recovery else [])} and all(value is True for value in phase['checks'].values())
         phase_ms = positive(phase['elapsedMs']); assert phase_ms < elapsed
         for kind, name in [('primary', 'qwen3:8b'), ('embedding', 'embeddinggemma:latest')]:
             assert phase[kind]['name'] == name and phase[kind]['digest'] == MODELS[name]
@@ -235,14 +309,22 @@ def verify(directory):
                 request = Request.from_dict({'schemaVersion': 'agat.decision.v1', 'id': stage['id'],
                                              'state': stage['input'] if index else fixture['input'], **fixture['shadow']})
                 assert call['request'] == request.to_dict()
-                assert call['httpStatus'] == 200 and calls[index]['finishedMs'] < call['startedMs'] < call['finishedMs'] < phase_ms
+                assert calls[index]['finishedMs'] < call['startedMs'] < call['finishedMs'] < phase_ms
                 if index < 2: assert call['finishedMs'] < calls[index + 1]['startedMs']
+                if runtime_recovery and index == 1:
+                    assert call['status'] == 'unavailable' and call['transportError'] == 'ECONNREFUSED'
+                    assert 'httpStatus' not in call and 'result' not in call
+                    assert observation == {'mode': 'shadow', 'fallback': 'primary', 'status': 'unavailable', 'reason': 'unreachable'}
+                    continue
+                assert call['httpStatus'] == 200
                 validate_result(call['result'], request, profile)
                 assert call['result']['status'] in ['ok', 'abstain']
                 assert observation == {'mode': 'shadow', 'fallback': 'primary', 'status': call['result']['status'],
                                        'reason': call['result']['reason'], 'result': call['result']}
             assert decision_calls[stages[0]['id']]['finishedMs'] < recovery['heldResponseAtMs']
             assert decision_calls[stages[1]['id']]['startedMs'] > recovery['releasedAtMs']
+            if runtime_recovery:
+                verify_runtime_phase(phase, launcher, stages, observations, decision_calls)
         assert phase['database'] == {'driver': 'postgresql', 'runtimeRole': 'agat_system', 'tenantRole': 'agat_tenant',
             'visibility': {'own': [1, 3, 2], 'foreign': [0, 0, 0]}, 'releaseRegistryDenied': True, 'retrievalExecution': 'isolated'}
         assert len(phase['children']) == 4 and {row['pid'] for row in phase['children']} <= owned
@@ -270,10 +352,16 @@ def verify(directory):
             'tickCalls': len(ticks), 'heldResponseMs': round(calls[1]['finishedMs'] - calls[1]['modelFinishedMs'], 3),
             'workflowRunId': phase['workflowRunId'], 'outputSha256': output_sets[-1]})
         if shadow:
+            inferred = [row for row in phase['decisionCalls'] if 'result' in row]
             summaries[-1]['shadow'] = {'calls': 3, 'generatedTokens': 0,
-                'outcomes': dict(Counter(f"{row['result']['status']}/{row['result']['reason']}" for row in phase['decisionCalls'])),
-                'inputTokens': [row['result']['inputTokens'] for row in phase['decisionCalls']],
-                'runtimeMs': [row['result']['durationMs'] for row in phase['decisionCalls']]}
+                'outcomes': dict(Counter(f"{row['result']['status']}/{row['result']['reason']}" if 'result' in row else 'unavailable/unreachable'
+                                         for row in phase['decisionCalls'])),
+                'inputTokens': [row['result']['inputTokens'] for row in inferred],
+                'runtimeMs': [row['result']['durationMs'] for row in inferred]}
+            if runtime_recovery:
+                summaries[-1]['shadow'].update(inferenceCalls=2, unavailableObservations=1)
+                summaries[-1]['shadow']['restartMs'] = round(phase['runtimeRecovery']['controlCalls'][1]['finishedMs']
+                                                            - phase['runtimeRecovery']['controlCalls'][1]['startedMs'], 3)
     assert prompt_sets[0] == prompt_sets[1] and output_sets[0] == output_sets[1]
     assert len(vectors) == 5 and all(len(values) == 1 for values in vectors.values())
     assert len({row['workflowRunId'] for row in summaries}) == 2
@@ -281,7 +369,9 @@ def verify(directory):
             'sourceFiles': len(sources), 'phases': summaries, 'equalPromptsAndOutputs': True, 'equalVectorsForFiveInputs': True,
             'primaryCalls': 6, 'embeddingItems': 10, 'sourceCitations': 12, 'nativeReplay': 'checked_by_live_harness',
             'ownedObservedPids': len(owned), 'ownedContainers': 4, 'qualification': 'not_assessed',
-            **({'shadowCalls': 6, 'profileSha256': plan['decision']['profile']['profileSha256']} if shadow else {})}
+            **({'shadowCalls': 6, 'profileSha256': plan['decision']['profile']['profileSha256']} if shadow else {}),
+            **({'shadowInferenceCalls': 4, 'unavailableObservations': 2, 'separateWarmupCalls': 3, 'runtimeRestarts': 2}
+               if runtime_recovery else {})}
 
 
 if __name__ == '__main__':

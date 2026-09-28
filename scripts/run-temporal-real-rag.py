@@ -256,6 +256,11 @@ def main():
                     require(shadow_control.failure is None and len(shadow_control.events) == 4, 'Incomplete shadow failure/recovery sequence')
             except Exception as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
+                # Let the integration harness persist the failed response and
+                # close its children before forcing the wrapper to stop.
+                drain_deadline = time.monotonic() + 5
+                while workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
+                    time.sleep(.1)
             finally:
                 try:
                     shared.stop(workload)
@@ -322,6 +327,8 @@ def main():
         report['logSha256']['decision.log'] = decision_log_sha
     if shadow_control:
         report['shadowRecovery'] = shadow_control.report()
+        report['shadowJournalSha256'] = {f'{transport}.shadow.jsonl': sha((directory / f'{transport}.shadow.jsonl').read_bytes())
+            for transport in plan['transports'] if (directory / f'{transport}.shadow.jsonl').exists()}
     write(directory / 'launcher.json', report)
     print(report['status'], failure, flush=True)
     return 1 if failure else 0
