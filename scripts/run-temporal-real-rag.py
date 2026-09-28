@@ -24,7 +24,7 @@ spec.loader.exec_module(shared)
 require, sha, write, command = shared.require, shared.sha, shared.write, shared.command
 SOURCES = ['apps/coordinator/src', 'apps/coordinator/test', 'apps/coordinator/package.json', 'apps/coordinator/tsconfig.json',
            'apps/temporal-worker/src', 'apps/temporal-worker/package.json', 'apps/temporal-worker/tsconfig.json',
-           'workers', 'packages', 'package.json', 'package-lock.json', 'scripts/run-temporal-real-rag.py',
+           'workers', 'package.json', 'package-lock.json', 'scripts/run-temporal-real-rag.py',
            'scripts/profile-embedding-rag.py', 'scripts/test-temporal-postgres-rag.sh', 'scripts/test-temporal-rag.sh',
            'scripts/lib/decision-primary-workflow.ts', 'scripts/lib/decision-rag.ts', 'scripts/lib/decision-shadow-proxy.ts',
            'deploy/k8s/docker-desktop/postgres-init.sh', shared.FIXTURE]
