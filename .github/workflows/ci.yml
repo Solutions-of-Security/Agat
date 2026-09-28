@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ha-postgres, state-migration, artifact-store, region-loss-dr]
+        suite: [ha-postgres, state-migration, artifact-store, region-loss-dr, temporal-rag]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -89,7 +89,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Run against disposable PostgreSQL and S3 services
+      - uses: actions/setup-python@v7
+        if: matrix.suite == 'temporal-rag'
+        with:
+          python-version: "3.13"
+      - name: Run against disposable integration services
         run: npm run fleet:test-${{ matrix.suite }}
 
   required:
