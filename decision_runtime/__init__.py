@@ -1,6 +1,6 @@
 """Experimental local, typed decisions for Agat (no workflow side effects)."""
 
-VERSION = "0.12.0"
+VERSION = "0.12.1"
 
 
 def implementation_sha256() -> str:

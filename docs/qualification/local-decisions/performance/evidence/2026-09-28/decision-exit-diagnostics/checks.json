@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "agat.decision.retirement-public-checks.v1",
+  "runtimeVersion": "0.12.1",
+  "content": "counts_and_fingerprints_only",
+  "measuredHostResourcesIncluded": false,
+  "rawEvidence": "retained_locally",
+  "realMlx": {
+    "sourceCommit": "9841706f05443ad25417d5e311b8fa258edecd74",
+    "sourceFiles": 23,
+    "status": "pass",
+    "runtimeCount": 4,
+    "ownedChildren": 8,
+    "allOwnedProcessesStopped": true,
+    "profileSha256": "aeda3e1818101bd91f920201bb2adfa1c10463894a456924a79d17d4c12a9c25",
+    "timeoutProfileSha256": "17af2b151c7c942171ce504704a480b5cb470590e2959ab844dfb879dc168a42",
+    "retirementReasons": [
+      "backend_unavailable",
+      "inference_timeout",
+      "inference_cancelled"
+    ],
+    "exitCodes": [
+      75,
+      130,
+      75,
+      75
+    ],
+    "sameProfileAndDecisionAfterRestart": true,
+    "completeTimeoutAndCancellationResponses": true,
+    "normalShutdownHasNoRetirementEvent": true,
+    "inputSha256": "9401e66998aba249ab20a45ff3011dd2a61e88c998a632256529b7a0d066223c",
+    "runtimeSourcesMatchFinal": true
+  },
+  "tests": {
+    "newRuntimeTests": 9,
+    "serviceLifecycleTests": 6,
+    "probeTests": 5,
+    "decision": {
+      "passed": 119,
+      "skipped": 3,
+      "failed": 0
+    },
+    "worker": {
+      "initialFailed": 1,
+      "targetedRerun": "pass",
+      "fullRerunPassed": 143,
+      "fullRerunFailed": 0,
+      "rootCause": "not_established"
+    },
+    "documentation": {
+      "nodePassed": 12,
+      "pythonPassed": 406,
+      "localLinkTargets": 2098,
+      "markdownFiles": 227,
+      "processCatalog": "pass"
+    }
+  },
+  "qualification": "not_assessed",
+  "routingEnabled": false,
+  "evidenceSha256": {
+    "mlx-retirement.json": "88ca1e48336e7f1240135f084c231e967b5e944e882345b1878933b15e3ed918"
+  },
+  "validationLogSha256": {
+    "decision.log": "a306392cbfebf6d875e51b07dd3c379c34412d12bbe16734d99a38e2bf427476",
+    "worker-initial-failure.log": "e17d8569377484331929fc65e06b4be10b115d79330eb0da0a79b40a0362b9ad",
+    "worker-rerun.log": "22a0e1443c98956b87870716ec7cb7fdf8ca6c7c300b7cddc72aed8b0d2f6780",
+    "docs.log": "b5bfdb2686fd6eca2ab25d224d5e7be7c50c4fb13602c1504181e050ac0d9ecc"
+  },
+  "verificationToolsSha256": {
+    "scripts/check-decision-retirement.py": "a1e894d45e33216ed87e60c8623b51e7166c9aa53d5afdff9caae338fc4bc3f2",
+    "scripts/test/test_decision_retirement.py": "bd9969683429487cfa7c0de2b14e1c7979991714ccf90250516d65044ce95192",
+    "decision_runtime/lifecycle.py": "a50856ea8ec9d8fad4cc8526cdc534c82cde6de3f01fe4b9a8b9f7a40676e2d1",
+    "decision_runtime/tests/test_exit_diagnostics.py": "582d59fb2d23f99a0aef248b234fb70c0c6c2cfaee79d7bcaa4491ed199df3bb"
+  }
+}

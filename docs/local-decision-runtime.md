@@ -32,6 +32,8 @@
 
 В `0.12.0` добавлены [операционные метрики и примеры alerts](./qualification/local-decisions/shadow/observability/README.md): `/metrics`, readiness, фиксированные счётчики исходов и раздельная latency вычислений/отказов. Реальный MLX, официальный parser и promtool проверены; постоянный мониторинг ещё не подключён.
 
+В `0.12.1` [причина retirement](./qualification/local-decisions/performance/decision-exit-diagnostics.md) записывается в stderr после завершения HTTP-обработчиков и cleanup backend. Timeout, cancellation, смерть ребёнка и явный restart проверены на настоящих весах; новый fingerprint требует отдельной применимой qualification.
+
 Отдельный offline [baseline по заголовкам заявок](./qualification/local-decisions/baselines/rules.md) сравнили на тех же 15 development-входах: 2 правильные метки, один принятый ответ. Покрытие недостаточно; правила не подключены к serving.
 
 ## Что реализовано
