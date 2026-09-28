@@ -596,10 +596,17 @@ class LocalModelClient:
         digest = hashlib.sha256(value.encode("utf-8")).digest()
         return [(byte - 127.5) / 127.5 for byte in digest]
 
-    def retrieve_knowledge(self, lease: dict[str, Any], *, dry_run: bool = False) -> str:
+    def retrieve_knowledge(self, lease: dict[str, Any], *, dry_run: bool = False,
+                           cancelled: threading.Event | None = None) -> str:
         knowledge = lease.get("knowledge")
         if not isinstance(knowledge, dict):
             return ""
+
+        def check_cancelled() -> None:
+            if cancelled is not None and cancelled.is_set():
+                raise RuntimeError("Knowledge retrieval cancelled")
+
+        check_cancelled()
         raw_groups = knowledge.get("groups")
         groups = raw_groups if isinstance(raw_groups, list) else []
         raw_memory = knowledge.get("memory")
@@ -620,6 +627,7 @@ class LocalModelClient:
                 query_text = str(run.get("name", "AGAT knowledge retrieval"))[:50_000]
             queries: list[dict[str, Any]] = []
             for raw_group in groups[:8]:
+                check_cancelled()
                 if not isinstance(raw_group, dict):
                     raise RuntimeError("Knowledge lease contains a malformed group")
                 embedding_model = raw_group.get("embeddingModel")
@@ -637,7 +645,7 @@ class LocalModelClient:
                 vector = (
                     self.dry_run_embedding(query_text)
                     if dry_run
-                    else self.embed(embedding_model, [query_text])[0]
+                    else self.embed(embedding_model, [query_text], cancelled=cancelled)[0]
                 )
                 queries.append(
                     {
@@ -647,7 +655,9 @@ class LocalModelClient:
                         "vector": vector,
                     }
                 )
+            check_cancelled()
             result = self.coordinator_client.knowledge_search(str(lease["leaseId"]), queries)
+            check_cancelled()
             raw_hits = result.get("hits")
             if not isinstance(raw_hits, list):
                 raise RuntimeError("Coordinator returned malformed knowledge hits")
@@ -742,7 +752,7 @@ class LocalModelClient:
         if context_text:
             user_message += f"\n\nКонтекст предыдущих этапов:\n{context_text}"
         knowledge_text = (
-            self.retrieve_knowledge(lease)
+            self.retrieve_knowledge(lease, cancelled=_PRIMARY_CANCELLED.get())
             if knowledge_context is None
             else knowledge_context
         )
@@ -2768,13 +2778,13 @@ def _execute_lease_body(
                 data={"kind": "tool_call", "phase": "completed", **audit},
             )
         elif dry_run:
-            knowledge_context = model_client.retrieve_knowledge(lease, dry_run=True)
+            knowledge_context = model_client.retrieve_knowledge(lease, dry_run=True, cancelled=cancelled)
             time.sleep(0.1)
             output = f"Тестовый результат этапа «{agent_name}» для запуска «{run_name}»."
             if knowledge_context:
                 output += " Локальный knowledge-контекст получен и проверен."
         else:
-            knowledge_context = model_client.retrieve_knowledge(lease)
+            knowledge_context = model_client.retrieve_knowledge(lease, cancelled=cancelled)
             client.event(
                 lease_id,
                 f"Вызвана локальная модель {model_name}",
