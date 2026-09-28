@@ -978,7 +978,7 @@ export function createCoordinatorServer(
         throw new A2AProtocolError(404, "NOT_FOUND", "OPERATION_NOT_FOUND", "A2A-операция не найдена");
       }
 
-      const temporalTickInstanceId = routeParam(pathname, /^\/api\/v1\/internal\/processes\/([^/]+)\/tick$/);
+      const temporalTickInstanceId = routeParam(pathname, /^\/api\/v1\/internal\/processes\/([^/]+)\/(?:tick|cancel)$/);
       if (request.method === "POST" && temporalTickInstanceId) {
         if (!config.temporalEnabled || !config.temporalInternalToken) throw new HttpError(404, "Маршрут API не найден");
         const supplied = request.headers["x-agat-temporal-token"];
@@ -987,7 +987,9 @@ export function createCoordinatorServer(
         }
         const body = await readJson<{ projectId?: unknown }>(request);
         if (typeof body.projectId !== "string") throw new HttpError(400, "projectId обязателен");
-        const state = store.temporalProcessTick(temporalTickInstanceId, body.projectId);
+        const state = pathname.endsWith("/cancel")
+          ? store.temporalProcessCancel(temporalTickInstanceId, body.projectId)
+          : store.temporalProcessTick(temporalTickInstanceId, body.projectId);
         if (!state) throw new HttpError(404, "Экземпляр Temporal-процесса не найден");
         json(response, 200, state);
         return;

@@ -15,11 +15,19 @@ function assertConfiguration(): void {
 }
 
 export async function tickProcess(input: ProcessWorkflowInput): Promise<DurableProcessState> {
+  return processStateRequest(input, "tick");
+}
+
+export async function cancelProcess(input: ProcessWorkflowInput): Promise<DurableProcessState> {
+  return processStateRequest(input, "cancel");
+}
+
+async function processStateRequest(input: ProcessWorkflowInput, action: "tick" | "cancel"): Promise<DurableProcessState> {
   assertConfiguration();
   let response: Response;
   try {
     response = await fetch(
-      `${coordinatorUrl}/api/v1/internal/processes/${encodeURIComponent(input.instanceId)}/tick`,
+      `${coordinatorUrl}/api/v1/internal/processes/${encodeURIComponent(input.instanceId)}/${action}`,
       {
         method: "POST",
         headers: {

@@ -1,0 +1,70 @@
+{
+  "schema": "agat.temporal.cancellation-checks.v1",
+  "baseCommit": "76744b31bba0e039da3c5cca1747b37eff04bdfa",
+  "databaseSchema": 29,
+  "temporalSdk": "1.24.0",
+  "workflowCommandsChanged": true,
+  "patch": "agat-process-cancellation-cleanup-v1",
+  "sourceSha256": {
+    "apps/coordinator/src/database.ts": "7ec97198f00961636bc9f766ac40b8ab75a763763cf99bee536e5ae654480551",
+    "apps/coordinator/src/server.ts": "e55a403582b21858cf6a130c1f421479e4f7f11c4d8f6ac7d7bc79daf4e03fd5",
+    "apps/temporal-worker/src/activities.ts": "01cc310430a3d92aa6987b941c7d2d030608f3f9a135c7d12608be127c9abbd5",
+    "apps/temporal-worker/src/workflows.ts": "65d6ef591f6b88cd2947dcc52d9f495301e6653d8107cb6327a41eb8c51f5b5e",
+    "apps/coordinator/test/temporal-cancellation.test.ts": "341d8d3d42216f0b8614c310cef14a43d54cdbbeb9527eb3ca587c592958d35e",
+    "apps/coordinator/test/temporal-cancellation.integration.test.ts": "f723be96f2efbe43320f062e8016b3d7c254a1d512ff29b2232ce5b553e521c7",
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "211f79eed896c9713e701837c525ec4ba4e534353c6a1974a807e85684f43408"
+  },
+  "evidenceSha256": {
+    "baseline/cancellation.json": "136c1086cdb91ed19ddb6e6d356b0f9ce9a7e13b1b3c941700346d950c03ed97",
+    "verified/cancellation.json": "d93993192276f59c4298997472c0c4e6236c7593d82a60c96f04a04aff15a577",
+    "verified/compensation.json": "c530ef1edaae3c8e46d99f0e08d8025d76383325f21fa65aa7a877aea2ab642a"
+  },
+  "checks": {
+    "httpAndSQLite": {
+      "pass": 1,
+      "fail": 0,
+      "log": "http.log"
+    },
+    "postgresConcurrentCancellationAndRls": {
+      "pass": 1,
+      "fail": 0,
+      "log": "postgres.log"
+    },
+    "liveTemporal": {
+      "scenarios": 6,
+      "pass": 6,
+      "fail": 0,
+      "log": "integration.log"
+    },
+    "coordinator": {
+      "pass": 289,
+      "skip": 6,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 13,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "newTestsStrict": "pass",
+      "log": "typecheck.log"
+    },
+    "initialCompensationFixtureFailure": {
+      "log": "compensation-run.log",
+      "cause": "Read graph from a nonexistent DTO property; corrected fixture constructs a typed graph before publishing."
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1776,
+      "markdownFiles": 207,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Parent cancellation after child starts; lost cleanup acknowledgement; worker restart; compensations via synthetic lease completions. Cancellation during scheduled-start remains a separate gate."
+}

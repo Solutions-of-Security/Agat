@@ -393,6 +393,84 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("serializes Temporal cancellation retries across replicas without duplicate terminal events", async () => {
+    await runWithPostgresSystemScope(async () => {
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-cancel-"));
+      const store = new AgatStore(":postgresql:", { ...storeOptions("cancel-parent", artifacts), temporalProcesses: true });
+      const lock = new pg.Client({ connectionString: systemUrl, ssl: false });
+      const probes: Array<{ child: ReturnType<typeof spawn>; done: Promise<unknown> }> = [];
+      try {
+        await lock.connect();
+        const projectId = `cancel-${randomUUID().slice(0, 8)}`, foreign = `foreign-${randomUUID().slice(0, 8)}`;
+        store.createProject({ id: projectId, name: "Cancellation" }); store.createProject({ id: foreign, name: "Foreign" });
+        const processId = String(store.createProcess({ name: projectId, graph: {
+          nodes: [
+            { id: "start", type: "start", name: "Start", position: { x: 0, y: 0 }, config: {} },
+            { id: "hold", type: "signal", name: "Hold", position: { x: 100, y: 0 }, config: { signalName: "resume", signalTimeoutSeconds: 3600 } },
+            { id: "end", type: "end", name: "End", position: { x: 200, y: 0 }, config: {} },
+          ], edges: [{ id: "a", source: "start", target: "hold", branch: "default" }, { id: "b", source: "hold", target: "end", branch: "default" }],
+        } }, projectId).id); store.publishProcess(processId, projectId);
+        const instance = store.startProcess(processId, { input: "Synthetic cancellation" }, projectId)!;
+        assert.equal(store.temporalProcessCancel(String(instance.id), foreign), null);
+        assert.equal(store.getProcessInstance(String(instance.id), projectId)!.status, "waiting_external");
+        await lock.query("BEGIN"); await lock.query("SELECT id FROM process_instances WHERE id = $1 FOR UPDATE", [instance.id]);
+        const names = [`${projectId}-a`, `${projectId}-b`];
+        for (const name of names) {
+          const child = spawn(process.execPath, ["--input-type=module", "-e", `
+            import fs from 'node:fs';
+            import { AgatStore } from ${JSON.stringify(fileURLToPath(new URL("../dist/database.js", import.meta.url)))};
+            const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+            const store = new AgatStore(':postgresql:', data.options);
+            try { process.stdout.write(JSON.stringify(store.temporalProcessCancel(data.instanceId, data.projectId))); }
+            finally { store.close(); }
+          `], { stdio: ["pipe", "pipe", "pipe"] });
+          let output = "", diagnostic = ""; child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+          child.stdout.on("data", chunk => { output += chunk; }); child.stderr.on("data", chunk => { diagnostic = (diagnostic + chunk).slice(-4000); });
+          const done = new Promise<unknown>((resolve, reject) => {
+            child.once("error", reject); child.once("close", code => {
+              try { assert.equal(code, 0, diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>")); resolve(JSON.parse(output)); }
+              catch (error) { reject(error); }
+            });
+          }); void done.catch(() => {});
+          child.stdin.end(JSON.stringify({ instanceId: instance.id, projectId,
+            options: { ...storeOptions(name, artifacts), temporalProcesses: true } }));
+          probes.push({ child, done });
+        }
+        let waiters = 0;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          for (const probe of probes) if (probe.child.exitCode !== null) await probe.done;
+          await lock.query("SELECT pg_stat_clear_snapshot()");
+          waiters = (await lock.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE application_name = ANY($1::text[]) AND wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE OF pi%'`,
+            [names.map(name => `${name}-system`)])).rows[0].n;
+          if (waiters === 2) break;
+          await delay(50);
+        }
+        assert.equal(waiters, 2, "Both cancellation attempts must wait at the same row lock");
+        await lock.query("COMMIT");
+        const [one, two] = await Promise.all(probes.map(probe => probe.done)); assert.deepEqual(one, two);
+        assert.equal(store.getProcessInstance(String(instance.id), projectId)!.status, "cancelled");
+        assert.deepEqual(store.temporalProcessCancel(String(instance.id), projectId), one);
+        const terminalEvents = await lock.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'process.instance.cancelled'", [instance.runId]);
+        assert.equal(terminalEvents.rows[0].n, 1);
+        const tenant = new pg.Client({ connectionString: tenantUrl, ssl: false });
+        try {
+          await tenant.connect(); await tenant.query("BEGIN");
+          await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [foreign]);
+          assert.equal((await tenant.query("SELECT pi.id FROM process_instances pi WHERE pi.id = $1 FOR UPDATE OF pi", [instance.id])).rowCount, 0);
+          await tenant.query("ROLLBACK");
+        } finally { await tenant.end(); }
+      } finally {
+        await lock.query("ROLLBACK").catch(() => {});
+        for (const probe of probes) {
+          if (probe.child.exitCode === null && probe.child.signalCode === null) probe.child.kill("SIGKILL");
+          await probe.done.catch(() => {});
+        }
+        await lock.end(); store.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("deduplicates scheduled-start across concurrent coordinators and isolates durable receipts with RLS", async () => {
     await runWithPostgresSystemScope(async () => {
       const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-scheduled-"));

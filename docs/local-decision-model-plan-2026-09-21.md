@@ -136,6 +136,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Владелец scheduled child](./qualification/local-decisions/performance/temporal-scheduled-ownership.md) устраняет воспроизведённый конфликт: startup reconciliation запускал standalone workflow до parent и завершал parent ошибкой. Schema 29 сохраняет владельца запуска, backfill receipts ограничен проектом. Настоящий Temporal прошёл два SIGKILL/restart coordinator до и после child start; обычный запуск продолжает восстанавливаться. SQLite/PostgreSQL upgrade, offline import, четыре интеграционных сценария и семь replay histories прошли. Следующий gate — отмена scheduled parent/child и согласованное terminal state в application database.
 
+[Отмена Temporal и application state](./qualification/local-decisions/performance/temporal-cancellation.md) устраняет подтверждённое расхождение после отмены scheduled parent: Temporal завершал child, а база сохраняла активное ожидание. Идемпотентная cleanup Activity синхронизирует state и дожидается компенсаций; проверены потерянный ответ, SIGKILL/restart worker, PostgreSQL concurrency/RLS и replay старых cancellation histories. Следующий gate — отмена parent во время scheduled-start, когда commit уже мог произойти, но child ещё не создан.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
