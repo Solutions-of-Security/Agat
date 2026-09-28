@@ -31,15 +31,24 @@ with make_server(DecisionEngine(Backend()),0) as server:
     print(server.server_port,flush=True)
     server.serve_forever()
 `], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-  const lines = createInterface({ input: backend.stdout! });let calls = 0, incomplete = false;
+  const lines = createInterface({ input: backend.stdout! });let calls = 0, phaseCalls = 0, barriersReleased = 0, incomplete = false;
+  const firstResponses: Array<() => void> = [];
   const primary = http.createServer((req, res) => {
     assert.equal(req.url, "/api/chat");let raw = "";
     req.on("data", chunk => { raw += chunk; });req.on("end", () => {
       const body = JSON.parse(raw);assert.equal(body.think, false);assert.equal(body.options.num_predict, 384);
-      assert.ok(Array.isArray(body.messages));const callNumber = ++calls;
+      assert.ok(Array.isArray(body.messages));const callNumber = ++calls, phaseCall = ++phaseCalls;
       res.writeHead(200, { "content-type": "application/json" });
-      setTimeout(() => res.end(JSON.stringify({ model: "fixture-primary", done: true, done_reason: incomplete ? "length" : "stop", total_duration: 1000000,
-        message: { content: `Учебный primary-ответ ${callNumber}; июль 100, август 120.` }, prompt_eval_count: 20, eval_count: 12 })), 100);
+      const complete = () => res.end(JSON.stringify({ model: "fixture-primary", done: true, done_reason: incomplete ? "length" : "stop", total_duration: 1000000,
+        message: { content: `Учебный primary-ответ ${callNumber}; июль 100, август 120.` }, prompt_eval_count: 20, eval_count: 12 }));
+      // Process startup may take longer than a fixed 100ms response delay.
+      // Hold the first response until the second real worker slot reaches HTTP.
+      if (!incomplete && phaseCall <= 2) {
+        firstResponses.push(complete);
+        if (firstResponses.length === 2) {
+          barriersReleased++; firstResponses.splice(0).forEach(finish => finish());
+        }
+      } else setTimeout(complete, 100);
     });
   });
   try {
@@ -53,15 +62,18 @@ with make_server(DecisionEngine(Backend()),0) as server:
     const decisionUrl = `http://127.0.0.1:${port}`;
     const profile = await decisionProfile(decisionUrl);
     for (const shadow of [false, true]) {
+      phaseCalls = 0; assert.equal(firstResponses.length, 0);
       const result = await workflowPhase({ phase: { id: shadow ? "shadow" : "control", shadow, runs: 2, concurrency: 2 },
         fixture, model: "fixture-primary", primaryUrl: `http://127.0.0.1:${address.port}`, decisionUrl,
         profileJson: profile.profileJson, timeoutMs: 15_000 });
+      assert.equal(result.status, "observed", JSON.stringify({ failure: result.failure,
+        primaryCalls: result.primaryCalls.length, maxPrimaryRequestsInFlight: result.maxPrimaryRequestsInFlight }));
       assert.equal(result.workflows.length, 2);assert.equal(result.primaryCalls.length, 6);
       assert.equal(result.decisionCalls.length, shadow ? 6 : 0);assert.ok(result.checks.allPrimaryOutputsPreserved);
       assert.equal(result.maxPrimaryRequestsInFlight, 2);assert.ok(result.checks.configuredConcurrencyObserved);
       if (shadow) assert.ok(result.workflows.every(run => run.stages.every((stage: Record<string, any>) => stage.observation?.fallback === "primary")));
     }
-    assert.equal(calls, 12);
+    assert.equal(calls, 12); assert.equal(barriersReleased, 2);
     incomplete = true;
     const failed = await workflowPhase({ phase: { id: "truncated", shadow: true, runs: 1, concurrency: 1 },
       fixture, model: "fixture-primary", primaryUrl: `http://127.0.0.1:${address.port}`, decisionUrl,
