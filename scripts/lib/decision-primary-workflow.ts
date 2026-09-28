@@ -91,7 +91,7 @@ async function body(req: http.IncomingMessage) {
 
 /** Full coordinator/worker chain. The adapter forwards every primary request to native Ollama. */
 export async function workflowPhase(options: { phase: Phase; fixture: Fixture; model: string; primaryUrl: string;
-  decisionUrl: string; profileJson: string; timeoutMs?: number; metadataId?: string }) {
+  decisionUrl: string; profileJson: string; timeoutMs?: number; metadataId?: string; embeddingTransport?: "isolated" | "session" }) {
   const { phase, fixture, model, primaryUrl, decisionUrl, profileJson } = options;
   validatePlan(fixture, [phase]);origin(primaryUrl);origin(decisionUrl);
   const metadataId = options.metadataId ?? phase.id;
@@ -180,6 +180,7 @@ export async function workflowPhase(options: { phase: Phase; fixture: Fixture; m
         "--credentials", path.join(temporary, "worker.json"), "--name", "workflow-probe-worker", "--models", model,
         "--model-url", `${primaryProxyUrl}/v1`, "--model-api-key", "probe-local", "--model-discovery", "off", "--no-web", "--poll-interval", "0.2",
         "--concurrency", String(phase.concurrency), ...(phase.shadow ? ["--decision-url", shadowUrl] : []),
+        ...(options.embeddingTransport ? ["--embedding-transport", options.embeddingTransport] : []),
         ...(fixture.rag ? ["--embedding-models", fixture.rag.embeddingModel] : [])],
       { cwd: root, stdio: ["ignore", "ignore", "ignore"], env: { ...globalThis.process.env, AGAT_OTEL_ENABLED: "false",
         OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" } });

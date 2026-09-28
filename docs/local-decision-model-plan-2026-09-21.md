@@ -160,6 +160,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Restart coordinator после completion](./qualification/local-decisions/performance/coordinator-completion-recovery.md) проверяет сохранность принятого output/shadow/provenance после SIGKILL coordinator при живом Python worker. Оба transport прошли настоящий tick outage, Update и чтение trace новым coordinator без смены Temporal Run ID. Проверены 6 SQLite и 6 PostgreSQL crash-сценариев, 293 coordinator tests. Следующий этап — повтор реальных локальных RAG-измерений после HTTP isolation.
 
+[Явный профиль transport для повторных RAG-измерений](./qualification/local-decisions/performance/rag-transport-profile.md) закрепляет CLI mode в обоих планах и передаёт его worker независимо от inherited environment. SHA новых HTTP helpers включены в frozen sources; verifier не приписывает старым опытам текущий default. Прошли 5 workflow и 5 профильных проверок, 293 coordinator tests, 12 Node + 323 Python documentation tests. Следующий шаг — реальный model run с этим профилем.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
