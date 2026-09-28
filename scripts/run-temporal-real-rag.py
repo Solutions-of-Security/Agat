@@ -35,6 +35,21 @@ SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
 SHADOW_RECOVERY_SOURCES = ['scripts/lib/temporal_shadow_control.py', 'scripts/test/test_temporal_shadow_control.py']
 
 
+def shadow_profile(path):
+    """Admit an explicit export of this runtime with the original experiment settings."""
+    from decision_runtime import VERSION, implementation_sha256
+    from decision_runtime.contracts import canonical_json, parse_json
+    path = path.resolve()
+    require(path.is_relative_to(ROOT / 'docs') and path.is_file(), 'Shadow profile must be a file under docs')
+    expected = json.loads(json.loads((ROOT / SHADOW_REFERENCE).read_text())['decision']['profileJson'])
+    expected['runtimeVersion'] = VERSION
+    expected['model']['implementationSha256'] = implementation_sha256()
+    profile = parse_json(path.read_bytes())
+    require(profile == expected, 'Explicit shadow profile differs from current runtime or frozen experiment settings')
+    raw = canonical_json(profile)
+    return path.relative_to(ROOT).as_posix(), {'profileJson': raw, 'profileSha256': sha(raw.encode())}
+
+
 def request(port, path, body=None, timeout=5, capture_status=False):
     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=timeout)
     try:
@@ -88,11 +103,14 @@ def main():
     parser.add_argument('--evidence-dir', type=Path, required=True)
     parser.add_argument('--shadow-python', type=Path, help='Resident MLX Python; requires --shadow-manifest')
     parser.add_argument('--shadow-manifest', type=Path, help='Verified resident decider manifest; enables the v2 shadow gate')
+    parser.add_argument('--shadow-profile', type=Path, help='Committed runtime profile export; default retains the historical profile')
     parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
     parser.add_argument('--shadow-resources', action='store_true', help='Observe owned-process and system memory during shadow recovery')
     args = parser.parse_args()
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
     shadow_enabled = args.shadow_manifest is not None
+    require(not args.shadow_profile or shadow_enabled, 'An explicit shadow profile requires both shadow runtime arguments')
+    reference_path, explicit_profile = shadow_profile(args.shadow_profile) if args.shadow_profile else (SHADOW_REFERENCE, None)
     require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
     require(not args.shadow_resources or args.shadow_recovery, 'Shadow resource diagnostics requires recovery mode')
     version_number = 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
@@ -107,7 +125,7 @@ def main():
     require(platform.system() == 'Darwin', 'This installed-model experiment requires the macOS host')
     commit = command(['git', 'rev-parse', 'HEAD'])
     measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else []),
-                      *resource_sources]
+                      *resource_sources, *([reference_path] if explicit_profile else [])]
     snapshot = subprocess.check_output(['git', 'archive', commit, '--', *measured_paths], cwd=ROOT, timeout=15)
     sources = {}
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -123,7 +141,7 @@ def main():
         sys.path.insert(0, str(ROOT))
         from decision_runtime.model_store import verify_manifest
         manifest, _ = verify_manifest(args.shadow_manifest.resolve())
-        expected = json.loads((ROOT / SHADOW_REFERENCE).read_text())['decision']
+        expected = explicit_profile or json.loads((ROOT / SHADOW_REFERENCE).read_text())['decision']
         profile = json.loads(expected['profileJson'])
         require(sha(expected['profileJson'].encode()) == expected['profileSha256'], 'Invalid reference decision profile')
         require(all(manifest[key] == profile['model'][key] for key in ['repository', 'revision', 'artifactSha256']), 'Shadow model changed')
@@ -134,7 +152,9 @@ def main():
         require(runtime['packages'] == requirements, 'Shadow dependencies differ from the pinned requirements')
         decision = {'profile': expected, 'manifest': {key: value for key, value in manifest.items() if key != 'snapshot'},
                     'policy': json.loads((ROOT / SHADOW_POLICY).read_text()), 'runtime': runtime,
-                    'referencePath': SHADOW_REFERENCE, 'policyPath': SHADOW_POLICY, 'warmupCalls': 3 if args.shadow_recovery else 1}
+                    'referencePath': reference_path, 'policyPath': SHADOW_POLICY, 'warmupCalls': 3 if args.shadow_recovery else 1}
+        if explicit_profile:
+            decision['referenceFormat'] = 'runtime-profile-v1'
     model_root = Path(os.environ.get('OLLAMA_MODELS', str(Path.home() / '.ollama/models')))
     for name, digest in shared.MODELS.items():
         require(sha((model_root / 'manifests/registry.ollama.ai/library' / name.replace(':', '/')).read_bytes()) == digest,
@@ -337,6 +357,14 @@ def main():
                 sample_resources('after_cleanup')
         model_log_sha = sha((temporary / 'ollama.log').read_bytes())
         decision_log_sha = sha((temporary / 'decision.log').read_bytes())
+        # Keep model/retirement diagnostics even when a workload fails before
+        # phase evidence is written. Raw process output is always private.
+        private_logs = ROOT / 'docs/private/temporal-real-rag' / directory.relative_to(ROOT / 'docs')
+        private_logs.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for name in ['ollama.log', *(['decision.log'] if shadow_enabled else [])]:
+            descriptor = os.open(private_logs / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'wb') as stream:
+                stream.write((temporary / name).read_bytes())
     phase_hashes = {}
     for transport in plan['transports']:
         phase_path = directory / f'{transport}.json'
