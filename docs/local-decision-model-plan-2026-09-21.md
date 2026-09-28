@@ -130,6 +130,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Настройки deployment](./qualification/local-decisions/performance/embedding-deployment-settings.md) теперь проходят из `.env` Compose и environment `k8s:up` в обычные/управляемые worker. Defaults сохранены; 50 round trips через production parser и 3 launcher tests прошли. Повторный запуск в Linux image недоступен из-за остановки Docker при ENOSPC, ограничение сохранено отдельно. Документированы перезапуск pod/container и откат. Следующий инженерный gate исходного плана — сквозной RAG через Temporal с retry/replay; бизнес-разметка и qualification не считаются выполненными.
 
+[Сквозной RAG через Temporal](./qualification/local-decisions/performance/temporal-rag-recovery.md) проверяет оба embedding transport: реальный Activity retry после потерянного tick reply, SIGKILL/restart Temporal worker, durable timer и JSON history replay. В каждом сценарии сохранены 3 primary-ответа, 3 shadow-наблюдения и 6 источников без повторных model calls при replay. Добавлен обязательный CI job и две реальные replay fixtures. Используются учебные model responses и SQLite; qualification не заявлена. Следующий gate — потерянное подтверждение создания процесса по расписанию и идемпотентность scheduled-start.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

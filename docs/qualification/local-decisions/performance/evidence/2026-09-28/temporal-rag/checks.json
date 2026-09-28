@@ -1,0 +1,59 @@
+{
+  "schema": "agat.temporal.rag-recovery-checks.v1",
+  "baseCommit": "27e32041a0abdf7bbb7c646ae5c51ddf4d3d8b61",
+  "runtimeChanged": false,
+  "node": "24.14.0",
+  "python": "3.14.3",
+  "temporalSdk": "1.24.0",
+  "temporalImage": "temporalio/temporal:1.8.1",
+  "temporalImageDigest": "sha256:59561b9ef060eaeb1f46cb6a1842d6cbdd8a393eb3b6d315ecef5fe2f0b1d7a6",
+  "checks": {
+    "integration": {
+      "pass": 2,
+      "fail": 0,
+      "log": "verified-integration.log"
+    },
+    "coordinator": {
+      "pass": 284,
+      "skip": 2,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "coordinatorAndTemporalTypecheck": "pass",
+    "allWorkspaceTypecheck": "pass",
+    "offlineReplay": {
+      "configTests": 3,
+      "histories": 5,
+      "fail": 0,
+      "log": "verified-replay.log"
+    },
+    "documentation": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinkTargets": 1709,
+      "markdownFiles": 204,
+      "processCategories": 7,
+      "processTemplates": 13,
+      "log": "docs.log"
+    }
+  },
+  "sourceSha256": {
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "5d7f750c89f47a8a7ab77fce3047347f181eec83b628b9e0a8af3ff41d8a87f7",
+    "scripts/test-temporal-rag.sh": "6a69fc0ec3654eb7f86e403a5e35f28b84942a2c83c96f0634ef803cd8ecc603",
+    "apps/coordinator/src/server.ts": "29a68b507fee72a4e78aa1cd7289b7b571131857dc4042279868eb8c65f7aafb",
+    "apps/coordinator/src/database.ts": "4837c0df0d9157441443f4e14780c5299f0fef677aff6528b7931a27598db411",
+    "apps/coordinator/src/process-runtime.ts": "792d2a3f4e8b7410d612e8ffe47e5b0b0d44268be76d369336e4790e0c1e9463",
+    "apps/temporal-worker/src/workflows.ts": "bae603846cd95b5376fd2e9487437c74cb853424ac88abcd4449cb3793b9b7d2",
+    "apps/temporal-worker/src/activities.ts": "3cabfd6579aded675f910af95b400cadb63cb5d93e22d4b334c54f89bff0df6e",
+    "apps/temporal-worker/src/worker.ts": "58205b9fb8bcd25c04595392f17f62ec81b8e431c136e6116d4f12d0a51e9e9e",
+    "workers/agat_worker.py": "d2e12e0e01dc555e88a20d4a3df939127fb619d4dc303e9b0816c035e441182e",
+    "package-lock.json": "157be2c984409d9faa17689085f3e38c254f6fc18ac11305829b8d7bf19e039f"
+  },
+  "evidenceSha256": {
+    "final/session.json": "09a1c7bdaff17eff35eb5e598b70912fa294d685768b49264176dbb8bc8eee59",
+    "final/isolated.json": "0e4abdc6bb1a4181ecb3a23501d38db720e32972ca1f5ec5dbc6aa5fa5014108"
+  },
+  "qualification": "not_assessed",
+  "routingEnabled": false
+}

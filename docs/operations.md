@@ -119,6 +119,8 @@ Team нельзя распределить между несколькими у�
 
 ## Temporal rollout и replay
 
+Сквозная проверка RAG с Activity retry, аварийным restart worker и replay: `npm run fleet:test-temporal-rag`. Она запускает отдельный Temporal dev server и тестовые coordinator/worker; [протокол и границы проверки](./qualification/local-decisions/performance/temporal-rag-recovery.md) сохранены вместе с evidence. Две полученные history входят в обычный `npm run test:temporal`.
+
 Перед каждым production worker build выполняются `npm run typecheck`, `npm test` и `npm run build`. `npm test` включает replay сохранённых Temporal histories. Новый immutable build сначала запускается как canary, затем получает ограниченный ramp и только после наблюдения становится current:
 
 ```bash
