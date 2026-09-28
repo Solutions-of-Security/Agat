@@ -402,7 +402,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       try {
         await lock.connect();
         const projectId = `cancel-${randomUUID().slice(0, 8)}`, foreign = `foreign-${randomUUID().slice(0, 8)}`;
-        store.createProject({ id: projectId, name: "Cancellation" }); store.createProject({ id: foreign, name: "Foreign" });
+        store.createProject({ id: projectId, name: projectId }); store.createProject({ id: foreign, name: foreign });
         const processId = String(store.createProcess({ name: projectId, graph: {
           nodes: [
             { id: "start", type: "start", name: "Start", position: { x: 0, y: 0 }, config: {} },

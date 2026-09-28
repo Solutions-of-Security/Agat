@@ -12,7 +12,7 @@
     "apps/temporal-worker/src/workflows.ts": "65d6ef591f6b88cd2947dcc52d9f495301e6653d8107cb6327a41eb8c51f5b5e",
     "apps/coordinator/test/temporal-cancellation.test.ts": "341d8d3d42216f0b8614c310cef14a43d54cdbbeb9527eb3ca587c592958d35e",
     "apps/coordinator/test/temporal-cancellation.integration.test.ts": "f723be96f2efbe43320f062e8016b3d7c254a1d512ff29b2232ce5b553e521c7",
-    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "211f79eed896c9713e701837c525ec4ba4e534353c6a1974a807e85684f43408"
+    "apps/coordinator/test/fleet-ha-postgres.integration.test.ts": "c6a7ec5b37c45725ff754e9691bbe412121fffd086485d7b6f89167d7c1193b4"
   },
   "evidenceSha256": {
     "baseline/cancellation.json": "136c1086cdb91ed19ddb6e6d356b0f9ce9a7e13b1b3c941700346d950c03ed97",
@@ -64,6 +64,18 @@
       "localLinks": 1776,
       "markdownFiles": 207,
       "log": "docs.log"
+    },
+    "postgresSharedFixtures": {
+      "pass": 3,
+      "fail": 0,
+      "log": "postgres-shared-fixtures.log"
+    },
+    "initialFullPostgresCi": {
+      "pass": 98,
+      "fail": 1,
+      "log": "ci-project-name-failure.log",
+      "job": "https://github.com/Solutions-of-Security/Agat/actions/runs/36365721214/job/108751614810",
+      "cause": "New fixture reused a globally unique project name from an earlier test. Fixed fixture names; three adjacent scenarios passed together."
     }
   },
   "scope": "Parent cancellation after child starts; lost cleanup acknowledgement; worker restart; compensations via synthetic lease completions. Cancellation during scheduled-start remains a separate gate."

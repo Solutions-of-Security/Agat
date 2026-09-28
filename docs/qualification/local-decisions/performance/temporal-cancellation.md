@@ -34,6 +34,8 @@ npm run fleet:test-ha-postgres -- --test-name-pattern='serializes Temporal cance
 npm run test:temporal
 ```
 
+Полный [PostgreSQL CI](https://github.com/Solutions-of-Security/Agat/actions/runs/36365721214/job/108751614810) выявил конфликт имени `Foreign` с ранее выполненной fixture: 98 pass и один fail нового теста до вызова cancellation. [Ошибка](./evidence/2026-09-28/temporal-cancellation/ci-project-name-failure.log) сохранена. Новый тест теперь использует уникальные имена проектов, совпадающие с его случайными ID; production-код не менялся. [Совместный прогон трёх соседних сценариев](./evidence/2026-09-28/temporal-cancellation/postgres-shared-fixtures.log) прошёл.
+
 ## Обновление и оставшиеся границы
 
 Сначала обновите coordinator с новым internal endpoint, затем Temporal workers с новым bundle по штатному canary/ramp. Workflow со старым worker сохраняет старое поведение отмены. Не откатывайте worker на bundle без patch после появления новых history. При длительном ожидании cleanup проверьте Activity failure/retry, доступность coordinator и прогресс compensation leases.
