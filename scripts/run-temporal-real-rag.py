@@ -11,6 +11,7 @@ import platform
 import re
 import shlex
 import socket
+import stat
 import subprocess
 import sys
 import tarfile
@@ -131,6 +132,24 @@ def open_private_log(path):
         raise
 
 
+def require_resident_shadow_model(manifest_path):
+    """Reject macOS cloud placeholders before opening or hashing model files."""
+    def resident(path):
+        require(not (getattr(path.stat(), 'st_flags', 0) & getattr(stat, 'SF_DATALESS', 0)),
+                'Shadow model has cloud-only files; restore pinned weights in a local store before running')
+    resident(manifest_path)
+    manifest = json.loads(manifest_path.read_bytes())
+    require(isinstance(manifest, dict) and isinstance(manifest.get('snapshot'), str)
+            and bool(manifest['snapshot']) and isinstance(manifest.get('files'), dict)
+            and bool(manifest['files']), 'Invalid shadow model manifest')
+    snapshot = Path(manifest['snapshot'])
+    resident(snapshot)
+    for name in manifest['files']:
+        require(isinstance(name, str) and bool(name) and Path(name).name == name,
+                'Invalid shadow model manifest')
+        resident(snapshot / name)
+
+
 def start_shadow_runtime(state, args, port, decision, warmup_request, log):
     process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
         '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
@@ -199,6 +218,7 @@ def main():
     require(not command(['git', 'ls-files', '--others', '--exclude-standard', '--', *measured_paths]), 'Untracked measured sources')
     decision = None
     if shadow_enabled:
+        require_resident_shadow_model(args.shadow_manifest.resolve())
         sys.path.insert(0, str(ROOT))
         from decision_runtime.model_store import verify_manifest
         manifest, _ = verify_manifest(args.shadow_manifest.resolve())
