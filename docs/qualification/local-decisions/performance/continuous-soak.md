@@ -51,7 +51,19 @@ Verifier проверяет целостность и согласованнос
 
 Целевые regression tests проверяют кооперативную отмену после завершённого запроса, profile mismatch до warmup, сохранение первого checkpoint при позднем ENOSPC, отсутствие второй попытки после изменившегося решения, общий sampler и warmup только первого блока. Launcher отдельно проверяется при отказе inventory, журналирования и pre-admission log allocation, SIGTERM и несовпадении dependency set. Verifier отклоняет resealed сокращённую длительность, неверные counts, замену процесса, потерю journal и неизвестный cleanup.
 
-Короткий реальный smoke и отмена должны пройти до полного двухчасового измерения. Их фактические результаты добавляются после запуска на committed исходниках; результат длительного эксперимента фиксируется отдельно, без превращения smoke в доказательство soak или прикладной qualification.
+Результаты до полного двухчасового измерения закреплены в [sanitized checks](./evidence/2026-10-03/continuous-soak-tooling/checks.json), исходники измерены на commit `034e0dd`:
+
+| Проверка | Результат |
+|---|---|
+| Целевые regression tests | 23/23 pass |
+| Полный docs/scripts набор | 12 Node tests; 463 Python tests, четыре прежних opt-in Docker skips |
+| Runtime regression | 122 tests, три opt-in skips; serving implementation fingerprint неизменен |
+| Реальный pinned decider smoke | Два блока по 20 секунд, 209 measured calls, три warmup; 40 229,650 мс измерений; независимый verifier pass |
+| Реальный SIGTERM | Два завершённых measured calls и три warmup сохранены; частичный первый блок, второй не стартовал; `cancelled`, launcher fail как ожидается |
+| Process identity и cleanup | Smoke verifier подтвердил идентичность; оба запуска завершили все наблюдаемые owned PID, cleanup errors нет |
+| Verifier отменённого запуска | Отказал неполному прогону; verification artifact не создан |
+
+Длительный эксперимент фиксируется отдельно. Эти короткие прогоны подтверждают instrumentation и cleanup, но не выполнение двухчасового gate или прикладную qualification.
 
 ## Основание выбора методики
 
