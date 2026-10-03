@@ -47,6 +47,16 @@ python3 scripts/verify-decision-soak.py \
 
 Verifier проверяет целостность и согласованность измерений, а не истинность меток и не повторяет модель. Seals — контрольные суммы, а не цифровые подписи. Отменённый, неполный или неисправный прогон не получает verifier `pass`, даже если его JSON заново resealed. Для анализа такого отказа сохраняются частичные evidence.
 
+[Экспорт публичной сводки](../../../../scripts/summarize-decision-soak.py) сначала повторяет полную независимую проверку. Он использует явный allowlist: версии, fingerprints, duration, counts и latency; source text, разметка, PID, host и system resources остаются приватными. Общие p50/p95 рассчитываются по всем измеренным строкам, без warmup и без усреднения percentiles блоков. Три regression tests подтверждают сохранение counts, отказ несвязанной verification и отсутствие приватных полей; неравные размеры блоков отдельно проверяют pooled p95.
+
+Анализатор требует committed собственные исходники и точное совпадение измеряемых файлов с сохранённым snapshot. Public summary фиксирует отдельно measured commit и analysis commit, SHA анализатора и приватных plan/launcher/verification artifacts. Команда после успешного завершения:
+
+```sh
+python3 scripts/summarize-decision-soak.py \
+  docs/private/2026-10-03/continuous-soak/run-1/runtime \
+  --output docs/qualification/local-decisions/performance/evidence/2026-10-03/continuous-soak/result-summary.json
+```
+
 ## Проверки реализации
 
 Целевые regression tests проверяют кооперативную отмену после завершённого запроса, profile mismatch до warmup, сохранение первого checkpoint при позднем ENOSPC, отсутствие второй попытки после изменившегося решения, общий sampler и warmup только первого блока. Launcher отдельно проверяется при отказе inventory, журналирования и pre-admission log allocation, SIGTERM и несовпадении dependency set. Verifier отклоняет resealed сокращённую длительность, неверные counts, замену процесса, потерю journal и неизвестный cleanup.
