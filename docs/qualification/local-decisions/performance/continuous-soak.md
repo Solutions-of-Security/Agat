@@ -30,17 +30,17 @@
 
 ```sh
 python3 scripts/run-decision-soak.py \
-  --evidence-dir docs/private/2026-10-03/continuous-soak/run-1 \
+  --evidence-dir docs/private/2026-10-03/continuous-soak/run-0.12.2 \
   --runtime-python /absolute/path/to/resident-mlx/bin/python \
   --manifest /absolute/path/to/resident-model/decider-2b.json \
-  --profile docs/qualification/local-decisions/performance/profiles/runtime-0.12.1.json \
+  --profile docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json \
   --policy docs/qualification/local-decisions/policy.shadow.v1.json \
   --dataset docs/qualification/local-decisions/development/evidence/2026-09-26/dataset.json \
   --duration-s 7200 --block-s 900
 
 python3 scripts/verify-decision-soak.py \
-  docs/private/2026-10-03/continuous-soak/run-1 \
-  --output docs/private/2026-10-03/continuous-soak/run-1/verification.json
+  docs/private/2026-10-03/continuous-soak/run-0.12.2 \
+  --output docs/private/2026-10-03/continuous-soak/run-0.12.2/verification.json
 ```
 
 [Offline verifier](../../../../scripts/verify-decision-soak.py) читает source snapshot именно измеренного commit. Проверяет implementation fingerprint, точные pinned dependencies, committed profile/policy/dataset, seals, duration каждого блока и всего прогона, отсутствие пропущенных запросов/окон, пересчёт summaries, идентичность PID во всех samples, полный journal и успешный cleanup. Допуск 0,0011 для вычисленных elapsed/rate summaries учитывает округление timestamps до 0,001 мс; counts, fingerprints и остальные поля сравниваются точно.
@@ -53,8 +53,8 @@ Verifier проверяет целостность и согласованнос
 
 ```sh
 python3 scripts/summarize-decision-soak.py \
-  docs/private/2026-10-03/continuous-soak/run-1/runtime \
-  --output docs/qualification/local-decisions/performance/evidence/2026-10-03/continuous-soak/result-summary.json
+  docs/private/2026-10-03/continuous-soak/run-0.12.2 \
+  --output docs/qualification/local-decisions/performance/evidence/2026-10-03/continuous-soak-0.12.2/result-summary.json
 ```
 
 ## Проверки реализации

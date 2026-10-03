@@ -1,6 +1,6 @@
 # Локальный исполнитель типизированных решений
 
-Статус на 26.09.2026: экспериментальный runtime `0.12.0` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса и leases; наблюдения доступны в технических деталях запуска. Отдельного UI настройки и автоматической маршрутизации пока нет.
+Статус на 03.10.2026: экспериментальный runtime `0.12.2` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса и leases; наблюдения доступны в технических деталях запуска. Отдельного UI настройки и автоматической маршрутизации пока нет.
 
 Добавлены [экспертная разметка, калибровка и отдельная проверка holdout](./qualification/local-decisions/calibration/README.md). Реальные экспертные данные пока не предоставлены; инженерный прогон завершился `not_qualified`, обученная температура не назначена default.
 
@@ -33,6 +33,8 @@
 В `0.12.0` добавлены [операционные метрики и примеры alerts](./qualification/local-decisions/shadow/observability/README.md): `/metrics`, readiness, фиксированные счётчики исходов и раздельная latency вычислений/отказов. Реальный MLX, официальный parser и promtool проверены; постоянный мониторинг ещё не подключён.
 
 В `0.12.1` [причина retirement](./qualification/local-decisions/performance/decision-exit-diagnostics.md) записывается в stderr после завершения HTTP-обработчиков и cleanup backend. Timeout, cancellation, смерть ребёнка и явный restart проверены на настоящих весах; новый fingerprint требует отдельной применимой qualification.
+
+В `0.12.2` [исправлено освобождение HTTP admission](./qualification/local-decisions/performance/http-admission-release.md): после завершения вычисления и cancellation watcher слот освобождается до записи ответа. Следующий последовательный запрос больше не получает `busy` из-за незавершённого response writer; настоящая конкуренция во время inference по-прежнему отвергается. Новый профиль закреплён отдельно; полный двухчасовой повтор ещё требуется.
 
 Отдельный offline [baseline по заголовкам заявок](./qualification/local-decisions/baselines/rules.md) сравнили на тех же 15 development-входах: 2 правильные метки, один принятый ответ. Покрытие недостаточно; правила не подключены к serving.
 

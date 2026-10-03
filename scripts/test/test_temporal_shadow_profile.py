@@ -5,12 +5,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from decision_runtime import VERSION
+
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('temporal_profile_verifier', ROOT / 'scripts/verify-temporal-real-rag.py')
 verifier = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verifier)
 launcher = verifier.launcher_module
-PROFILE = 'docs/qualification/local-decisions/performance/profiles/runtime-0.12.1.json'
+PROFILE = f'docs/qualification/local-decisions/performance/profiles/runtime-{VERSION}.json'
 
 
 class ShadowProfileTests(unittest.TestCase):
@@ -56,7 +58,10 @@ class ShadowProfileTests(unittest.TestCase):
             with self.subTest(change=change):
                 sources = dict(self.sources)
                 if change == 'version':
-                    sources['decision_runtime/__init__.py'] = sources['decision_runtime/__init__.py'].replace(b'0.12.1', b'0.12.2')
+                    original = sources['decision_runtime/__init__.py']
+                    sources['decision_runtime/__init__.py'] = original.replace(
+                        f'VERSION = "{self.profile["runtimeVersion"]}"'.encode(), b'VERSION = "0.0.0"')
+                    self.assertNotEqual(sources['decision_runtime/__init__.py'], original)
                 elif change == 'source':
                     sources['decision_runtime/engine.py'] += b'\n# changed runtime\n'
                 else:
