@@ -190,6 +190,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Локальная доступность весов до admission](./qualification/local-decisions/performance/model-residency.md), 03.10: обнаруженное ожидание cloud-only checkpoint при подготовке полного повтора устранено явным отказом по macOS `SF_DATALESS` до чтения весов и запуска процессов. Шесть новых regression tests и вся cleanup/recovery матрица с live Docker — 86/86 pass; resident symlink cache, compressed файлы и платформы без flags поддерживаются. Serving-профиль 0.12.1 не меняется. Следующий gate — прежний полный real-model повтор после cleanup-исправлений; предметная qualification и SLO открыты.
 
+[Полный повтор после cleanup-исправлений](./qualification/local-decisions/performance/cleanup-repeat.md), 03.10: оба embedding transport прошли Temporal/PostgreSQL с runtime 0.12.1, реальными Qwen3/embeddings/decider, SIGKILL/restart и fallback. Независимый verifier, два replay после cleanup и сравнение прежнего baseline подтвердили 6 primary calls, 10 embedding items, 4 shadow inference, 2 unavailable fallback и все prompts/outputs/vectors. Четыре собственных контейнера удалены, PID/cleanup errors нет; raw artifacts остаются приватными. Следующий этап — многочасовая непрерывная нагрузка pinned runtime; предметная qualification и SLO открыты.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
