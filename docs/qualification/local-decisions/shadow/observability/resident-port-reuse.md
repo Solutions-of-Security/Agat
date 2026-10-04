@@ -4,7 +4,8 @@
 остановился на повторном preflight с `Address already in use`. Failed report
 сохранён. TCP regression воспроизвёл тот же отказ после закрытия соединения;
 preflight исправлен для немедленного повторного запуска POSIX listener.
-Постоянные jobs сейчас отсутствуют. Routing выключен, qualification —
+После этого failed опыта jobs отсутствовали. [Полный повтор](./resident-rollout.md)
+позднее прошёл и оставил два jobs работающими. Routing выключен, qualification —
 `not_assessed`.
 
 ## Реальный частичный rollout
