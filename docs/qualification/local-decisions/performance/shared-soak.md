@@ -11,8 +11,10 @@ policy, calibration и профиль 0.12.2 не меняются. Прикла
 [CLI](../../../../scripts/benchmark-decision-shared-soak.py) использует
 [контроллер](../../../../scripts/lib/decision_shared_soak.py) и тот же
 [paired probe](../../../../scripts/lib/decision_shared_load.py): два rounds
-на фазу, две отдельные warmup pairs на блок, максимум 240 measured calls
-в блоке, один активный запрос на модель и никаких retries.
+на фазу, две отдельные warmup pairs на блок, один активный запрос на модель
+и никаких retries. Controller поддерживает до 30 development cases; для
+используемого закреплённого набора из 15 cases полный блок содержит 240
+measured calls (для 30 cases — 480).
 
 По умолчанию цель — **7200 секунд измеряемых окон**, максимум 128 блоков.
 Measured time каждого блока — его elapsed после последнего warmup; включает
