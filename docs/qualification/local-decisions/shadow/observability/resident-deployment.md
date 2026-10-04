@@ -147,7 +147,7 @@ plist и путь plist в фактическом `launchctl print`. Он чит
 
 Bootstrap intent и ownership созданных файлов записываются до операции,
 которая может прерваться. При неуспешной установке выполняется собственный
-rollback, включая частично записанный файл с прежним inode и ожидаемым
+rollback, включая частично записанный файл с прежними device/inode/ctime и ожидаемым
 префиксом; чужой или изменённый файл сохраняется. Неполная инвентаризация
 процессов не может дать успешный cleanup report. Это реализует управление
 foreground user agents согласно [Apple launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
@@ -164,19 +164,20 @@ python3 scripts/manage-decision-resident-deployment.py check \
 # status/stop требуют bundle, expected-seal и новый private output.
 ```
 
-04.10 реальный `check` на commit `9a50cd25d2efecaa33a44a0a8bfaf5462460a496`
+04.10 реальный `check` на commit `b370ec0e9d413de667d14c8880a3b4afffde4453`
 поверх main `7b93ff4213f735085d68b9781ace408b35c0853c` завершился `verified`:
 package gate, source bindings, bundle/model/profile, labels, plist paths и
 порты проверены. Runtime и scraper не регистрировались. [Публичная сводка](../evidence/2026-10-04/service-management-0.12.2/result-summary.json)
 содержит только явный набор counts, SHA и исходов; домашние пути и raw
 process/API evidence остаются в `docs/private`.
 
-19 новых fixture tests проверяют неполный/чужой package gate, traversal,
+21 новый fixture test проверяют неполный/чужой package gate, traversal,
 занятые labels/ports, foreign plist path, первый и устаревший scrape,
 числовой counter и новый прирост, inventory после ошибки, прерванный bootstrap,
-полный цикл install/stop/reinstall и сохранение изменённого файла. Всего
-49 целевых manager/builder/launchd/service tests проходят. Полный `docs:check`
-прошёл на Node 24 / Python 3.13.12: 12 Node checks, 525 Python tests (четыре
+полный цикл install/stop/reinstall, повторную выдачу inode, прерванный
+unbuffered write и сохранение изменённого файла. Всего
+51 целевой manager/builder/launchd/service tests проходят. Полный `docs:check`
+прошёл на Node 24 / Python 3.13.12: 12 Node checks, 527 Python tests (четыре
 opt-in skips), process catalog и локальные ссылки. Первый запуск в sandbox
 сохранил отказы из-за запрета loopback/PID inspection; полный повтор с нужным
 доступом прошёл. Независимый verifier повторно пересчитал 33 committed sources
@@ -209,3 +210,12 @@ Base Homebrew Python остаётся внешней управляемой за
 локальное состояние alerts; владелец реакций и production SLO требуют
 согласования. Предметная qualification, independent reviews, calibration,
 holdout и ограниченная маршрутизация остаются отдельными gates.
+
+Linux CI обнаружил повторную выдачу прежнего inode после удаления файла.
+Guard теперь проверяет device/inode и `st_ctime_ns`, а write выполняется без
+буфера: при прерывании финальная identity читается через собственный file
+descriptor. Собственный handle остаётся открытым до конца операции, поэтому
+inode исходного файла не освобождается для повторной выдачи даже после
+замены pathname. Два regression tests воспроизводят reused inode с одинаковыми
+bytes и частичную запись. Исходный CI failure сохранён в `docs/private`;
+после исправления preflight и независимая проверка выполнены заново.
