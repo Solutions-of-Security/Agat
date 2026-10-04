@@ -116,6 +116,7 @@ logs и TSDB остаются в игнорируемом `docs/private`.
 boot/login и crash loop из этих counters не выводятся. Live pending alert
 и его снятие до прежних двух минут не доказывают firing; его временные
 условия проверяются отдельными прежними promtool unit tests. Постоянное
-наблюдение из стабильного resident deployment и владелец реакций остаются
-следующим этапом. Routing выключен,
+[Resident bundle](./resident-deployment.md) подготовлен и проверен реальным
+native gate; его постоянная регистрация и владелец реакций остаются
+следующим этапом после CI. Routing выключен,
 qualification — `not_assessed`.
