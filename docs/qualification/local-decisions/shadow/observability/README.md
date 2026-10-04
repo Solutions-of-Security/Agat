@@ -80,8 +80,9 @@ sum by(instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
 scrape/recovery опыт: loopback, полный профиль 0.12.2, counters/reset,
 pending/cleared alert и owned cleanup. [Resident bundle](./resident-deployment.md)
 подготовлен и прошёл отдельный native gate; manager прошёл ownership/cleanup
-tests и реальный preflight без регистрации. Постоянная установка и владелец
-реакций остаются следующим этапом после CI.
+tests. [Первый install/status/stop](./resident-port-reuse.md) прошёл, повторный
+preflight выявил и воспроизвёл ошибку address reuse; fix проверен. Сейчас
+jobs отсутствуют; полный повтор постоянной установки — следующий этап после CI.
 
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
