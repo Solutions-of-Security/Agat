@@ -79,7 +79,8 @@ sum by(instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
 [Native Prometheus 3.13.4](./native-prometheus.md) прошёл 04.10 реальный
 scrape/recovery опыт: loopback, полный профиль 0.12.2, counters/reset,
 pending/cleared alert и owned cleanup. [Resident bundle](./resident-deployment.md)
-подготовлен и прошёл отдельный native gate; постоянная регистрация и владелец
+подготовлен и прошёл отдельный native gate; manager прошёл ownership/cleanup
+tests и реальный preflight без регистрации. Постоянная установка и владелец
 реакций остаются следующим этапом после CI.
 
 ```bash
