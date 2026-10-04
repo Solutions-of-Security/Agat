@@ -89,6 +89,6 @@ promtool check config docs/qualification/local-decisions/shadow/observability/pr
 promtool test rules docs/qualification/local-decisions/shadow/observability/alerts.test.yml
 ```
 
-Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. Нативное восстановление на этом Mac по-прежнему не подтверждено из-за Documents/TCC; данный опыт его не заменяет.
+Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. [Нативное восстановление 0.12.2](../native-launchd-0.12.2.md) подтверждено 04.10 из resident checkout вне Documents; настоящий scraper и постоянное наблюдение остаются следующим этапом.
 
 Решения опираются на официальные рекомендации [instrumentation](https://prometheus.io/docs/practices/instrumentation/), [naming](https://prometheus.io/docs/practices/naming/), [формат экспорта](https://prometheus.io/docs/instrumenting/exposition_formats/), [Python parser](https://prometheus.github.io/client_python/parser/) и [unit testing rules](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/), проверенные 26.09.2026. Ограничение labels и раздельная latency отклонённых запросов выбраны по фактическому устройству этого runtime.
