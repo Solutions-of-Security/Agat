@@ -3,11 +3,11 @@
 04.10.2026. **Resident bundle подготовлен и прошёл реальный native gate**
 после [проверки настоящего scraper](./native-prometheus.md). Runtime, модель,
 свежий venv и scraper находятся в Application Support, вне Documents и
-временного каталога. Постоянная регистрация служб — следующий отдельный
-этап после CI. [Manager](../../../../../scripts/manage-decision-resident-deployment.py)
+временного каталога. [Постоянный rollout](./resident-rollout.md) прошёл
+05.10 MSK; два jobs установлены и работают. [Manager](../../../../../scripts/manage-decision-resident-deployment.py)
 прошёл тесты и preflight реального bundle. [Первый install/status/stop](./resident-port-reuse.md)
 прошёл; повторный preflight выявил TCP address reuse issue, который исправлен
-и проверен до нового полного rollout. Jobs сейчас отсутствуют. Routing
+и проверен до успешного полного повторного rollout. Routing
 выключен, qualification — `not_assessed`.
 
 ## Подготовка и границы владения

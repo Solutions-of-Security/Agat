@@ -81,8 +81,9 @@ scrape/recovery опыт: loopback, полный профиль 0.12.2, counters
 pending/cleared alert и owned cleanup. [Resident bundle](./resident-deployment.md)
 подготовлен и прошёл отдельный native gate; manager прошёл ownership/cleanup
 tests. [Первый install/status/stop](./resident-port-reuse.md) прошёл, повторный
-preflight выявил и воспроизвёл ошибку address reuse; fix проверен. Сейчас
-jobs отсутствуют; полный повтор постоянной установки — следующий этап после CI.
+preflight выявил и воспроизвёл ошибку address reuse; fix проверен.
+[Полный повтор постоянного rollout](./resident-rollout.md) прошёл: два user
+LaunchAgents работают из resident bundle, scrape и counters проверены.
 
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
