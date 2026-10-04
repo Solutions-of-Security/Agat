@@ -47,7 +47,8 @@ def resident_primary(primary):
 
 
 def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup=2, time_budget_s=300,
-                     timeout_ms=10000, client=None, health_transport=None, progress=None):
+                     timeout_ms=10000, client=None, health_transport=None, progress=None,
+                     pair_observer=None, stop_on_failure=False, cancel_requested=None, expected_profile=None):
     cases = development_cases(dataset)
     requests = [Request.from_dict(case["request"]) for case in cases]
     if (not requests or len(requests) > 30 or any(r.kind not in {"choice", "boolean"} for r in requests)
@@ -57,10 +58,19 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
             or type(time_budget_s) is not int or not 1 <= time_budget_s <= 600
             or type(timeout_ms) is not int or not 100 <= timeout_ms <= 10000):
         raise ValueError("Unsupported or excessive shared-load plan")
+    if (type(stop_on_failure) is not bool or any(callback is not None and not callable(callback)
+            for callback in (pair_observer, cancel_requested))):
+        raise ValueError("Invalid shared-load observation controls")
+    if expected_profile is not None:
+        profile_from_health({"status": "ready", "mode": "shadow", "profileJson": canonical_json(expected_profile),
+                             "profileSha256": fingerprint(expected_profile)})
+        expected_profile = copy.deepcopy(expected_profile)
     transport = health_transport or LoopbackJson(decision_url, 5)
     client = client or LocalDecisionClient(decision_url)
     health = transport("GET", "/health")
     profile = profile_from_health(health)
+    if expected_profile is not None and profile != expected_profile:
+        raise ValueError("Shared-load profile differs from the frozen experiment")
     profile_sha = health["profileSha256"]
     primary = primary_factory()
     primary_identity = copy.deepcopy(primary.identity)
@@ -113,22 +123,55 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                 changes[kind].add(request.id)
         return row
 
+    def observed_pair(phase, index, pair):
+        nonlocal stopped
+        if pair_observer is not None:
+            try:
+                pair_observer(phase, index, copy.deepcopy(pair))
+            except Exception:
+                stopped = "observation_failed"
+        if stopped is None and stop_on_failure:
+            if any(row["status"] not in {"ok", "abstain"} for row in pair):
+                stopped = "request_failed"
+            elif changes["decision"]:
+                stopped = "decision_changed"
+
     def budget_available():
         nonlocal stopped
+        if stopped is not None:
+            return False
+        if cancel_requested is not None:
+            try:
+                cancelled = cancel_requested()
+            except Exception:
+                stopped = "observation_failed"
+                return False
+            if cancelled:
+                stopped = "cancelled"
+                return False
         if time.perf_counter() - started >= time_budget_s:
             stopped = "time_budget"
             return False
         return True
 
+    def sequential(request):
+        pair = [one("primary", request)]
+        if not (stop_on_failure and pair[0]["status"] not in {"ok", "abstain"}):
+            pair.append(one("decision", request))
+        return pair
+
     warmups = []
     for i in range(warmup):
         if not budget_available(): break
         request = requests[i % len(requests)]
-        warmups.extend([one("primary", request), one("decision", request)])
+        pair = sequential(request)
+        warmups.extend(pair)
+        observed_pair("warmup", i + 1, pair)
     resident = [{"phase": "after_warmup", **resident_primary(primary)}]
     phases = []
     with ThreadPoolExecutor(max_workers=2) as pool:
         for phase in PHASES:
+            if stopped is not None: break
             rows, pairs = [], []
             for index, request in enumerate(requests * rounds):
                 if not budget_available(): break
@@ -137,7 +180,7 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                 elif phase.startswith("primary_only"):
                     pair = [one("primary", request)]
                 elif phase == "sequential_pair":
-                    pair = [one("primary", request), one("decision", request)]
+                    pair = sequential(request)
                 else:
                     gate = threading.Barrier(2)
                     futures = [pool.submit(one, kind, request, gate) for kind in ("primary", "decision")]
@@ -147,6 +190,7 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                     begin, end = min(r["startedMs"] for r in pair), max(r["finishedMs"] for r in pair)
                     overlap = max(0, min(r["finishedMs"] for r in pair) - max(r["startedMs"] for r in pair))
                     pairs.append({"caseId": request.id, "elapsedMs": round(end - begin, 3), "requestOverlapMs": round(overlap, 3)})
+                observed_pair(phase, index + 1, pair)
                 if progress and (index + 1) % 5 == 0:
                     progress(phase, index + 1)
             phases.append({"name": phase, "rows": rows, "pairs": pairs,
@@ -172,7 +216,10 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                    "plan": {"phaseOrder": list(PHASES), "rounds": rounds, "warmupPairs": warmup,
                             "timeBudgetSeconds": time_budget_s, "decisionTimeoutMs": timeout_ms,
                             "expectedMeasuredRequests": len(requests) * rounds * 8, "maxConcurrentCallsPerModel": 1,
-                            "retry": False, "modelLoadExcluded": True},
+                            "retry": False, "modelLoadExcluded": True,
+                            "stopOnFailure": stop_on_failure, "pairObservation": pair_observer is not None,
+                            "cooperativeCancellation": cancel_requested is not None,
+                            "expectedProfilePinned": expected_profile is not None},
                    "elapsedMs": round((time.perf_counter() - started) * 1000, 3), "stoppedReason": stopped,
                    "warmup": warmups, "phases": phases, "primaryResidence": resident,
                    "repeatDecisionChanges": {kind: sorted(ids) for kind, ids in changes.items()},
