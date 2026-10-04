@@ -64,6 +64,19 @@ class ServiceManagementTest(unittest.TestCase):
             sock.return_value.__enter__.return_value.bind.side_effect = OSError('address already in use')
             with self.assertRaises(OSError): manage.preflight(self.bundle_root,8766,9095)
 
+    def test_preflight_reuses_time_wait_after_stop_but_refuses_live_listener(self):
+        with manage.socket.socket() as listener,manage.socket.socket() as monitor:
+            listener.setsockopt(manage.socket.SOL_SOCKET,manage.socket.SO_REUSEADDR,1)
+            listener.bind(('127.0.0.1',0));listener.listen(1);port = listener.getsockname()[1]
+            monitor.bind(('127.0.0.1',0));monitor_port = monitor.getsockname()[1];monitor.close()
+            with patch.object(manage,'service_info',return_value=None):
+                with self.assertRaises(OSError): manage.preflight(self.bundle_root,port,monitor_port)
+                with manage.socket.create_connection(('127.0.0.1',port),timeout=2) as client:
+                    peer,_ = listener.accept();peer.close()
+                    self.assertEqual(client.recv(1),b'')
+                listener.close()
+                self.assertEqual(manage.preflight(self.bundle_root,port,monitor_port)['status'],'verified')
+
     def test_registered_label_must_use_owned_plist_path(self):
         label = manage.LABELS[0];expected = self.root/'Library/LaunchAgents'/f'{label}.plist'
         state = SimpleNamespace(returncode=0,stdout=f'path = {expected}\n pid = 111\n last exit code = 75: EX_TEMPFAIL\n',stderr='')
