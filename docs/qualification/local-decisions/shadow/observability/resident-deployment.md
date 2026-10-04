@@ -1,10 +1,10 @@
 # Resident deployment для постоянного локального наблюдения
 
-04.10.2026. Следующий шаг после [реального native scrape/recovery](./native-prometheus.md)
-— подготовить стабильное resident расположение runtime, модели, зависимостей
-и scraper вне Documents и временного каталога. Подготовка создаёт новый
-bundle и приватный manifest; сервисы регистрируются отдельно после проверки
-пакета. Routing остаётся выключенным, qualification — `not_assessed`.
+04.10.2026. **Resident bundle подготовлен и прошёл реальный native gate**
+после [проверки настоящего scraper](./native-prometheus.md). Runtime, модель,
+свежий venv и scraper находятся в Application Support, вне Documents и
+временного каталога. Постоянная регистрация служб — следующий отдельный
+этап после CI. Routing остаётся выключенным, qualification — `not_assessed`.
 
 ## Подготовка и границы владения
 
@@ -63,7 +63,51 @@ wheel hashes, copied/generated file hashes, installed dependencies,
   --output docs/private/new-run/resident-preparation.json
 ```
 
-## Проверка до постоянной регистрации
+## Фактическая проверка resident пакета
+
+Измеренный commit — `aa06d1333269d1fe5198878ef60e9db642f9cd37`, поверх
+main `96c5490c8e61e0b71d1caf8e93edb00f11ab8733` после scraper gate.
+Подготовка закрепила **27 source files**, **36 copied files**, **9 generated
+configs/plists**, 34 wheels и 34 installed dependency versions. Fresh venv,
+offline hash install, `pip check`, MLX calculation и оба promtool checks
+завершились с exit 0. Manifest и model files проверены после копирования.
+
+| Наблюдение package gate | Результат |
+|---|---:|
+| Native starts / scored calls | 2 / 2 |
+| SIGKILL → exit 75 | 421,623 мс |
+| SIGKILL → новый ready runtime | 20426,738 мс |
+| Полный launcher, включая scraper и cleanup | 48708,555 мс |
+| Metric snapshots / series в каждом | 4 / 46 |
+| API queries / query-range points (шаг 1 с) | 55 / 26 |
+| Собственные PID | 7, все остановлены |
+
+Временный LaunchAgent действительно загрузил package из Application Support
+через новый venv. До scoring и после restart получен прежний полный профиль
+0.12.2 с SHA `81663153638983bd72afd5a31d8871f38c7db064e28a37636a36b780cf0b6cef`.
+Оба результата, logits/probabilities и token counts совпали с предыдущим
+native baseline. Source relocation не создаёт новый serving recipe.
+
+Scraper подтвердил counters 0 → 1 → 0 → 1, новый server start time,
+`up` 1 → 0 → 1 и pending/cleared endpoint alert. Query-range содержит
+26 пересэмплированных points, включая 20 down points; это не число scrapes.
+Рабочие persistent plists пока не регистрировались: gate использовал
+уникальный временный label и private evidence directory.
+
+Отдельная проверка пересчитала bundle/seals, все copied/generated/source
+SHA и исходники измеренного commit, model artifact, pinned binaries/archive,
+request/result bindings, retirement event и raw Prometheus evidence. Она
+повторно подтвердила отсутствие временного job и семи PID. [Публичная сводка](../evidence/2026-10-04/resident-package-0.12.2/result-summary.json)
+сохраняет только counts, SHA и исходы. Home paths, command output, model
+manifest locations и API bodies находятся в игнорируемом `docs/private`.
+
+30 целевых builder/launchd/service tests прошли. Полный `docs:check`:
+12 Node checks, 506 Python tests (четыре opt-in skips), 13 process templates,
+2201 локальная ссылка до добавления итогового отчёта. Девять новых tests
+проверяют exact pins, wheel metadata/hash lock, cloud-only admission,
+ownership/path boundaries, loopback config и service-root/profile gating.
+
+## Постоянная регистрация после CI
 
 Нативный probe принимает `--service-root <release>/runtime` вместе с новым
 venv, manifest и policy из bundle. Он создаёт только временный уникальный
