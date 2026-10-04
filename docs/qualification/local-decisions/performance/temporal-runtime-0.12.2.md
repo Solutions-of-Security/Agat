@@ -81,7 +81,7 @@ Docker daemon. Anonymous volumes в этом полном опыте отдел�
 калибровка, holdout, согласованные SLO и ограниченная маршрутизация
 после qualification остаются открытыми.
 
-Следующий инженерный этап — нативный launchd restart с тем же полным
-профилем 0.12.2, сохранёнными startup/retirement logs и независимой проверкой
-удаления временного job и собственных PID. Затем — подключение наблюдения
-к реальному native endpoint и проверка operational recovery.
+[Нативный launchd restart](../shadow/native-launchd-0.12.2.md) с тем же полным
+профилем 0.12.2 завершён 04.10: startup/retirement logs сохранены, удаление
+временного job и собственных PID перепроверено отдельно. Следующий этап —
+подключение наблюдения к реальному native endpoint и проверка recovery.
