@@ -143,8 +143,9 @@ class LaunchdProbeTest(unittest.TestCase):
 
     def test_startup_failure_retains_children_inventory_and_logs(self):
         self.health_error = True
-        tick = iter(range(0, 1000, 50))
-        with patch.object(probe.time, 'monotonic', side_effect=lambda: next(tick)):
+        # Advance past the startup budget, then leave time for cleanup checks.
+        tick = iter([0,50,100,150])
+        with patch.object(probe.time, 'monotonic', side_effect=lambda: next(tick,200)):
             self.assertEqual(probe.main(self.args), 1)
         report = json.loads(self.output.read_text())
         self.assertEqual(report['status'], 'failed')
@@ -271,6 +272,13 @@ class ServiceInfoTest(unittest.TestCase):
     def test_exit_observation_has_a_bounded_deadline(self):
         with patch.object(probe.time, 'monotonic', side_effect=[0,0,6]), patch.object(probe.time, 'sleep'), patch.object(probe, 'service_info', return_value={'runs':1}):
             with self.assertRaisesRegex(RuntimeError, 'within 5 seconds'): probe.wait_for_exit('fixture', 75, [], None)
+
+    def test_cleanup_waits_for_native_registration_removal_without_rebooting_it(self):
+        with patch.object(probe, 'service_info', side_effect=[{'runs':2}, None]), patch.object(probe.time, 'sleep'), patch.object(probe, 'launchctl') as control:
+            self.assertTrue(probe.wait_for_removal('fixture', None))
+            control.assert_not_called()
+        with patch.object(probe.time, 'monotonic', side_effect=[0,0,9]), patch.object(probe.time, 'sleep'), patch.object(probe, 'service_info', return_value={'runs':2}):
+            self.assertFalse(probe.wait_for_removal('fixture', None))
 
 
 class HarnessIdentityTest(unittest.TestCase):

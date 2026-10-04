@@ -72,6 +72,15 @@ def wait_for_exit(target, code, snapshots, diagnostic_path, timeout=5):
     raise RuntimeError(f'launchd did not record runtime exit {code} within {timeout} seconds')
 
 
+def wait_for_removal(target, diagnostic_path, timeout=8):
+    deadline = time.monotonic()+timeout
+    while time.monotonic() < deadline:
+        if service_info(target, diagnostic_path) is None:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def harness_fingerprints():
     sources = ['scripts/check-decision-launchd.py', 'scripts/check-decision-service-recovery.py',
                'scripts/lib/decision_service.py', 'scripts/lib/decision_performance.py']
@@ -254,7 +263,7 @@ def main(argv=None):
             # LaunchAgents directory, enable/disable override or login item is edited.
             try:
                 launchctl('bootout',target)
-                checks['temporaryServiceRemoved'] = service_info(target) is None
+                checks['temporaryServiceRemoved'] = wait_for_removal(target, directory/'cleanup-service-state.txt')
                 checks['allOwnedProcessesStopped'] = gone(pids,timeout=8) and inventory_complete
                 checks['harnessSourcesStable'] = harness_fingerprints() == sources
                 ensure(checks['temporaryServiceRemoved'], 'Temporary LaunchAgent remains registered')
@@ -276,7 +285,7 @@ def main(argv=None):
                      'retainedFilesSha256':{path.name:hashlib.sha256(path.read_bytes()).hexdigest()
                                            for path in [directory/f'{label}.plist',
                                                         *[Path(config[key]) for key in ('StandardOutPath','StandardErrorPath')],
-                                                        directory/'failure-service-state.txt']
+                                                        directory/'failure-service-state.txt', directory/'cleanup-service-state.txt']
                                            if path.is_file()} if persistent is not None and config is not None else {},
                      'limitations':['One restart in the current GUI login session; no boot/login or crash-loop test.',
                                     'Temporary job was booted out; no persistent service was installed.',
