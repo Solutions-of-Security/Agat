@@ -76,6 +76,11 @@ sum by(instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
 
 ## Воспроизведение
 
+[Native Prometheus 3.13.4](./native-prometheus.md) прошёл 04.10 реальный
+scrape/recovery опыт: loopback, полный профиль 0.12.2, counters/reset,
+pending/cleared alert и owned cleanup. Постоянное наблюдение из стабильного
+resident deployment и владелец реакций остаются следующим этапом.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \

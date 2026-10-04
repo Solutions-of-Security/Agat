@@ -76,7 +76,9 @@ crash loop, постоянная установка и производстве�
 Прежний внеплановый exit 75 при совместной работе моделей этим управляемым
 SIGKILL не объясняется.
 
-Далее — подключить нативный scraper к реальному endpoint, проверить scrape,
-счётчики, недоступность при recovery и восстановление наблюдения. Независимые
+[Настоящий native Prometheus scrape/recovery](./observability/native-prometheus.md)
+также прошёл 04.10: counters/reset, `up` 1 → 0 → 1, pending/cleared alert
+и owned cleanup перепроверены. Далее — постоянное наблюдение из стабильного
+resident deployment. Независимые
 бизнес-данные, человеческие reviews, калибровка, holdout и согласование SLO
 остаются открытыми; ограниченная маршрутизация требует qualification.
