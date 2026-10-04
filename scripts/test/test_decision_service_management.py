@@ -116,6 +116,21 @@ class ServiceManagementTest(unittest.TestCase):
         with self.assertRaises(RuntimeError): manage.remove_owned_file(created[0])
         self.assertTrue(path.exists())
 
+    def test_reused_inode_with_identical_bytes_cannot_pass_ownership(self):
+        path = self.root/'reused.plist';path.write_bytes(b'owned');record = manage.file_record(path)
+        real_stat = path.stat()
+        reused = SimpleNamespace(st_dev=real_stat.st_dev,st_ino=real_stat.st_ino,st_ctime_ns=real_stat.st_ctime_ns+1)
+        with patch.object(Path,'is_file',return_value=True),patch.object(Path,'is_symlink',return_value=False),patch.object(Path,'stat',return_value=reused):
+            with self.assertRaisesRegex(RuntimeError,'changed'): manage.remove_owned_file(record)
+        self.assertEqual(path.read_bytes(),b'owned')
+
+    def test_interrupted_unbuffered_write_retains_identity_for_partial_cleanup(self):
+        path = self.root/'partial.plist';created = [];real_write = os.write
+        def partial(fd,data):
+            real_write(fd,data[:2]);raise KeyboardInterrupt('write interrupted')
+        with patch.object(manage.os,'write',side_effect=partial),self.assertRaises(KeyboardInterrupt): manage.exclusive_file(path,b'abcdef',created)
+        self.assertEqual(path.read_bytes(),b'ab');manage.remove_owned_file(created[0]);self.assertFalse(path.exists())
+
     def test_bootstrap_failure_rolls_out_only_owned_label_and_new_files(self):
         source,path = manage.plist_paths(self.bundle_root)[0];path.parent.mkdir(parents=True)
         created = [];manage.exclusive_file(path,source.read_bytes(),created);pids = set()

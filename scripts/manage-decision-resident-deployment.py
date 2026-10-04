@@ -157,16 +157,24 @@ def owned_service_info(root,label):
 
 def file_record(path,expected=None,complete=True):
     info = path.stat()
-    return {'path':path,'device':info.st_dev,'inode':info.st_ino,
+    return {'path':path,'device':info.st_dev,'inode':info.st_ino,'ctimeNs':info.st_ctime_ns,
             'bytes':path.read_bytes() if expected is None else expected,'complete':complete}
 
 
 def exclusive_file(path,encoded,created):
     # Publish ownership before writing: an interruption can leave a partial file.
     descriptor = os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(descriptor,'wb') as stream:
+    try:
         record = file_record(path,encoded,complete=False);created.append(record)
-        stream.write(encoded)
+        offset = 0
+        while offset < len(encoded):
+            written = os.write(descriptor,encoded[offset:]);require(written > 0,'Owned file write made no progress')
+            offset += written
+    finally:
+        # Read identity from our descriptor even after a partial write; no
+        # buffered close may change it afterward. ctime detects inode reuse.
+        if 'record' in locals(): record['ctimeNs'] = os.fstat(descriptor).st_ctime_ns
+        os.close(descriptor)
     require(path.read_bytes() == encoded,'Incomplete owned file write')
     record['complete'] = True
 
@@ -175,7 +183,7 @@ def remove_owned_file(record):
     path = record['path']
     require(path.is_file() and not path.is_symlink(),'Owned file was replaced')
     info = path.stat();raw = path.read_bytes()
-    require((info.st_dev,info.st_ino) == (record['device'],record['inode'])
+    require((info.st_dev,info.st_ino,info.st_ctime_ns) == (record['device'],record['inode'],record['ctimeNs'])
             and (raw == record['bytes'] if record['complete'] else record['bytes'].startswith(raw)),
             'Refusing to remove a changed owned file')
     path.unlink()
