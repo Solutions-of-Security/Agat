@@ -122,7 +122,11 @@ def preflight(root,port,monitor_port):
         require(not path.exists() and not path.is_symlink() and service_info(f'gui/{os.getuid()}/{source.stem}') is None,
                 'Refusing to replace an existing plist or registered service')
     for candidate in (port,monitor_port):
-        with socket.socket() as check: check.bind(('127.0.0.1',candidate))
+        with socket.socket() as check:
+            # Match the real POSIX listeners: retired connections in TIME_WAIT
+            # do not prevent restart. Never enable SO_REUSEPORT sharing.
+            check.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            check.bind(('127.0.0.1',candidate));check.listen(1)
     return {'status':'verified','labelsAvailable':True,'plistPathsAvailable':True,'portsAvailable':True}
 
 

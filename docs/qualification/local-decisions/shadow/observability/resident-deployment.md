@@ -5,8 +5,10 @@
 свежий venv и scraper находятся в Application Support, вне Documents и
 временного каталога. Постоянная регистрация служб — следующий отдельный
 этап после CI. [Manager](../../../../../scripts/manage-decision-resident-deployment.py)
-уже прошёл тесты и preflight реального bundle без регистрации. Routing остаётся
-выключенным, qualification — `not_assessed`.
+прошёл тесты и preflight реального bundle. [Первый install/status/stop](./resident-port-reuse.md)
+прошёл; повторный preflight выявил TCP address reuse issue, который исправлен
+и проверен до нового полного rollout. Jobs сейчас отсутствуют. Routing
+выключен, qualification — `not_assessed`.
 
 ## Подготовка и границы владения
 
