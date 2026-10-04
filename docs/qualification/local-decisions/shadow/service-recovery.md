@@ -99,4 +99,46 @@ launchctl bootout "gui/$(id -u)/org.agat.decision-shadow"
 
 Опыты прекращаются при неподтверждённом результате; неготовый native startup не считается успешным restart. Предметная qualification остаётся открытой, автоматическая маршрутизация выключена.
 
+## Проверка закреплённого профиля и сохранение диагностики
+
+04.10.2026. Нативный probe теперь принимает `--expected-profile` и явный
+`--inference-timeout-ms`. Ранее он всегда выбирал 2000 мс и мог проверить restart
+другого профиля, чем опубликованный isolated-профиль с deadline 5000 мс.
+При заданном expected profile параметры проверяются до регистрации job,
+а полный `/health` профиль — до первого scoring и SIGKILL и после restart.
+Несовпадение останавливает опыт; endpoint не получает диагностический input
+при первоначальном несовпадении.
+
+`--evidence-dir` создаёт новый каталог только внутри игнорируемого `docs/private`.
+Plist и stdout/stderr сохраняются и при неготовом startup: каталог имеет режим
+0700, файлы — 0600. Дети собственного LaunchAgent учитываются до HTTP readiness.
+Неполный inventory или ошибка очистки сохраняются в failed report; они не
+допускают отметку о подтверждённой остановке всех процессов. Ошибка `launchctl
+print` также не означает отсутствия job: принимается только конкретный ответ
+об отсутствии указанной службы.
+
+Измеритель требует committed bytes собственных исходников и сохраняет commit,
+source SHA и SHA оставшихся diagnostic files. Изменение harness во время опыта
+отвергается. Эти SHA фиксируют содержимое, а не являются цифровой подписью.
+Схема нового отчёта — `agat.decision.launchd-recovery.v2`; неуспешный опыт
+возвращает ненулевой exit status и сохраняет отдельные исходы lifecycle/cleanup.
+
+```bash
+# Сначала commit изменённых исходников probe; каталог evidence ещё не существует.
+.venv/decision/bin/python scripts/check-decision-launchd.py \
+  --python .venv/decision/bin/python \
+  --manifest .local-models/decisions/decider-2b.json \
+  --policy docs/qualification/local-decisions/policy.shadow.v1.json \
+  --request docs/qualification/local-decisions/request.example.json \
+  --expected-profile docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json \
+  --inference-timeout-ms 5000 \
+  --evidence-dir docs/private/new-run/launchd \
+  --output docs/private/new-run/launchd/launchd-recovery.json
+```
+
+Двенадцать новых fixture tests проверяют границы профиля и source admission,
+startup без HTTP, inventory, ошибки проверки регистрации, сохранение логов
+и отказ при неподтверждённом cleanup. Они не запускают MLX и не доказывают
+нативный restart; для этого требуется отдельный реальный опыт.
+
 [Независимая перепроверка](./evidence/2026-09-26/verification-service-recovery.json) пересчитала seals, профили и logits/вероятности, сверила текущий implementation SHA и отсутствие процессов/job. `npm test`: 204 coordinator, 52 web, 45 worker (1 skip), 97 runtime (3 skip), Temporal/replay и process pack — без ошибок. `docs:check`: 12 Node- и 62 Python-проверки, каталог процессов и локальные ссылки — без ошибок. Шесть lifecycle-тестов отдельно проверяют смерть в простое, сохранение ответа при одновременном shutdown, отсутствие retry и сохранение стандартного поведения без opt-in.
