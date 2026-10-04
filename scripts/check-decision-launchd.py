@@ -36,8 +36,13 @@ def launchctl(*arguments):
     return subprocess.run(['/bin/launchctl', *arguments], capture_output=True, text=True, timeout=10)
 
 
-def service_info(target):
+def service_info(target, diagnostic_path=None):
     state = launchctl('print', target)
+    if diagnostic_path is not None:
+        # Human-readable launchctl output can include symbolic sysexits names.
+        # Keep the native output private so a parser failure is diagnosable.
+        diagnostic_path.write_text(state.stdout+state.stderr)
+        diagnostic_path.chmod(0o600)
     if state.returncode:
         label = target.rsplit('/', 1)[-1]
         if state.returncode == 113 and f'Could not find service "{label}"' in state.stderr:
@@ -45,9 +50,26 @@ def service_info(target):
         raise RuntimeError('Cannot inspect temporary LaunchAgent registration')
     result = {}
     for key in ('pid', 'runs', 'last exit code'):
-        match = re.search(r'^\s*'+re.escape(key)+r' = (\d+)\s*$', state.stdout, re.MULTILINE)
+        suffix = r'(?:: [A-Z][A-Z0-9_]*)?' if key == 'last exit code' else ''
+        match = re.search(r'^\s*'+re.escape(key)+r' = (\d+)'+suffix+r'\s*$', state.stdout, re.MULTILINE)
         if match: result[key] = int(match[1])
     return result
+
+
+def wait_for_exit(target, code, snapshots, diagnostic_path, timeout=5):
+    # PID disappearance and launchd's publication of the exit status need not
+    # be observed atomically. Wait only for that status, never restart the job.
+    deadline = time.monotonic()+timeout
+    while time.monotonic() < deadline:
+        state = service_info(target, diagnostic_path)
+        if not snapshots or snapshots[-1] != state:
+            snapshots.append(state)
+        ensure(state is not None, 'Temporary LaunchAgent disappeared before its exit status')
+        if 'last exit code' in state:
+            ensure(state['last exit code'] == code, f'launchd recorded an unexpected exit code: {state["last exit code"]}')
+            return state
+        time.sleep(0.1)
+    raise RuntimeError(f'launchd did not record runtime exit {code} within {timeout} seconds')
 
 
 def harness_fingerprints():
@@ -211,8 +233,7 @@ def main(argv=None):
             failed = time.monotonic();os.kill(child['pid'],signal.SIGKILL)
             ensure(gone([before['pid']]+[row['pid'] for row in before['children']],timeout=5), 'Failed process did not stop')
             before['failureToExitMs'] = round((time.monotonic()-failed)*1000,3)
-            observed = service_info(target);snapshots.append(observed)
-            ensure(observed and observed.get('last exit code') == 75, 'launchd did not record runtime exit 75')
+            wait_for_exit(target, 75, snapshots, directory/'failure-service-state.txt')
             checks['failureExit75'] = True
             print('launchd recorded exit 75; waiting for its throttled restart',flush=True)
             second, after = ready(before['pid'])
@@ -254,7 +275,8 @@ def main(argv=None):
                      'failure':failure, 'cleanupFailure':cleanup_failure, 'logsRetained':persistent is not None,
                      'retainedFilesSha256':{path.name:hashlib.sha256(path.read_bytes()).hexdigest()
                                            for path in [directory/f'{label}.plist',
-                                                        *[Path(config[key]) for key in ('StandardOutPath','StandardErrorPath')]]
+                                                        *[Path(config[key]) for key in ('StandardOutPath','StandardErrorPath')],
+                                                        directory/'failure-service-state.txt']
                                            if path.is_file()} if persistent is not None and config is not None else {},
                      'limitations':['One restart in the current GUI login session; no boot/login or crash-loop test.',
                                     'Temporary job was booted out; no persistent service was installed.',

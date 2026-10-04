@@ -65,7 +65,7 @@ class LaunchdProbeTest(unittest.TestCase):
                 self.state = 'absent'
             return SimpleNamespace(returncode=0, stdout='', stderr='')
 
-        def service_info(target):
+        def service_info(target, diagnostic_path=None):
             if self.state == 'absent': return None
             if self.state == 'failed':
                 self.state = 'second'
@@ -244,6 +244,33 @@ class ServiceInfoTest(unittest.TestCase):
         state = SimpleNamespace(returncode=0, stdout='\tpid = 211\n\truns = 2\n\tlast exit code = 75\n\tother = 9\n', stderr='')
         with patch.object(probe, 'launchctl', return_value=state):
             self.assertEqual(probe.service_info('gui/501/org.agat.fixture'), {'pid':211, 'runs':2, 'last exit code':75})
+
+    def test_native_sysexits_suffix_is_parsed_and_raw_output_is_retained(self):
+        state = SimpleNamespace(returncode=0, stdout='\truns = 1\n\tlast exit code = 75: EX_TEMPFAIL\n', stderr='')
+        with tempfile.TemporaryDirectory() as temporary:
+            diagnostic = Path(temporary)/'state.txt'
+            with patch.object(probe, 'launchctl', return_value=state):
+                self.assertEqual(probe.service_info('gui/501/org.agat.fixture', diagnostic), {'runs':1, 'last exit code':75})
+            self.assertEqual(diagnostic.read_text(), state.stdout)
+            self.assertEqual(stat.S_IMODE(diagnostic.stat().st_mode), 0o600)
+        for invalid in ('75 extra', '75: EX_TEMPFAIL junk', '75: 5'):
+            state.stdout = f'\tlast exit code = {invalid}\n'
+            with self.subTest(invalid=invalid), patch.object(probe, 'launchctl', return_value=state):
+                self.assertNotIn('last exit code', probe.service_info('gui/501/org.agat.fixture'))
+
+    def test_exit_observation_waits_for_launchd_and_rejects_wrong_status(self):
+        snapshots = []
+        with patch.object(probe, 'service_info', side_effect=[{'runs':1}, {'runs':1, 'last exit code':75}]), patch.object(probe.time, 'sleep'):
+            self.assertEqual(probe.wait_for_exit('fixture', 75, snapshots, None)['last exit code'], 75)
+        self.assertEqual(len(snapshots), 2)
+        with patch.object(probe, 'service_info', return_value={'runs':1, 'last exit code':78}):
+            with self.assertRaisesRegex(RuntimeError, 'unexpected exit code'): probe.wait_for_exit('fixture', 75, [], None)
+        with patch.object(probe, 'service_info', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'disappeared'): probe.wait_for_exit('fixture', 75, [], None)
+
+    def test_exit_observation_has_a_bounded_deadline(self):
+        with patch.object(probe.time, 'monotonic', side_effect=[0,0,6]), patch.object(probe.time, 'sleep'), patch.object(probe, 'service_info', return_value={'runs':1}):
+            with self.assertRaisesRegex(RuntimeError, 'within 5 seconds'): probe.wait_for_exit('fixture', 75, [], None)
 
 
 class HarnessIdentityTest(unittest.TestCase):

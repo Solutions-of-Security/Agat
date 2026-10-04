@@ -139,7 +139,14 @@ source SHA и SHA оставшихся diagnostic files. Изменение harn
 SIGTERM во время lifecycle опыта вызывает bounded cleanup и сохраняет failed
 report с диагностикой. Прежний signal handler восстанавливается после cleanup.
 
-Тринадцать новых fixture tests проверяют границы профиля и source admission,
+`launchctl print` может добавлять символическое имя к числовому exit code,
+например `75: EX_TEMPFAIL`. Такой формат показан и в [диагностике Apple DTS](https://developer.apple.com/forums/thread/791996).
+Parser принимает числовой код с необязательным символическим suffix и отвергает
+посторонний текст. После исчезновения PID публикация exit code ожидается не
+более пяти секунд; другой код или потеря регистрации завершают опыт ошибкой.
+Исходный вывод launchctl сохраняется приватно в `failure-service-state.txt`.
+
+Шестнадцать новых fixture tests проверяют границы профиля и source admission,
 startup без HTTP, inventory, ошибки проверки регистрации, сохранение логов
 и отказ при неподтверждённом cleanup, а также SIGTERM. Они не запускают MLX и не доказывают
 нативный restart; для этого требуется отдельный реальный опыт.
