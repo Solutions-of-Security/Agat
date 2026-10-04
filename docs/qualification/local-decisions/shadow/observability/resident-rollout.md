@@ -84,7 +84,9 @@ remote write и внешние receivers отсутствуют. Оба jobs о�
 
 LaunchAgents работают в текущем GUI domain. Их последующий boot/login,
 обновление внешнего Homebrew Python и многосуточное наблюдение не объявляются
-проверенными. Следующий инженерный этап — bounded совместная нагрузка
-Qwen/decider с supervisor/retirement/metrics evidence для прежнего внепланового
-exit 75. Предметные данные, independent human reviews, calibration/holdout,
+проверенными. [Два bounded совместных прогона Qwen/decider](../../performance/resident-shared-load-0.12.2.md)
+затем прошли 480 measured calls с supervisor/retirement/metrics evidence;
+службы продолжают работать. Следующий gate — длительный совместный soak,
+причина прежнего внепланового exit 75 остаётся открытой. Предметные данные,
+independent human reviews, calibration/holdout,
 владелец реакций и production SLO остаются открытыми.
