@@ -111,5 +111,108 @@ class SharedTest(unittest.TestCase):
         self.assertEqual((fixture.calls, len(primary.requests)), (0, 0))
         self.assertEqual(report["status"], "degraded")
 
+    def test_journal_copies_every_completed_pair_and_cannot_mutate_report(self):
+        seen=[]
+        def observer(phase,index,rows):
+            seen.append((phase,index,json.loads(json.dumps(rows))))
+            for row in rows: row['caseId']='MUTATED'
+        report=self.run_probe(pair_observer=observer)
+        self.assertEqual(report['status'],'observed');self.assertEqual(len(seen),7)
+        self.assertEqual([r for _,_,rows in seen for r in rows],report['warmup']+[r for p in report['phases'] for r in p['rows']])
+        self.assertNotIn('MUTATED',json.dumps(report))
+
+    def test_primary_failure_does_not_start_sequential_decision(self):
+        class Broken(Primary):
+            def predict(self,request): self.requests.append(request.to_dict());raise BaselineError('backend_error')
+        fixture=Fixture();primary=Broken();seen=[]
+        report=self.run_probe(fixture,primary,stop_on_failure=True,pair_observer=lambda *args:seen.append(args))
+        self.assertEqual(report['stoppedReason'],'request_failed');self.assertEqual(report['phases'],[])
+        self.assertEqual((fixture.calls,len(primary.requests),len(report['warmup'])),(0,1,1))
+        self.assertEqual(len(seen),1)
+
+    def test_first_measured_busy_is_retained_without_next_primary_or_decision(self):
+        fixture=Fixture();fixture.busy=True;primary=Primary();seen=[]
+        report=self.run_probe(fixture,primary,stop_on_failure=True,pair_observer=lambda *args:seen.append(args))
+        self.assertEqual(report['stoppedReason'],'request_failed');self.assertEqual((fixture.calls,len(primary.requests)),(2,1))
+        self.assertEqual(report['phases'][0]['rows'][0]['reason'],'busy')
+        self.assertEqual(len(report['phases']),1);self.assertEqual(len(seen),2)
+
+    def test_observer_io_failure_retains_completed_pair_and_hides_exception(self):
+        def fail(*_): raise OSError('PRIVATE SOURCE CONTENT')
+        fixture=Fixture();primary=Primary();report=self.run_probe(fixture,primary,pair_observer=fail)
+        self.assertEqual(report['stoppedReason'],'observation_failed');self.assertEqual(len(report['warmup']),2)
+        self.assertEqual((fixture.calls,len(primary.requests)),(1,1));self.assertEqual(report['phases'],[])
+        self.assertNotIn('PRIVATE SOURCE',json.dumps(report))
+
+    def test_cancel_before_warmup_never_starts_inference(self):
+        fixture=Fixture();primary=Primary();report=self.run_probe(fixture,primary,cancel_requested=lambda:True)
+        self.assertEqual(report['stoppedReason'],'cancelled');self.assertEqual((fixture.calls,len(primary.requests)),(0,0))
+
+    def test_cancel_after_pair_keeps_it_and_starts_no_new_calls(self):
+        state={'cancel':False};fixture=Fixture();primary=Primary()
+        def observe(phase,*_):
+            if phase!='warmup':state['cancel']=True
+        report=self.run_probe(fixture,primary,pair_observer=observe,cancel_requested=lambda:state['cancel'])
+        self.assertEqual(report['stoppedReason'],'cancelled');self.assertEqual((fixture.calls,len(primary.requests)),(2,1))
+        self.assertEqual(len(report['phases'][0]['rows']),1)
+
+    def test_cancel_observer_failure_is_degraded_without_inference(self):
+        def fail():raise RuntimeError('SECRET')
+        fixture=Fixture();primary=Primary();report=self.run_probe(fixture,primary,cancel_requested=fail)
+        self.assertEqual(report['stoppedReason'],'observation_failed');self.assertEqual((fixture.calls,len(primary.requests)),(0,0))
+        self.assertNotIn('SECRET',json.dumps(report))
+
+    def test_bad_controls_rejected_before_health_and_primary_factory(self):
+        for controls in ({'pair_observer':3},{'cancel_requested':True},{'stop_on_failure':1}):
+            fixture=Fixture();calls=[]
+            with self.assertRaises(ValueError):
+                benchmark_shared(dataset(),'http://127.0.0.1:1',lambda:calls.append(True),client=fixture,health_transport=fixture.health,**controls)
+            self.assertEqual((fixture.calls,fixture.health_calls,calls),(0,0,[]))
+
+    def test_expected_profile_mismatch_stops_before_primary_factory_or_inference(self):
+        fixture=Fixture();calls=[];profile=fixture.engine.profile();profile['runtimeVersion']='different'
+        with self.assertRaisesRegex(ValueError,'frozen experiment'):
+            benchmark_shared(dataset(),'http://127.0.0.1:1',lambda:calls.append(True),expected_profile=profile,
+                             client=fixture,health_transport=fixture.health)
+        self.assertEqual((fixture.health_calls,fixture.calls,calls),(1,0,[]))
+
+    def test_changed_decision_stops_after_recording_the_changed_row(self):
+        from decision_runtime.engine import DecisionEngine
+        from decision_runtime.tests.test_decisions import Backend
+        fixture=Fixture();primary=Primary();seen=[]
+        def observe(phase,index,rows):
+            seen.append(rows)
+            if phase=='warmup':fixture.engine=DecisionEngine(Backend([0,3]))
+        report=self.run_probe(fixture,primary,pair_observer=observe,stop_on_failure=True)
+        self.assertEqual(report['stoppedReason'],'decision_changed')
+        self.assertEqual((fixture.calls,len(primary.requests),len(seen)),(2,1,2))
+        self.assertTrue(report['repeatDecisionChanges']['decision'])
+        self.assertEqual(len(report['phases']),1)
+
+    def test_overlap_failure_keeps_both_active_calls_and_starts_no_next_phase(self):
+        entered_primary=threading.Event();entered_decision=threading.Event()
+        class OverlapPrimary(Primary):
+            def predict(self,request):
+                result=super().predict(request)
+                if len(self.requests)==4:
+                    entered_primary.set()
+                    if not entered_decision.wait(1):raise RuntimeError('Missing concurrent decision')
+                return result
+        class OverlapFailure(Fixture):
+            def decide(self,shadow):
+                if self.calls==3:
+                    entered_decision.set()
+                    if not entered_primary.wait(1):raise RuntimeError('Missing concurrent primary')
+                    self.busy=True
+                return super().decide(shadow)
+        fixture=OverlapFailure();primary=OverlapPrimary()
+        report=self.run_probe(fixture,primary,stop_on_failure=True)
+        self.assertEqual(report['stoppedReason'],'request_failed')
+        self.assertEqual((fixture.calls,len(primary.requests)),(4,4))
+        self.assertEqual([p['name'] for p in report['phases']],list(PHASES[:4]))
+        rows=report['phases'][-1]['rows'];self.assertEqual(len(rows),2)
+        self.assertEqual(rows[1]['reason'],'busy')
+        self.assertGreater(report['phases'][-1]['pairs'][0]['requestOverlapMs'],0)
+
 
 if __name__ == "__main__": unittest.main()
