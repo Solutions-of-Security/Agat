@@ -219,6 +219,15 @@ class LaunchdProbeTest(unittest.TestCase):
         self.assertEqual(self.state, 'absent')
         self.assertFalse(self.output.exists())
 
+    def test_resident_service_root_is_forwarded_and_profile_validation_still_precedes_scoring(self):
+        self.health_profile = {**self.profile,'runtimeVersion':'0.12.1'}
+        root = self.root/'resident/runtime'
+        self.assertEqual(probe.main(self.args+['--service-root',str(root)]),1)
+        self.assertEqual(probe.launch_agent.call_args.kwargs['root'],root)
+        self.assertEqual(self.scores,[])
+        self.assertEqual(self.signals,[])
+        self.assertTrue(json.loads(self.output.read_text())['checks']['temporaryServiceRemoved'])
+
     def test_monitoring_requires_both_binaries_private_evidence_and_expected_profile(self):
         for flags in (['--prometheus','fixture'], ['--promtool','fixture']):
             with self.subTest(flags=flags):

@@ -135,6 +135,7 @@ def evidence_directory(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--python', type=Path, default=ROOT/'.venv/decision/bin/python')
+    parser.add_argument('--service-root',type=Path,default=ROOT,help='Resident runtime package root; expected profile still checked before scoring')
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--policy', type=Path, required=True)
     parser.add_argument('--request', type=Path, required=True)
@@ -229,7 +230,7 @@ def main(argv=None):
 
         signal.signal(signal.SIGTERM, interrupted)
         try:
-            config = launch_agent(root=ROOT, python=args.python, manifest=args.manifest, policy=args.policy,
+            config = launch_agent(root=args.service_root, python=args.python, manifest=args.manifest, policy=args.policy,
                                   log_dir=directory, label=label, inference_timeout_ms=args.inference_timeout_ms)
             # Reserve an ephemeral loopback port; both starts use that same port.
             import socket
