@@ -194,6 +194,22 @@ class LaunchdProbeTest(unittest.TestCase):
         self.assertTrue(report['checks']['temporaryServiceRemoved'])
         self.assertTrue(report['checks']['allOwnedProcessesStopped'])
 
+    def test_sigterm_keeps_diagnostics_and_boots_out_the_owned_job(self):
+        previous = signal.getsignal(signal.SIGTERM)
+        def cancel(_runtime, _request):
+            signal.raise_signal(signal.SIGTERM)
+        with patch.object(probe.OwnedRuntime, 'score', cancel):
+            self.assertEqual(probe.main(self.args), 1)
+        report = json.loads(self.output.read_text())
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(report['failure']['type'], 'KeyboardInterrupt')
+        self.assertTrue(report['checks']['temporaryServiceRemoved'])
+        self.assertTrue(report['checks']['allOwnedProcessesStopped'])
+        self.assertTrue(report['logsRetained'])
+        self.assertEqual(self.state, 'absent')
+        self.assertEqual(self.signals, [])
+        self.assertEqual(signal.getsignal(signal.SIGTERM), previous)
+
     def test_config_mismatch_is_rejected_before_job_registration(self):
         args = list(self.args)
         args[args.index('--inference-timeout-ms')+1] = '2000'

@@ -136,9 +136,12 @@ source SHA и SHA оставшихся diagnostic files. Изменение harn
   --output docs/private/new-run/launchd/launchd-recovery.json
 ```
 
-Двенадцать новых fixture tests проверяют границы профиля и source admission,
+SIGTERM во время lifecycle опыта вызывает bounded cleanup и сохраняет failed
+report с диагностикой. Прежний signal handler восстанавливается после cleanup.
+
+Тринадцать новых fixture tests проверяют границы профиля и source admission,
 startup без HTTP, inventory, ошибки проверки регистрации, сохранение логов
-и отказ при неподтверждённом cleanup. Они не запускают MLX и не доказывают
+и отказ при неподтверждённом cleanup, а также SIGTERM. Они не запускают MLX и не доказывают
 нативный restart; для этого требуется отдельный реальный опыт.
 
 [Независимая перепроверка](./evidence/2026-09-26/verification-service-recovery.json) пересчитала seals, профили и logits/вероятности, сверила текущий implementation SHA и отсутствие процессов/job. `npm test`: 204 coordinator, 52 web, 45 worker (1 skip), 97 runtime (3 skip), Temporal/replay и process pack — без ошибок. `docs:check`: 12 Node- и 62 Python-проверки, каталог процессов и локальные ссылки — без ошибок. Шесть lifecycle-тестов отдельно проверяют смерть в простое, сохранение ответа при одновременном shutdown, отсутствие retry и сохранение стандартного поведения без opt-in.

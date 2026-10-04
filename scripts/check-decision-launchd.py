@@ -180,6 +180,12 @@ def main(argv=None):
                 time.sleep(0.2)
             raise RuntimeError('LaunchAgent did not become ready within the bounded startup period')
 
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def interrupted(_signum, _frame):
+            raise KeyboardInterrupt('Native launchd probe interrupted')
+
+        signal.signal(signal.SIGTERM, interrupted)
         try:
             config = launch_agent(root=ROOT, python=args.python, manifest=args.manifest, policy=args.policy,
                                   log_dir=directory, label=label, inference_timeout_ms=args.inference_timeout_ms)
@@ -235,6 +241,8 @@ def main(argv=None):
                 ensure(checks['harnessSourcesStable'], 'Native probe sources changed during measurement')
             except (Exception, KeyboardInterrupt) as error:
                 cleanup_failure = {'type': type(error).__name__, 'message': str(error)[:1000]}
+            finally:
+                signal.signal(signal.SIGTERM, previous_sigterm)
     success = failure is None and cleanup_failure is None and all(checks.values())
     report = sealed({'schemaVersion':'agat.decision.launchd-recovery.v2','createdAt':created,
                      'status':'observed' if success else 'failed','qualification':'not_assessed','routingEnabled':False,
