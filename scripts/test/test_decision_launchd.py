@@ -219,6 +219,17 @@ class LaunchdProbeTest(unittest.TestCase):
         self.assertEqual(self.state, 'absent')
         self.assertFalse(self.output.exists())
 
+    def test_monitoring_requires_both_binaries_private_evidence_and_expected_profile(self):
+        for flags in (['--prometheus','fixture'], ['--promtool','fixture']):
+            with self.subTest(flags=flags):
+                self.assertEqual(probe.main(self.args+flags),1)
+                self.assertIsNone(self.config)
+                self.assertFalse(self.output.exists())
+        args = list(self.args)
+        index = args.index('--expected-profile');del args[index:index+2]
+        self.assertEqual(probe.main(args+['--prometheus','fixture','--promtool','fixture']),1)
+        self.assertIsNone(self.config)
+
     def test_existing_evidence_and_public_raw_destination_are_rejected(self):
         self.directory.mkdir(parents=True)
         self.assertEqual(probe.main(self.args), 1)

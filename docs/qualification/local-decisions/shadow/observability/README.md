@@ -76,6 +76,11 @@ sum by(instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
 
 ## Воспроизведение
 
+[Native Prometheus protocol](./native-prometheus.md) задаёт отдельный реальный
+scrape/recovery опыт на закреплённой LTS 3.13.4: loopback, полный профиль,
+counters/reset, pending alert и owned cleanup. Подготовленный инструмент
+не означает постоянную установку или подтверждённый результат до прогона.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \

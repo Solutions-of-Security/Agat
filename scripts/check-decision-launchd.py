@@ -26,6 +26,7 @@ from decision_runtime.artifacts import read_json, sealed, write_new
 from decision_runtime.contracts import Request, canonical_json, fingerprint
 from scripts.lib.decision_performance import profile_from_health
 from scripts.lib.decision_service import launch_agent, write_launch_agent
+from scripts.lib.decision_monitoring import PrometheusObservation
 
 # Reuse the already-tested UTF-8 HTTP probe and owned-child identification.
 recovery = runpy.run_path(str(ROOT/'scripts/check-decision-service-recovery.py'))
@@ -83,7 +84,11 @@ def wait_for_removal(target, diagnostic_path, timeout=8):
 
 def harness_fingerprints():
     sources = ['scripts/check-decision-launchd.py', 'scripts/check-decision-service-recovery.py',
-               'scripts/lib/decision_service.py', 'scripts/lib/decision_performance.py']
+               'scripts/lib/decision_service.py', 'scripts/lib/decision_performance.py',
+               'scripts/lib/decision_monitoring.py',
+               'docs/qualification/local-decisions/shadow/observability/prometheus-3.13.4.json',
+               'docs/qualification/local-decisions/shadow/observability/alerts.yml',
+               'docs/qualification/local-decisions/shadow/observability/alerts.test.yml']
     return {name: hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in sources}
 
 
@@ -137,12 +142,17 @@ def main(argv=None):
     parser.add_argument('--expected-profile', type=Path)
     parser.add_argument('--inference-timeout-ms', type=int, default=2000)
     parser.add_argument('--evidence-dir', type=Path, help='New private directory to retain plist and logs, including failed startup')
+    parser.add_argument('--prometheus', type=Path, help='Pinned native Prometheus executable for optional real scrape/recovery observation')
+    parser.add_argument('--promtool', type=Path, help='Matching pinned native promtool executable')
     args = parser.parse_args(argv)
     try:
         ensure(platform.system() == 'Darwin', 'This probe requires macOS launchd')
         ensure(not args.output.exists(), 'Output already exists')
         ensure(100 <= args.inference_timeout_ms <= 10000, 'Invalid inference deadline')
         expected = expected_profile(args.expected_profile, args.inference_timeout_ms)
+        ensure(bool(args.prometheus) == bool(args.promtool), 'Supply both --prometheus and --promtool')
+        ensure(not args.prometheus or (args.evidence_dir is not None and expected is not None),
+               'Monitoring requires persistent private evidence and an expected profile')
         request = Request.from_dict(read_json(args.request))
         ensure(request.kind in ('choice', 'boolean'), 'Use a Choice/Boolean diagnostic request')
         commit, sources = harness_identity()
@@ -168,6 +178,7 @@ def main(argv=None):
     failure = cleanup_failure = None
     inventory_complete = True
     config = None
+    monitor = None
     context = contextlib.nullcontext(persistent) if persistent is not None else tempfile.TemporaryDirectory(prefix='agat-launchd-probe-')
     with context as temporary:
         directory = Path(temporary)
@@ -232,11 +243,16 @@ def main(argv=None):
             lint = subprocess.run(['/usr/bin/plutil','-lint',str(plist)],capture_output=True,text=True,timeout=5)
             ensure(lint.returncode == 0, 'Generated LaunchAgent failed native plist validation')
             checks['nativePlistValidated'] = True
+            if args.prometheus:
+                monitor = PrometheusObservation(ROOT, directory, args.prometheus, args.promtool)
+                monitor.start(port)
             bootstrap = launchctl('bootstrap',domain,str(plist))
             ensure(bootstrap.returncode == 0, 'Temporary LaunchAgent bootstrap failed')
             first, before = ready()
+            if monitor: monitor.ready()
             before['decision'] = first.score(request)
             ensure(before['decision']['httpStatus'] == 200, 'Initial native service scoring failed')
+            if monitor: monitor.scored()
             child = next(row for row in before['children'] if row['role']=='inference')
             ensure(child in child_processes(before['pid']), 'Owned child changed before signal')
             failed = time.monotonic();os.kill(child['pid'],signal.SIGKILL)
@@ -244,6 +260,7 @@ def main(argv=None):
             before['failureToExitMs'] = round((time.monotonic()-failed)*1000,3)
             wait_for_exit(target, 75, snapshots, directory/'failure-service-state.txt')
             checks['failureExit75'] = True
+            if monitor: monitor.failed()
             print('launchd recorded exit 75; waiting for its throttled restart',flush=True)
             second, after = ready(before['pid'])
             after['failureToReadyMs'] = round((time.monotonic()-failed)*1000,3)
@@ -251,11 +268,13 @@ def main(argv=None):
             checks['sameProfileAfterRestart'] = True
             ensure(after['service'].get('runs',0) >= 2,'launchd did not restart the service')
             checks['nativeRestartObserved'] = True
+            if monitor: monitor.ready(second=True)
             after['decision'] = second.score(request)
             ensure(after['decision']['httpStatus'] == 200,'Native restart scoring failed')
             for key in ('status','reason','selectedOptionId','value','distribution'):
                 ensure(after['decision']['result'][key] == before['decision']['result'][key],'Native restart changed the decision')
             checks['sameDecisionAfterRestart'] = True
+            if monitor: monitor.scored(second=True)
         except (Exception, KeyboardInterrupt) as error:
             failure = {'type': type(error).__name__, 'message': str(error)[:1000]}
         finally:
@@ -272,8 +291,14 @@ def main(argv=None):
             except (Exception, KeyboardInterrupt) as error:
                 cleanup_failure = {'type': type(error).__name__, 'message': str(error)[:1000]}
             finally:
+                if monitor:
+                    try:
+                        monitor.close()
+                    except (Exception, KeyboardInterrupt) as error:
+                        cleanup_failure = {'type':type(error).__name__, 'message':str(error)[:1000]}
                 signal.signal(signal.SIGTERM, previous_sigterm)
-    success = failure is None and cleanup_failure is None and all(checks.values())
+    success = (failure is None and cleanup_failure is None and all(checks.values())
+               and (monitor is None or all(monitor.checks.values())))
     report = sealed({'schemaVersion':'agat.decision.launchd-recovery.v2','createdAt':created,
                      'status':'observed' if success else 'failed','qualification':'not_assessed','routingEnabled':False,
                      'label':label,'domain':domain,'inputSha256':request.input_sha256,
@@ -285,11 +310,14 @@ def main(argv=None):
                      'retainedFilesSha256':{path.name:hashlib.sha256(path.read_bytes()).hexdigest()
                                            for path in [directory/f'{label}.plist',
                                                         *[Path(config[key]) for key in ('StandardOutPath','StandardErrorPath')],
-                                                        directory/'failure-service-state.txt', directory/'cleanup-service-state.txt']
+                                                        directory/'failure-service-state.txt', directory/'cleanup-service-state.txt',
+                                                        directory/'prometheus.yml',directory/'prometheus.log']
                                            if path.is_file()} if persistent is not None and config is not None else {},
                      'limitations':['One restart in the current GUI login session; no boot/login or crash-loop test.',
                                     'Temporary job was booted out; no persistent service was installed.',
                                     'Recovery latency includes model loading and is not a production SLO.']})
+    if monitor is not None:
+        report = sealed({**{k:v for k,v in report.items() if k != 'sha256'},'monitoring':monitor.report()})
     write_new(args.output,report)
     args.output.chmod(0o600)
     print(f'Native launchd recovery {report["status"]}; evidence: {args.output}',flush=True)
