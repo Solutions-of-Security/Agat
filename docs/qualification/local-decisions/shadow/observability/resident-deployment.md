@@ -4,7 +4,9 @@
 после [проверки настоящего scraper](./native-prometheus.md). Runtime, модель,
 свежий venv и scraper находятся в Application Support, вне Documents и
 временного каталога. Постоянная регистрация служб — следующий отдельный
-этап после CI. Routing остаётся выключенным, qualification — `not_assessed`.
+этап после CI. [Manager](../../../../../scripts/manage-decision-resident-deployment.py)
+уже прошёл тесты и preflight реального bundle без регистрации. Routing остаётся
+выключенным, qualification — `not_assessed`.
 
 ## Подготовка и границы владения
 
@@ -108,6 +110,79 @@ manifest locations и API bodies находятся в игнорируемом 
 ownership/path boundaries, loopback config и service-root/profile gating.
 
 ## Постоянная регистрация после CI
+
+### Управление собственными jobs
+
+Manager предоставляет `check`, `install`, `status` и `stop`. Каждая команда
+требует expected bundle seal, пересчитывает copied/generated files, модель
+и implementation SHA, сверяет точный serving profile и два сгенерированных
+plist с committed recipe. Исходники manager и его зависимостей должны
+совпадать с HEAD; sealed private report сохраняет commit и SHA 33 sources.
+Checksum подтверждает целостность артефакта, а не цифровую подпись.
+
+`check` проверяет package verification с полным набором из 15 успешных checks,
+связь с bundle/profile и прежним native baseline. Затем проверяет отсутствие
+registration marker, обоих labels и установленных plists, а также свободные
+loopback ports. Команда не создаёт jobs, не выполняет inference и не изменяет
+release. `install` выполняет тот же preflight, создаёт только новые plists
+с режимом 0600 и регистрирует их в текущем GUI domain.
+
+Readiness требует реальных PID, одного inference child, полного health
+profile, единственного правильного target и свежего успешного scrape.
+Пустой query result до первого scrape и временный HTTP 503 ожидаются в
+пределах 90 секунд; несовпадающий profile/target отклоняется. При установке
+`lastScrape` должен быть после начала bootstrap. После одного диагностического
+решения Prometheus обязан показать прирост computed counter от наблюдённого
+значения. Старый TSDB sample не подтверждает новый запуск. Формат ответа
+проверяется по [HTTP API Prometheus](https://prometheus.io/docs/prometheus/latest/querying/api/).
+
+`status` проверяет владельца registration marker, byte-for-byte установленный
+plist и путь plist в фактическом `launchctl print`. Он читает health/scrape,
+не выполняя inference. `stop` использует те же ownership checks, но не зависит
+от доступности HTTP, поэтому может остановить отказавший runtime. Он инвентаризует
+собственные PID, выполняет bootout только двух своих labels и отдельно ждёт
+исчезновения jobs/PID. Изменённый или заменённый plist не удаляется.
+После успешной остановки marker архивируется; bundle/model/TSDB сохраняются,
+повторный `check`/`install` возможен.
+
+Bootstrap intent и ownership созданных файлов записываются до операции,
+которая может прерваться. При неуспешной установке выполняется собственный
+rollback, включая частично записанный файл с прежним inode и ожидаемым
+префиксом; чужой или изменённый файл сохраняется. Неполная инвентаризация
+процессов не может дать успешный cleanup report. Это реализует управление
+foreground user agents согласно [Apple launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
+
+```bash
+# Bundle уже подготовлен и package gate проверен; каждый output — новый.
+python3 scripts/manage-decision-resident-deployment.py check \
+  --bundle "$HOME/Library/Application Support/Agat/decision-shadow/releases/<release>" \
+  --expected-seal <sha256-from-deployment.json> \
+  --verification docs/private/<package-run>/verification.json \
+  --output docs/private/<management-run>/preflight.json
+
+# После check и CI: те же аргументы с install и новым output.
+# status/stop требуют bundle, expected-seal и новый private output.
+```
+
+04.10 реальный `check` на commit `9a50cd25d2efecaa33a44a0a8bfaf5462460a496`
+поверх main `7b93ff4213f735085d68b9781ace408b35c0853c` завершился `verified`:
+package gate, source bindings, bundle/model/profile, labels, plist paths и
+порты проверены. Runtime и scraper не регистрировались. [Публичная сводка](../evidence/2026-10-04/service-management-0.12.2/result-summary.json)
+содержит только явный набор counts, SHA и исходов; домашние пути и raw
+process/API evidence остаются в `docs/private`.
+
+19 новых fixture tests проверяют неполный/чужой package gate, traversal,
+занятые labels/ports, foreign plist path, первый и устаревший scrape,
+числовой counter и новый прирост, inventory после ошибки, прерванный bootstrap,
+полный цикл install/stop/reinstall и сохранение изменённого файла. Всего
+49 целевых manager/builder/launchd/service tests проходят. Полный `docs:check`
+прошёл на Node 24 / Python 3.13.12: 12 Node checks, 525 Python tests (четыре
+opt-in skips), process catalog и локальные ссылки. Первый запуск в sandbox
+сохранил отказы из-за запрета loopback/PID inspection; полный повтор с нужным
+доступом прошёл. Независимый verifier повторно пересчитал 33 committed sources
+и 45 bundle files, модель и seals, затем подтвердил отсутствие jobs/plists
+и свободные порты. Реальные постоянные install/stop/reinstall ещё не
+объявляются выполненными.
 
 Нативный probe принимает `--service-root <release>/runtime` вместе с новым
 venv, manifest и policy из bundle. Он создаёт только временный уникальный
