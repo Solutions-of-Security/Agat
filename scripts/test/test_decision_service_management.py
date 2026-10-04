@@ -110,6 +110,7 @@ class ServiceManagementTest(unittest.TestCase):
         path = self.root/'new.plist';path.write_bytes(b'ab');record = manage.file_record(path,b'abcdef',complete=False)
         manage.remove_owned_file(record);self.assertFalse(path.exists())
         created = [];manage.exclusive_file(path,b'abcdef',created);path.write_bytes(b'foreign')
+        self.addCleanup(manage.close_file_record,created[0])
         with self.assertRaises(RuntimeError): manage.remove_owned_file(created[0])
         self.assertEqual(path.read_bytes(),b'foreign');path.unlink()
         replacement = self.root/'replacement';replacement.write_bytes(b'abcdef');replacement.replace(path)
@@ -118,6 +119,7 @@ class ServiceManagementTest(unittest.TestCase):
 
     def test_reused_inode_with_identical_bytes_cannot_pass_ownership(self):
         path = self.root/'reused.plist';path.write_bytes(b'owned');record = manage.file_record(path)
+        self.addCleanup(manage.close_file_record,record)
         real_stat = path.stat()
         reused = SimpleNamespace(st_dev=real_stat.st_dev,st_ino=real_stat.st_ino,st_ctime_ns=real_stat.st_ctime_ns+1)
         with patch.object(Path,'is_file',return_value=True),patch.object(Path,'is_symlink',return_value=False),patch.object(Path,'stat',return_value=reused):

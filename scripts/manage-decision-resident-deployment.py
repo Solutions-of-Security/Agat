@@ -155,17 +155,26 @@ def owned_service_info(root,label):
     return result
 
 
-def file_record(path,expected=None,complete=True):
-    info = path.stat()
-    return {'path':path,'device':info.st_dev,'inode':info.st_ino,'ctimeNs':info.st_ctime_ns,
-            'bytes':path.read_bytes() if expected is None else expected,'complete':complete}
+def file_record(path,expected=None,complete=True,descriptor=None):
+    handle = os.open(path,os.O_RDONLY|os.O_NOFOLLOW) if descriptor is None else os.dup(descriptor)
+    try:
+        info = os.fstat(handle)
+        return {'path':path,'device':info.st_dev,'inode':info.st_ino,'ctimeNs':info.st_ctime_ns,'descriptor':handle,
+                'bytes':path.read_bytes() if expected is None else expected,'complete':complete}
+    except BaseException:
+        os.close(handle);raise
+
+
+def close_file_record(record):
+    handle = record.pop('descriptor',None)
+    if handle is not None: os.close(handle)
 
 
 def exclusive_file(path,encoded,created):
     # Publish ownership before writing: an interruption can leave a partial file.
     descriptor = os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     try:
-        record = file_record(path,encoded,complete=False);created.append(record)
+        record = file_record(path,encoded,complete=False,descriptor=descriptor);created.append(record)
         offset = 0
         while offset < len(encoded):
             written = os.write(descriptor,encoded[offset:]);require(written > 0,'Owned file write made no progress')
@@ -181,12 +190,14 @@ def exclusive_file(path,encoded,created):
 
 def remove_owned_file(record):
     path = record['path']
+    require('descriptor' in record,'Owned file handle was already closed')
     require(path.is_file() and not path.is_symlink(),'Owned file was replaced')
     info = path.stat();raw = path.read_bytes()
     require((info.st_dev,info.st_ino,info.st_ctime_ns) == (record['device'],record['inode'],record['ctimeNs'])
             and (raw == record['bytes'] if record['complete'] else record['bytes'].startswith(raw)),
             'Refusing to remove a changed owned file')
     path.unlink()
+    close_file_record(record)
 
 
 def api(port,path,parameters=None):
@@ -344,7 +355,8 @@ def main(argv=None):
             marker = registered_ownership(root,bundle)
             result = inspect_services(root,bundle,port,monitor_port,owned_pids=pids,inventory=inventory,include_api=args.action != 'stop')
             if args.action == 'stop':
-                result['cleanup'] = rollback(root,list(LABELS),[file_record(p) for _,p in plist_paths(root)],pids,inventory['complete'])
+                for _,path in plist_paths(root): created.append(file_record(path))
+                result['cleanup'] = rollback(root,list(LABELS),created,pids,inventory['complete'])
                 result['registration'] = marker
                 archived = root/f'registration.stopped.{time.time_ns()}.json'
                 require(not archived.exists(),'Stopped registration archive already exists')
@@ -355,7 +367,9 @@ def main(argv=None):
         if args.action == 'install' and (registered or created):
             try: result['cleanup'] = rollback(args.bundle.absolute(),registered,created,pids,inventory['complete'])
             except (Exception,KeyboardInterrupt) as cleanup: cleanup_failure = {'type':type(cleanup).__name__,'message':str(cleanup)[:1000]}
-    finally: signal.signal(signal.SIGTERM,previous_sigterm)
+    finally:
+        signal.signal(signal.SIGTERM,previous_sigterm)
+        for record in created: close_file_record(record)
     report = sealed({'schemaVersion':'agat.decision.resident-management.v1','createdAt':datetime.now(timezone.utc).isoformat(),
                      'action':args.action,'status':'failed' if failure or cleanup_failure else result.get('status','unavailable'),
                      'qualification':'not_assessed','routingEnabled':False,'bundleSeal':args.expected_seal,
