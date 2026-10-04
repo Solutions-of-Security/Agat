@@ -84,8 +84,8 @@ Cleanup errors и оставшихся собственных PID нет. Пос
 соответствуют [руководству k6 по soak testing](https://grafana.com/docs/k6/latest/testing-guides/test-types/soak-testing/);
 конкретный двухчасовой бюджет был выбран в плане этого проекта.
 
-Следующий этап — полный Temporal/PostgreSQL/RAG с тем же профилем 0.12.2,
+[Следующий полный Temporal/PostgreSQL/RAG](./temporal-runtime-0.12.2.md) с тем же профилем 0.12.2,
 контролируемым отказом и restart shadow, обоими embedding transport и
-отдельным native replay после cleanup. Прежний внеплановый exit 75 при
+отдельным native replay после cleanup выполнен 04.10. Прежний внеплановый exit 75 при
 совместно загруженных моделях остаётся открытым вопросом; standalone успех
 и fix HTTP admission не устанавливают его причину.
