@@ -48,8 +48,9 @@ package verification содержит все 15 требуемых checks. От�
 сохраняет aggregates/fingerprints; raw paths, commands и API bodies private.
 
 Serving code после предыдущих 584 Python / 12 Node checks не менялся;
-документ и локальные ссылки проверены дополнительно. Следующие gates —
-совместная Qwen/decider нагрузка нового package и постоянный rollout после
-успешного CI, затем полный 7200-секундный shared soak. Boot/login,
+документ и локальные ссылки проверены дополнительно.
+[Короткая совместная Qwen/decider нагрузка](./wired-package-shared-load-0.12.3.md)
+также прошла после исправления collector. Следующие gates — постоянный
+rollout после CI и полный 7200-секундный shared soak. Boot/login,
 crash-loop, owner/SLO и предметная qualification открыты. Recovery timing
 не является production SLO; routing выключен, qualification `not_assessed`.
