@@ -47,8 +47,8 @@ recipe и совместные Qwen/decider gates.
 [Выбор resident profile и подготовка 0.12.3](./resident-profile-selection.md)
 закрепляют selected source и matching wired argv. Новый отдельный bundle
 прошёл offline preparation и независимую проверку всех bytes/pins; прежние
-jobs 0.12.2 продолжают работать. Native launch/recovery нового package,
-постоянный rollout и полный shared gate ещё впереди.
+jobs 0.12.2 продолжают работать. Постоянный rollout и полный shared gate
+ещё впереди; отдельный native package gate приведён ниже.
 
 [Native gate нового wired package](./resident-wired-package-0.12.3.md)
 подтвердил два запуска, совпадающие решения, exit 75, restart и настоящий
