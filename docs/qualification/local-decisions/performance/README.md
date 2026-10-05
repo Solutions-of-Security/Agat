@@ -74,6 +74,11 @@ initial/recovery argv и archived-source verifier. 58 профильных и mu
 checks прошли. Это tooling для нового native gate с fallback/replay;
 реальный wired Temporal/RAG опыт пока не заявляется.
 
+[Управляемая остановка Temporal launcher](./temporal-launcher-cancellation.md),
+06.10: SIGTERM/SIGINT кооперативно завершают owned process groups и сохраняют
+failed report. Четыре OS signal regression и handler restoration прошли;
+повторный сигнал не прерывает cleanup. GPU/profile и Workflow Commands не меняются.
+
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
 [Workflow с реальным RAG](./rag-workflow.md) на runtime 0.12.0 выполнил ещё 12 workflows, 44 embeddings, 36 primary и 18 shadow. Оба источника доставлены на каждый этап; 6/12 итогов ошибаются в арифметике, 6/12 используют групповой синтаксис citations, который прежний renderer не связывает с источниками. Названия фаз входят в prompt, поэтому различия между фазами не имеют причинной интерпретации.

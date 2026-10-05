@@ -10,6 +10,7 @@ from pathlib import Path
 import platform
 import re
 import shlex
+import signal
 import socket
 import stat
 import subprocess
@@ -156,7 +157,8 @@ def require_resident_shadow_model(manifest_path):
         resident(snapshot / name)
 
 
-def start_shadow_runtime(state, args, port, decision, warmup_request, log):
+def start_shadow_runtime(state, args, port, decision, warmup_request, log, *, check_cancelled=lambda: None):
+    check_cancelled()
     wired_mib = getattr(args, 'shadow_wired_limit_mib', None)
     wired_bytes = wired_limit_bytes(wired_mib)
     model = json.loads(decision['profile']['profileJson'])['model']
@@ -177,8 +179,10 @@ def start_shadow_runtime(state, args, port, decision, warmup_request, log):
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'})
     state['process'] = process
+    check_cancelled()  # The handle is owned before cooperative cancellation.
     deadline = time.monotonic() + 30
     while True:
+        check_cancelled()
         require(process.poll() is None, 'Owned shadow runtime exited during startup')
         try:
             state['health'] = request(port, '/health')
@@ -187,15 +191,17 @@ def start_shadow_runtime(state, args, port, decision, warmup_request, log):
             require(time.monotonic() < deadline, 'Owned shadow runtime startup timeout')
             time.sleep(.1)
     health = state['health']
+    check_cancelled()
     require(health.get('status') == 'ready' and health.get('mode') == 'shadow', 'Shadow runtime not ready')
     require(all(health[key] == decision['profile'][key] for key in ['profileJson', 'profileSha256']), 'Live shadow profile changed')
     state['warmup'] = request(port, '/v1/decisions', warmup_request, 12, capture_status=True)
+    check_cancelled()
     warmup = state['warmup']
     require(warmup['httpStatus'] == 200 and warmup['result'].get('status') in ['ok', 'abstain'],
             'Shadow warmup failed: ' + str(warmup['result'].get('reason')))
 
 
-def main():
+def main(*, check_cancelled=lambda: None):
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
     parser = argparse.ArgumentParser(description=__doc__)
@@ -319,6 +325,7 @@ def main():
                 bound.bind(('127.0.0.1', 0))
                 port = bound.getsockname()[1]
             try:
+                check_cancelled()
                 shadow_environment = {}
                 if args.shadow_resources:
                     resources = ResourceSampler(started)
@@ -336,12 +343,14 @@ def main():
                         if args.shadow_recovery:
                             from scripts.lib.temporal_shadow_control import ShadowRecoveryControl
                             shadow_control = ShadowRecoveryControl(temporary / 'control',
-                                lambda state: start_shadow_runtime(state, args, shadow_port, decision, warmup_request, decision_log),
+                                lambda state: start_shadow_runtime(state, args, shadow_port, decision, warmup_request, decision_log,
+                                                                   check_cancelled=check_cancelled),
                                 shared.inventory, shared.stop, started)
                             shadow_control.start()
                             shadow_environment['AGAT_TEMPORAL_SHADOW_CONTROL'] = str(shadow_control.directory)
                         else:
-                            start_shadow_runtime(initial_state, args, shadow_port, decision, warmup_request, decision_log)
+                            start_shadow_runtime(initial_state, args, shadow_port, decision, warmup_request, decision_log,
+                                                 check_cancelled=check_cancelled)
                     finally:
                         initial_state = shadow_control.state if shadow_control else initial_state
                         shadow_runtime = initial_state.get('process')
@@ -353,8 +362,10 @@ def main():
                 ollama = subprocess.Popen(['ollama', 'serve'], cwd=ROOT, stdout=model_log, stderr=subprocess.STDOUT,
                                           start_new_session=True, env={**os.environ, **settings, 'OLLAMA_HOST': f'127.0.0.1:{port}'})
                 pids.add(ollama.pid)
+                check_cancelled()
                 deadline = time.monotonic() + 30
                 while True:
+                    check_cancelled()
                     require(ollama.poll() is None, 'Owned model server exited')
                     try:
                         version = request(port, '/api/version')
@@ -363,13 +374,16 @@ def main():
                         require(time.monotonic() < deadline, 'Owned model server startup timeout')
                         time.sleep(.1)
                 initial = request(port, '/api/ps')
+                check_cancelled()
                 require(initial.get('models') == [], 'Owned model server must start empty')
                 for endpoint, payload in [('/api/embed', {'model': 'embeddinggemma:latest', 'input': ['Локальная проверка'],
                         'truncate': False, 'keep_alive': '5m', 'options': {'num_ctx': 2048}}),
                     ('/api/chat', {'model': 'qwen3:8b', 'messages': [{'role': 'user', 'content': 'Ответь одним словом: готово.'}],
                         'stream': False, 'think': False, 'keep_alive': '5m',
                         'options': {'temperature': .2, 'seed': 0, 'num_ctx': 8192, 'num_predict': 8}})]:
+                    check_cancelled()
                     result = request(port, endpoint, payload, 60)
+                    check_cancelled()
                     require(result.get('model') == payload['model'], 'Warmup model mismatch')
                     warmup.append({'model': payload['model'], 'nativeTotalMs': result['total_duration'] / 1e6,
                                    'nativeLoadMs': result['load_duration'] / 1e6})
@@ -378,6 +392,7 @@ def main():
                 deadline, next_sample, next_resources = time.monotonic() + plan['workloadBudgetSeconds'], 0, 0
                 print('Owned models warmed; real PostgreSQL/Temporal RAG started', flush=True)
                 for transport in plan['transports']:
+                    check_cancelled()
                     workload = subprocess.Popen(['bash', 'scripts/test-temporal-postgres-rag.sh',
                         '--test-skip-pattern=Temporal RAG (sqlite|postgresql)/'], cwd=ROOT, stdout=test_log,
                         stderr=subprocess.STDOUT, start_new_session=True, env={**environment, **shadow_environment,
@@ -385,7 +400,9 @@ def main():
                             'AGAT_TEMPORAL_REAL_MODEL_URL': f'http://127.0.0.1:{port}',
                             'AGAT_TEMPORAL_REAL_RAG_PLAN': str(directory / 'plan.json'), 'AGAT_TEMPORAL_REAL_RAG_TRANSPORT': transport})
                     pids.add(workload.pid)
+                    check_cancelled()
                     while workload.poll() is None:
+                        check_cancelled()
                         require(time.monotonic() < deadline, 'Workload budget exceeded')
                         if resources is not None and time.monotonic() >= next_resources:
                             sample_resources(transport)
@@ -406,23 +423,28 @@ def main():
                             samples.append({'elapsedMs': (time.monotonic() - started) * 1000, 'models': request(port, '/api/ps')['models']})
                             next_sample = time.monotonic() + 10
                         time.sleep(.5)
+                    check_cancelled()
                     workloads.append({'transport': transport, 'pid': workload.pid, 'exitCode': workload.returncode})
                     require(workload.returncode == 0, 'Live integration tests failed; inspect tests.log')
                     require(json.loads((directory / f'{transport}.json').read_text()).get('status') == 'pass', 'Incomplete transport evidence')
                     print(transport + ': recovery and native replay passed', flush=True)
                 if shadow_enabled:
+                    check_cancelled()
                     decision_after = request(shadow_port, '/health')
+                    check_cancelled()
                     require(decision_after == decision_before, 'Shadow runtime health/profile changed during workload')
                 if shadow_control:
                     require(shadow_control.failure is None and len(shadow_control.events) == 4, 'Incomplete shadow failure/recovery sequence')
                 if resources:
                     require(not resources.errors, 'Resource observations incomplete')
-            except Exception as error:
+            except (Exception, KeyboardInterrupt) as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
                 # Let the integration harness persist the failed response and
                 # close its children before forcing the wrapper to stop.
+                # An operator cancellation instead starts teardown now.
                 drain_deadline = time.monotonic() + 5
-                while workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
+                interrupted = isinstance(error, (ExperimentInterrupted, KeyboardInterrupt))
+                while not interrupted and workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
                     time.sleep(.1)
             finally:
                 sample_resources('before_cleanup')
@@ -468,6 +490,11 @@ def main():
         failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close or could not be verified'}
     if resources is not None and resources.errors and failure is None:
         failure = {'type': 'ObservationError', 'reason': 'Resource observations incomplete'}
+    if failure is None:
+        try:
+            check_cancelled()  # Signals received during teardown cannot skip it.
+        except (Exception, KeyboardInterrupt) as error:
+            failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
     report = {'schema': f'agat.temporal.real-rag-launcher.v{version_number}', 'status': 'fail' if failure else 'pass', 'failure': failure,
               'planSha256': sha((directory / 'plan.json').read_bytes()), 'phaseSha256': phase_hashes,
               'elapsedMs': (time.monotonic() - started) * 1000, 'ollamaVersion': version, 'warmup': warmup,
@@ -493,5 +520,31 @@ def main():
     return 1 if failure else 0
 
 
+class ExperimentInterrupted(RuntimeError):
+    """An operator stopped the experiment at an owned-process checkpoint."""
+
+
+def cli():
+    # Exceptions inside a signal handler can interrupt Popen before its handle
+    # is registered or abandon cleanup. Record the first signal, then raise
+    # only at explicit checkpoints after ownership has been established.
+    requested = None
+    def interrupt(signum, _frame):
+        nonlocal requested
+        if requested is None:
+            requested = signum
+    def check_cancelled():
+        if requested is not None:
+            raise ExperimentInterrupted('Temporal experiment interrupted by ' + signal.Signals(requested).name)
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        for sig in previous:
+            signal.signal(sig, interrupt)
+        return main(check_cancelled=check_cancelled)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(cli())
