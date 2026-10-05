@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import os
+import platform
 import time
 from pathlib import Path
 
@@ -13,6 +14,30 @@ from .engine import Scores
 from .model_store import verify_manifest
 
 PROMPT_VERSION = "agat.state-first.letters.v1"
+
+
+def wired_limit_bytes(limit_mib: int | None) -> int | None:
+    if limit_mib is not None and (type(limit_mib) is not int or not 0 <= limit_mib <= 65536):
+        raise ValueError("wired_limit_mib must be an integer between 0 and 65536, or None")
+    return None if limit_mib is None else limit_mib * 1024 * 1024
+
+
+def configure_wired_limit(mx, limit_bytes: int | None) -> None:
+    if limit_bytes is None:
+        return
+    version = platform.mac_ver()[0]
+    major = version.split(".")[0]
+    if platform.system() != "Darwin" or not major.isdigit() or int(major) < 15:
+        raise RuntimeError("Explicit wired memory requires macOS 15 or newer")
+    device = mx.device_info()
+    total, available = device.get("memory_size"), device.get("max_recommended_working_set_size")
+    if type(total) is not int or type(available) is not int or total <= 0 or available <= 0:
+        raise RuntimeError("MLX device does not expose a valid wired memory budget")
+    if limit_bytes >= total or limit_bytes > available:
+        raise ValueError("Wired memory exceeds the device budget or is not below total memory")
+    # Apply once before load/evaluation. This is a per-process residency budget,
+    # not an allocation cap or a change to the system's wired limit.
+    mx.set_wired_limit(limit_bytes)
 
 
 def prompt_parts(request: Request) -> tuple[str, str]:
@@ -39,11 +64,13 @@ def encode_request(tokenizer, request: Request, max_tokens: int) -> tuple[list[i
 
 
 class MlxBackend:
-    def __init__(self, manifest_path: Path, max_tokens: int = 2048, *, cache_limit_mib: int | None = None):
+    def __init__(self, manifest_path: Path, max_tokens: int = 2048, *, cache_limit_mib: int | None = None,
+                 wired_limit_mib: int | None = None):
         if type(max_tokens) is not int or not 64 <= max_tokens <= 4096:
             raise ValueError("max_tokens must be between 64 and 4096")
         if cache_limit_mib is not None and (type(cache_limit_mib) is not int or not 0 <= cache_limit_mib <= 4096):
             raise ValueError("cache_limit_mib must be an integer between 0 and 4096, or None")
+        wired_bytes = wired_limit_bytes(wired_limit_mib)
         started = time.perf_counter()
         manifest, snapshot = verify_manifest(manifest_path)
         config = parse_json((snapshot / "config.json").read_bytes())
@@ -59,6 +86,7 @@ class MlxBackend:
 
         if not mx.metal.is_available():
             raise RuntimeError("This backend requires Apple Silicon with Metal")
+        configure_wired_limit(mx, wired_bytes)
         self.mx = mx
         # mlx-lm 0.31.3 implements this text backbone in qwen3_5, but does not map
         # Transformers' qwen3_5_text alias. Its ModelArgs accepts the flat text config.
@@ -88,6 +116,8 @@ class MlxBackend:
             "implementationSha256": implementation_sha256(),
             "maxInputTokens": max_tokens, "quantization": "none", "allocatorCacheLimitBytes": cache_limit_bytes,
         }
+        if wired_bytes is not None:
+            self.identity["allocatorWiredLimitBytes"] = wired_bytes
         self.load_ms = round((time.perf_counter() - started) * 1000, 3)
 
     def score(self, request: Request) -> Scores:

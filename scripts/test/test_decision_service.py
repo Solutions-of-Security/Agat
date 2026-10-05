@@ -42,11 +42,21 @@ class ServiceConfigTest(unittest.TestCase):
         self.assertIn('--inference-timeout-ms',config['ProgramArguments'])
         self.assertEqual(config['WorkingDirectory'],str(self.root))
 
+    def test_opt_in_wired_budget_and_zero_survive_plist_round_trip(self):
+        self.assertNotIn('--wired-limit-mib', launch_agent(**self.args)['ProgramArguments'])
+        for budget in (0, 4096, 65536):
+            with self.subTest(budget=budget):
+                config = plistlib.loads(plistlib.dumps(launch_agent(**self.args, wired_limit_mib=budget)))
+                args = config['ProgramArguments']
+                self.assertEqual(args[args.index('--wired-limit-mib') + 1], str(budget))
+
     def test_invalid_paths_and_limits_are_rejected_before_output(self):
         for overrides in ({'python':'missing'}, {'manifest':'missing'}, {'policy':'missing'},
                           {'calibration':'missing'}, {'log_dir':'missing'}, {'root':self.root/'missing'},
                           {'port':0}, {'port':True}, {'port':65536}, {'max_tokens':4097},
                           {'cache_limit_mib':-1}, {'inference_timeout_ms':99},
+                          {'wired_limit_mib':-1}, {'wired_limit_mib':65537}, {'wired_limit_mib':True},
+                          {'wired_limit_mib':0.5},
                           {'inference_timeout_ms':10001}, {'throttle_s':0}, {'throttle_s':9},
                           {'label':'bad/label'}, {'label':'org.agat\nshadow'}):
             with self.subTest(overrides=overrides),self.assertRaises(ValueError):
