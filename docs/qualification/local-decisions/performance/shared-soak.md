@@ -143,6 +143,13 @@ inference child и Prometheus PID, точный профиль и 47 конеч�
 сохранён, диагностика первичного отказа исправлена. Qualification и SLO
 остаются открытыми, прежний внеплановый exit 75 не объяснён.
 
+[Новый полный resident повтор](./resident-shared-soak-failure-0.12.2.md)
+завершился failed после 3 773 806,379 measured milliseconds: 8176 attempts,
+140 успешных отдельных warmup, 34 полных блока и timeout в блоке 35.
+Исходный duration/cap сохранён; full verifier отказал. Recovery с тем же
+профилем и cleanup временных процессов подтверждены отдельно. Новый opt-in
+memory profile потребует собственных короткого и полного native gates.
+
 [Grafana k6 soak testing](https://grafana.com/docs/k6/latest/testing-guides/test-types/soak-testing/)
 рекомендует длительную нагрузку после smoke/ordinary tests и наблюдение ресурсов.
 Здесь используется прежний локальный probe с увеличением общей длительности;

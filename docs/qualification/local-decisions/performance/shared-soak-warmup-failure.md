@@ -59,6 +59,11 @@ catalog. Sandbox-отказы socket/process tests сохранены отдел
 
 ## Следующий gate
 
+Этот повтор выполнен отдельным [полным resident опытом](./resident-shared-soak-failure-0.12.2.md)
+и тоже завершился failed: timeout после 3 773 806,379 measured milliseconds.
+Его результаты, recovery и дальнейшая memory-гипотеза оформлены отдельно;
+исходное warmup evidence ниже не изменяется.
+
 Повторить заранее закреплённый полный 7200-секундный план после native
 recovery с сохранением исходного failed опыта. Новый output обязателен;
 первый отказ снова останавливает нагрузку. Больше времени server inference
