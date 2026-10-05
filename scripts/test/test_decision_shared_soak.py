@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from decision_runtime.artifacts import read_json, sealed, verify_seal, write_new
+from decision_runtime.contracts import DecisionError
 from decision_runtime.engine import DecisionEngine
 from decision_runtime.tests.test_decisions import Backend
 from scripts.lib.decision_shared_load import benchmark_shared, summarize
@@ -165,6 +166,69 @@ class SharedSoakTest(unittest.TestCase):
             self.assertEqual(result['stoppedReason'], 'request_failed')
             self.assertEqual(len(result['blocks']), 1)
             self.assertEqual(fixture.calls, 2)
+
+    def test_request_failure_precedes_final_health_and_primary_checks(self):
+        # A timeout retires the backend before the final health check. The
+        # resulting unavailable health must not relabel the first request fault.
+        for fail_call in (1, 3):
+            for final_failure in ('health', 'primary', 'both'):
+                with self.subTest(fail_call=fail_call, final_failure=final_failure):
+                    fixture = Fixture(); primary = FixturePrimary()
+                    original_score = fixture.engine.backend.score
+                    original_health = fixture.health
+                    retired = False
+
+                    def score(request):
+                        nonlocal retired
+                        if fixture.calls == fail_call:
+                            retired = True
+                            raise DecisionError('inference_timeout', 'PRIVATE timeout detail')
+                        return original_score(request)
+
+                    def health(*args):
+                        if retired and final_failure in ('health', 'both'):
+                            raise OSError('PRIVATE unavailable health')
+                        return original_health(*args)
+
+                    def tag():
+                        return {'digest': '2' * 64 if retired and final_failure in ('primary', 'both')
+                                else primary.identity['digest']}
+
+                    fixture.engine.backend.score = score
+                    primary.tag = tag
+                    probes = []
+
+                    def probe(data, url, _factory, **kwargs):
+                        probes.append(True)
+                        return benchmark_shared(data, url, lambda: primary, client=fixture,
+                                                health_transport=health, **kwargs)
+
+                    with tempfile.TemporaryDirectory() as tmp:
+                        directory = Path(tmp); journal = []
+                        result = shared_soak(dataset(), 'http://127.0.0.1:1', lambda: None,
+                                             directory, fixture.engine.profile(), duration_s=10,
+                                             max_blocks=3, probe=probe, journal=journal.append)
+                        block = read_json(directory / 'block-001.json')
+                        rows = block['warmup'] + [r for phase in block['phases'] for r in phase['rows']]
+                        self.assertEqual((result['status'], result['stoppedReason']),
+                                         ('degraded', 'request_failed'))
+                        self.assertEqual((len(probes), len(result['blocks']), fixture.calls), (1, 1, fail_call))
+                        self.assertEqual(rows[-1]['reason'], 'inference_timeout')
+                        self.assertEqual([r for event in journal for r in event['rows']], rows)
+                        self.assertNotIn('PRIVATE', json.dumps(result) + json.dumps(block))
+
+    def test_final_profile_change_without_a_request_fault_still_fails(self):
+        fixture = Fixture(); fixture.changed = True
+
+        def probe(data, url, _factory, **kwargs):
+            return benchmark_shared(data, url, lambda: FixturePrimary(), client=fixture,
+                                    health_transport=fixture.health, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = shared_soak(dataset(), 'http://127.0.0.1:1', lambda: None, Path(tmp),
+                                 fixture.engine.profile(), duration_s=10, max_blocks=3, probe=probe)
+            self.assertEqual((result['status'], result['stoppedReason'], len(result['blocks'])),
+                             ('degraded', 'profile_changed', 1))
 
     def test_invalid_dataset_and_bounds_fail_before_probe(self):
         calls = []

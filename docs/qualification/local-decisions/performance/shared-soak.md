@@ -129,9 +129,12 @@ inference child и Prometheus PID, точный профиль и 47 конеч�
 перепроверил source, package, журнал, raw metrics и cleanup. Три наблюдавшихся
 временных PID завершены, Qwen выгружен; два постоянных resident jobs работают.
 
-**Полный совместный 7200-секундный gate не запускался.** По указанию пользователя
-работа останавливается после завершения этого этапа tooling/smoke. Qualification
-и SLO остаются открытыми, прежний внеплановый exit 75 не объяснён.
+В этом tooling/smoke этапе полный совместный 7200-секундный gate не запускался;
+по тогдашнему указанию пользователя работа была остановлена после его
+завершения. После нового указания продолжить [первая полная попытка](./shared-soak-warmup-failure.md)
+05.10 остановилась на warmup timeout до measured нагрузки; failed evidence
+сохранён, диагностика первичного отказа исправлена. Qualification и SLO
+остаются открытыми, прежний внеплановый exit 75 не объяснён.
 
 [Grafana k6 soak testing](https://grafana.com/docs/k6/latest/testing-guides/test-types/soak-testing/)
 рекомендует длительную нагрузку после smoke/ordinary tests и наблюдение ресурсов.
