@@ -63,6 +63,11 @@ retirement events и cleanup своих временных processes.
 
 ## Воспроизведение и независимая проверка
 
+После полной offline verification [публичный экспортер](./shared-soak-summary.md)
+заново проверяет saved evidence и считает pooled p50/p95/max по measured rows,
+отдельно от warmup. Он требует committed analysis sources и новый файл под
+`docs`; не запускает inference и не изменяет первичный duration/cap.
+
 Обе loopback model services должны быть готовы с закреплёнными weights/profile.
 Primary используется как structured label generator, не полный production agent.
 Следующие команды не регистрируют и не удаляют LaunchAgents:
