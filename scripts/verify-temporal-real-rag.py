@@ -55,10 +55,14 @@ def verify_shadow_profile(decision, sources):
     reference = launcher_module.SHADOW_REFERENCE
     historical = json.loads(sources[reference])['decision']
     if 'referenceFormat' not in decision:
+        assert 'wiredLimitMiB' not in decision
         assert decision['referencePath'] == reference and decision['profile'] == historical
         assert historical['profileSha256'] == '4bd6e0de2bfde982d8d5fbdfc4d5e7ef36ccd1d8bb69356cd558a33934cb7a2a'
     else:
         assert decision['referenceFormat'] == 'runtime-profile-v1'
+        selected = decision['referencePath']
+        assert isinstance(selected, str) and Path(selected).as_posix() == selected and '..' not in Path(selected).parts
+        assert Path(selected).is_relative_to('docs') and not Path(selected).is_relative_to('docs/private')
         expected = json.loads(historical['profileJson'])
         tree = ast.parse(sources['decision_runtime/__init__.py'])
         versions = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
@@ -69,8 +73,13 @@ def verify_shadow_profile(decision, sources):
         assert runtime_sources
         implementation = b''.join(Path(name).name.encode() + b'\0' + sources[name] + b'\0' for name in runtime_sources)
         expected['model']['implementationSha256'] = sha(implementation)
-        assert json.loads(sources[decision['referencePath']]) == expected
+        if 'wiredLimitMiB' in decision:
+            wired = decision['wiredLimitMiB']
+            assert type(wired) is int and 0 <= wired <= 65536
+            expected['model']['allocatorWiredLimitBytes'] = wired * 1024**2
         raw = json.dumps(expected, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        assert json.dumps(json.loads(sources[decision['referencePath']]), ensure_ascii=False,
+                          sort_keys=True, separators=(',', ':'), allow_nan=False) == raw
         assert decision['profile'] == {'profileJson': raw, 'profileSha256': sha(raw)}
     assert sha(decision['profile']['profileJson']) == decision['profile']['profileSha256']
     return json.loads(decision['profile']['profileJson'])
@@ -217,6 +226,7 @@ def verify(directory):
         assert isinstance(reference, str) and reference.startswith('docs/')
         assert Path(reference).as_posix() == reference and '..' not in Path(reference).parts
         assert (ROOT / reference).resolve().is_relative_to(ROOT / 'docs')
+        assert not (ROOT / reference).resolve().is_relative_to(ROOT / 'docs/private')
         paths.append(reference)
     archived = subprocess.check_output(['git', 'archive', plan['implementationCommit'], '--', *paths], cwd=ROOT, timeout=15)
     with tarfile.open(fileobj=io.BytesIO(archived)) as archive:
