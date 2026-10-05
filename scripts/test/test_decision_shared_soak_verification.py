@@ -10,15 +10,17 @@ from scripts.lib.decision_shared_soak import shared_soak
 from scripts.lib.decision_shared_soak_verification import SCHEMA, verify_measurements
 from scripts.test.test_decision_baselines import dataset
 from scripts.test.test_decision_performance import Fixture
+from scripts.test.test_decision_shared_load import sized_dataset
 from scripts.test.test_decision_shared_soak import SyntheticClock, TimedBlocks
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class VerificationTest(unittest.TestCase):
-    def fixture(self):
+    def fixture(self, data=None):
         with tempfile.TemporaryDirectory() as tmp:
-            clock = SyntheticClock(); journal = []; data = dataset(); profile = Fixture().engine.profile()
+            clock = SyntheticClock(); journal = []; data = dataset() if data is None else data
+            profile = Fixture().engine.profile()
             result = shared_soak(data, 'http://127.0.0.1:1', lambda: None, Path(tmp), profile,
                                  duration_s=3, max_blocks=4, probe=TimedBlocks(clock), clock=clock, journal=journal.append)
             reports = [json.loads((Path(tmp) / e['path']).read_text()) for e in result['blocks']]
@@ -53,6 +55,14 @@ class VerificationTest(unittest.TestCase):
         self.assertEqual((proof['status'], proof['measuredMs'], proof['counts']['measuredCalls']), ('verified', 3000, 32))
         self.assertEqual(proof['counts']['overlappingPairs'], 4)
         self.assertFalse(proof['routingEnabled'])
+
+    def test_thirty_case_controller_checkpoint_and_journal_verify_independently(self):
+        values = self.fixture(sized_dataset(30))
+        proof = verify_measurements(*values)
+        self.assertEqual((proof['status'], proof['counts']['blocks'], proof['counts']['measuredCalls']),
+                         ('verified', 1, 480))
+        self.assertEqual((proof['counts']['warmupCalls'], proof['counts']['overlappingPairs']), (4, 60))
+        self.assertEqual(values[2]['stoppedReason'], 'duration_complete')
 
     def test_resealed_request_count_cannot_hide_dropped_rows(self):
         self.reject(lambda v: v[2].update(measuredAttempts=31))

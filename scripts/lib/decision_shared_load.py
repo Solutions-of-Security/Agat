@@ -18,6 +18,10 @@ from scripts.lib.decision_performance import distribution, hardware, profile_fro
 from workers.local_decisions import LocalDecisionClient, PROFILE
 
 SCHEMA = "agat.decision.shared-load.v1"
+MAX_CASES = 30
+MAX_ROUNDS = 2
+CALLS_PER_CASE_ROUND = 8
+MAX_MEASURED_CALLS = MAX_CASES * MAX_ROUNDS * CALLS_PER_CASE_ROUND
 PHASES = ("decision_only_before", "primary_only_before", "sequential_pair", "overlapping_pair",
           "primary_only_after", "decision_only_after")
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,9 +55,10 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                      pair_observer=None, stop_on_failure=False, cancel_requested=None, expected_profile=None):
     cases = development_cases(dataset)
     requests = [Request.from_dict(case["request"]) for case in cases]
-    if (not requests or len(requests) > 30 or any(r.kind not in {"choice", "boolean"} for r in requests)
+    if (not requests or len(requests) > MAX_CASES or any(r.kind not in {"choice", "boolean"} for r in requests)
             or any(len(canonical_json(r.to_dict()).encode()) > 6144 for r in requests)
-            or type(rounds) is not int or not 1 <= rounds <= 2 or len(requests) * rounds * 8 > 240
+            or type(rounds) is not int or not 1 <= rounds <= MAX_ROUNDS
+            or len(requests) * rounds * CALLS_PER_CASE_ROUND > MAX_MEASURED_CALLS
             or type(warmup) is not int or not 1 <= warmup <= 4
             or type(time_budget_s) is not int or not 1 <= time_budget_s <= 600
             or type(timeout_ms) is not int or not 100 <= timeout_ms <= 10000):
@@ -215,7 +220,7 @@ def benchmark_shared(dataset, decision_url, primary_factory, *, rounds=1, warmup
                    "primary": primary_identity, "primaryStable": primary_stable, "host": hardware(), "harnessFiles": sources,
                    "plan": {"phaseOrder": list(PHASES), "rounds": rounds, "warmupPairs": warmup,
                             "timeBudgetSeconds": time_budget_s, "decisionTimeoutMs": timeout_ms,
-                            "expectedMeasuredRequests": len(requests) * rounds * 8, "maxConcurrentCallsPerModel": 1,
+                            "expectedMeasuredRequests": len(requests) * rounds * CALLS_PER_CASE_ROUND, "maxConcurrentCallsPerModel": 1,
                             "retry": False, "modelLoadExcluded": True,
                             "stopOnFailure": stop_on_failure, "pairObservation": pair_observer is not None,
                             "cooperativeCancellation": cancel_requested is not None,

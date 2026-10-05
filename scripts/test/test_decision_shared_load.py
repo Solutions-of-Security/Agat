@@ -1,3 +1,4 @@
+import copy
 import itertools
 import json
 import threading
@@ -23,6 +24,16 @@ class Primary:
         return {"selectedOptionId": request.options[0].id, "inputTokens": 100, "outputTokens": 12}
     def transport(self, _method, _path):
         return {"models": [{"name": self.model, "digest": self.identity["digest"], "size": 100, "size_vram": 80}]}
+
+
+def sized_dataset(count):
+    data = dataset(); data.pop('sha256'); original = data['cases'][0]
+    data['cases'] = []
+    for index in range(count):
+        case = copy.deepcopy(original)
+        case['id'] = case['request']['id'] = f'fixture-bounded-{index}'
+        data['cases'].append(case)
+    return sealed(data)
 
 
 class SharedTest(unittest.TestCase):
@@ -71,6 +82,29 @@ class SharedTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 benchmark_shared(dataset(), "http://127.0.0.1:1", primary, client=fixture, health_transport=fixture.health, **plan)
         self.assertEqual((fixture.health_calls, fixture.calls, calls), (0, 0, []))
+
+    def test_two_rounds_support_the_declared_thirty_case_bound(self):
+        for count in (16, 30):
+            with self.subTest(cases=count):
+                fixture, primary = Fixture(), Primary()
+                report = benchmark_shared(sized_dataset(count), 'http://127.0.0.1:1',
+                                          lambda: primary, rounds=2, warmup=2,
+                                          client=fixture, health_transport=fixture.health,
+                                          stop_on_failure=True, expected_profile=fixture.engine.profile())
+                self.assertEqual((report['status'], report['stoppedReason']), ('observed', None))
+                measured = sum(len(phase['rows']) for phase in report['phases'])
+                self.assertEqual((measured, report['plan']['expectedMeasuredRequests']), (count * 16, count * 16))
+                self.assertEqual((fixture.calls, len(primary.requests)), (count * 8 + 2, count * 8 + 2))
+                self.assertEqual(report['plan']['maxConcurrentCallsPerModel'], 1)
+                self.assertFalse(report['plan']['retry'])
+
+    def test_thirty_one_cases_fail_before_health_or_primary_creation(self):
+        fixture = Fixture(); primary_calls = []
+        with self.assertRaisesRegex(ValueError, 'Unsupported or excessive'):
+            benchmark_shared(sized_dataset(31), 'http://127.0.0.1:1',
+                             lambda: primary_calls.append(True), rounds=2,
+                             client=fixture, health_transport=fixture.health)
+        self.assertEqual((fixture.calls, fixture.health_calls, primary_calls), (0, 0, []))
 
     def test_failures_and_busy_are_not_successful_fast_latency_samples(self):
         rows = [{"status": "ok", "reason": "accepted", "wallMs": 500, "inputTokens": 10, "outputTokens": 0},
