@@ -222,6 +222,8 @@ Development-сравнение не закрывает qualification: decider п
 
 [Согласованная граница shared cases](./qualification/local-decisions/performance/shared-soak-case-cap.md), 05.10 MSK: объявленные 30 cases / два rounds ранее отклонялись paired probe из-за старого cap 240 calls. Дефект воспроизведён на 16 и 30 cases; общие constants теперь допускают конечный максимум 480 при прежней concurrency и time budget. Full controller fixture и независимый verifier подтвердили 480 measured / четыре warmup calls / 60 overlapping pairs; 31 cases отклоняются до модели. Целевой набор — 47/47. Новые inputs являются unit fixtures; serving profile, прежние реальные 15-case evidence и предметная qualification не меняются.
 
+[Воспроизводимая shared-soak сводка](./qualification/local-decisions/performance/shared-soak-summary.md), 05.10 MSK: новый CLI повторяет offline verifier перед public allowlist export, закрепляет analysis commit/SHA и считает pooled quantiles по исходным measured rows, отдельно от warmup. Шесть новых tests и полный целевой набор 53/53 прошли. Существующий реальный smoke независимо экспортирован повторно: 180 844,854 measured milliseconds, 295 calls, восемь warmup и 30 overlapping pairs; новых model calls нет. Это проверка анализа и прежнего короткого опыта; полный 7200-секундный gate, предметная qualification и owner/SLO этим этапом не закрываются.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
