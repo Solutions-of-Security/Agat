@@ -28,13 +28,16 @@ def ensure(condition, message):
     if not condition: raise RuntimeError(message)
 
 
-def child_processes(parent):
-    found = subprocess.run(['/usr/bin/pgrep', '-P', str(parent)], capture_output=True, text=True, timeout=2)
+def child_processes(parent, *, timeout_s=2):
+    """Inspect owned children with a bounded budget per metadata command."""
+    if type(timeout_s) is not int or not 1 <= timeout_s <= 30:
+        raise ValueError('Process inspection timeout must be an integer from 1 to 30 seconds')
+    found = subprocess.run(['/usr/bin/pgrep', '-P', str(parent)], capture_output=True, text=True, timeout=timeout_s)
     ensure(found.returncode in (0, 1), 'Cannot inspect owned children')
     pids = [int(value) for value in found.stdout.split()]
     if not pids: return []
     rows = subprocess.check_output(['/bin/ps', '-p', ','.join(map(str, pids)), '-o', 'pid=,ppid=,command='],
-                                   text=True, timeout=2).splitlines()
+                                   text=True, timeout=timeout_s).splitlines()
     result = []
     for row in rows:
         pid, ppid, command = row.strip().split(maxsplit=2)
