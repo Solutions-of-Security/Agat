@@ -81,8 +81,9 @@ docs-check до profile export отказал на семи bindings tests из-
 нового profile file; genuine export исправил эту зависимость, повтор прошёл.
 
 [Recipe для нового resident профиля](./resident-profile-selection.md) уже
-подготовлен и проверен без model inference. Следующие gates — native package,
-rollout, короткий paired Qwen/decider опыт и новый закреплённый 7200-секундный soak.
+подготовлен и проверен; [native package gate](./resident-wired-package-0.12.3.md)
+также прошёл. Следующие gates — rollout, короткий paired Qwen/decider опыт
+и новый закреплённый 7200-секундный soak.
 Пока постоянные jobs используют 0.12.2. Matching development outputs не
 доказывают correctness, calibration или причинность прежнего timeout;
 routing выключен, qualification — `not_assessed`.

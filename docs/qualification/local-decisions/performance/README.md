@@ -47,8 +47,13 @@ recipe и совместные Qwen/decider gates.
 [Выбор resident profile и подготовка 0.12.3](./resident-profile-selection.md)
 закрепляют selected source и matching wired argv. Новый отдельный bundle
 прошёл offline preparation и независимую проверку всех bytes/pins; прежние
-jobs 0.12.2 продолжают работать. Native launch/recovery нового package,
-постоянный rollout и полный shared gate ещё впереди.
+jobs 0.12.2 продолжают работать. Постоянный rollout и полный shared gate
+ещё впереди; отдельный native package gate приведён ниже.
+
+[Native gate нового wired package](./resident-wired-package-0.12.3.md)
+подтвердил два запуска, совпадающие решения, exit 75, restart и настоящий
+scrape/alert cycle. Все семь временных PID отсутствуют, прежний resident
+восстановлен. Новый постоянный rollout и совместные gates ещё не завершены.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
