@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import hashlib
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -79,6 +81,69 @@ class ResidentDeploymentTest(unittest.TestCase):
         self.assertEqual(config['ThrottleInterval'],30)
         for port in (True,80,65536):
             with self.subTest(port=port),self.assertRaises(ValueError): prepare.prometheus_agent(self.root,self.root/'bin/prometheus',port)
+
+    def profile(self, wired=False):
+        name = 'runtime-0.12.3-wired-4096.json' if wired else 'runtime-0.12.3.json'
+        return json.loads((ROOT/'docs/qualification/local-decisions/performance/profiles'/name).read_text())
+
+    def test_wired_budget_is_exact_and_default_and_explicit_zero_are_distinct(self):
+        profile = self.profile()
+        self.assertEqual(prepare.service_options(profile), {'wired_limit_mib': None})
+        self.assertEqual(prepare.service_options(self.profile(True)), {'wired_limit_mib': 4096})
+        profile['model']['allocatorWiredLimitBytes'] = 0
+        self.assertEqual(prepare.service_options(profile), {'wired_limit_mib': 0})
+        for value in (None, True, -1, 1, 65537 * 1024 * 1024, 4294967296.0, '4096'):
+            profile['model']['allocatorWiredLimitBytes'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'whole number'):
+                prepare.service_options(profile)
+
+    def test_non_memory_recipe_changes_are_rejected(self):
+        for field, value in [('maxInputTokens', 4096), ('allocatorCacheLimitBytes', 0),
+                             ('inferenceExecution', {'kind': 'isolated-process', 'startMethod': 'spawn', 'deadlineMs': 10000})]:
+            profile = self.profile(True); profile['model'][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'recipe'):
+                prepare.service_options(profile)
+        profile = self.profile(); profile['calibration']['status'] = 'fitted'
+        with self.assertRaisesRegex(ValueError, 'recipe'): prepare.service_options(profile)
+
+    def test_profile_source_is_public_with_policy_and_no_symlink_escape(self):
+        profiles = self.root/'docs/profiles';profiles.mkdir(parents=True)
+        path = profiles/'wired.json';path.write_text(json.dumps(self.profile(True)))
+        policy = self.root/prepare.POLICY;policy.parent.mkdir(parents=True);policy.write_bytes((ROOT/prepare.POLICY).read_bytes())
+        with patch.object(prepare, 'ROOT', self.root):
+            name, profile = prepare.profile_source(path)
+            self.assertEqual(name, 'docs/profiles/wired.json');self.assertEqual(profile, self.profile(True))
+            private = self.root/'docs/private/profile.json';private.parent.mkdir();private.write_bytes(path.read_bytes())
+            outside = self.root/'outside.json';outside.write_bytes(path.read_bytes())
+            escape = profiles/'escape.json';escape.symlink_to(outside)
+            for rejected in (private, outside, escape, profiles/'missing.json'):
+                with self.subTest(rejected=rejected), self.assertRaisesRegex(ValueError, 'public profile'):
+                    prepare.profile_source(rejected)
+            changed = self.profile(True);changed['policy']['id'] = 'other'
+            path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError): prepare.profile_source(path)
+
+    def test_selected_profile_is_committed_and_bound_in_source_identity(self):
+        selected = 'docs/profiles/wired.json'
+        paths = ['decision_runtime/__main__.py', 'decision_runtime/models.json', 'decision_runtime/requirements-mlx.txt',
+                 'scripts/prepare-decision-resident-deployment.py', 'scripts/lib/decision_service.py',
+                 'scripts/lib/decision_performance.py', selected, prepare.POLICY,
+                 f'{prepare.OBS}/prometheus-3.13.4.json', f'{prepare.OBS}/alerts.yml', f'{prepare.OBS}/alerts.test.yml']
+        for name in paths:
+            path = self.root/name;path.parent.mkdir(parents=True, exist_ok=True);path.write_text('fixture\n')
+        (self.root/selected).write_text(json.dumps(self.profile(True)))
+        (self.root/prepare.POLICY).write_bytes((ROOT/prepare.POLICY).read_bytes())
+        for args in (['init', '-q'], ['add', '.'], ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+                                                   'commit', '-qm', 'source binding fixture']):
+            subprocess.run(['git', *args], cwd=self.root, check=True, capture_output=True)
+        with patch.object(prepare, 'ROOT', self.root):
+            commit, sources = prepare.source_identity(selected)
+            self.assertEqual(sources[selected], hashlib.sha256((self.root/selected).read_bytes()).hexdigest())
+            self.assertNotIn(prepare.PROFILE, sources)
+            self.assertEqual(len(commit), 40)
+            (self.root/selected).write_text(json.dumps(self.profile()))
+            with self.assertRaisesRegex(ValueError, 'Commit deployment sources'):
+                prepare.source_identity(selected)
 
 
 if __name__ == '__main__': unittest.main()

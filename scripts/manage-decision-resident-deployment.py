@@ -45,8 +45,8 @@ def require(condition,message):
     if not condition: raise RuntimeError(message)
 
 
-def source_identity():
-    commit,files = prepare['source_identity']()
+def source_identity(profile_path=None):
+    commit,files = prepare['source_identity'](profile_path or prepare['PROFILE'])
     files.update(native['harness_fingerprints']())
     for name in ('scripts/manage-decision-resident-deployment.py','docs/qualification/local-decisions/request.example.json'):
         files[name] = sha256_file(ROOT/name)
@@ -75,7 +75,9 @@ def validate_bundle(root,expected_seal):
     require(bundle['sha256'] == expected_seal and bundle['destination'] == str(root)
             and bundle['status'] == 'prepared' and bundle['routingEnabled'] is False and bundle['qualification'] == 'not_assessed',
             'Unexpected resident bundle or routing state')
-    profile = read_json(ROOT/'docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json')
+    profile_name,profile = prepare['profile_source'](bundle.get('profileSourcePath',prepare['LEGACY_PROFILE']))
+    require(bundle.get('profileSourcePath',profile_name) == profile_name
+            and bundle['sourceFiles'].get(profile_name) == sha256_file(ROOT/profile_name), 'Bundle public profile source mismatch')
     require(bundle['profile'] == profile and bundle['profileSha256'] == fingerprint(profile),'Bundle/profile mismatch')
     for name,checksum in {**bundle['copiedFiles'],**bundle['generatedFiles']}.items():
         require(sha256_file(checked_path(root,name)) == checksum,'Resident bundle file changed')
@@ -86,7 +88,8 @@ def validate_bundle(root,expected_seal):
     require(monitor_arg.startswith('--web.listen-address=127.0.0.1:'),'Prometheus must bind loopback')
     monitor_port = int(monitor_arg.rsplit(':',1)[1]);require(port != monitor_port,'Duplicate service ports')
     expected = launch_agent(root=root/'runtime',python=root/'venv/bin/python',manifest=root/'config/decider-2b.json',
-                            policy=root/'config/policy.json',log_dir=root/'logs',port=port,inference_timeout_ms=5000)
+                            policy=root/'config/policy.json',log_dir=root/'logs',port=port,inference_timeout_ms=5000,
+                            **prepare['service_options'](profile))
     expected['EnvironmentVariables'].update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
     require(configs == [expected,prepare['prometheus_agent'](root,root/'bin/prometheus',monitor_port)],'Service configuration differs from the owned recipe')
     for config in configs:
@@ -326,8 +329,8 @@ def main(argv=None):
     try:
         require(platform.system() == 'Darwin','Resident service management requires macOS')
         require(not args.output.exists() and args.output.absolute().resolve().is_relative_to((ROOT/'docs/private').resolve()),'Use a new private output under docs/private')
-        commit,sources = source_identity()
         root = args.bundle.absolute();bundle,port,monitor_port = validate_bundle(root,args.expected_seal)
+        commit,sources = source_identity(bundle.get('profileSourcePath',prepare['LEGACY_PROFILE']))
         if args.action in ('check','install'):
             require(args.verification is not None,'Supply the verified package gate before registration')
             gate_evidence(args.verification,bundle)

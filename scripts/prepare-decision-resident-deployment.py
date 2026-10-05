@@ -21,13 +21,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from decision_runtime import implementation_sha256
+from decision_runtime import VERSION, implementation_sha256
 from decision_runtime.artifacts import read_json, sealed, write_new
-from decision_runtime.contracts import canonical_json, fingerprint
+from decision_runtime.contracts import Policy, canonical_json, fingerprint
 from decision_runtime.model_store import sha256_file, verify_manifest
 from scripts.lib.decision_service import launch_agent, write_launch_agent
+from scripts.lib.decision_performance import profile_from_health
 
-PROFILE = 'docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json'
+PROFILE = f'docs/qualification/local-decisions/performance/profiles/runtime-{VERSION}.json'
+LEGACY_PROFILE = 'docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json'
 POLICY = 'docs/qualification/local-decisions/policy.shadow.v1.json'
 OBS = 'docs/qualification/local-decisions/shadow/observability'
 
@@ -89,10 +91,44 @@ def resident_manifest(path):
     return verify_manifest(path)
 
 
-def source_identity():
+def service_options(profile):
+    model = profile['model']; execution = model.get('inferenceExecution', {})
+    require(model.get('maxInputTokens') == 2048 and model.get('allocatorCacheLimitBytes') == 128 * 1024 * 1024
+            and execution.get('kind') == 'isolated-process' and execution.get('startMethod') == 'spawn'
+            and execution.get('deadlineMs') == 5000 and profile['calibration'] == {
+                'semantics': 'softmax_over_allowed_options', 'status': 'uncalibrated', 'temperature': 1.0},
+            'Profile differs from the resident input/cache/deadline/calibration recipe')
+    wired = None
+    if 'allocatorWiredLimitBytes' in model:
+        value = model['allocatorWiredLimitBytes']
+        require(type(value) is int and 0 <= value <= 65536 * 1024 * 1024 and value % (1024 * 1024) == 0,
+                'Profile wired budget must be a whole number of MiB within the CLI range')
+        wired = value // (1024 * 1024)
+    return {'wired_limit_mib': wired}
+
+
+def profile_source(value):
+    repository = ROOT.resolve()
+    path = Path(value)
+    if not path.is_absolute(): path = ROOT / path
+    path = path.resolve()
+    require(path.is_file() and path.is_relative_to(repository / 'docs')
+            and not path.is_relative_to(repository / 'docs/private'), 'Use a public profile file under docs')
+    profile = read_json(path)
+    profile_from_health({'status': 'ready', 'mode': 'shadow', 'profileJson': canonical_json(profile),
+                         'profileSha256': fingerprint(profile)})
+    service_options(profile)
+    policy = Policy.from_dict(read_json(ROOT / POLICY)).to_dict()
+    require(profile['policy'] == {**policy, 'sha256': fingerprint(policy)}, 'Profile differs from the copied resident policy')
+    return path.relative_to(repository).as_posix(), profile
+
+
+def source_identity(profile_path=PROFILE):
+    profile_name, _ = profile_source(profile_path)
     names = [p.relative_to(ROOT).as_posix() for p in sorted((ROOT/'decision_runtime').glob('*.py'))]
     names += ['decision_runtime/models.json','decision_runtime/requirements-mlx.txt',
-              'scripts/prepare-decision-resident-deployment.py','scripts/lib/decision_service.py',PROFILE,POLICY,
+              'scripts/prepare-decision-resident-deployment.py','scripts/lib/decision_service.py',
+              'scripts/lib/decision_performance.py',profile_name,POLICY,
               f'{OBS}/prometheus-3.13.4.json',f'{OBS}/alerts.yml',f'{OBS}/alerts.test.yml']
     commit = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,timeout=5).strip()
     files = {n:sha256_file(ROOT/n) for n in names}
@@ -118,6 +154,7 @@ def main(argv=None):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--runtime-port',type=int,default=8766)
     parser.add_argument('--monitor-port',type=int,default=9095)
+    parser.add_argument('--profile',type=Path,default=Path(PROFILE),help='Committed public runtime profile; defaults to the current unwired export')
     args = parser.parse_args(argv)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     def interrupted(_signal,_frame): raise KeyboardInterrupt('Resident preparation interrupted')
@@ -130,8 +167,8 @@ def main(argv=None):
         destination = new_destination(args.destination)
         require(type(args.runtime_port) is int and 1024 <= args.runtime_port <= 65535 and args.runtime_port != args.monitor_port,'Invalid or duplicate service ports')
         prometheus_agent(destination,args.prometheus,args.monitor_port)
-        commit,sources = source_identity()
-        profile = read_json(ROOT/PROFILE)
+        profile_name,profile = profile_source(args.profile)
+        commit,sources = source_identity(profile_name)
         require(profile['model']['implementationSha256'] == implementation_sha256(),'Runtime source/profile mismatch')
         manifest,snapshot = resident_manifest(args.manifest)
         require(manifest['artifactSha256'] == profile['model']['artifactSha256'] and manifest['revision'] == profile['model']['revision']
@@ -157,7 +194,7 @@ def main(argv=None):
         if (snapshot/'README.md').is_file(): copy(snapshot/'README.md','docs/model-card.md')
         local_manifest = {**manifest,'snapshot':str(directory/'model')}
         write_new(directory/'config/decider-2b.json',local_manifest)
-        for source,relative in [(ROOT/PROFILE,'config/profile.json'),(ROOT/POLICY,'config/policy.json'),
+        for source,relative in [(ROOT/profile_name,'config/profile.json'),(ROOT/POLICY,'config/policy.json'),
                                 (ROOT/f'{OBS}/alerts.yml','config/alerts.yml'),(ROOT/f'{OBS}/alerts.test.yml','config/alerts.test.yml')]: copy(source,relative)
         for name,path in [('prometheus',args.prometheus),('promtool',args.promtool)]: copy(path,f'bin/{name}',0o700)
         for name in ('LICENSE','NOTICE'):
@@ -182,7 +219,8 @@ def main(argv=None):
         run([str(directory/'bin/promtool'),'check','config',str(config)],30)
         run([str(directory/'bin/promtool'),'test','rules',str(directory/'config/alerts.test.yml')],30)
         jobs = [launch_agent(root=directory/'runtime',python=local_python,manifest=directory/'config/decider-2b.json',
-                             policy=directory/'config/policy.json',log_dir=directory/'logs',port=args.runtime_port,inference_timeout_ms=5000),
+                             policy=directory/'config/policy.json',log_dir=directory/'logs',port=args.runtime_port,
+                             inference_timeout_ms=5000,**service_options(profile)),
                 prometheus_agent(directory,directory/'bin/prometheus',args.monitor_port)]
         jobs[0]['EnvironmentVariables'].update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
         for job in jobs:
@@ -197,7 +235,8 @@ def main(argv=None):
             path.chmod(0o600);generated[path.relative_to(directory).as_posix()] = sha256_file(path)
         prepared = sealed({'schemaVersion':'agat.decision.resident-bundle.v1','createdAt':datetime.now(timezone.utc).isoformat(),
                            'status':'prepared','qualification':'not_assessed','routingEnabled':False,'sourceCommit':commit,
-                           'destination':str(directory),'profile':profile,'profileSha256':fingerprint(profile),'sourceFiles':sources,
+                           'destination':str(directory),'profile':profile,'profileSourcePath':profile_name,
+                           'profileSha256':fingerprint(profile),'sourceFiles':sources,
                            'copiedFiles':copied,'generatedFiles':generated,'wheels':wheels,'installedDependencies':installed,'python':str(local_python),
                            'serviceConfigs':jobs,'limitations':['No job was registered or installed by preparation.',
                            'Base Homebrew Python remains an external managed dependency; a reboot/login was not exercised.']})

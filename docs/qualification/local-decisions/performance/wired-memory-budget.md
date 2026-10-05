@@ -80,8 +80,9 @@ tests, 2279 локальных ссылок в 251 Markdown-файле и proces
 docs-check до profile export отказал на семи bindings tests из-за отсутствия
 нового profile file; genuine export исправил эту зависимость, повтор прошёл.
 
-Следующий этап — recipe для нового resident профиля, короткий paired
-Qwen/decider опыт и затем новый заранее закреплённый 7200-секундный soak.
+[Recipe для нового resident профиля](./resident-profile-selection.md) уже
+подготовлен и проверен без model inference. Следующие gates — native package,
+rollout, короткий paired Qwen/decider опыт и новый закреплённый 7200-секундный soak.
 Пока постоянные jobs используют 0.12.2. Matching development outputs не
 доказывают correctness, calibration или причинность прежнего timeout;
 routing выключен, qualification — `not_assessed`.

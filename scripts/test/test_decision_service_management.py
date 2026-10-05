@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import hashlib
 import json
 import os
 import time
@@ -16,6 +17,68 @@ from decision_runtime.contracts import canonical_json,fingerprint
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('resident_manage',ROOT/'scripts/manage-decision-resident-deployment.py')
 manage = importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(manage)
+
+
+class BundleProfileTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name).resolve()
+        self.repo = self.home/'repo';self.repo.mkdir()
+        self.release = self.home/'Library/Application Support/Agat/decision-shadow/releases/fixture';self.release.mkdir(parents=True)
+        for name in ('runtime/decision_runtime', 'venv/bin', 'config', 'logs', 'launchd', 'bin'):
+            (self.release/name).mkdir(parents=True, exist_ok=True)
+        for name in ('runtime/decision_runtime/__main__.py', 'venv/bin/python', 'config/decider-2b.json'):
+            (self.release/name).write_text('fixture\n')
+        (self.release/'venv/bin/python').chmod(0o700)
+        for path in (self.repo/manage.prepare['POLICY'], self.release/'config/policy.json'):
+            path.parent.mkdir(parents=True, exist_ok=True);path.write_bytes((ROOT/manage.prepare['POLICY']).read_bytes())
+
+    def bundle(self, wired, legacy=False):
+        name = 'runtime-0.12.2.json' if legacy else ('runtime-0.12.3-wired-4096.json' if wired else 'runtime-0.12.3.json')
+        profile = json.loads((ROOT/'docs/qualification/local-decisions/performance/profiles'/name).read_text())
+        (self.release/'runtime/decision_runtime/__init__.py').write_text(f'VERSION = "{profile["runtimeVersion"]}"\n')
+        digest = hashlib.sha256()
+        for path in sorted((self.release/'runtime/decision_runtime').glob('*.py')):
+            digest.update(path.name.encode()+b'\0'+path.read_bytes()+b'\0')
+        profile['model']['implementationSha256'] = digest.hexdigest()
+        source = manage.prepare['LEGACY_PROFILE'] if legacy else 'docs/profiles/selected.json'
+        path = self.repo/source;path.parent.mkdir(parents=True, exist_ok=True);path.write_text(canonical_json(profile)+'\n')
+        configs = [manage.launch_agent(root=self.release/'runtime',python=self.release/'venv/bin/python',
+            manifest=self.release/'config/decider-2b.json',policy=self.release/'config/policy.json',log_dir=self.release/'logs',
+            inference_timeout_ms=5000,**manage.prepare['service_options'](profile)),
+            manage.prepare['prometheus_agent'](self.release,self.release/'bin/prometheus',9095)]
+        configs[0]['EnvironmentVariables'].update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+        import plistlib
+        for config in configs:
+            (self.release/'launchd'/f'{config["Label"]}.plist').write_bytes(plistlib.dumps(config))
+        body = {'schemaVersion':'agat.decision.resident-bundle.v1','status':'prepared','destination':str(self.release),
+                'routingEnabled':False,'qualification':'not_assessed','profile':profile,'profileSha256':fingerprint(profile),
+                'sourceFiles':{source:hashlib.sha256(path.read_bytes()).hexdigest()},'copiedFiles':{},'generatedFiles':{},
+                'serviceConfigs':configs}
+        if not legacy: body['profileSourcePath'] = source
+        bundle = sealed(body);(self.release/'deployment.json').write_text(canonical_json(bundle));return bundle
+
+    def validate(self, bundle):
+        with patch.object(Path,'home',return_value=self.home),patch.object(manage,'ROOT',self.repo), \
+             patch.dict(manage.prepare['profile_source'].__globals__, {'ROOT':self.repo}), \
+             patch.object(manage,'verify_manifest',return_value=({'artifactSha256':bundle['profile']['model']['artifactSha256']},None)):
+            return manage.validate_bundle(self.release,bundle['sha256'])
+
+    def test_legacy_and_selected_wired_bundle_recipes_remain_verifiable(self):
+        for wired, legacy in ((False,True),(False,False),(True,False)):
+            with self.subTest(wired=wired,legacy=legacy):
+                bundle = self.bundle(wired,legacy);result,port,monitor = self.validate(bundle)
+                self.assertEqual(result,bundle);self.assertEqual((port,monitor),(8766,9095))
+
+    def test_resealed_source_mismatch_or_dropped_wired_flag_is_rejected(self):
+        bundle = self.bundle(True)
+        bundle.pop('sha256');source = bundle['profileSourcePath'];bundle['sourceFiles'][source] = 'f'*64
+        bundle = sealed(bundle);(self.release/'deployment.json').write_text(canonical_json(bundle))
+        with self.assertRaisesRegex(RuntimeError,'public profile'): self.validate(bundle)
+        bundle = self.bundle(True);bundle.pop('sha256')
+        args = bundle['serviceConfigs'][0]['ProgramArguments'];at = args.index('--wired-limit-mib');del args[at:at+2]
+        bundle = sealed(bundle);(self.release/'deployment.json').write_text(canonical_json(bundle))
+        with self.assertRaisesRegex(RuntimeError,'recipe'): self.validate(bundle)
 
 
 class ServiceManagementTest(unittest.TestCase):
