@@ -9,14 +9,14 @@ from pathlib import Path
 from decision_runtime.artifacts import sealed, verify_seal, write_new
 from decision_runtime.contracts import Request
 from scripts.lib.decision_baselines import development_cases
-from scripts.lib.decision_shared_load import SCHEMA as BLOCK_SCHEMA, benchmark_shared
+from scripts.lib.decision_shared_load import MAX_CASES, SCHEMA as BLOCK_SCHEMA, benchmark_shared
 
 SCHEMA = 'agat.decision.shared-soak.v1'
 
 
 def validate_plan(dataset, duration_s, max_blocks):
     cases = development_cases(dataset)
-    if (not cases or len(cases) > 30
+    if (not cases or len(cases) > MAX_CASES
             or any(Request.from_dict(c['request']).kind not in {'choice', 'boolean'} for c in cases)
             or type(duration_s) is not int or not 1 <= duration_s <= 7200
             or type(max_blocks) is not int or not 1 <= max_blocks <= 128):
