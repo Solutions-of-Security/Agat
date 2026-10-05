@@ -10,6 +10,10 @@
 и проверен до успешного полного повторного rollout. Routing
 выключен, qualification — `not_assessed`.
 
+05.10 MSK [builder/manager дополнены выбором public profile](../../performance/resident-profile-selection.md).
+Новый пакет 0.12.3 с wired budget 4096 МиБ подготовлен; его запуск/recovery
+ещё проверяются отдельно. Ниже сохранён фактический package gate 0.12.2.
+
 ## Подготовка и границы владения
 
 [Builder](../../../../../scripts/prepare-decision-resident-deployment.py)
