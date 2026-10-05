@@ -50,6 +50,11 @@ recipe и совместные Qwen/decider gates.
 jobs 0.12.2 продолжают работать. Native launch/recovery нового package,
 постоянный rollout и полный shared gate ещё впереди.
 
+[Native gate нового wired package](./resident-wired-package-0.12.3.md)
+подтвердил два запуска, совпадающие решения, exit 75, restart и настоящий
+scrape/alert cycle. Все семь временных PID отсутствуют, прежний resident
+восстановлен. Новый постоянный rollout и совместные gates ещё не завершены.
+
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
 [Workflow с реальным RAG](./rag-workflow.md) на runtime 0.12.0 выполнил ещё 12 workflows, 44 embeddings, 36 primary и 18 shadow. Оба источника доставлены на каждый этап; 6/12 итогов ошибаются в арифметике, 6/12 используют групповой синтаксис citations, который прежний renderer не связывает с источниками. Названия фаз входят в prompt, поэтому различия между фазами не имеют причинной интерпретации.

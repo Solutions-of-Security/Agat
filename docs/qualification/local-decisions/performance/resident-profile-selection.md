@@ -74,9 +74,9 @@ cache/deadline/calibration, legacy bundle и resealed argv/source mismatch.
 Первый ограниченный запуск целевых tests отказал на loopback socket;
 повтор с native доступом прошёл.
 
-Следующий gate — запуск нового package через временный собственный label,
-fault injection и настоящий scraper с проверкой cleanup и восстановления
-прежнего resident. После этого — постоянный rollout после CI, короткий
+[Native gate нового package](./resident-wired-package-0.12.3.md) прошёл через
+временный собственный label, fault injection и настоящий scraper; cleanup
+и восстановление прежнего resident перепроверены. Далее — rollout после CI, короткий
 совместный Qwen/decider опыт и новый полный 7200-секундный shared soak.
 Сходство development outputs не закрывает calibration, бизнес-качество
 или причину старого timeout; routing выключен, qualification `not_assessed`.
