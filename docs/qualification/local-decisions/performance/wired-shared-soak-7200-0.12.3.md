@@ -93,8 +93,8 @@ runs не позволяют приписать скорости или преж
 Дискретные observations не доказывают непрерывную стабильность. Closed-loop
 phases не задают production arrival rate; этот gate не является SLO.
 Serving code данным evidence commit не меняется. Родительский полный
-`docs:check` для launcher прошёл: 603 Python tests с четырьмя explicit
-platform skips и 12 Node checks; первоначальные failed checks сохранены
+`docs:check` для launcher прошёл: 603 Python tests с четырьмя skips для явно
+включаемых Docker fixtures и 12 Node checks; первоначальные failed checks сохранены
 и разобраны в [соседнем отчёте](./temporal-launcher-cancellation.md).
 
 Для текущего документационного commit с Node 24.14.0 / Python 3.13.12
