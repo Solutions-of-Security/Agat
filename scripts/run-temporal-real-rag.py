@@ -20,6 +20,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from decision_runtime.mlx_backend import wired_limit_bytes
 spec = importlib.util.spec_from_file_location('embedding_profile', ROOT / 'scripts/profile-embedding-rag.py')
 shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
@@ -36,18 +37,23 @@ SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
 SHADOW_RECOVERY_SOURCES = ['scripts/lib/temporal_shadow_control.py', 'scripts/test/test_temporal_shadow_control.py']
 
 
-def shadow_profile(path):
+def shadow_profile(path, *, wired_limit_mib=None):
     """Admit an explicit export of this runtime with the original experiment settings."""
     from decision_runtime import VERSION, implementation_sha256
     from decision_runtime.contracts import canonical_json, parse_json
+    wired_bytes = wired_limit_bytes(wired_limit_mib)
     path = path.resolve()
-    require(path.is_relative_to(ROOT / 'docs') and path.is_file(), 'Shadow profile must be a file under docs')
+    docs = (ROOT / 'docs').resolve()
+    require(path.is_relative_to(docs) and not path.is_relative_to(docs / 'private') and path.is_file(),
+            'Shadow profile must be a public file under docs')
     expected = json.loads(json.loads((ROOT / SHADOW_REFERENCE).read_text())['decision']['profileJson'])
     expected['runtimeVersion'] = VERSION
     expected['model']['implementationSha256'] = implementation_sha256()
+    if wired_bytes is not None:
+        expected['model']['allocatorWiredLimitBytes'] = wired_bytes
     profile = parse_json(path.read_bytes())
-    require(profile == expected, 'Explicit shadow profile differs from current runtime or frozen experiment settings')
     raw = canonical_json(profile)
+    require(raw == canonical_json(expected), 'Explicit shadow profile differs from current runtime or frozen experiment settings')
     return path.relative_to(ROOT).as_posix(), {'profileJson': raw, 'profileSha256': sha(raw.encode())}
 
 
@@ -151,10 +157,23 @@ def require_resident_shadow_model(manifest_path):
 
 
 def start_shadow_runtime(state, args, port, decision, warmup_request, log):
-    process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
+    wired_mib = getattr(args, 'shadow_wired_limit_mib', None)
+    wired_bytes = wired_limit_bytes(wired_mib)
+    model = json.loads(decision['profile']['profileJson'])['model']
+    require(('allocatorWiredLimitBytes' in model) == (wired_bytes is not None)
+            and model.get('allocatorWiredLimitBytes') == wired_bytes
+            and (wired_bytes is None or type(model['allocatorWiredLimitBytes']) is int),
+            'Shadow wired budget differs from pinned profile')
+    require('wiredLimitMiB' not in decision if wired_bytes is None else
+            type(decision.get('wiredLimitMiB')) is int and decision['wiredLimitMiB'] == wired_mib,
+            'Shadow wired budget differs from recorded plan')
+    arguments = [str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
         '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
         '--max-tokens', '2048', '--cache-limit-mib', '128', '--inference-timeout-ms', '5000',
-        '--exit-on-backend-unavailable', '--port', str(port)], cwd=ROOT,
+        '--exit-on-backend-unavailable', '--port', str(port)]
+    if wired_mib is not None:
+        arguments += ['--wired-limit-mib', str(wired_mib)]
+    process = subprocess.Popen(arguments, cwd=ROOT,
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'})
     state['process'] = process
@@ -184,13 +203,17 @@ def main():
     parser.add_argument('--shadow-python', type=Path, help='Resident MLX Python; requires --shadow-manifest')
     parser.add_argument('--shadow-manifest', type=Path, help='Verified resident decider manifest; enables the v2 shadow gate')
     parser.add_argument('--shadow-profile', type=Path, help='Committed runtime profile export; default retains the historical profile')
+    parser.add_argument('--shadow-wired-limit-mib', type=int, help='Explicit per-process wired budget; requires a matching committed shadow profile')
     parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
     parser.add_argument('--shadow-resources', action='store_true', help='Observe owned-process and system memory during shadow recovery')
     args = parser.parse_args()
+    wired_limit_bytes(args.shadow_wired_limit_mib)
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
     shadow_enabled = args.shadow_manifest is not None
     require(not args.shadow_profile or shadow_enabled, 'An explicit shadow profile requires both shadow runtime arguments')
-    reference_path, explicit_profile = shadow_profile(args.shadow_profile) if args.shadow_profile else (SHADOW_REFERENCE, None)
+    require(args.shadow_wired_limit_mib is None or (shadow_enabled and args.shadow_profile is not None),
+            'An explicit wired budget requires both shadow runtime arguments and a matching shadow profile')
+    reference_path, explicit_profile = shadow_profile(args.shadow_profile, wired_limit_mib=args.shadow_wired_limit_mib) if args.shadow_profile else (SHADOW_REFERENCE, None)
     require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
     require(not args.shadow_resources or args.shadow_recovery, 'Shadow resource diagnostics requires recovery mode')
     version_number = 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
@@ -236,6 +259,8 @@ def main():
                     'referencePath': reference_path, 'policyPath': SHADOW_POLICY, 'warmupCalls': 3 if args.shadow_recovery else 1}
         if explicit_profile:
             decision['referenceFormat'] = 'runtime-profile-v1'
+        if args.shadow_wired_limit_mib is not None:
+            decision['wiredLimitMiB'] = args.shadow_wired_limit_mib
     model_root = Path(os.environ.get('OLLAMA_MODELS', str(Path.home() / '.ollama/models')))
     for name, digest in shared.MODELS.items():
         require(sha((model_root / 'manifests/registry.ollama.ai/library' / name.replace(':', '/')).read_bytes()) == digest,
