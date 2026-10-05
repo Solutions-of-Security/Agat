@@ -62,6 +62,8 @@ class OwnedRuntime:
         command = [str(args.python.absolute()), '-m', 'decision_runtime', 'serve', '--manifest', str(args.manifest.resolve()),
                    '--policy', str(args.policy.resolve()), '--cache-limit-mib', '128', '--max-tokens', '2048',
                    '--inference-timeout-ms', str(deadline_ms), '--exit-on-backend-unavailable', '--port', str(port)]
+        if getattr(args, 'wired_limit_mib', None) is not None:
+            command += ['--wired-limit-mib', str(args.wired_limit_mib)]
         self.log = (directory/f'{name}.stderr').open('wb')
         self.process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                         stderr=self.log, env={**os.environ, 'PYTHONUNBUFFERED': '1'})
@@ -134,6 +136,7 @@ def main():
     parser.add_argument('--policy', type=Path, required=True)
     parser.add_argument('--request', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--wired-limit-mib', type=int)
     args = parser.parse_args()
     ensure(not args.output.exists(), 'Output already exists')
     request = Request.from_dict(read_json(args.request))

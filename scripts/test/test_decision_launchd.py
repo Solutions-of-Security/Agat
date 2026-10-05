@@ -83,6 +83,7 @@ class LaunchdProbeTest(unittest.TestCase):
             self.state = 'failed'
 
         def config(**kwargs):
+            self.config_kwargs = kwargs
             self.config = {'Label':kwargs['label'], 'ProgramArguments':['python', '--port', '8766'],
                            'StandardOutPath':str(kwargs['log_dir']/'runtime.out.log'),
                            'StandardErrorPath':str(kwargs['log_dir']/'runtime.err.log')}
@@ -140,6 +141,25 @@ class LaunchdProbeTest(unittest.TestCase):
         self.assertEqual(self.scores, [])
         self.assertEqual(self.signals, [])
         self.assertEqual(report['ownedPids'], [111,112,113])
+
+    def test_wired_profile_requires_matching_opt_in_and_reaches_service_recipe(self):
+        self.profile['model']['allocatorWiredLimitBytes'] = 4096 * 1024 * 1024
+        self.expected.write_text(canonical_json(self.profile))
+        self.args += ['--wired-limit-mib', '4096']
+        self.assertEqual(probe.main(self.args), 0)
+        self.assertEqual(self.config_kwargs['wired_limit_mib'], 4096)
+        report = json.loads(self.output.read_text())
+        self.assertEqual(report['expectedProfileSha256'], fingerprint(self.profile))
+        self.assertTrue(report['checks']['expectedProfileMatched'])
+
+    def test_wired_profile_mismatch_rejects_before_launch_or_scoring(self):
+        self.profile['model']['allocatorWiredLimitBytes'] = 4096 * 1024 * 1024
+        self.expected.write_text(canonical_json(self.profile))
+        self.assertEqual(probe.main(self.args), 1)
+        self.assertEqual(self.scores, [])
+        self.assertEqual(self.state, 'absent')
+        self.assertIsNone(self.config)
+        self.assertFalse(self.directory.exists())
 
     def test_startup_failure_retains_children_inventory_and_logs(self):
         self.health_error = True

@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from decision_runtime.artifacts import read_json, sealed, write_new
 from decision_runtime.contracts import Request, canonical_json, fingerprint
+from decision_runtime.mlx_backend import wired_limit_bytes
 from scripts.lib.decision_performance import profile_from_health
 from scripts.lib.decision_service import launch_agent, write_launch_agent
 from scripts.lib.decision_monitoring import PrometheusObservation
@@ -101,7 +102,8 @@ def harness_identity():
     return commit, sources
 
 
-def expected_profile(path, deadline_ms):
+def expected_profile(path, deadline_ms, wired_limit_mib=None):
+    wired_bytes = wired_limit_bytes(wired_limit_mib)
     if path is None:
         return None
     profile = read_json(path)
@@ -113,6 +115,7 @@ def expected_profile(path, deadline_ms):
     ensure(execution.get('kind') == 'isolated-process' and execution.get('startMethod') == 'spawn'
            and execution.get('deadlineMs') == deadline_ms
            and model.get('maxInputTokens') == 2048 and model.get('allocatorCacheLimitBytes') == 128*1024*1024
+           and model.get('allocatorWiredLimitBytes') == wired_bytes
            and profile['calibration']['status'] == 'uncalibrated',
            'Probe configuration does not match the expected profile')
     return profile
@@ -142,6 +145,7 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--expected-profile', type=Path)
     parser.add_argument('--inference-timeout-ms', type=int, default=2000)
+    parser.add_argument('--wired-limit-mib', type=int)
     parser.add_argument('--evidence-dir', type=Path, help='New private directory to retain plist and logs, including failed startup')
     parser.add_argument('--prometheus', type=Path, help='Pinned native Prometheus executable for optional real scrape/recovery observation')
     parser.add_argument('--promtool', type=Path, help='Matching pinned native promtool executable')
@@ -150,7 +154,7 @@ def main(argv=None):
         ensure(platform.system() == 'Darwin', 'This probe requires macOS launchd')
         ensure(not args.output.exists(), 'Output already exists')
         ensure(100 <= args.inference_timeout_ms <= 10000, 'Invalid inference deadline')
-        expected = expected_profile(args.expected_profile, args.inference_timeout_ms)
+        expected = expected_profile(args.expected_profile, args.inference_timeout_ms, args.wired_limit_mib)
         ensure(bool(args.prometheus) == bool(args.promtool), 'Supply both --prometheus and --promtool')
         ensure(not args.prometheus or (args.evidence_dir is not None and expected is not None),
                'Monitoring requires persistent private evidence and an expected profile')
@@ -231,7 +235,8 @@ def main(argv=None):
         signal.signal(signal.SIGTERM, interrupted)
         try:
             config = launch_agent(root=args.service_root, python=args.python, manifest=args.manifest, policy=args.policy,
-                                  log_dir=directory, label=label, inference_timeout_ms=args.inference_timeout_ms)
+                                  log_dir=directory, label=label, inference_timeout_ms=args.inference_timeout_ms,
+                                  wired_limit_mib=args.wired_limit_mib)
             # Reserve an ephemeral loopback port; both starts use that same port.
             import socket
             with socket.socket() as reservation:
