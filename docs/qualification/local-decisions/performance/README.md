@@ -16,8 +16,14 @@ warmup без ошибок или смены решений. 95 supervisor/metri
 первого отказа и независимый offline verifier. Настоящий 180-секундный smoke
 завершил 295 measured calls, 30 overlapping pairs и проверенный counter
 245 → 399; ошибки и смена decider отсутствуют, temporary cleanup подтверждён.
-564 Python / 12 Node checks прошли. Полный 7200-секундный совместный gate
-не запускался; по указанию пользователя работа завершается на этом этапе.
+564 Python / 12 Node checks прошли. В том этапе полный совместный gate
+не запускался; работа была остановлена по тогдашнему указанию пользователя.
+
+[Полная попытка после возобновления работы](./shared-soak-warmup-failure.md)
+05.10 MSK остановилась на decider warmup `inference_timeout` до measured
+нагрузки. Failed plan, journal и checkpoints сохранены; поздний event
+подтвердил текущий exit 75 и recovery с тем же профилем. Контроллер исправлен,
+чтобы последующая недоступность health не подменяла первичный request fault.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 

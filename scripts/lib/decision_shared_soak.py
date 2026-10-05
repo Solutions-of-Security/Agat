@@ -100,7 +100,12 @@ def shared_soak(dataset, decision_url, primary_factory, directory, profile, *, d
         failed = any(row['status'] not in {'ok', 'abstain'} for row in all_rows)
         if primary_identity is None: primary_identity = copy.deepcopy(report['primary'])
         cancellation = cancelled()
-        if observation_error:
+        # Final health/residence checks run after the requests. A backend
+        # retirement can fail those checks without changing the pinned profile;
+        # retain the block's first request fault instead of its consequences.
+        if failed:
+            stopped = report['stoppedReason'] or 'request_failed'
+        elif observation_error:
             stopped = 'observation_failed';failure = observation_error
         elif changes['decision']:
             stopped = 'decision_changed_across_blocks'
@@ -109,7 +114,7 @@ def shared_soak(dataset, decision_url, primary_factory, directory, profile, *, d
         elif (report['primary'] != primary_identity or not report['primaryStable'] or len(report['primaryResidence']) != len(report['phases']) + 1
               or any(r['status'] != 'resident' for r in report['primaryResidence'])):
             stopped = 'primary_changed_or_unloaded'
-        elif failed or report['repeatDecisionChanges']['decision']:
+        elif report['repeatDecisionChanges']['decision']:
             stopped = report['stoppedReason'] or 'request_failed'
         elif report['status'] != 'observed' and report['stoppedReason'] != 'time_budget':
             stopped = report['stoppedReason'] or 'block_degraded'
