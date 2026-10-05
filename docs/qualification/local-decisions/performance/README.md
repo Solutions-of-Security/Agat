@@ -38,6 +38,12 @@ attempts. 34 блока прошли; в блоке 35 decider timeout заве�
 Причинность системных memory observations не установлена; следующий этап —
 отдельный opt-in memory profile и новые native gates.
 
+[Opt-in wired-memory budget 0.12.3](./wired-memory-budget.md) проверен до
+model loading и в настоящем 30-call decider pilot. Оба новых профиля
+экспортированы; результаты/tokens совпали с baseline, resident 0.12.2
+восстановлен. Это короткий отдельный опыт; следующий этап — новый resident
+recipe и совместные Qwen/decider gates.
+
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
 [Workflow с реальным RAG](./rag-workflow.md) на runtime 0.12.0 выполнил ещё 12 workflows, 44 embeddings, 36 primary и 18 shadow. Оба источника доставлены на каждый этап; 6/12 итогов ошибаются в арифметике, 6/12 используют групповой синтаксис citations, который прежний renderer не связывает с источниками. Названия фаз входят в prompt, поэтому различия между фазами не имеют причинной интерпретации.

@@ -1,6 +1,6 @@
 # Локальный исполнитель типизированных решений
 
-Статус на 03.10.2026: экспериментальный runtime `0.12.2` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса и leases; наблюдения доступны в технических деталях запуска. Отдельного UI настройки и автоматической маршрутизации пока нет.
+Статус на 05.10.2026: экспериментальный runtime `0.12.3` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса, leases и [редакторе shadow-проверки](./qualification/local-decisions/shadow/editor.md); наблюдения доступны в технических деталях запуска. Автоматическая маршрутизация не включена. Постоянный resident пока использует 0.12.2.
 
 Добавлены [экспертная разметка, калибровка и отдельная проверка holdout](./qualification/local-decisions/calibration/README.md). Реальные экспертные данные пока не предоставлены; инженерный прогон завершился `not_qualified`, обученная температура не назначена default.
 
@@ -37,6 +37,8 @@
 В `0.12.2` [исправлено освобождение HTTP admission](./qualification/local-decisions/performance/http-admission-release.md): после завершения вычисления и cancellation watcher слот освобождается до записи ответа. Следующий последовательный запрос больше не получает `busy` из-за незавершённого response writer; настоящая конкуренция во время inference по-прежнему отвергается. Новый профиль закреплён отдельно; полный двухчасовой повтор ещё требуется.
 
 Отдельный offline [baseline по заголовкам заявок](./qualification/local-decisions/baselines/rules.md) сравнили на тех же 15 development-входах: 2 правильные метки, один принятый ответ. Покрытие недостаточно; правила не подключены к serving.
+
+В `0.12.3` добавлен [явный per-process wired-memory budget](./qualification/local-decisions/performance/wired-memory-budget.md) с проверкой macOS/device bounds до загрузки модели. Default не вызывает setter; opt-in меняет serving fingerprint. Настоящий 30-call pilot с 4096 MiB сохранил решения/tokens прежнего baseline и deadline 5000 мс, затем восстановил resident 0.12.2. Совместный Qwen/decider gate и причинность прежнего timeout ещё не подтверждены.
 
 ## Что реализовано
 
