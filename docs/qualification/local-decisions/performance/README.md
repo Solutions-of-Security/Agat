@@ -53,7 +53,13 @@ jobs 0.12.2 продолжают работать. Постоянный rollout 
 [Native gate нового wired package](./resident-wired-package-0.12.3.md)
 подтвердил два запуска, совпадающие решения, exit 75, restart и настоящий
 scrape/alert cycle. Все семь временных PID отсутствуют, прежний resident
-восстановлен. Новый постоянный rollout и совместные gates ещё не завершены.
+восстановлен. Новый постоянный rollout ещё не завершён.
+
+[Совместный wired package опыт](./wired-package-shared-load-0.12.3.md)
+после исправления collector завершил два повтора: 480 measured calls,
+60 HTTP-overlapping pairs, прежние signatures/tokens, counter 0 → 244 и
+полный cleanup. Первый failed collector protocol сохранён отдельно.
+Полный 7200-секундный gate ещё открыт.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
