@@ -38,8 +38,11 @@ destination=Path(sys.argv[1]);phase=sys.argv[2];processes=[]
 case=retention.PrivateLogRetentionTests();case.setUp()
 script=destination/'model-fixture.py';script.write_text(fixture.FIXTURE)
 def announce():
-    (destination/'ready.json').write_text(json.dumps({'groups':[p.pid for p in processes],
-        'ownedPids':sorted(set().union(*(real_inventory(p.pid)[0] for p in processes)))}))
+    payload=json.dumps({'groups':[p.pid for p in processes],
+        'ownedPids':sorted(set().union(*(real_inventory(p.pid)[0] for p in processes)))})
+    # The parent must never observe an existing but empty/truncated admission file.
+    pending=destination/'ready.tmp';pending.write_text(payload)
+    pending.replace(destination/'ready.json')
 def spawn(args,**kwargs):
     if args==['ollama','serve']:
         ready=destination/'model-ready'
