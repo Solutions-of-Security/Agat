@@ -2,9 +2,9 @@
   "schemaVersion": "agat.decision.caller-sli-public-summary.v1",
   "status": "diagnostic_tooling_verified",
   "trafficKind": "diagnostic_fixture",
-  "sourceCommit": "430f44d778f5eabc5b6cac62da272147c23eed5f",
+  "sourceCommit": "81c30f0bc49f3aec131cc52afcd125829221daad",
   "sourceFiles": {
-    "apps/coordinator/src/database.ts": "2ff65bd69481b28c643960c19e4425316ec27fdb6a4d61a0f2d0ba24b47ce458",
+    "apps/coordinator/src/database.ts": "96339d5a2a4c65181f246e8aa8ab08f047d25197e74e4cafb8240ebb7e552348",
     "apps/coordinator/src/local-decisions.ts": "6221beda56b91860a9cf1dd4ba65d18d155d18f64b82b7e674ca05d93c2af605",
     "decision_runtime/artifacts.py": "cdc1567e77928986a9cc3e79f7e703146bd5d8741f50d0f36cc2857100b10b20",
     "decision_runtime/contracts.py": "07f52ea645e891a2b0313bdd783f02d7312cf426ab3a4646cf49af420049c140",
@@ -23,7 +23,7 @@
     2,
     1
   ],
-  "independentAuditChecks": 8,
+  "independentAuditChecks": 9,
   "ownedProcessesAbsent": 11,
   "earlierOwnedProcessesAbsent": 17,
   "earlierNativeFailuresPreserved": 2,
@@ -73,15 +73,15 @@
       },
       "callerLatencyMs": {
         "count": 9,
-        "max": 1002.216,
-        "p50": 42.567,
-        "p95": 1002.216
+        "max": 1000.657,
+        "p50": 49.063,
+        "p95": 1000.657
       },
       "scoringLatencyMs": {
         "count": 4,
-        "max": 30.863,
-        "p50": 27.383,
-        "p95": 30.863
+        "max": 34.562,
+        "p50": 31.441,
+        "p95": 34.562
       }
     },
     "legacy-and-missing": {
@@ -122,15 +122,15 @@
       },
       "callerLatencyMs": {
         "count": 9,
-        "max": 1002.216,
-        "p50": 42.567,
-        "p95": 1002.216
+        "max": 1000.657,
+        "p50": 49.063,
+        "p95": 1000.657
       },
       "scoringLatencyMs": {
         "count": 5,
-        "max": 30.863,
-        "p50": 29.482,
-        "p95": 30.863
+        "max": 34.562,
+        "p50": 31.441,
+        "p95": 34.562
       }
     },
     "replay-only": {
@@ -187,18 +187,19 @@
     }
   },
   "rawFilePins": {
-    "known": "4b3d081f7c4869770aaea680459cd007e7f767be3128af3f60212ad2f036c083",
-    "legacy-and-missing": "a955455a8c1d2887227d1e9b662d00bd6b4debc5b5055811ea574c914a7a5754",
-    "replay-only": "93f60bde1c821fb801fb457e81e01669dfab3cf1e6531a380080e757092f4df8",
+    "known": "fa7f3e8b9a715d136f8de49061a83d57d7aab3c0f3b422d65857a06cb1fc3f26",
+    "legacy-and-missing": "2ac04341e56f5ca3137605cf09d3991de2868f27ca9a7d6254bd2e9f3f8641b2",
+    "replay-only": "cbab1923560372e5858ee640e99e1009a124cf46527cc22d19362b105f591221",
     "duplicate": "738aa0c2cdba78cc0ff639f5c94cef7d43806506bc8ac7b95ce0668f643b08b3"
   },
-  "auditFileSha256": "a638b0ee58461d4677e7eed560d3aed6f151656679b57201ad9796f5b099f3e9",
+  "auditFileSha256": "dfd4e9bda82715a3a96ddbb88efad0ae36d7d416b8d8e8a650e72c0c212a18fa",
   "archive": {
-    "fileCount": 115,
-    "archiveBytes": 81908764,
-    "archiveFileSha256": "18c42b661fcb91591be13e2d32a67cf634cd66fad7a7d4c7acb79616dd8fb06a",
+    "fileCount": 174,
+    "archiveBytes": 123015376,
+    "archiveFileSha256": "c2e8b58f91eb4e3d591c9a159e83f6fe42ce9898a612b2ba7e6c70b36c1c4fc5",
     "measurementCommits": [
       "430f44d778f5eabc5b6cac62da272147c23eed5f",
+      "81c30f0bc49f3aec131cc52afcd125829221daad",
       "b5fdadaf9925e2300d77e39248850fd72e77928e"
     ],
     "everyFileShaAndSizeVerified": true,
@@ -206,9 +207,9 @@
   },
   "tests": {
     "sliTargeted": 18,
-    "coordinatorShadowTargeted": 21,
-    "coordinatorFull": 324,
-    "coordinatorFullPassed": 296,
+    "coordinatorShadowTargeted": 22,
+    "coordinatorFull": 325,
+    "coordinatorFullPassed": 297,
     "coordinatorOptInSkipped": 28,
     "workerFull": 146,
     "workerOptionalSkipped": 3,
@@ -220,7 +221,8 @@
     "docsNode": 12,
     "fullNpmTestPassed": true,
     "typecheckPassed": true,
-    "processTraceRegressionFailedBeforeFix": true
+    "processTraceRegressionFailedBeforeFix": true,
+    "processSpanRollbackRegressionFailedBeforeFix": true
   },
   "scope": "provided_traces_only",
   "populationCoverageVerified": false,
@@ -229,5 +231,8 @@
   "sloAccepted": false,
   "routingEnabled": false,
   "qualification": "not_assessed",
-  "sha256": "09f02191711388dfd3021c93ff8138bc2c449beac7ee529f14f5a4979fb3aa6e"
+  "previousSuccessfulOwnedProcessesAbsent": 11,
+  "nativeAttempts": 4,
+  "previousSuccessfulRepeatPreserved": true,
+  "sha256": "95d63c73e3527e487d009ca63e33a11948c2710d44babbfd196aa9a0a6d3cd1c"
 }

@@ -98,7 +98,7 @@ Regression требует valid trace ID уже до lease, совпадение
 
 [Allowlist summary](../evidence/2026-10-07/caller-sli/result-summary.json)
 сохраняет результаты опыта на measurement commit
-`430f44d778f5eabc5b6cac62da272147c23eed5f`. Выполнены 10 client steps через
+`81c30f0bc49f3aec131cc52afcd125829221daad`. Выполнены 10 client steps через
 настоящий loopback HTTP с явно контролируемым fixture backend, сохранены
 12 run traces в обычном SQLite coordinator. Computed, abstain, backend
 error, busy, timeout, cancellation, nonlistening-port fault, injected
@@ -110,8 +110,8 @@ Safe replay сохранил исходное timing с provenance без нов
 timing содержит девять observations: два ok, один abstain, один error и
 пять unavailable; один safe replay исключён из новых calls. Известный
 timely numerator — три, denominator — девять. Caller p50/p95/max для
-всех исходов — 42,567 / 1002,216 / 1002,216 ms, scoring p50/p95/max для
-четырёх computed/error результатов — 27,383 / 30,863 / 30,863 ms. В
+всех исходов — 49,063 / 1000,657 / 1000,657 ms, scoring p50/p95/max для
+четырёх computed/error результатов — 31,441 / 34,562 / 34,562 ms. В
 длинном caller sample находится специально вызванный network timeout;
 быстрая ошибка не стала успешным latency observation.
 
@@ -121,11 +121,11 @@ measurement имеет нулевую denominator, null ratios и exit 2. Пов
 run/stage отклонён с failed receipt / exit 1. Никакой из этих measurements
 не принят за real workflow SLO или предметную qualification.
 
-Независимый audit прошёл восемь checks: raw file pins, committed/current
+Независимый audit прошёл девять checks: raw file pins, committed/current
 восемь source bindings, timing boundaries, counts/ratios/nearest-rank
 quantiles, stored result/profile/input bindings, replay/fallback и cleanup.
 11 PID финальной попытки отсутствуют; ещё 17 recorded PID из первых двух
-попыток также завершены. Resident сохранил четыре PID, 34 dependency pins,
+попыток и 11 из прежнего успешного повтора также завершены. Resident сохранил четыре PID, 34 dependency pins,
 profile/registration, fresh scrape и counters 1/0/0 без новых MLX calls.
 
 Первая попытка сохранила ошибочное ожидание одного TCP errno для bound
@@ -135,8 +135,12 @@ worker поведения. [Python socket documentation](https://docs.python.org
 описывает timeout на connect и возможность отдельного timeout OS stack;
 конкретная причина данного errno не установлена. Вторая попытка выявила
 пустой process trace ID; failing regression воспроизведён до product fix,
-21 targeted checks и полный coordinator набор 324 tests после него прошли
-(296 pass, 28 opt-in skips).
+21 targeted checks и полный coordinator набор 324 tests после него прошли.
+Дополнительный exporter regression выявил незавершённый process root span
+при rollback внешней транзакции. Исправленный final набор — 22 targeted,
+325 coordinator tests (297 pass, 28 opt-in skips); оба воспроизведённых
+product faults и все неуспешные test fixtures сохранены. Финальный native
+повтор выполнен уже на committed rollback fix.
 
 Полный `npm test` прошёл; после trace fix весь coordinator набор перепроверен.
 Worker — 146 tests / три optional skips, runtime — 135 / три optional skips,
@@ -146,10 +150,10 @@ docs — 700 Python / четыре Docker opt-in skips и 12 Node checks, links 
 process catalog — pass. Необязательные native Docker scenarios выполняются
 отдельными CI integration jobs, а не приписываются локальному тесту.
 
-Все три попытки, raw traces/wire metrics, failed/passed regression logs,
-оба audit и два measured Git sources сохранены в private архиве:
-115 files, 81 908 764 bytes, SHA-256
-`18c42b661fcb91591be13e2d32a67cf634cd66fad7a7d4c7acb79616dd8fb06a`.
+Все четыре попытки, raw traces/wire metrics, failed/passed regression logs,
+audits и три measured Git sources сохранены в private архиве:
+174 files, 123 015 376 bytes, SHA-256
+`c2e8b58f91eb4e3d591c9a159e83f6fe42ce9898a612b2ba7e6c70b36c1c4fc5`.
 Каждый file SHA/size и CRC проверены; идентичная копия находится в
 исходном workspace `docs/private`. Следующие gates — assigned-attempt
 inventory, фактический boot/login, согласование owner/SLO и независимые
