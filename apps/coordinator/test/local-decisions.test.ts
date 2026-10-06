@@ -6,6 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
 
 import { AgatStore } from "../src/database.js";
 import { createDecisionShadowLease, decisionSha256, normalizeDecisionShadowConfig, validateDecisionShadowResult,
@@ -13,6 +14,7 @@ import { createDecisionShadowLease, decisionSha256, normalizeDecisionShadowConfi
   DECISION_CALLER_TIMING_VERSION,
   type DecisionShadowConfig, type DecisionShadowLease } from "../src/local-decisions.js";
 import { normalizeProcessGraph } from "../src/process-engine.js";
+import { CoordinatorTelemetry } from "../src/telemetry.js";
 import type { ProcessGraph } from "../src/types.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -299,6 +301,34 @@ test("process root trace exists before dispatch and remains stable after SQLite 
     store.close(); store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
     assert.deepEqual(store.getRunTrace(runId), before);
   } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("process root span ends when the enclosing start transaction rolls back", async () => {
+  const exporter = new InMemorySpanExporter();
+  const telemetry = new CoordinatorTelemetry({ enabled: true, serviceName: "agat-caller-rollback", exporterEndpoint: "", exporter });
+  const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true, telemetry });
+  const prepare = store.db.prepare.bind(store.db);
+  try {
+    node(store);
+    store.db.prepare = sql => {
+      const statement = prepare(sql);
+      if (/INSERT INTO events/.test(sql)) {
+        const get = statement.get.bind(statement);
+        statement.get = (...args) => {
+          if (args.includes("process.scenario.started")) throw new Error("Controlled post-start event fault");
+          return get(...args);
+        };
+      }
+      return statement;
+    };
+    assert.throws(() => start(store), /Controlled post-start event fault/);
+    store.db.prepare = prepare;
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM runs").get() as any).count, 0);
+    await telemetry.forceFlush();
+    const spans = exporter.getFinishedSpans().filter(span => span.name === "invoke_workflow agat");
+    assert.equal(spans.length, 1);
+    assert.equal(spans[0]!.attributes["agat.run.status"], "failed");
+  } finally { store.db.prepare = prepare; store.close(); await telemetry.shutdown(); }
 });
 
 test("feature flag, old workers, malformed responses and missing observations always retain the primary path", () => {

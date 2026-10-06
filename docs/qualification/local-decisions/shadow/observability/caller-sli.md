@@ -85,6 +85,11 @@ Native reopen проверка обнаружила прежний дефект 
 только при следующем открытии SQLite и меняла manifest hash. Run теперь
 получает root identity через существующий coordinator telemetry до
 dispatch; она сохраняется вместе с run. При ошибке создания span закрывается.
+Внешняя транзакция также учитывает созданные process root spans: post-start
+SQL failure или неуспешный commit закрывает их, успешный commit оставляет
+span на lifecycle run. Реальный in-memory OpenTelemetry exporter regression
+воспроизводит post-start rollback без DB run и требует завершённый failed
+span; до fix exporter не получал его.
 Regression требует valid trace ID уже до lease, совпадение dispatch trace
 и неизменность полного saved trace после reopen. Формат identity согласован
 с [W3C Trace Context](https://www.w3.org/TR/trace-context/#trace-id).

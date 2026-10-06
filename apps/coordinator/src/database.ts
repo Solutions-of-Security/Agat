@@ -1102,6 +1102,7 @@ export class AgatStore {
   private readonly artifactObjectLockMode: "none" | "GOVERNANCE" | "COMPLIANCE";
   private artifactObjectStore: ArtifactObjectStore | null;
   private transactionDepth = 0;
+  private readonly transactionProcessSpans = new Set<string>();
 
   constructor(dbPath: string, options: StoreOptions = {}) {
     this.knowledgeSearchMaxCandidates = normalizeKnowledgeSearchMaxCandidates(options.knowledgeSearchMaxCandidates);
@@ -10398,6 +10399,7 @@ export class AgatStore {
       );
       const placement = this.assertProjectQueueCapacity(project);
       const runTrace = this.telemetry.startRun({ runId, projectId: project });
+      if (this.transactionDepth > 0) this.transactionProcessSpans.add(runId);
     try {
       this.db
         .prepare(`
@@ -16455,11 +16457,15 @@ export class AgatStore {
     if (this.transactionDepth > 0) return callback();
     this.db.exec("BEGIN IMMEDIATE");
     this.transactionDepth = 1;
+    this.transactionProcessSpans.clear();
     try {
       const result = callback();
       this.db.exec("COMMIT");
       return result;
     } catch (error) {
+      for (const runId of this.transactionProcessSpans) {
+        this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      }
       try { this.db.exec("ROLLBACK"); }
       catch (rollbackError) {
         // A failed COMMIT may already have released a broken connection. Its
@@ -16468,6 +16474,7 @@ export class AgatStore {
       }
       throw error;
     } finally {
+      this.transactionProcessSpans.clear();
       this.transactionDepth = 0;
     }
   }
