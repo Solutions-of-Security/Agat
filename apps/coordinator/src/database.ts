@@ -12970,8 +12970,11 @@ export class AgatStore {
         .all(runId) as Row[]).flatMap((stage) => {
         const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
         const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
+        const decisionLease = activity.decisionShadowLease as DecisionShadowLease | undefined;
         return activity.decisionShadowObservation ? [{ stageId: String(stage.id),
-          profileSha256: (activity.decisionShadowLease as DecisionShadowLease | undefined)?.profileSha256 ?? null,
+          profileSha256: decisionLease?.profileSha256 ?? null,
+          inputSha256: decisionLease?.inputSha256 ?? null,
+          callerTimeoutMs: decisionLease?.timeoutMs ?? null,
           context: decisionConfig ? { kind: decisionConfig.kind, question: decisionConfig.question,
             options: decisionConfig.options } : null,
           observation: activity.decisionShadowObservation }] : [];

@@ -209,6 +209,13 @@ npm run test:decision
 
 ## Следующий этап
 
+[Caller timing и SLI](./qualification/local-decisions/shadow/observability/caller-sli.md)
+измеряют полный local HTTP boundary отдельно от scoring. Negotiation
+сохраняет совместимость со старыми leases/worker responses; offline CLI
+сверяет источники, profile/input bindings и deadline, учитывает ошибки,
+неизвестные legacy timing и replay. [Owner/SLO proposal](./qualification/local-decisions/shadow/observability/resident-service-acceptance.md)
+ещё не согласован; предоставленные trace не доказывают полноту реального потока.
+
 Собрать разрешённые реальные примеры с экспертными метками и группировкой по документам/шаблонам; зафиксировать допустимые ошибки и нужное покрытие. Провести предметное испытание через готовые команды разметки, фиксации плана, калибровки и квалификации. При недостаточном качестве меток сравнить более сильные checkpoints или дообучение. Loader dataset запрещает перенос одной группы, исходного документа или одинакового нормализованного текста между splits; перефразы и близкие шаблоны требуют предметной проверки.
 
 Для текущего корпуса v2 нужны новые независимые группы, calibration-примеры и запросы доступа. Development-разбор выделил случаи `agat-source-019` и `agat-source-021`: достаточность сведений и зависимость от порядка вариантов. Подробности и границы сравнения — в [протоколе третьего блока](./qualification/local-decisions/development/README.md).

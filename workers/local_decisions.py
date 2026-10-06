@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 PROFILE = "local_decision_shadow_v2"
 SUPPORTED_PROFILES = ("local_decision_shadow_v1", PROFILE)
 MAX_RESPONSE = 64 * 1024
+CALLER_TIMING_VERSION = "agat.decision.caller-timing.v1"
 
 
 def validate_decision_url(url: str) -> str:
@@ -34,6 +35,18 @@ class LocalDecisionClient:
         self.url = validate_decision_url(url)
 
     def decide(self, shadow: dict, cancelled: threading.Event | None = None) -> dict:
+        """Measure the local HTTP call through response parsing and transport cleanup."""
+        # Older coordinators do not admit timing metadata. Emit only when negotiated.
+        if not isinstance(shadow, dict) or shadow.get("callerTimingVersion") != CALLER_TIMING_VERSION:
+            return self._decide(shadow, cancelled)
+        started = time.monotonic()
+        observation = self._decide(shadow, cancelled)
+        return {**observation, "callerTiming": {
+            "schemaVersion": CALLER_TIMING_VERSION, "clock": "monotonic", "boundary": "local_http_call",
+            "durationMs": round(max(0.0, time.monotonic()-started)*1000, 3),
+        }}
+
+    def _decide(self, shadow: dict, cancelled: threading.Event | None = None) -> dict:
         """A watchdog closes the transport at a wall-clock deadline, including slow reads.
 
         A timeout discards the response. Isolated runtimes supporting the explicit

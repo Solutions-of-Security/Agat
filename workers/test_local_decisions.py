@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 from agat_worker import LocalModelClient, _execute_lease_body
-from local_decisions import LocalDecisionClient, validate_decision_url
+from local_decisions import CALLER_TIMING_VERSION, LocalDecisionClient, validate_decision_url
 from telemetry import ExecutionMetrics, WorkerTelemetry
 from decision_runtime.contracts import Request, fingerprint
 from decision_runtime.engine import DecisionEngine
@@ -51,6 +51,38 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["value"], 0)
         self.assertIsNot(result["value"], False)
+
+    def test_negotiated_timing_covers_local_http_and_legacy_envelope_is_unchanged(self):
+        legacy = self.client.decide(self.shadow)
+        self.assertEqual(set(legacy), {"result"})
+        started = time.monotonic()
+        measured = self.client.decide({**self.shadow, "callerTimingVersion": CALLER_TIMING_VERSION})
+        wall_ms = (time.monotonic()-started)*1000
+        timing = measured["callerTiming"]
+        self.assertEqual({k: v for k, v in timing.items() if k != "durationMs"}, {
+            "schemaVersion": CALLER_TIMING_VERSION, "clock": "monotonic", "boundary": "local_http_call"})
+        self.assertGreaterEqual(timing["durationMs"], measured["result"]["durationMs"]-0.001)
+        self.assertLessEqual(timing["durationMs"], wall_ms+0.001)
+        future = self.client.decide({**self.shadow, "callerTimingVersion": "unknown"})
+        self.assertEqual(set(future), {"result"})
+
+    def test_negotiated_timeout_records_elapsed_time_instead_of_model_scoring_duration(self):
+        score = self.backend.score
+        def delayed(parsed):
+            time.sleep(0.2)
+            return score(parsed)
+        with patch.object(self.backend, "score", side_effect=delayed):
+            measured = self.client.decide({**self.shadow, "timeoutMs": 100, "callerTimingVersion": CALLER_TIMING_VERSION})
+        self.assertEqual((measured["status"], measured["reason"]), ("unavailable", "timeout"))
+        self.assertGreaterEqual(measured["callerTiming"]["durationMs"], 90)
+        self.assertLess(measured["callerTiming"]["durationMs"], 600)
+
+    def test_negotiated_cancelled_call_keeps_failure_timing_without_contacting_backend(self):
+        cancelled = threading.Event(); cancelled.set()
+        measured = self.client.decide({**self.shadow, "callerTimingVersion": CALLER_TIMING_VERSION}, cancelled)
+        self.assertEqual((measured["status"], measured["reason"]), ("unavailable", "cancelled"))
+        self.assertGreaterEqual(measured["callerTiming"]["durationMs"], 0)
+        self.assertEqual(self.backend.calls, 0)
 
     def test_server_deadline_survives_http_as_bound_error_and_health_becomes_unavailable(self):
         from decision_runtime.isolated import IsolatedBackend
