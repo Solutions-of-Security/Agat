@@ -59,7 +59,8 @@ scrape/alert cycle. Все семь временных PID отсутствую�
 после исправления collector завершил два повтора: 480 measured calls,
 60 HTTP-overlapping pairs, прежние signatures/tokens, counter 0 → 244 и
 полный cleanup. Первый failed collector protocol сохранён отдельно.
-Полный 7200-секундный gate ещё открыт.
+Результат последующего [полного 7200-секундного gate](./wired-shared-soak-7200-0.12.3.md)
+приведён отдельно.
 
 [Timeout collector в полном wired soak](./wired-soak-collector-timeout-0.12.3.md),
 06.10 MSK: исходный gate failed после 291,894 с; все 668 сохранённых
@@ -78,6 +79,15 @@ checks прошли. Это tooling для нового native gate с fallback/
 06.10: SIGTERM/SIGINT кооперативно завершают owned process groups и сохраняют
 failed report. Четыре OS signal regression и handler restoration прошли;
 повторный сигнал не прерывает cleanup. GPU/profile и Workflow Commands не меняются.
+
+[Полный wired shared soak 0.12.3](./wired-shared-soak-7200-0.12.3.md),
+06.10 MSK: исходные 7200 measured seconds пройдены — 7226,882 с,
+16 353 measured и 276 warmup calls без failures, 2040 overlapping pairs.
+Полный verifier и native audit сверили 12 405 journal records, 3321
+observations, counter 0 → 8304 и отсутствие всех шести временных PID.
+Старый resident 0.12.2 восстановлен с прежним scraper; новый release
+не зарегистрирован. По указанию пользователя этап закрыт, продолжение
+остановлено. Wired native Temporal/RAG, rollout и qualification открыты.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
