@@ -10397,14 +10397,15 @@ export class AgatStore {
         node.type === "approval" || (node.type === "agent" && node.config.approvalRequired === true)
       );
       const placement = this.assertProjectQueueCapacity(project);
-
+      const runTrace = this.telemetry.startRun({ runId, projectId: project });
+    try {
       this.db
         .prepare(`
           INSERT INTO runs(
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, created_at, updated_at
-            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain
-          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain, trace_id, root_span_id
+          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           runId,
@@ -10421,6 +10422,8 @@ export class AgatStore {
           String(placement.queue_name),
           String(placement.home_region),
           String(placement.residency_domain),
+          runTrace.traceId,
+          runTrace.spanId,
         );
       this.db
         .prepare(`
@@ -10488,6 +10491,10 @@ export class AgatStore {
         this.advanceProcessToken(instanceId, tokenId, start.id, requestedStartNodeId ? processInput : null);
       }
       return this.getProcessInstance(instanceId, project)!;
+    } catch (error) {
+      this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      throw error;
+    }
   }
 
   replayProcessInstance(

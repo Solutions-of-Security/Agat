@@ -76,6 +76,15 @@ python3 scripts/summarize-decision-shadow-sli.py \
 отдельными measurements; CLI не может достоверно определить их происхождение
 по телу JSON и сохраняет явно заявленный traffic kind.
 
+Native reopen проверка обнаружила прежний дефект `startProcessLocked`:
+новый run имел пустые trace/root-span IDs, startup migration назначала их
+только при следующем открытии SQLite и меняла manifest hash. Run теперь
+получает root identity через существующий coordinator telemetry до
+dispatch; она сохраняется вместе с run. При ошибке создания span закрывается.
+Regression требует valid trace ID уже до lease, совпадение dispatch trace
+и неизменность полного saved trace после reopen. Формат identity согласован
+с [W3C Trace Context](https://www.w3.org/TR/trace-context/#trace-id).
+
 Методика good/total и необходимость согласования SLO взяты из
 [Google SRE Implementing SLOs](https://sre.google/workbook/implementing-slos/).
 Текущие targets в proposal выбраны для обсуждения по инженерным evidence.

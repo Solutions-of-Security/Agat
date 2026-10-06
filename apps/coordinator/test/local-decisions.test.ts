@@ -282,6 +282,25 @@ test("opt-in shadow stores once, survives retry and preserves primary output, AC
   } finally { store.close(); }
 });
 
+test("process root trace exists before dispatch and remains stable after SQLite reopen", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-caller-trace-"));
+  const database = path.join(directory, "trace.sqlite");
+  let store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+  try {
+    const worker = node(store); const instance = start(store); const runId = String(instance.runId);
+    const initial = store.getRunTrace(runId)!;
+    assert.match(String((initial.run as any).traceId), /^[a-f0-9]{32}$/);
+    assert.notEqual((initial.run as any).traceId, "0".repeat(32));
+    const lease = store.leaseNext(worker)!;
+    assert.equal(lease.traceContext.traceId, (initial.run as any).traceId);
+    store.recordDecisionShadow(worker, lease.leaseId, { result: pythonResult(lease.decisionShadow!.request).result, callerTiming });
+    store.completeLease(worker, lease.leaseId, "PRIMARY");
+    const before = store.getRunTrace(runId)!;
+    store.close(); store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+    assert.deepEqual(store.getRunTrace(runId), before);
+  } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("feature flag, old workers, malformed responses and missing observations always retain the primary path", () => {
   for (const variant of ["disabled", "unsupported_worker", "invalid_response", "missing_result", "timeout"]) {
     const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: variant !== "disabled" });
