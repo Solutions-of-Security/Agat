@@ -31,6 +31,7 @@ class ObserverPreparationTest(unittest.TestCase):
         config = prepare.agent(root, "/fixture/resident/venv/bin/python", "a"*64)
         self.assertIs(config["KeepAlive"], False); self.assertIs(config["RunAtLoad"], True)
         self.assertIs(config["AbandonProcessGroup"], False)
+        self.assertEqual(config["ProcessType"], "Standard")
         self.assertEqual(config["ProgramArguments"][-1], "a"*64)
         self.assertEqual(config["EnvironmentVariables"]["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin")
         self.assertEqual(config["EnvironmentVariables"]["HF_HUB_OFFLINE"], "1")

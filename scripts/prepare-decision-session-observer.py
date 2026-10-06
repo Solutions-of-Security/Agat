@@ -61,7 +61,7 @@ def snapshot(root, commit):
 def agent(root, python, seal):
     private = root / "docs/private"
     return {"Label": LABEL, "ProgramArguments": [python, "-B", str(root / "observer.py"), "--package", str(root), "--expected-seal", seal],
-            "WorkingDirectory": str(root), "RunAtLoad": True, "KeepAlive": False, "ProcessType": "Background", "ExitTimeOut": 30,
+            "WorkingDirectory": str(root), "RunAtLoad": True, "KeepAlive": False, "ProcessType": "Standard", "ExitTimeOut": 30,
             "AbandonProcessGroup": False,
             "EnvironmentVariables": {"PYTHONUNBUFFERED": "1", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
                                      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},

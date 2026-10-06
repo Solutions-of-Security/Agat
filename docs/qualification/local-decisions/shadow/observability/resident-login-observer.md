@@ -42,6 +42,16 @@ environment и loopback bindings сохраняются.
 
 `org.agat.decision-session-observer` имеет `RunAtLoad=true`,
 `KeepAlive=false`, `ExitTimeOut=30` и `AbandonProcessGroup=false`.
+Однократная заказанная пользователем приёмка использует `ProcessType=Standard`.
+Первый native install с `Background` завершился Git inspection timeout
+5 секунд до event collection, тогда как foreground observation прошёл.
+Failed receipt и package сохранены, guarded rollback удалил новый job,
+installed plist и registration без cleanup error. По текущему macOS man и
+[официальному Apple source](https://raw.githubusercontent.com/apple-oss-distributions/launchd/main/man/launchd.plist.5)
+`Background` предназначен для незапрошенной работы с resource limits;
+`Standard` сохраняет обычную light resource policy. Повтор готовится в
+новом immutable package. Git inspection и inference deadline не расширены;
+причинность единственного timeout отдельно не доказывается.
 Согласно [Apple launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html),
 user agents загружаются при login и завершаются при logout. Установленный
 macOS `launchd.plist(5)` указывает, что при завершении job launchd очищает
