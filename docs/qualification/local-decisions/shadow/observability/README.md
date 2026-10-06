@@ -89,6 +89,12 @@ LaunchAgents работают из resident bundle, scrape и counters пров�
 stop/reinstall и отдельный native audit прошли. Boot/login, bounded
 crash-loop и согласование owner/SLO остаются открытыми.
 
+[Приёмка boot/login](./resident-boot-login.md) теперь имеет отдельный
+readonly CLI: baseline file SHA, реальная OS/GUI session identity, времена
+начала процессов, точный environment и прежняя registration привязка.
+Требуемый event должен наблюдаться фактически; прежняя сессия возвращает
+`awaiting_event` с exit 2.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \
