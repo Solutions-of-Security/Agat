@@ -86,3 +86,20 @@ Bounded crash-loop и независимые human reviews/calibration/holdout �
 сохранение failed observations. Dependency tests проверяют точные pins,
 normalization collisions, Python/platform drift и `pip check` failure.
 Fixture event не объявляется настоящим reboot/login этого Mac.
+
+Полный `docs:check` прошёл: 628 Python tests, четыре explicit Docker opt-in
+skips, 12 Node checks, process catalog и локальные ссылки. После commit
+`7ed2770bd9eb37be81de2b95918c1069e462fc8c` настоящий `capture` вернул
+`baseline_recorded`: 35 committed inputs, 34 dependencies, четыре owned
+процесса и свежий scrape проверены. Немедленный `verify --event boot`
+вернул **`awaiting_event`, exit 2**: boot UUID и GUI session не изменились.
+
+Отдельный native audit подтвердил seals/source bytes, неизменные
+package/profile/registration, прежний PID set, настоящие boot/GUI fields,
+готовность и raw counters: computed 1, rejected 0, failed 0. Девять checks
+прошли. [Публичная сводка](../evidence/2026-10-07/resident-session-gate/result-summary.json)
+закрепляет baseline file SHA
+`582cb7b1a0c4e6fc77406dfaa15cdfe9b3050cd8e5389de1045a08ac47bbe67e`.
+Baseline сохранён отдельным mode 0600 файлом в постоянном workspace;
+raw evidence и measured source сохранены в проверенном private архиве.
+**Boot/login gate остаётся открытым** до реального нового event.
