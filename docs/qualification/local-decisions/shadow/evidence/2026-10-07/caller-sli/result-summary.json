@@ -1,0 +1,233 @@
+{
+  "schemaVersion": "agat.decision.caller-sli-public-summary.v1",
+  "status": "diagnostic_tooling_verified",
+  "trafficKind": "diagnostic_fixture",
+  "sourceCommit": "430f44d778f5eabc5b6cac62da272147c23eed5f",
+  "sourceFiles": {
+    "apps/coordinator/src/database.ts": "2ff65bd69481b28c643960c19e4425316ec27fdb6a4d61a0f2d0ba24b47ce458",
+    "apps/coordinator/src/local-decisions.ts": "6221beda56b91860a9cf1dd4ba65d18d155d18f64b82b7e674ca05d93c2af605",
+    "decision_runtime/artifacts.py": "cdc1567e77928986a9cc3e79f7e703146bd5d8741f50d0f36cc2857100b10b20",
+    "decision_runtime/contracts.py": "07f52ea645e891a2b0313bdd783f02d7312cf426ab3a4646cf49af420049c140",
+    "decision_runtime/model_store.py": "8e5a2396d899b344f88ee6083921041e127b2b0f4f94ce5fc1db9a417598573e",
+    "scripts/lib/decision_shadow_sli.py": "05347344c4454bb7cbaeeb3d20ad8ae457e66bb8c6b6ec54af78d8659eb039cc",
+    "scripts/summarize-decision-shadow-sli.py": "f016ed6778691b4ae0dc0ed0c4060d260426dfb81bce62be881f223f6ac6b972",
+    "workers/local_decisions.py": "5c119ddd76fa341820ce93a0c9cc80ca89d59d9891d4e883c32fd340bd79434d"
+  },
+  "nativeTraces": 12,
+  "nativeClientSteps": 10,
+  "nativeCommands": 5,
+  "nativeCommandReturncodes": [
+    0,
+    0,
+    2,
+    2,
+    1
+  ],
+  "independentAuditChecks": 8,
+  "ownedProcessesAbsent": 11,
+  "earlierOwnedProcessesAbsent": 17,
+  "earlierNativeFailuresPreserved": 2,
+  "checks": {
+    "sqliteFullTraceUnchangedAfterReopen": true,
+    "primaryFallbackPreserved": true,
+    "residentFourProcessesUnchanged": true,
+    "resident34DependenciesUnchanged": true,
+    "freshResidentScrape": true,
+    "additionalResidentInference": 0,
+    "actualBootLoginAccepted": false
+  },
+  "aggregates": {
+    "known": {
+      "status": "diagnostic_only",
+      "measurementStatus": "provided_observations_measured",
+      "counts": {
+        "abstain": 1,
+        "boundResults": 3,
+        "boundResultsWithUnknownCallerDeadline": 0,
+        "boundResultsWithUnknownTimeliness": 0,
+        "boundResultsWithinCallerDeadline": 3,
+        "error": 1,
+        "knownCallerTimings": 9,
+        "lateBoundResults": 0,
+        "missingCallerTimings": 0,
+        "missingLeaseBindings": 0,
+        "observedChecks": 9,
+        "ok": 2,
+        "profileBindingMismatches": 0,
+        "reusedChecks": 1,
+        "safeReplayUnavailable": 0,
+        "timelyBoundResults": 3,
+        "truncatedTraces": 0,
+        "unassignedChecks": 0,
+        "unavailable": 5
+      },
+      "dataGaps": [],
+      "boundResultRatio": 0.3333333333333333,
+      "withinCallerDeadlineRatio": {
+        "lower": 0.3333333333333333,
+        "upper": 0.3333333333333333
+      },
+      "timelyBoundResultRatio": {
+        "lower": 0.3333333333333333,
+        "upper": 0.3333333333333333
+      },
+      "callerLatencyMs": {
+        "count": 9,
+        "max": 1002.216,
+        "p50": 42.567,
+        "p95": 1002.216
+      },
+      "scoringLatencyMs": {
+        "count": 4,
+        "max": 30.863,
+        "p50": 27.383,
+        "p95": 30.863
+      }
+    },
+    "legacy-and-missing": {
+      "status": "diagnostic_only",
+      "measurementStatus": "insufficient_data",
+      "counts": {
+        "abstain": 1,
+        "boundResults": 4,
+        "boundResultsWithUnknownCallerDeadline": 1,
+        "boundResultsWithUnknownTimeliness": 1,
+        "boundResultsWithinCallerDeadline": 3,
+        "error": 1,
+        "knownCallerTimings": 9,
+        "lateBoundResults": 0,
+        "missingCallerTimings": 2,
+        "missingLeaseBindings": 0,
+        "observedChecks": 11,
+        "ok": 3,
+        "profileBindingMismatches": 0,
+        "reusedChecks": 1,
+        "safeReplayUnavailable": 0,
+        "timelyBoundResults": 3,
+        "truncatedTraces": 0,
+        "unassignedChecks": 0,
+        "unavailable": 6
+      },
+      "dataGaps": [
+        "missing_caller_timings"
+      ],
+      "boundResultRatio": 0.36363636363636365,
+      "withinCallerDeadlineRatio": {
+        "lower": 0.2727272727272727,
+        "upper": 0.36363636363636365
+      },
+      "timelyBoundResultRatio": {
+        "lower": 0.2727272727272727,
+        "upper": 0.36363636363636365
+      },
+      "callerLatencyMs": {
+        "count": 9,
+        "max": 1002.216,
+        "p50": 42.567,
+        "p95": 1002.216
+      },
+      "scoringLatencyMs": {
+        "count": 5,
+        "max": 30.863,
+        "p50": 29.482,
+        "p95": 30.863
+      }
+    },
+    "replay-only": {
+      "status": "diagnostic_only",
+      "measurementStatus": "insufficient_data",
+      "counts": {
+        "abstain": 0,
+        "boundResults": 0,
+        "boundResultsWithUnknownCallerDeadline": 0,
+        "boundResultsWithUnknownTimeliness": 0,
+        "boundResultsWithinCallerDeadline": 0,
+        "error": 0,
+        "knownCallerTimings": 0,
+        "lateBoundResults": 0,
+        "missingCallerTimings": 0,
+        "missingLeaseBindings": 0,
+        "observedChecks": 0,
+        "ok": 0,
+        "profileBindingMismatches": 0,
+        "reusedChecks": 1,
+        "safeReplayUnavailable": 0,
+        "timelyBoundResults": 0,
+        "truncatedTraces": 0,
+        "unassignedChecks": 0,
+        "unavailable": 0
+      },
+      "dataGaps": [
+        "no_observed_checks"
+      ],
+      "boundResultRatio": null,
+      "withinCallerDeadlineRatio": {
+        "lower": null,
+        "upper": null
+      },
+      "timelyBoundResultRatio": {
+        "lower": null,
+        "upper": null
+      },
+      "callerLatencyMs": {
+        "count": 0,
+        "max": null,
+        "p50": null,
+        "p95": null
+      },
+      "scoringLatencyMs": {
+        "count": 0,
+        "max": null,
+        "p50": null,
+        "p95": null
+      }
+    },
+    "duplicate": {
+      "status": "failed"
+    }
+  },
+  "rawFilePins": {
+    "known": "4b3d081f7c4869770aaea680459cd007e7f767be3128af3f60212ad2f036c083",
+    "legacy-and-missing": "a955455a8c1d2887227d1e9b662d00bd6b4debc5b5055811ea574c914a7a5754",
+    "replay-only": "93f60bde1c821fb801fb457e81e01669dfab3cf1e6531a380080e757092f4df8",
+    "duplicate": "738aa0c2cdba78cc0ff639f5c94cef7d43806506bc8ac7b95ce0668f643b08b3"
+  },
+  "auditFileSha256": "a638b0ee58461d4677e7eed560d3aed6f151656679b57201ad9796f5b099f3e9",
+  "archive": {
+    "fileCount": 115,
+    "archiveBytes": 81908764,
+    "archiveFileSha256": "18c42b661fcb91591be13e2d32a67cf634cd66fad7a7d4c7acb79616dd8fb06a",
+    "measurementCommits": [
+      "430f44d778f5eabc5b6cac62da272147c23eed5f",
+      "b5fdadaf9925e2300d77e39248850fd72e77928e"
+    ],
+    "everyFileShaAndSizeVerified": true,
+    "crcVerified": true
+  },
+  "tests": {
+    "sliTargeted": 18,
+    "coordinatorShadowTargeted": 21,
+    "coordinatorFull": 324,
+    "coordinatorFullPassed": 296,
+    "coordinatorOptInSkipped": 28,
+    "workerFull": 146,
+    "workerOptionalSkipped": 3,
+    "runtimeFull": 135,
+    "runtimeOptionalSkipped": 3,
+    "webFull": 61,
+    "docsPython": 700,
+    "docsDockerOptInSkipped": 4,
+    "docsNode": 12,
+    "fullNpmTestPassed": true,
+    "typecheckPassed": true,
+    "processTraceRegressionFailedBeforeFix": true
+  },
+  "scope": "provided_traces_only",
+  "populationCoverageVerified": false,
+  "fullAssignedAttemptInventoryVerified": false,
+  "ownerSloAgreementRecorded": false,
+  "sloAccepted": false,
+  "routingEnabled": false,
+  "qualification": "not_assessed",
+  "sha256": "09f02191711388dfd3021c93ff8138bc2c449beac7ee529f14f5a4979fb3aa6e"
+}

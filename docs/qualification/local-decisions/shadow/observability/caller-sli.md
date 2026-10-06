@@ -28,7 +28,7 @@ lease рядом с `profileSha256`. Это fingerprints и deadline, а не и
 представления `1` и `1.0` совместимы. Старый trace без lease bindings
 получает явный data gap.
 
-Denominator — все предоставленные назначенные checks: ok, abstain, error,
+Denominator — сохранённые `decisionObservations` предоставленных traces: ok, abstain, error,
 unavailable, missing result и timeout. Быстрая ошибка не улучшает долю
 своевременных валидных результатов. Disabled/unsupported/invalid-input
 checks без lease, safe replay и safe-replay-unavailable учитываются
@@ -48,6 +48,10 @@ count. Missing timing, missing lease bindings, profile drift и truncated
 trace дают `insufficient_data`. Scope всегда `provided_traces_only`;
 `populationCoverageVerified=false`: полноту реального клиентского потока
 невозможно установить по произвольно выбранным trace exports.
+Этап, отменённый или ещё работающий до записи observation, может отсутствовать
+в этом массиве. Поэтому текущий CLI не подтверждает полный denominator
+назначенных attempts; следующий gate — inventory таких этапов и settlement
+pending records, отдельно от уже сохранённых observations.
 
 [CLI](../../../../../scripts/summarize-decision-shadow-sli.py) требует
 независимые SHA-256 каждого input и profile file, content profile SHA,
@@ -84,6 +88,67 @@ dispatch; она сохраняется вместе с run. При ошибке
 Regression требует valid trace ID уже до lease, совпадение dispatch trace
 и неизменность полного saved trace после reopen. Формат identity согласован
 с [W3C Trace Context](https://www.w3.org/TR/trace-context/#trace-id).
+
+## Проверенный native протокол
+
+[Allowlist summary](../evidence/2026-10-07/caller-sli/result-summary.json)
+сохраняет результаты опыта на measurement commit
+`430f44d778f5eabc5b6cac62da272147c23eed5f`. Выполнены 10 client steps через
+настоящий loopback HTTP с явно контролируемым fixture backend, сохранены
+12 run traces в обычном SQLite coordinator. Computed, abstain, backend
+error, busy, timeout, cancellation, nonlistening-port fault, injected
+input mismatch, legacy response и live replay сохранили primary output.
+Safe replay сохранил исходное timing с provenance без нового HTTP call.
+После close/reopen весь trace, включая manifest, остался неизменным.
+
+Четыре pinned CLI measurements дали exit 0/2/2/1. Набор с известным
+timing содержит девять observations: два ok, один abstain, один error и
+пять unavailable; один safe replay исключён из новых calls. Известный
+timely numerator — три, denominator — девять. Caller p50/p95/max для
+всех исходов — 42,567 / 1002,216 / 1002,216 ms, scoring p50/p95/max для
+четырёх computed/error результатов — 27,383 / 30,863 / 30,863 ms. В
+длинном caller sample находится специально вызванный network timeout;
+быстрая ошибка не стала успешным latency observation.
+
+Добавление legacy и missing-result traces даёт 11 observations, девять
+known timings и два unknown, `insufficient_data` / exit 2. Replay-only
+measurement имеет нулевую denominator, null ratios и exit 2. Повтор одного
+run/stage отклонён с failed receipt / exit 1. Никакой из этих measurements
+не принят за real workflow SLO или предметную qualification.
+
+Независимый audit прошёл восемь checks: raw file pins, committed/current
+восемь source bindings, timing boundaries, counts/ratios/nearest-rank
+quantiles, stored result/profile/input bindings, replay/fallback и cleanup.
+11 PID финальной попытки отсутствуют; ещё 17 recorded PID из первых двух
+попыток также завершены. Resident сохранил четыре PID, 34 dependency pins,
+profile/registration, fresh scrape и counters 1/0/0 без новых MLX calls.
+
+Первая попытка сохранила ошибочное ожидание одного TCP errno для bound
+nonlistening socket: actual caller вернул timeout. В отдельном повторе
+сценарий принимает наблюдаемые unreachable/timeout; это не изменение
+worker поведения. [Python socket documentation](https://docs.python.org/3.13/library/socket.html#timeouts-and-the-connect-method)
+описывает timeout на connect и возможность отдельного timeout OS stack;
+конкретная причина данного errno не установлена. Вторая попытка выявила
+пустой process trace ID; failing regression воспроизведён до product fix,
+21 targeted checks и полный coordinator набор 324 tests после него прошли
+(296 pass, 28 opt-in skips).
+
+Полный `npm test` прошёл; после trace fix весь coordinator набор перепроверен.
+Worker — 146 tests / три optional skips, runtime — 135 / три optional skips,
+web — 61, Temporal/replay и process pack — pass. Полная typecheck прошла;
+после trace fix coordinator typecheck повторена. SLI targeted — 18,
+docs — 700 Python / четыре Docker opt-in skips и 12 Node checks, links и
+process catalog — pass. Необязательные native Docker scenarios выполняются
+отдельными CI integration jobs, а не приписываются локальному тесту.
+
+Все три попытки, raw traces/wire metrics, failed/passed regression logs,
+оба audit и два measured Git sources сохранены в private архиве:
+115 files, 81 908 764 bytes, SHA-256
+`18c42b661fcb91591be13e2d32a67cf634cd66fad7a7d4c7acb79616dd8fb06a`.
+Каждый file SHA/size и CRC проверены; идентичная копия находится в
+исходном workspace `docs/private`. Следующие gates — assigned-attempt
+inventory, фактический boot/login, согласование owner/SLO и независимые
+business data/reviews/calibration/holdout.
 
 Методика good/total и необходимость согласования SLO взяты из
 [Google SRE Implementing SLOs](https://sre.google/workbook/implementing-slos/).
