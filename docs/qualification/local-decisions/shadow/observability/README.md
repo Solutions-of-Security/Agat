@@ -89,7 +89,11 @@ LaunchAgents работают из resident bundle, scrape и counters пров�
 stop/reinstall и отдельный native audit прошли. Boot/login, bounded
 crash-loop и согласование owner/SLO остаются открытыми.
 
-[Приёмка boot/login](./resident-boot-login.md) теперь имеет отдельный
+[Bounded crash-loop gate](./resident-crash-loop.md) выполняется отдельным
+временным job с тремя отказами, четырьмя поколениями и 30-секундным stable
+окном. Tooling и fixtures готовы; фактический native gate ещё открыт.
+
+[Приёмка boot/login](./resident-boot-login.md) имеет отдельный
 readonly CLI: baseline file SHA, реальная OS/GUI session identity, времена
 начала процессов, точный environment и прежняя registration привязка.
 Требуемый event должен наблюдаться фактически; прежняя сессия возвращает
