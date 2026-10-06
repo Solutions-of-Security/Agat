@@ -100,6 +100,11 @@ readonly CLI: baseline file SHA, реальная OS/GUI session identity, вр�
 Требуемый event должен наблюдаться фактически; прежняя сессия возвращает
 `awaiting_event` с exit 2.
 
+[Однократный login collector](./resident-login-observer.md) подготавливает
+frozen baseline source в Application Support и проверяет boot/login из
+отдельного `RunAtLoad`, `KeepAlive=false` job. Pending observation остаётся
+pending; snapshot и его Git objects не зависят от временного checkout.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \

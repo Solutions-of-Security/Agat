@@ -9,6 +9,11 @@
 package, profile, registration и dependency pins. Старый GUI session не
 закрывает этот gate; фактический reboot/login нового release пока открыт.
 
+[Однократный login collector](./qualification/local-decisions/shadow/observability/resident-login-observer.md)
+подготавливает baseline source и собственные Git objects в Application
+Support. Отдельный user job проверяет оба event при login и сохраняет
+pending observation без inference и без закрытия фактического event gate.
+
 В `0.3.0` добавлены [экспорт утверждённой ассистентом разметки и предметное development-сравнение](./qualification/local-decisions/development/README.md). На 15 development-примерах decider выбрал 14 правильных меток, Qwen Base — 7; обратный порядок выявил ошибочное принятое решение decider. Девять отложенных случаев не оценивались. Результат — `diagnostic_only`, без квалификации и включения маршрутизации.
 
 Следующий [генеративный baseline Qwen3 8B](./qualification/local-decisions/baselines/README.md) на тех же входах дал 9/15 меток в исходном порядке и 8/15 в обратном. Его JSON-ответы сравниваются по меткам; текстовая уверенность не подменяет вероятности logits.
