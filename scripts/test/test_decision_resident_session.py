@@ -27,6 +27,16 @@ class ResidentSessionTest(unittest.TestCase):
         self.assertEqual(result["status"], "awaiting_event")
         self.assertEqual(result["event"], "login")
 
+    def test_adjusted_calendar_boottime_in_same_os_session_is_not_an_event(self):
+        for delta in (-0.111569, 0.111569):
+            current = {**self.current, "bootTimeEpoch": self.baseline["bootTimeEpoch"]+delta}
+            for expected in ("boot", "login"):
+                with self.subTest(delta=delta, expected=expected):
+                    result = session.observed_event(self.baseline, current, expected)
+                    self.assertEqual(result["status"], "awaiting_event")
+                    self.assertIs(result["bootChanged"], False)
+                    self.assertIs(result["guiChanged"], False)
+
     def test_boot_accepts_reused_numeric_session_and_pids_with_new_births(self):
         self.current.update(bootSessionUuid="22345678-1234-1234-1234-123456789abc", bootTimeEpoch=1791321001)
         for expected in ("boot", "login"):

@@ -103,3 +103,8 @@ package/profile/registration, прежний PID set, настоящие boot/GU
 Baseline сохранён отдельным mode 0600 файлом в постоянном workspace;
 raw evidence и measured source сохранены в проверенном private архиве.
 **Boot/login gate остаётся открытым** до реального нового event.
+
+[Постоянный login collector](./resident-login-observer.md) сохраняет frozen
+source этого baseline вне временного checkout и автоматически записывает
+отдельные boot/login observations при следующем user login. Установка в
+прежней сессии записывает pending receipt и сохраняет этот gate открытым.
