@@ -86,12 +86,13 @@ preflight выявил и воспроизвёл ошибку address reuse; fix
 LaunchAgents работают из resident bundle, scrape и counters проверены.
 07.10 MSK [постоянный wired rollout 0.12.3](./resident-wired-rollout-0.12.3.md)
 переключил оба jobs на профиль с wired budget 4096 МиБ; два installs,
-stop/reinstall и отдельный native audit прошли. Boot/login, bounded
-crash-loop и согласование owner/SLO остаются открытыми.
+stop/reinstall и отдельный native audit прошли. Boot/login и согласование owner/SLO остаются открытыми.
 
 [Bounded crash-loop gate](./resident-crash-loop.md) выполняется отдельным
 временным job с тремя отказами, четырьмя поколениями и 30-секундным stable
-окном. Tooling и fixtures готовы; фактический native gate ещё открыт.
+окном. Native wired gate и отдельный audit прошли: 30/30/30 секунд между
+стартами, точный baseline, все 13 временных PID/job очищены; постоянный
+resident сохранил PID/profile/counters и свежий scrape.
 
 [Приёмка boot/login](./resident-boot-login.md) имеет отдельный
 readonly CLI: baseline file SHA, реальная OS/GUI session identity, времена

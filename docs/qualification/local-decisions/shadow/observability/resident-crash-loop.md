@@ -2,8 +2,8 @@
 
 07.10.2026 MSK. Следующий эксплуатационный gate проверяет три управляемых
 отказа собственного inference child, четыре автоматических поколения
-launchd и 30 секунд стабильной работы последнего процесса. Native gate
-пока не заявляется пройденным; fixtures проверяют admission и verifier.
+launchd и 30 секунд стабильной работы последнего процесса. **Настоящий
+нативный gate и отдельный audit прошли** на действующем wired package 0.12.3.
 Routing выключен, qualification — `not_assessed`.
 
 ## Границы и конфигурация
@@ -76,8 +76,8 @@ SIGINT/SIGTERM переводят запуск в cleanup; второй сигн
 27 целевых tests проверяют четыре поколения и конечный fault budget,
 throttle, stale exit/metrics, bindings/tokens, чужие/пропущенные PID,
 raw alerts вместо pass flags, разрывы stable window, signal cleanup,
-изменение постоянного resident и source drift. Эти fixtures не доказывают
-настоящий crash-loop на этом Mac. Реальный boot/login, owner/SLO,
+изменение постоянного resident и source drift. Fixtures проверяют error paths; фактический результат описан ниже.
+Реальный boot/login, owner/SLO,
 независимые human reviews/calibration/holdout остаются отдельными gates.
 
 Первый полный docs check выявил гонку в существующем Temporal signal fixture:
@@ -89,5 +89,39 @@ failed log и cleanup evidence сохранены приватно. Runtime/Work
 
 После исправления полный `docs:check` прошёл: 655 Python tests, четыре
 explicit Docker opt-in skips, 12 Node checks, каталог и 2360 локальных
-ссылок в 262 Markdown файлах. Native measurement следует этому committed
-checkpoint; фактический результат будет сохранён отдельно.
+ссылок в 262 Markdown файлах. Native measurement выполнен после этого committed
+checkpoint; raw evidence и результат сохранены отдельно.
+
+## Фактический native result
+
+Committed source `2b0476d9f17fae647e2c2aeed5f0ac78b6e108b0`, 37 source hashes.
+Все три управляемых idle child SIGKILL дали самостоятельный exit 75,
+реальный target down / pending alert и автоматическое восстановление.
+Native birth intervals — **30 / 30 / 30 секунд**; четыре поколения дали
+точные прежние wired diagnostic outcome/distribution и 117 input / 0
+generated tokens. Сохранены 41 raw файл и все API responses.
+
+| Измерение | Результат |
+|---|---|
+| SIGKILL → exit, мс | 450,231 / 278,165 / 497,893 |
+| SIGKILL → HTTP readiness, мс | 17 918,213 / 25 482,735 / 26 497,360 |
+| Scoring четырёх процессов, мс | 4153,527 / 339,349 / 320,008 / 465,929 |
+| Стабильное окно | 30,056415 с / 16 observations |
+| Полный gate с cleanup | 149 698,412 мс |
+
+Первый scoring нового процесса занял 4,15 секунды; это один замер и не
+гарантированно host-cold start. Четыре вызова не устанавливают p95/SLO.
+
+Отдельный audit пересчитал raw metrics/targets/alerts/history, native state
+и birth files, три retirement events, plists/seals и committed sources,
+сравнил все решения с independently pinned wired rollout baseline. Все
+**12 checks прошли**. Все 12 временных runtime PID и scraper PID отсутствуют,
+job удалён. Два постоянных jobs и четыре прежних resident PID готовы;
+registration/environment/model/profile и counters computed 1 / rejected 0 /
+failed 0 не изменились. Boot/login baseline остаётся применимым.
+
+[Публичная сводка](../evidence/2026-10-07/resident-crash-loop-0.12.3/result-summary.json)
+содержит counts, timing и proof/source SHA. Raw evidence, auditor, failed
+fixture log/cleanup proof и полный measured Git source сохранены в private
+архиве; CRC и SHA/size каждого файла и persistent workspace copy проверены.
+Boot/login, owner/SLO и независимая предметная qualification остаются открытыми.
