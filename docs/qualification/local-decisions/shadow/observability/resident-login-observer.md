@@ -119,7 +119,7 @@ native mutation.
 Native preparation/install/stop/reinstall проверяются после committed
 checkpoint; fixtures сами не подтверждают event или native deployment.
 
-Полный `docs:check` финальной версии прошёл: 681 Python tests, четыре
+Полный `docs:check` перед native policy correction прошёл: 681 Python tests, четыре
 explicit Docker opt-in skips, 12 Node checks, 2371 локальная ссылка в
 263 Markdown files и process catalog. Regression bootstrap race сначала
 проверяет чужой path перед rollback bootout; чужой job остаётся работать,
@@ -127,3 +127,44 @@ explicit Docker opt-in skips, 12 Node checks, 2371 локальная ссылк
 
 Owner/SLO и независимые human reviews/calibration/holdout остаются
 отдельными gates. Collector не назначает владельцев и не включает routing.
+
+## Native результат
+
+После checkpoint `311dcab0f0527af8bacc3ca3c1337bf7bb79e205` новый Standard
+package прошёл девять native steps: preparation, foreground, check,
+install/status/stop, затем check/reinstall/status. Два install этого launchd job
+завершились с `runs=1`, exit 0; observer остаётся зарегистрированным и
+не имеет активного PID. При следующем login будет выполнен новый запуск.
+Три Standard observations сохранили шесть raw event receipts:
+**boot и login — `awaiting_event`, exit 2**. Изначальный foreground старого
+Background package также сохранён отдельно.
+
+Независимый audit прошёл 13 checks: оба committed builder histories,
+35 frozen historical sources, собственные Git objects и native recipe,
+inode/ctime/file pins, все raw receipts, install/stop/reinstall и отсутствие
+завершённых observer/verifier processes. Постоянный resident сохранил
+четыре прежних PID, package/model/profile/registration и 34 dependency
+pins. Настоящий scrape подтверждает 46 series и counters computed 1 /
+rejected 0 / failed 0 — дополнительных inference нет.
+
+Первый отдельный audit отклонил равенство `kern.boottime`: calendar boot
+time сдвинулся на 0,111569 с при прежних UUID и GUI session. В
+[Apple XNU clock source](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/osfmk/kern/clock.c)
+`clock_set_calendar_microtime` корректирует и boot calendar time.
+Audit сохраняет chronology и проверку event identity; точное равенство
+этого calendar поля не требуется. Failed audit сохранён; corrected audit
+перепроверил исходные receipts, source bindings при этом не менялись.
+Отдельная regression проверяет положительную и отрицательную clock
+adjustment в той же сессии; 13 session tests прошли. Первый audit и
+первоначальные тестовые логи сохранены приватно.
+
+Финальный полный `docs:check` прошёл: **682 Python tests**, четыре explicit
+Docker opt-in skips, 12 Node checks, process catalog и локальные ссылки.
+[Публичная сводка](../evidence/2026-10-07/resident-login-observer/result-summary.json)
+содержит только status/count/source pins и признаки pending event.
+Оба immutable packages, raw evidence, failed history, corrected audit,
+финальные checks и оба measured Git sources сохранены в private ZIP.
+CRC и SHA/size каждого file, а также копия в исходном workspace проверены.
+
+**Реальный boot/login gate остаётся открытым.** Установка, successful exit
+collector и fixture clock adjustment сами не доказывают новый OS event.

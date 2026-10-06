@@ -13,6 +13,9 @@ package, profile, registration и dependency pins. Старый GUI session не
 подготавливает baseline source и собственные Git objects в Application
 Support. Отдельный user job проверяет оба event при login и сохраняет
 pending observation без inference и без закрытия фактического event gate.
+Native check/install/status/stop/reinstall и отдельный audit прошли;
+observer зарегистрирован и idle до следующего user login. Старый resident
+сохранил PID/profile/counters, все шесть event receipts остаются pending.
 
 В `0.3.0` добавлены [экспорт утверждённой ассистентом разметки и предметное development-сравнение](./qualification/local-decisions/development/README.md). На 15 development-примерах decider выбрал 14 правильных меток, Qwen Base — 7; обратный порядок выявил ошибочное принятое решение decider. Девять отложенных случаев не оценивались. Результат — `diagnostic_only`, без квалификации и включения маршрутизации.
 
