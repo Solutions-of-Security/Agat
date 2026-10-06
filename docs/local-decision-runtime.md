@@ -4,6 +4,11 @@
 
 Добавлены [экспертная разметка, калибровка и отдельная проверка holdout](./qualification/local-decisions/calibration/README.md). Реальные экспертные данные пока не предоставлены; инженерный прогон завершился `not_qualified`, обученная температура не назначена default.
 
+[Readonly приёмка boot/login](./qualification/local-decisions/shadow/observability/resident-boot-login.md)
+фиксирует baseline и требует настоящую смену OS/GUI session при неизменных
+package, profile, registration и dependency pins. Старый GUI session не
+закрывает этот gate; фактический reboot/login нового release пока открыт.
+
 В `0.3.0` добавлены [экспорт утверждённой ассистентом разметки и предметное development-сравнение](./qualification/local-decisions/development/README.md). На 15 development-примерах decider выбрал 14 правильных меток, Qwen Base — 7; обратный порядок выявил ошибочное принятое решение decider. Девять отложенных случаев не оценивались. Результат — `diagnostic_only`, без квалификации и включения маршрутизации.
 
 Следующий [генеративный baseline Qwen3 8B](./qualification/local-decisions/baselines/README.md) на тех же входах дал 9/15 меток в исходном порядке и 8/15 в обратном. Его JSON-ответы сравниваются по меткам; текстовая уверенность не подменяет вероятности logits.
