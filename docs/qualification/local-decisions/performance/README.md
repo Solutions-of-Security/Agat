@@ -72,8 +72,8 @@ deadline; следующий полный опыт сохраняет собст
 [Wired profile в Temporal/RAG launcher](./temporal-wired-profile.md),
 06.10 MSK: explicit budget связывается с committed public profile,
 initial/recovery argv и archived-source verifier. 58 профильных и mutation
-checks прошли. Это tooling для нового native gate с fallback/replay;
-реальный wired Temporal/RAG опыт пока не заявляется.
+checks прошли. Реальный wired Temporal/RAG gate с fallback/replay
+[завершён отдельно](./temporal-wired-runtime-0.12.3.md).
 
 [Управляемая остановка Temporal launcher](./temporal-launcher-cancellation.md),
 06.10: SIGTERM/SIGINT кооперативно завершают owned process groups и сохраняют
@@ -86,8 +86,16 @@ failed report. Четыре OS signal regression и handler restoration прош
 Полный verifier и native audit сверили 12 405 journal records, 3321
 observations, counter 0 → 8304 и отсутствие всех шести временных PID.
 Старый resident 0.12.2 восстановлен с прежним scraper; новый release
-не зарегистрирован. По указанию пользователя этап закрыт, продолжение
-остановлено. Wired native Temporal/RAG, rollout и qualification открыты.
+не зарегистрирован.
+
+[Реальный wired Temporal/PostgreSQL/RAG 0.12.3](./temporal-wired-runtime-0.12.3.md),
+06.10 MSK: оба embedding transport прошли с 4096 МиБ wired и прежним deadline
+5000 мс. Выполнены 6 primary calls, 10 embedding items, 4 shadow inference и
+2 unavailable fallback. Отдельный replay двух histories после cleanup,
+source-bound verifier и независимый baseline/model/binary audit прошли.
+Все 81 собственный PID и четыре контейнера отсутствуют; прежний resident
+сохранил PID/profile/fresh scrape. Следующий этап — permanent rollout wired
+package; boot/login и предметная qualification остаются открытыми.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
