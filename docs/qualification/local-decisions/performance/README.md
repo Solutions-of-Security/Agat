@@ -1,5 +1,14 @@
 # Задержка локальных решений и отказ при перегрузке
 
+[Постоянный wired resident 0.12.3](../shadow/observability/resident-wired-rollout-0.12.3.md),
+07.10 MSK: после полного shared soak и native Temporal/PostgreSQL/RAG
+два собственных jobs переключены на точный профиль с wired budget 4096 МиБ.
+Два installs, status/stop/reinstall и отдельный native audit прошли:
+два диагностических ответа совпали с baseline, counters 0 → 1,
+восемь прежних PID отсутствуют, четыре новых работают. 0.12.2 сохранён
+для rollback; boot/login, bounded crash-loop, owner/SLO и предметная
+qualification остаются открытыми.
+
 26.09.2026. На Apple M1 Max с 32 ГиБ памяти выполнен ограниченный HTTP-прогон `Mapika/decider-2b` (runtime `0.4.0`) через настоящий `workers.local_decisions.LocalDecisionClient`. [Свидетельство](./evidence/2026-09-26/decider-http.json) фиксирует профиль модели, SHA инструментов, все измерения и план нагрузки. Результат — `observed`, качество модели и производственный SLO этим прогоном не квалифицируются. Позже измерены [загрузка, память и cache runtime 0.5/0.6](./resources.md), [совместная нагрузка с Qwen3 8B](./shared-load.md) [синтетический контекст до 4096 токенов](./context.md) и [600 секунд непрерывных HTTP-вызовов](./endurance.md).
 
 Отдельная [диагностика противоречий и команд внутри текста](./robustness.md) выявила ошибочное принятое решение при перестановке вариантов. Она не меняет результаты нагрузочных измерений и подтверждает необходимость сохранять shadow без routing.

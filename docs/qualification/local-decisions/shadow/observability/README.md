@@ -84,6 +84,10 @@ tests. [Первый install/status/stop](./resident-port-reuse.md) прошёл
 preflight выявил и воспроизвёл ошибку address reuse; fix проверен.
 [Полный повтор постоянного rollout](./resident-rollout.md) прошёл: два user
 LaunchAgents работают из resident bundle, scrape и counters проверены.
+07.10 MSK [постоянный wired rollout 0.12.3](./resident-wired-rollout-0.12.3.md)
+переключил оба jobs на профиль с wired budget 4096 МиБ; два installs,
+stop/reinstall и отдельный native audit прошли. Boot/login, bounded
+crash-loop и согласование owner/SLO остаются открытыми.
 
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
@@ -98,6 +102,6 @@ promtool check config docs/qualification/local-decisions/shadow/observability/pr
 promtool test rules docs/qualification/local-decisions/shadow/observability/alerts.test.yml
 ```
 
-Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. [Нативное восстановление 0.12.2](../native-launchd-0.12.2.md) подтверждено 04.10 из resident checkout вне Documents; настоящий scraper и постоянное наблюдение остаются следующим этапом.
+Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. [Нативное восстановление 0.12.2](../native-launchd-0.12.2.md) подтверждено 04.10 из resident checkout вне Documents; настоящий scraper и постоянная регистрация затем проверены на этом Mac. Владелец реакций и production SLO пока не согласованы.
 
 Решения опираются на официальные рекомендации [instrumentation](https://prometheus.io/docs/practices/instrumentation/), [naming](https://prometheus.io/docs/practices/naming/), [формат экспорта](https://prometheus.io/docs/instrumenting/exposition_formats/), [Python parser](https://prometheus.github.io/client_python/parser/) и [unit testing rules](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/), проверенные 26.09.2026. Ограничение labels и раздельная latency отклонённых запросов выбраны по фактическому устройству этого runtime.

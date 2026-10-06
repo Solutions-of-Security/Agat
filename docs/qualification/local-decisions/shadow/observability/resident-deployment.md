@@ -13,7 +13,10 @@
 05.10 MSK [builder/manager дополнены выбором public profile](../../performance/resident-profile-selection.md).
 Новый пакет 0.12.3 с wired budget 4096 МиБ подготовлен и прошёл
 [отдельный native launch/recovery gate](../../performance/resident-wired-package-0.12.3.md).
-Ниже сохранён фактический package gate 0.12.2.
+07.10 MSK [постоянный wired rollout 0.12.3](./resident-wired-rollout-0.12.3.md)
+прошёл: оба jobs переключены, полный install/status/stop/reinstall и native
+audit проверены; 0.12.2 сохранён для rollback. Ниже сохранён фактический
+package gate 0.12.2.
 
 ## Подготовка и границы владения
 

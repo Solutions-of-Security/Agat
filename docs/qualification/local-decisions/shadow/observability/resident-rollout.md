@@ -1,5 +1,9 @@
 # Постоянное локальное наблюдение: проверенный rollout
 
+07.10.2026 MSK постоянные службы переключены на
+[wired resident 0.12.3](./resident-wired-rollout-0.12.3.md).
+Ниже сохранён исходный rollout 0.12.2 от 05.10.
+
 05.10.2026 MSK. После [исправления TCP preflight](./resident-port-reuse.md)
 полный install/status/stop/reinstall завершился и прошёл независимую проверку.
 **Два собственных user LaunchAgents установлены и работают** из resident
