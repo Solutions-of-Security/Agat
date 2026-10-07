@@ -266,3 +266,5 @@ python3 -m unittest scripts.test.test_decision_performance -v
 v5 gate прошёл оба transports, recovery и независимый replay 137 events.
 Шесть SQL intents/returns, caller latency и прежние model signatures
 подтверждены; owner/SLO, actual boot/login и human qualification открыты.
+
+[Fixed arrivals wired 4096 МиБ](./arrival-rate-4096.md): два native repeats, 264 scheduled / 216 computed, 24 client drops / 24 busy. На 2048 tokens при 1 arrival/с — 24/24 и caller p95 874.733 мс, при 2 arrivals/с — 50%. Это diagnostic capacity без owner/SLO или customer-population acceptance.
