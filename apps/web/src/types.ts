@@ -1152,6 +1152,14 @@ export interface RunTrace {
     gates: GoldenEvalGates;
   } | null;
   decisionObservations?: RunDecisionObservation[];
+  decisionAssignmentHistory?: {
+    schemaVersion: "agat.decision.shadow-assignment-inventory.v1";
+    scope: "coordinator_shadow_assignments";
+    stages: Array<{ stageId: string; coverage: "complete" | "legacy_gap" | "replay";
+      assignments: Array<{ assignmentId: string; stageAttempt: number; profileSha256: string; inputSha256: string;
+        callerTimeoutMs: number; observation: RunDecisionObservation["observation"] | null;
+        outcome: "recorded" | "pending" | "ended_without_observation" }> }>;
+  };
   decisionStageInventory?: {
     schemaVersion: "agat.decision.shadow-stage-inventory.v1";
     scope: "stored_shadow_stages";

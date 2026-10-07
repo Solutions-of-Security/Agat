@@ -55,7 +55,7 @@ trace дают `insufficient_data`. Scope всегда `provided_traces_only`;
 
 [CLI](../../../../../scripts/summarize-decision-shadow-sli.py) требует
 независимые SHA-256 каждого input и profile file, content profile SHA,
-явные threshold и traffic kind. Девять measurement/transport/validation
+явные threshold и traffic kind. Десять measurement/transport/validation
 sources должны совпадать с HEAD до и после расчёта. Новый sealed output
 создаётся только в `docs/private`, с mode 0600; прежний не перезаписывается.
 Source drift или нарушенный pin дают failed receipt и exit 1. Недостаток

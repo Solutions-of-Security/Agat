@@ -111,6 +111,11 @@ pending; snapshot и его Git objects не зависят от временн�
 [Owner/SLO proposal](./resident-service-acceptance.md) остаётся draft;
 диагностические ratios не подтверждают пользовательский SLO.
 
+[История assignments](./assignment-history.md) сохраняет shadow dispatch
+leases при retry, validated observations и coverage/legacy gap.
+Assignment не считается доказанным HTTP send; record-once и primary path
+сохраняются.
+
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
 latency. Legacy inventory gaps и safe replay имеют явное accounting.

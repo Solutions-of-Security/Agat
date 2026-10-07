@@ -8,6 +8,8 @@ import type { SyncDatabase } from "./sync-database.js";
 import { createDecisionShadowLease, normalizeDecisionShadowConfig, supportsDecisionShadow,
   unavailableDecision, validateDecisionShadowResult, type DecisionShadowLease,
   type DecisionShadowConfig, type DecisionShadowObservation } from "./local-decisions.js";
+import { DECISION_ASSIGNMENT_INVENTORY, appendShadowAssignment, assignmentHistory, assignmentHistoryDto,
+  newAssignmentHistory, recordAssignmentObservation } from "./decision-shadow-assignments.js";
 import {
   S3ArtifactObjectStoreSync,
   artifactObjectKey,
@@ -12062,9 +12064,14 @@ export class AgatStore {
             if (!supportsDecisionShadow(labels.decisionShadow, config)) {
               unavailable = "unsupported_worker";
             } else {
-              decisionShadow = createDecisionShadowLease(config, String(candidate.stage_id),
+              const nextShadow = createDecisionShadowLease(config, String(candidate.stage_id),
                 typeof candidate.stage_input === "string" ? candidate.stage_input : String(candidate.run_input));
-              rawActivity.decisionShadowLease = decisionShadow;
+              const history = assignmentHistory(rawActivity.decisionShadowAssignmentHistory)
+                ?? newAssignmentHistory(Number(candidate.attempt) === 0 ? "complete" : "legacy_gap");
+              const updated = appendShadowAssignment(history, randomUUID(), Number(candidate.attempt) + 1, nextShadow);
+              rawActivity.decisionShadowAssignmentHistory = updated;
+              rawActivity.decisionShadowLease = nextShadow;
+              decisionShadow = nextShadow;
             }
           } catch {
             unavailable = "invalid_input";
@@ -12263,10 +12270,12 @@ export class AgatStore {
     stageId: string, state: string | null): Record<string, unknown> {
     if (!node.config.decisionShadow) return {};
     const config = node.config.decisionShadow;
-    const activity: Record<string, unknown> = { decisionShadowConfig: config };
+    const activity: Record<string, unknown> = { decisionShadowConfig: config,
+      decisionShadowAssignmentHistory: newAssignmentHistory() };
     const instance = this.db.prepare("SELECT replay_mode, replay_of_instance_id FROM process_instances WHERE id = ?")
       .get(instanceId) as Row;
     if (instance.replay_mode !== "safe") return activity;
+    activity.decisionShadowAssignmentHistory = newAssignmentHistory("replay");
     const visit = Number((this.db.prepare("SELECT COUNT(*) AS count FROM stages WHERE run_id = ? AND process_node_id = ?")
       .get(runId, node.id) as Row).count);
     const source = this.db.prepare(`
@@ -12297,7 +12306,7 @@ export class AgatStore {
   recordDecisionShadow(nodeId: string, leaseId: string, raw: unknown): DecisionShadowObservation {
     return this.transaction(() => {
       const stage = this.db.prepare(`
-        SELECT s.id, s.run_id, s.activity_json, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
+        SELECT s.id, s.run_id, s.activity_json, s.attempt, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
         WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ?
           AND r.status = 'running'
         ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
@@ -12312,6 +12321,8 @@ export class AgatStore {
       const config = normalizeDecisionShadowConfig(activity.decisionShadowConfig);
       const observation = validateDecisionShadowResult(raw, activity.decisionShadowLease as DecisionShadowLease, config.profileJson);
       activity.decisionShadowObservation = observation;
+      const history = recordAssignmentObservation(assignmentHistory(activity.decisionShadowAssignmentHistory), Number(stage.attempt), observation);
+      if (history) activity.decisionShadowAssignmentHistory = history;
       this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
       this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId, observation);
       // Roll back both writes if persistence outlasted ownership, before COMMIT.
@@ -12399,6 +12410,9 @@ export class AgatStore {
       const shadowActivity = parseJson<Record<string, unknown>>(stage.activity_json, {});
       if (shadowActivity.decisionShadowLease && !shadowActivity.decisionShadowObservation) {
         shadowActivity.decisionShadowObservation = unavailableDecision("missing_result");
+        const history = recordAssignmentObservation(assignmentHistory(shadowActivity.decisionShadowAssignmentHistory),
+          Number(stage.attempt), shadowActivity.decisionShadowObservation as DecisionShadowObservation);
+        if (history) shadowActivity.decisionShadowAssignmentHistory = history;
         this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(shadowActivity), String(stage.id));
         this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId,
           shadowActivity.decisionShadowObservation as DecisionShadowObservation);
@@ -12970,7 +12984,7 @@ export class AgatStore {
     const events = eventRows.slice(0, 10_000).map((row) => this.eventDto(row));
     const artifacts = this.listRunArtifacts(runId);
     const goldenEvaluation = this.goldenEvaluationForRun(runId, project);
-    const decisionStages = (this.db.prepare("SELECT id, status, activity_json FROM stages WHERE run_id = ? ORDER BY position")
+    const decisionStages = (this.db.prepare("SELECT id, status, attempt, lease_id, activity_json FROM stages WHERE run_id = ? ORDER BY position")
       .all(runId) as Row[]).map(stage => ({ stage,
         activity: parseJson<Record<string, unknown>>(stage.activity_json, {}) }));
     return {
@@ -12978,6 +12992,13 @@ export class AgatStore {
       events,
       artifacts,
       manifest: this.executionManifest(run),
+      decisionAssignmentHistory: {
+        schemaVersion: DECISION_ASSIGNMENT_INVENTORY, scope: "coordinator_shadow_assignments",
+        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
+          .map(({ stage, activity }) => ({ stageId: String(stage.id),
+            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), Boolean(stage.lease_id),
+              activity.decisionShadowObservation as DecisionShadowObservation | undefined) })),
+      },
       decisionStageInventory: {
         schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages",
         stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
