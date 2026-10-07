@@ -714,7 +714,8 @@ for (const boundary of ["stage read", "activity write", "duplicate intent"] as c
       const worker = node(store, true, DECISION_CALLER_ACCOUNTING); const instance = start(store); const id = String(instance.runId);
       const lease = store.leaseNext(worker)!;
       if (boundary === "duplicate intent") store.beginDecisionShadow(worker, lease.leaseId, intent(lease));
-      const before = callerInventory(store, id); const prepare = store.db.prepare.bind(store.db); let reached = false;
+      const before = store.db.prepare("SELECT activity_json FROM stages WHERE lease_id=?").get(lease.leaseId);
+      const prepare = store.db.prepare.bind(store.db); let reached = false;
       store.db.prepare = sql => {
         const statement = prepare(sql);
         if (boundary === "activity write" && sql === "UPDATE stages SET activity_json = ? WHERE id = ?") {
@@ -730,7 +731,32 @@ for (const boundary of ["stage read", "activity write", "duplicate intent"] as c
       };
       try { assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, intent(lease)), /аренда/); }
       finally { store.db.prepare = prepare; }
-      assert.ok(reached); assert.deepEqual(callerInventory(store, id).assignments, before.assignments);
+      assert.ok(reached);
+      assert.deepEqual(store.db.prepare("SELECT activity_json FROM stages WHERE lease_id=?").get(lease.leaseId), before);
+      assert.equal(callerInventory(store, id).assignments[0].outcome,
+        boundary === "duplicate intent" ? "return_missing" : "no_intent_recorded");
+      assert.equal(store.renewLease(worker, lease.leaseId), false);
+    } finally { store.close(); }
+  });
+}
+
+for (const recordedIntent of [false, true]) {
+  test(`readonly inventories stop treating expired ownership as pending (intent=${recordedIntent})`, context => {
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store, true, DECISION_CALLER_ACCOUNTING); const instance = start(store); const id = String(instance.runId);
+      const lease = store.leaseNext(worker)!;
+      if (recordedIntent) store.beginDecisionShadow(worker, lease.leaseId, intent(lease));
+      const before = store.db.prepare("SELECT activity_json FROM stages WHERE lease_id=?").get(lease.leaseId)!;
+      assert.equal((store.getRunTrace(id)!.decisionAssignmentHistory as any).stages[0].assignments[0].outcome, "pending");
+      context.mock.timers.tick(Date.parse(lease.expiresAt) - Date.now());
+      const trace = store.getRunTrace(id)!;
+      assert.equal((trace.run as any).stages[0].status, "running", "The readonly check must work before maintenance");
+      assert.equal((trace.decisionAssignmentHistory as any).stages[0].assignments[0].outcome, "ended_without_observation");
+      assert.equal((trace.decisionCallerAccounting as any).stages[0].assignments[0].outcome, recordedIntent ? "return_missing" : "no_intent_recorded");
+      assert.deepEqual(trace.decisionObservations, []);
+      assert.deepEqual(store.db.prepare("SELECT activity_json FROM stages WHERE lease_id=?").get(lease.leaseId), before);
       assert.equal(store.renewLease(worker, lease.leaseId), false);
     } finally { store.close(); }
   });

@@ -2927,7 +2927,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         const raw = processEnvCallerEvidence();
         if (!raw) return;
         const file = path.join(raw, `${name}.json`);
-        fs.writeFileSync(file, JSON.stringify({ name, details, project, foreignProject: foreign,
+        fs.writeFileSync(file, JSON.stringify({ name, capturedAt: new Date().toISOString(), details, project, foreignProject: foreign,
           stage: first.db.prepare("SELECT id,run_id,status,attempt,node_id,lease_id,lease_expires_at,activity_json FROM stages WHERE id=?").get(lease.stage.id),
           trace: first.getRunTrace(String(run.runId), project), shadowEvents: events() }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
       },
@@ -3008,7 +3008,14 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           assert.equal(result.status, 400); assert.match(String(result.body.error), /Активная аренда не найдена/);
           assert.deepEqual(f.activity(), before); assert.equal(f.events().length, 0);
           assert.equal(f.first.renewLease(f.worker.id, f.lease.leaseId), false);
-          f.persist(`expiry-${boundary.replaceAll(" ", "-")}`, { http: result, activityBefore: before, activityUnchanged: true, sqlWaitPastExpiryVerified: true });
+          const expiredTrace = f.first.getRunTrace(f.runId, f.project)!;
+          assert.equal((expiredTrace.run as any).stages[0].status, "running");
+          assert.equal((expiredTrace.decisionAssignmentHistory as any).stages[0].assignments[0].outcome, "ended_without_observation");
+          assert.equal((expiredTrace.decisionCallerAccounting as any).stages[0].assignments[0].outcome,
+            boundary === "stage lock" ? "no_intent_recorded" : "return_missing");
+          assert.deepEqual(f.activity(), before);
+          f.persist(`expiry-${boundary.replaceAll(" ", "-")}`, { http: result, activityBefore: before, activityUnchanged: true,
+            sqlWaitPastExpiryVerified: true, readonlyExpiredOwnershipVerified: true });
           context.diagnostic(`Caller ${boundary}: real SQL wait past expiry; HTTP 400; caller history/observation/event unchanged`);
         } finally { await writer.query("ROLLBACK").catch(() => {}); await f.close(); await Promise.allSettled(pending); await writer.end(); }
       });
