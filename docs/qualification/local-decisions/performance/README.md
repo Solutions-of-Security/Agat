@@ -261,3 +261,8 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Production idle opt-in на настоящей модели](./embedding-worker-idle-model.md): 528 точных сохранённых векторов, 32 lease/completion, 12 reaped helpers, отдельный холодный запрос и общий lifecycle обычного worker.
 
 [Настройки deployment](./embedding-deployment-settings.md): три параметра доставляются через Compose, общий Kubernetes ConfigMap и `k8s:up`; 50 проверок с production parser, сохранённые defaults и инструкции отката.
+
+[Temporal/PostgreSQL/RAG 0.12.3 с caller accounting](./temporal-caller-runtime-0.12.3.md):
+v5 gate прошёл оба transports, recovery и независимый replay 137 events.
+Шесть SQL intents/returns, caller latency и прежние model signatures
+подтверждены; owner/SLO, actual boot/login и human qualification открыты.

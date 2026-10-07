@@ -133,6 +133,10 @@ explicit JSON bytes mode. Native SQL traces дают восемь intents, ше�
 returns и два unknown без profile mismatch; historical default latency
 и ratios сохранены. Следующий gate — актуальный Temporal/PostgreSQL/RAG.
 
+[Latest Temporal/PostgreSQL/RAG caller gate](../../performance/temporal-caller-runtime-0.12.3.md)
+прошёл actual recovery обоих transports, SQL binding шести intents/returns
+и независимый replay 137 events. Диагностические latency и ratios опубликованы.
+
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
 latency. Legacy inventory gaps и safe replay имеют явное accounting.

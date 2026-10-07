@@ -65,7 +65,8 @@ ratios; отсутствие нового stage inventory остаётся яв�
 `92abcb1c4e02147a1c90788af7d696563fdcf40319d906b211270f83d4b5f330`.
 CRC, SHA/size каждого файла и идентичная копия в исходном workspace проверены.
 
-Следующий gate — повтор actual Temporal/PostgreSQL/RAG с caller telemetry
-и отдельным pinned SLI анализом. Это не MLX performance measurement,
+Последующий [actual Temporal/PostgreSQL/RAG gate](../../performance/temporal-caller-runtime-0.12.3.md)
+с caller telemetry и отдельным pinned SLI анализом прошёл. Этот identity gate
+не является MLX performance measurement,
 customer population или human qualification. Owner/SLO и actual boot/login
 остаются открытыми; routing выключен.

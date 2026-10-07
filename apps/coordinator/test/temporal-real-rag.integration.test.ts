@@ -13,6 +13,7 @@ import { root, cleanEnv, processChild, within, eventually, listen, close } from 
 import { AgatStore } from "../src/database.js";
 import type { ProcessGraph } from "../src/types.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
+import { DECISION_CALLER_INVENTORY } from "../src/decision-caller-accounting.js";
 import { decisionProfile, digest, generation, json, origin, primaryIdentity, type Fixture } from "../../../scripts/lib/decision-primary-workflow.js";
 import { embeddingIdentity, forwardEmbedding, verifyIngestion, verifyRetrieval } from "../../../scripts/lib/decision-rag.js";
 import { forwardDecisionRequest } from "../../../scripts/lib/decision-shadow-proxy.js";
@@ -26,9 +27,10 @@ const shadowEnabled = Boolean(decisionUrl);
 const controlDirectory = process.env.AGAT_TEMPORAL_SHADOW_CONTROL;
 const shadowRecoveryEnabled = Boolean(controlDirectory);
 const shadowResourcesEnabled = process.env.AGAT_TEMPORAL_SHADOW_RESOURCES === "true";
-const schemaVersion = shadowResourcesEnabled ? 4 : shadowRecoveryEnabled ? 3 : shadowEnabled ? 2 : 1;
+const callerAccountingEnabled = process.env.AGAT_TEMPORAL_SHADOW_CALLER_ACCOUNTING === "true";
+const schemaVersion = callerAccountingEnabled ? 5 : shadowResourcesEnabled ? 4 : shadowRecoveryEnabled ? 3 : shadowEnabled ? 2 : 1;
 const enabled = Boolean(modelUrl && planPath && address);
-if (modelUrl || planPath || decisionUrl || controlDirectory || shadowResourcesEnabled) {
+if (modelUrl || planPath || decisionUrl || controlDirectory || shadowResourcesEnabled || callerAccountingEnabled) {
   assert.ok(enabled, "Real-model qualification requires a model URL, frozen plan and Temporal address");
   assert.equal(process.env.AGAT_TEST_TEMPORAL_STATE_STORE, "postgresql");
   assert.ok(selectedTransport === "isolated" || selectedTransport === "session", "Each transport requires its own database/server");
@@ -37,6 +39,7 @@ if (modelUrl || planPath || decisionUrl || controlDirectory || shadowResourcesEn
     assert.equal(fs.statSync(controlDirectory).mode & 0o777, 0o700);
   }
   if (shadowResourcesEnabled) assert.ok(shadowRecoveryEnabled);
+  if (callerAccountingEnabled) assert.ok(shadowResourcesEnabled);
 }
 const fixturePath = "docs/qualification/local-decisions/performance/rag-workflow.fixture.json";
 const fixture = JSON.parse(fs.readFileSync(path.join(root, fixturePath), "utf8")) as Fixture;
@@ -63,6 +66,8 @@ for (const transport of ["isolated", "session"] as const) {
     assert.equal(plan.sourceSha256[fixturePath], digest(fs.readFileSync(path.join(root, fixturePath))));
     assert.deepEqual(plan.fixture, fixture);
     assert.equal(plan.shadow, shadowEnabled); assert.deepEqual(plan.transports, ["isolated", "session"]);
+    if (callerAccountingEnabled) assert.deepEqual(plan.callerAccounting, { capability: "agat.decision.caller-accounting.v1",
+      timingSchemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call", profileIdentity: "coordinator_json_bytes" });
     if (shadowRecoveryEnabled) assert.deepEqual(plan.shadowRecovery, { protocol: "private-files-v1", signal: "SIGKILL",
       actions: ["isolated/kill", "isolated/restart", "session/kill", "session/restart"] });
     const primary = await primaryIdentity(target, primaryName, plan.models[primaryName]);
@@ -300,7 +305,9 @@ for (const transport of ["isolated", "session"] as const) {
         const stage = beforeRestart.run.stages.find((row: any) => row.processNodeId === fixture.roles[1]!.id);
         const observation = beforeRestart.decisionObservations.find((row: any) => row.stageId === stage.id);
         assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryCalls[1]!.output);
-        assert.deepEqual(observation.observation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+        const { callerTiming: fallbackTiming, ...fallbackObservation } = observation.observation;
+        assert.deepEqual(fallbackObservation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+        if (callerAccountingEnabled) assert.ok(fallbackTiming);
         fallbackSnapshot = { stageId: stage.id, stageSha256: digest(JSON.stringify(stage)), observationSha256: digest(JSON.stringify(observation)),
           recordedMs: clock(), restartFinishedMs: 0, thirdResponseReleasedMs: 0 };
         await control("restart", instance.id); runtimeDown = false;
@@ -326,8 +333,15 @@ for (const transport of ["isolated", "session"] as const) {
           assert.equal(rows.length, 1); assert.equal(calls.length, 1);
           const observation = rows[0].observation;
           assert.equal(observation.mode, "shadow"); assert.equal(observation.fallback, "primary");
+          const { callerTiming, ...withoutTiming } = observation;
+          if (callerAccountingEnabled || callerTiming !== undefined) {
+            assert.deepEqual(Object.keys(callerTiming).sort(), ["boundary", "clock", "durationMs", "schemaVersion"]);
+            assert.equal(callerTiming.schemaVersion, "agat.decision.caller-timing.v1"); assert.equal(callerTiming.clock, "monotonic");
+            assert.equal(callerTiming.boundary, "local_http_call"); assert.equal(typeof callerTiming.durationMs, "number");
+            assert.ok(Number.isFinite(callerTiming.durationMs) && callerTiming.durationMs >= 0 && callerTiming.durationMs <= rows[0].callerTimeoutMs);
+          }
           if (shadowRecoveryEnabled && stage.processNodeId === fixture.roles[1]!.id) {
-            assert.deepEqual(observation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+            assert.deepEqual(withoutTiming, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
             assert.equal(calls[0]!.transportError, "ECONNREFUSED");
             assert.equal(digest(JSON.stringify(stage)), fallbackSnapshot!.stageSha256);
             assert.equal(digest(JSON.stringify(rows[0])), fallbackSnapshot!.observationSha256);
@@ -339,6 +353,32 @@ for (const transport of ["isolated", "session"] as const) {
             assert.deepEqual(observation.result[field], expectedProfile[field]);
           assert.equal(observation.result.generatedTokens, 0);
           assert.equal(calls[0]!.request.state, stage.input ?? fixture.input);
+        }
+        if (callerAccountingEnabled) {
+          assert.equal(trace.decisionCallerAccounting.schemaVersion, DECISION_CALLER_INVENTORY);
+          assert.equal(trace.decisionCallerAccounting.scope, "caller_operation_intents");
+          assert.equal(trace.decisionCallerAccounting.stages.length, 3);
+          assert.equal(trace.events.filter((row: any) => row.type === "decision.shadow").length, 3);
+          for (const stage of stages) {
+            const activity = JSON.parse(store.db.prepare("SELECT activity_json FROM stages WHERE id = ?").get(stage.id)!.activity_json as string);
+            const history = activity.decisionShadowAssignmentHistory, ledger = activity.decisionShadowCallerAccounting;
+            assert.equal(history.coverage, "complete"); assert.equal(ledger.coverage, "complete");
+            assert.equal(history.assignments.length, 1); assert.equal(ledger.assignments.length, 1);
+            const assignment = history.assignments[0], caller = ledger.assignments[0];
+            const observation = trace.decisionObservations.find((row: any) => row.stageId === stage.id).observation;
+            assert.equal(caller.assignmentId, assignment.assignmentId); assert.equal(caller.stageAttempt, stage.attempt);
+            assert.equal(caller.negotiated, true); assert.equal(caller.intent, true);
+            assert.equal(activity.decisionShadowLease.assignmentId, assignment.assignmentId);
+            assert.equal(activity.decisionShadowLease.callerAccountingVersion, "agat.decision.caller-accounting.v1");
+            assert.equal(activity.decisionShadowLease.callerTimingVersion, "agat.decision.caller-timing.v1");
+            assert.equal(assignment.profileSha256, decision!.profileSha256);
+            assert.equal(activity.decisionShadowConfig.profileJson, decision!.profileJson);
+            assert.deepEqual(assignment.observation, observation); assert.deepEqual(activity.decisionShadowObservation, observation);
+            assert.deepEqual(caller.returned, { status: observation.status, reason: observation.reason, callerTiming: observation.callerTiming });
+            const inventory = trace.decisionCallerAccounting.stages.find((row: any) => row.stageId === stage.id);
+            assert.equal(inventory.coverage, "complete");
+            assert.deepEqual(inventory.assignments, [{ ...caller, outcome: "returned" }]);
+          }
         }
       }
       const retrieval = stages.map((stage: any, index: number) => {
@@ -385,6 +425,8 @@ for (const transport of ["isolated", "session"] as const) {
       assert.deepEqual(await coordinator.stop(), { code: 0, signal: null }, coordinator.log());
       result = { workflowId, workflowRunId, instanceId: instance.id, primary, embedding, ingestion, primaryCalls, embeddingCalls,
         ticks, trace, retrieval, recovery, history: serializedHistory,
+        ...(callerAccountingEnabled ? { callerAccountingSql: stages.map((stage: any) => store.db.prepare(
+          "SELECT id, status, attempt, activity_json FROM stages WHERE id = ?").get(stage.id)) } : {}),
         ...(decision ? { decision, decisionCalls, shadowRecovery: { firstAcceptedObservationSha256: digest(observationSnapshot!),
           decisionCallsBeforeRelease: 1, primaryFallbackPreserved: true } } : {}),
         ...(shadowRecoveryEnabled ? { runtimeRecovery: { controlCalls, fallbackSnapshot } } : {}),
