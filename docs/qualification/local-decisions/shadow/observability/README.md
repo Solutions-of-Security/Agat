@@ -118,6 +118,9 @@ Assignment не считается доказанным HTTP send; record-once �
 
 [Caller accounting](./caller-accounting.md) сохраняет negotiated intent/return
 receipts, unknown outcomes после worker death и отдельный caller denominator.
+[PostgreSQL caller gate](./caller-postgres.md) проверяет concurrent begin,
+row/event-lock expiry, retained COMMIT ACK, idempotency, restart и tenant RLS;
+readonly inventory учитывает фактический expiry до maintenance.
 
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
