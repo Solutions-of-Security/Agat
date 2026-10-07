@@ -116,6 +116,9 @@ leases при retry, validated observations и coverage/legacy gap.
 Assignment не считается доказанным HTTP send; record-once и primary path
 сохраняются.
 
+[Caller accounting](./caller-accounting.md) сохраняет negotiated intent/return
+receipts, unknown outcomes после worker death и отдельный caller denominator.
+
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
 latency. Legacy inventory gaps и safe replay имеют явное accounting.
