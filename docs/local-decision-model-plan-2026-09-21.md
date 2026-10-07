@@ -274,8 +274,6 @@ Development-сравнение не закрывает qualification: decider п
 
 [0.5 decision arrivals/с при работе primary](./qualification/local-decisions/performance/arrival-primary-half-4096.md), 07.10 MSK: opt-in v3 rate закреплён перед измерением; default v1/v2 сохраняется и прежние native evidence прошли verifier. Два native repeats дали 72/72 computed без drops/busy/measurement errors; long active 12/12, caller p95/max 1110.362 мс; 8 decision warmups отдельно. Primary вернул 10/24 planned calls, 14 capacity drops, 24 actual HTTP overlap pairs подтверждены. 10 audit checks сверили previous/current runtime/primary/inputs и неизменные computed signatures; все 12 recorded PID отсутствуют, resident и 35 protected sources сохранены без новых inference. 53 committed contributors, 25 targeted и 759 Python / 12 Node docs checks прошли. ZIP 57 files / два measured Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Draft planning envelope для обсуждения уточнён до 0.5 decision arrivals/с / 1 active call. Следующие внешние gates — owners и реальные eligible workloads/SLO, actual boot/login, разрешённые независимые заявки и два human reviewers для calibration/holdout. Routing выключен, qualification not_assessed; инженерные synthetic результаты не заменяют эти gates.
 
-## Вывод: что именно можно воспроизвести
-
 [Контракт реального shadow-пилота](./qualification/local-decisions/shadow/observability/shadow-pilot-plan.md),
 08.10 MSK: CLI закрепляет project/process/version, future UTC window до семи дней,
 profile bytes/fingerprint и предлагаемые targets. Blank owners/data scope остаются
@@ -283,6 +281,17 @@ profile bytes/fingerprint и предлагаемые targets. Blank owners/data
 Восемь regression checks проверяют pins, prospective window, private output,
 source drift и отсутствие ложной готовности. Следующий инженерный шаг — census
 полного сохранённого cohort; независимые публичные данные подбираются отдельно.
+
+[Публичные IT-вопросы для разметки](./qualification/local-decisions/source-review/public-support/README.md),
+08.10 MSK: bounded сбор официального Stack Exchange API и importer закрепляют
+completed UTC window после pinned checkpoint, точные source bytes/URL/SHA,
+полноту пагинации, явную CC BY-SA 4.0 и атрибуцию. Известные author/text
+зависимости группируются с прежним seed. Два review остаются пустыми, метки
+из tags/ответов не выводятся; источники не выдаются за клиентские события
+Agat. BANKING77 отклонён как независимый benchmark из-за неизвестного
+пересечения с обучением и иной схемы intent. Qualification и routing не включены.
+
+## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
 
