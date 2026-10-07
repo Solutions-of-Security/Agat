@@ -59,3 +59,5 @@ good/total и error budget policy; [Service Level Objectives](https://sre.google
 Источники измерений: [shared soak](../../performance/wired-shared-soak-7200-0.12.3.md)
 и [native crash gate](./resident-crash-loop.md). Они показывают ограниченные
 engineering workloads; согласование user-facing SLO на них не выполнено.
+
+[Controlled arrivals](../../performance/arrival-rate-4096.md), 07.10: два отдельных wired 4096 МиБ runtime на 2048 tokens дали 24/24 при 1 arrival/с, p95 874.733 мс; при 2 arrivals/с — 50% computed, с явными drops/busy. Краткий synthetic опыт добавляет данные к planning envelope; owners, real traffic, targets и burst policy по-прежнему не согласованы.
