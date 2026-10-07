@@ -13,21 +13,21 @@ export function interceptScheduledStartCommit(connectionString: string, applicat
   return interceptCommit(connectionString, applicationName, /^INSERT INTO process_scheduled_start_receipts\s*\(/i);
 }
 
-export function interceptCallerAccountingCommit(connectionString: string, applicationName: string) {
-  return interceptCommit(connectionString, applicationName, /^UPDATE stages\s+SET activity_json\s*=/i);
+export function interceptCallerAccountingCommit(connectionString: string, applicationName: string, initiallyArmed = true) {
+  return interceptCommit(connectionString, applicationName, /^UPDATE stages\s+SET activity_json\s*=/i, initiallyArmed);
 }
 
 /** Loopback-only fault fixture: forward COMMIT, retain its real server reply.
  * Only the named connection after the selected transaction's write is affected.
  * Authentication bytes and SQL payloads are never logged or saved.
  */
-async function interceptCommit(connectionString: string, applicationName: string, write: RegExp) {
+async function interceptCommit(connectionString: string, applicationName: string, write: RegExp, initiallyArmed = true) {
   const destination = new URL(connectionString);
   assert.equal(destination.hostname, "127.0.0.1");
   assert.ok(Number(destination.port) > 0);
   const sockets = new Set<net.Socket>();
   const errors: Error[] = [];
-  let fired = false, completed = false;
+  let fired = false, completed = false, armed = initiallyArmed;
   let held: { client: net.Socket; upstream: net.Socket } | undefined;
   let confirm!: () => void;
   const committed = new Promise<void>(resolve => { confirm = resolve; });
@@ -64,8 +64,8 @@ async function interceptCommit(connectionString: string, applicationName: string
             const query = type === "Q" ? body.toString("utf8").replace(/\0$/, "").trim()
               : type === "P" ? body.subarray(body.indexOf(0) + 1).toString("utf8").split("\0")[0]! : "";
             if (/^(?:BEGIN(?: IMMEDIATE)?|ROLLBACK)$/i.test(query.trim())) wroteTarget = false;
-            if (write.test(query.trim())) wroteTarget = true;
-            if (wroteTarget && /^COMMIT$/i.test(query) && !fired) {
+            if (armed && write.test(query.trim())) wroteTarget = true;
+            if (armed && wroteTarget && /^COMMIT$/i.test(query) && !fired) {
               fired = true; withholding = true; held = { client, upstream };
             }
           }
@@ -90,6 +90,7 @@ async function interceptCommit(connectionString: string, applicationName: string
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const address = server.address(); assert.ok(address && typeof address === "object");
   return { committed, errors,
+    arm: () => { assert.ok(!armed && !fired, "Commit fault is already armed or fired"); armed = true; },
     route: (value: string) => {
       const url = new URL(value); assert.equal(url.hostname, destination.hostname); assert.equal(url.port, destination.port);
       url.port = String(address.port); return url.toString();

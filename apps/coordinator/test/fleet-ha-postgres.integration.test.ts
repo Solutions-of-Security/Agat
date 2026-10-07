@@ -153,6 +153,39 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
     } };
 }
 
+type CallerWorkerObservation = {
+  pid: number; python: string; completed: string[]; primaryCalls: string[]; liveThreads: string[];
+  requests: Array<{ method: string; path: string; status: number; startedNs: number; finishedNs: number; threadId: number }>;
+};
+function startObservedCallerWorker(input: { coordinator: string; token: string; model: string;
+  decisionUrl: string; operation: "intent" | "return" }) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_") && !name.startsWith("OTEL_")));
+  const child = spawn("python3", [fileURLToPath(new URL("./decision-caller-worker-probe.py", import.meta.url))], {
+    env: { ...env, AGAT_OTEL_ENABLED: "false", PYTHONDONTWRITEBYTECODE: "1" }, stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "", diagnostic = "";
+  const closed = new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
+    child.once("close", (code, signal) => resolve({ code, signal })); child.once("error", reject);
+  });
+  void closed.catch(() => {});
+  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (data: string) => { output = (output + data).slice(-128 * 1024); });
+  child.stderr.on("data", (data: string) => { diagnostic = (diagnostic + data).slice(-8192); });
+  const send = (value: unknown) => child.stdin.write(JSON.stringify(value) + "\n"); send(input);
+  const records = (prefix: string) => output.split("\n").slice(0, -1).filter(line => line.startsWith(prefix + " "))
+    .map(line => JSON.parse(line.slice(prefix.length + 1)));
+  return { closed, send, pid: child.pid, diagnostic: () => `${diagnostic}\n${output}`,
+    checkpoints: () => records("AGAT_CALLER_WORKER_CHECKPOINT") as Array<{ pid: number; phase: string }>,
+    completed: () => records("AGAT_CALLER_WORKER_COMPLETED") as Array<{ leaseId: string; liveThreads: string[] }>,
+    result: () => { const values = records("AGAT_CALLER_WORKER_PROBE"); assert.equal(values.length, 1); return values[0] as CallerWorkerObservation; },
+    stop: async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      try { return await within(closed, 5_000, "Caller worker did not exit"); }
+      catch (error) { child.kill("SIGKILL"); await closed; throw error; }
+    } };
+}
+
+
 async function eventually(check: () => Promise<boolean>, message: string): Promise<void> {
   const deadline = performance.now() + 5_000;
   while (performance.now() < deadline) { if (await check()) return; await delay(20); }
@@ -2923,6 +2956,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     const events = () => first.db.prepare("SELECT id FROM events WHERE run_id=? AND type='decision.shadow'").all(String(run.runId));
     const children: Awaited<ReturnType<typeof startCoordinatorProcess>>[] = [];
     return { first, project, foreign, worker, lease, intent, payload, activity, events, artifacts, suffix, runId: String(run.runId),
+      nextLease: () => {
+        const following = first.startProcess(String(process.id), { input: "Following caller fixture", priority: 100 }, project)!;
+        const next = first.leaseNext(worker.id)!;
+        assert.ok(next?.decisionShadow); assert.equal(next.run.id, String(following.runId));
+        return { runId: String(following.runId), lease: next };
+      },
       persist: (name: string, details: Record<string, unknown>) => {
         const raw = processEnvCallerEvidence();
         if (!raw) return;
@@ -2947,6 +2986,85 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         first.markWorkerPoolOffline(project); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); },
     };
     } catch (error) { first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error; }
+  }
+
+  for (const operation of ["intent", "return"] as const) for (const fault of ["disconnect", "withhold"] as const) {
+    it(`real Python caller worker preserves primary and resumes after unknown ${operation} COMMIT (${fault})`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), instance = `caller-worker-${f.suffix}`;
+        const proxy = await interceptCallerAccountingCommit(systemUrl, `agat-${instance}-system`, false);
+        let worker: ReturnType<typeof startObservedCallerWorker> | undefined;
+        const backendCalls: Array<{ id: string; profileSha256: string }> = [], backendErrors: unknown[] = [];
+        const backend = http.createServer((request, response) => {
+          void (async () => {
+            assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/decisions");
+            const parts: Buffer[] = []; for await (const chunk of request) parts.push(Buffer.from(chunk));
+            const body = JSON.parse(Buffer.concat(parts).toString("utf8"));
+            backendCalls.push({ id: body.id, profileSha256: String(request.headers["x-agat-decision-profile"]) });
+            assert.ok(backendCalls.length <= 2, "Actual HTTP caller must not replay after an uncertain transaction");
+            response.writeHead(503, { "content-type": "application/json" }); response.end(JSON.stringify({ error: "Controlled busy fixture" }));
+          })().catch(error => { backendErrors.push(error); response.writeHead(500); response.end(); });
+        });
+        try {
+          await new Promise<void>(resolve => backend.listen(0, "127.0.0.1", resolve));
+          const address = backend.address(); assert.ok(address && typeof address === "object");
+          const child = await f.child(instance, { AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl),
+            ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) });
+          worker = startObservedCallerWorker({ coordinator: `http://127.0.0.1:${child.port}`, token: f.worker.token,
+            model: f.project, decisionUrl: `http://127.0.0.1:${address.port}`, operation });
+          worker.send({ lease: f.lease });
+          await eventually(async () => worker!.checkpoints().length === 1,
+            `Actual caller did not reach its ${operation} checkpoint: ${worker.diagnostic()}`);
+          assert.equal(worker.checkpoints()[0]!.phase, operation); proxy.arm(); worker.send({ continue: true });
+          await within(Promise.race([proxy.committed, worker.closed.then(result => {
+            throw new Error(`Caller worker exited before real COMMIT: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+          })]), 5_000, "Actual Python caller did not reach the selected real COMMIT");
+          const committed = f.activity();
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].intent, true);
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].returned !== null, operation === "return");
+          assert.equal(backendCalls.length, operation === "return" ? 1 : 0);
+          f.persist(`worker-${operation}-${fault}-before-ack`, { realSuccessfulCommitObserved: true, activityAtCommit: committed,
+            workerPid: worker.pid, backendCalls: [...backendCalls] });
+          if (fault === "disconnect") proxy.disconnect();
+          await eventually(async () => worker!.completed().length === 1,
+            `Caller did not preserve primary after its unknown COMMIT: ${worker.diagnostic()}`);
+          const firstTrace = f.first.getRunTrace(f.runId, f.project)!;
+          assert.equal(firstTrace.run && (firstTrace.run as any).stages[0].output, `PRIMARY ${f.runId}`);
+          assert.equal((firstTrace.decisionCallerAccounting as any).stages[0].assignments[0].outcome,
+            operation === "return" ? "returned" : "return_missing");
+          const following = f.nextLease(); worker.send({ lease: following.lease });
+          await eventually(async () => worker!.completed().length === 2,
+            `Same caller process did not execute the following lease: ${worker.diagnostic()}`);
+          worker.send({ stop: true }); assert.deepEqual(await worker.closed, { code: 0, signal: null });
+          const observed = worker.result(); const leases = [f.lease.leaseId, following.lease.leaseId];
+          assert.deepEqual(observed.completed, leases); assert.deepEqual(observed.primaryCalls, leases); assert.deepEqual(observed.liveThreads, []);
+          const byLease = (id: string) => observed.requests.filter(r => r.path.startsWith(`/api/v1/leases/${id}/`));
+          const firstRequests = byLease(f.lease.leaseId), nextRequests = byLease(following.lease.leaseId);
+          assert.equal(firstRequests.filter(r => r.path.endsWith(operation === "intent" ? "/decision-shadow/intent" : "/decision-shadow") && r.status === 503).length, 1);
+          assert.equal(firstRequests.filter(r => r.path.endsWith("/decision-shadow/intent")).length, 1);
+          assert.equal(firstRequests.filter(r => r.path.endsWith("/decision-shadow")).length, operation === "return" ? 1 : 0);
+          assert.ok([...firstRequests, ...nextRequests].every(r => !r.path.endsWith("/fail")));
+          assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow/intent") && r.status === 200).length, 1);
+          assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow") && r.status === 200).length, 1);
+          assert.equal(observed.requests.filter(r => r.path.endsWith("/complete") && r.status === 200).length, 2);
+          const nextTrace = f.first.getRunTrace(following.runId, f.project)!;
+          assert.equal((nextTrace.run as any).status, "completed"); assert.equal((nextTrace.run as any).stages[0].output, `PRIMARY ${following.runId}`);
+          const returned = (nextTrace.decisionCallerAccounting as any).stages[0].assignments[0];
+          assert.equal(returned.outcome, "returned"); assert.equal(returned.returned.reason, "busy");
+          assert.ok(returned.returned.callerTiming.durationMs >= 0); assert.equal(backendCalls.length, operation === "return" ? 2 : 1);
+          assert.equal(backendCalls.at(-1)!.id, following.lease.decisionShadow!.request.id);
+          assert.ok(backendCalls.every(call => call.profileSha256 === f.lease.decisionShadow!.profileSha256));
+          assert.deepEqual(proxy.errors, []); assert.deepEqual(backendErrors, []);
+          f.persist(`worker-${operation}-${fault}-final`, { worker: observed, backendCalls, followingTrace: nextTrace,
+            followingStage: f.first.db.prepare("SELECT id,run_id,status,attempt,node_id,lease_id,lease_expires_at,activity_json FROM stages WHERE id=?").get(following.lease.stage.id),
+            primaryPreserved: true, followingLeaseCompleted: true, renewersAndWatchdogJoined: true });
+          context.diagnostic(`Python caller ${operation}/${fault}: one HTTP 503, both primary completions HTTP 200, following caller returned, no duplicate backend calls or worker threads`);
+        } finally {
+          await worker?.stop(); await proxy.close(); await f.close(); backend.closeAllConnections();
+          await new Promise<void>(resolve => backend.close(() => resolve()));
+        }
+      });
+    });
   }
 
   it("caller accounting concurrent replicas allow one invocation and preserve return, restart and tenant RLS", async context => {
