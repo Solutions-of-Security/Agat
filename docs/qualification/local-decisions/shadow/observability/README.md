@@ -122,6 +122,12 @@ receipts, unknown outcomes после worker death и отдельный caller 
 row/event-lock expiry, retained COMMIT ACK, idempotency, restart и tenant RLS;
 readonly inventory учитывает фактический expiry до maintenance.
 
+[Actual Python caller recovery](./caller-worker-postgres.md) проверил четыре
+unknown-COMMIT сценария и следующую lease в том же worker/coordinator.
+Два native прогона прошли по 12 targeted / 112 Fleet/HA tests; actual
+renewal HTTP 204 измеряется без подстановки success code. Следующий gate —
+явная идентичность configured JSON bytes при offline SLI accounting.
+
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
 latency. Legacy inventory gaps и safe replay имеют явное accounting.
