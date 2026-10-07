@@ -290,6 +290,11 @@ completed UTC window после pinned checkpoint, точные source bytes/URL
 из tags/ответов не выводятся; источники не выдаются за клиентские события
 Agat. BANKING77 отклонён как независимый benchmark из-за неизвестного
 пересечения с обучением и иной схемы intent. Qualification и routing не включены.
+Committed сбор `58bd7a5` вернул 145 вопросов; 129 включены, 16 без явной
+лицензии исключены. 955 audit checks восстановили source/input bindings и
+122 группы; fixed split даёт 49 development / 46 calibration / 34 holdout
+заданий. Девять targeted и 776 Python / 12 Node docs checks прошли.
+Human review, эталонные метки и model calls — ноль; преобладает английский язык.
 
 ## Вывод: что именно можно воспроизвести
 
