@@ -38,6 +38,8 @@ class CallerSliCliTest(unittest.TestCase):
         self.assertEqual(self.invoke(), 0)
         report = verify_seal(read_json(self.output), "agat.decision.shadow-caller-sli.v1")
         self.assertEqual(report["status"], "diagnostic_only"); self.assertFalse(report["sloAccepted"])
+        self.assertEqual(report["profileIdentity"], "runtime_fingerprint")
+        self.assertEqual(report["profileFingerprintSha256"], fingerprint(self.profile))
         self.assertFalse(report["routingEnabled"]); self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.invoke(), 1)
 
@@ -105,6 +107,51 @@ class CallerSliCliTest(unittest.TestCase):
         self.trace.write_text(json.dumps(trace)); self.base[self.base.index("--trace-sha256")+1] = self.sha(self.trace)
         self.assertEqual(self.invoke(), 1)
         self.assertIn("marker differ", read_json(self.output)["failure"]["message"])
+
+    def configured_bytes_args(self):
+        args = self.base.copy(); sha = self.sha(self.profile_file)
+        args[args.index("--profile-sha256")+1] = sha
+        trace = read_json(self.trace)
+        trace["decisionObservations"][0]["profileSha256"] = sha
+        trace["decisionStageInventory"]["stages"][0]["profileSha256"] = sha
+        self.trace.write_text(json.dumps(trace))
+        args[args.index("--trace-sha256")+1] = self.sha(self.trace)
+        return args + ["--profile-identity", "coordinator_json_bytes"]
+
+    def test_explicit_bytes_mode_matches_noncanonical_coordinator_config(self):
+        self.assertEqual(self.invoke(self.configured_bytes_args()), 0)
+        report = verify_seal(read_json(self.output), "agat.decision.shadow-caller-sli.v1")
+        self.assertEqual(report["profileIdentity"], "coordinator_json_bytes")
+        self.assertEqual(report["profileSha256"], self.sha(self.profile_file))
+        self.assertEqual(report["profileFingerprintSha256"], fingerprint(self.profile))
+        self.assertNotEqual(report["profileSha256"], report["profileFingerprintSha256"])
+        self.assertEqual(report["counts"]["profileBindingMismatches"], 0)
+        self.assertFalse(report["populationCoverageVerified"]); self.assertFalse(report["sloAccepted"])
+
+    def test_raw_hash_requires_explicit_mode_and_correct_independent_pin(self):
+        args = self.configured_bytes_args()[:-2]
+        self.assertEqual(self.invoke(args), 1)
+        self.assertIn("profile content SHA", read_json(self.output)["failure"]["message"])
+        self.output.unlink(); args += ["--profile-identity", "coordinator_json_bytes"]
+        args[args.index("--profile-sha256")+1] = fingerprint(self.profile)
+        self.assertEqual(self.invoke(args), 1)
+        self.assertIn("coordinator profile bytes SHA", read_json(self.output)["failure"]["message"])
+
+    def test_whitespace_changes_need_a_new_pin_and_do_not_match_old_assignments(self):
+        args = self.configured_bytes_args(); self.profile_file.write_bytes(self.profile_file.read_bytes()+b"\n")
+        args[args.index("--profile-file-sha256")+1] = self.sha(self.profile_file)
+        self.assertEqual(self.invoke(args), 1)
+        self.assertIn("coordinator profile bytes SHA", read_json(self.output)["failure"]["message"])
+        self.output.unlink(); args[args.index("--profile-sha256")+1] = self.sha(self.profile_file)
+        self.assertEqual(self.invoke(args), 2)
+        self.assertEqual(read_json(self.output)["counts"]["profileBindingMismatches"], 1)
+
+    def test_bytes_mode_rejects_utf16_even_with_matching_file_and_content_hashes(self):
+        self.profile_file.write_bytes(json.dumps(self.profile).encode("utf-16"))
+        args = self.configured_bytes_args()
+        args[args.index("--profile-file-sha256")+1] = self.sha(self.profile_file)
+        self.assertEqual(self.invoke(args), 1)
+        self.assertEqual(read_json(self.output)["status"], "failed")
 
 
 if __name__ == "__main__": unittest.main()

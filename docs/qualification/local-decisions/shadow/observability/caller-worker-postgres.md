@@ -67,7 +67,9 @@ Optional SLI bridge выявил другую границу: coordinator зак
 bytes `profileJson`, а SLI CLI ожидает runtime fingerprint разобранного JSON.
 Whitespace и literal `1.0` сохраняют другой SHA при одинаковом содержимом.
 Raw profile и actual CLI rejection сохранены; следующий этап добавит
-явный identity mode без переписывания historical hashes.
+явный identity mode без переписывания historical hashes. Последующий
+[configured profile identity gate](./caller-profile-identity.md) проверил
+этот режим на native SQL traces и сохранил historical default metrics.
 
 Owner/SLO agreement, customer population, actual boot/login и независимая
 human qualification остаются неподтверждёнными. Routing выключен.

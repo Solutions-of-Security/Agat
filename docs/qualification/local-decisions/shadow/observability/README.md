@@ -128,6 +128,11 @@ unknown-COMMIT сценария и следующую lease в том же worke
 renewal HTTP 204 измеряется без подстановки success code. Следующий gate —
 явная идентичность configured JSON bytes при offline SLI accounting.
 
+[Configured profile identity](./caller-profile-identity.md) добавляет
+explicit JSON bytes mode. Native SQL traces дают восемь intents, шесть
+returns и два unknown без profile mismatch; historical default latency
+и ratios сохранены. Следующий gate — актуальный Temporal/PostgreSQL/RAG.
+
 [Stage inventory](./stage-inventory.md) показывает assigned pending и
 terminal stages без observation; отдельный census не подменяет ими HTTP
 latency. Legacy inventory gaps и safe replay имеют явное accounting.

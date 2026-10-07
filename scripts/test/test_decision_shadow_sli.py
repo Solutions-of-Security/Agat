@@ -1,8 +1,10 @@
 import copy
+import hashlib
+import json
 import math
 import unittest
 
-from decision_runtime.contracts import fingerprint
+from decision_runtime.contracts import canonical_json, fingerprint
 from scripts.lib.decision_shadow_sli import analyze
 
 
@@ -110,6 +112,40 @@ class CallerSliTest(unittest.TestCase):
         self.assertIn("missing_lease_bindings", result["dataGaps"])
         self.assertFalse(result["leaseBindingCoverageVerified"])
         self.assertEqual(result["withinCallerDeadlineRatio"], {"lower": 0.0, "upper": 1.0})
+
+    def test_noncanonical_configured_bytes_match_the_stored_lease_identity(self):
+        raw = json.dumps(self.profile, indent=2).encode("utf-8")
+        row = self.row(); row["profileSha256"] = hashlib.sha256(raw).hexdigest()
+        trace = self.trace([row])
+        self.assertEqual(analyze([trace], self.profile, 1000)["counts"]["profileBindingMismatches"], 1)
+        report = analyze([trace], self.profile, 1000, profile_json_bytes=raw)
+        self.assertEqual(report["counts"]["profileBindingMismatches"], 0)
+        self.assertTrue(report["stageInventory"]["inventoryBindingsVerified"])
+        self.assertEqual(report["boundResultRatio"], 1)
+
+    def test_canonical_exact_bytes_preserve_the_default_analysis(self):
+        trace = self.trace([self.row()])
+        self.assertEqual(analyze([trace], self.profile, 1000),
+                         analyze([trace], self.profile, 1000, profile_json_bytes=canonical_json(self.profile).encode("utf-8")))
+
+    def test_appended_whitespace_is_a_distinct_configured_byte_identity(self):
+        raw = canonical_json(self.profile).encode("utf-8")
+        report = analyze([self.trace([self.row()])], self.profile, 1000, profile_json_bytes=raw+b"\n")
+        self.assertEqual(report["counts"]["profileBindingMismatches"], 1)
+        self.assertEqual(report["stageInventory"]["counts"]["inventoryProfileMismatches"], 1)
+
+    def test_coordinator_bytes_reject_invalid_encoding_bounds_and_json(self):
+        for raw in ("text", bytearray(b"{}"), b"", b" "*(1024*1024+1),
+                    json.dumps(self.profile).encode("utf-16"), b'{}\xff', b'\xef\xbb\xbf{}',
+                    b'{"x":1,"x":2}', b'{"x":NaN}'):
+            with self.subTest(raw_type=type(raw)), self.assertRaises(ValueError):
+                analyze([self.trace([self.row()])], self.profile, 1000, profile_json_bytes=raw)
+
+    def test_supplied_bytes_cannot_substitute_another_profile_or_a_boolean_alias(self):
+        for change in ({"model": {"repository": "other"}}, {"calibration": {"temperature": True}}):
+            raw = json.dumps({**self.profile, **change}).encode("utf-8")
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "differ from parsed profile"):
+                analyze([self.trace([self.row()])], self.profile, 1000, profile_json_bytes=raw)
 
 
 if __name__ == "__main__": unittest.main()
