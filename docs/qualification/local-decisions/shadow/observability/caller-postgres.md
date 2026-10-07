@@ -47,8 +47,9 @@ committed SQL до ответа HTTP. Auth bytes и SQL payloads proxy не со
 
 Во всех четырёх unknown-COMMIT сценариях primary завершён через независимый
 parent store. На этом этапе продолжение настоящего Python worker после
-PostgreSQL commit uncertainty ещё не проверено. Следующий gate закроет
-именно эту границу. Synthetic unavailable callback с duration 1000 ms —
+PostgreSQL commit uncertainty ещё не проверялось; последующий
+[actual worker recovery gate](./caller-worker-postgres.md) закрыл эту границу.
+Synthetic unavailable callback с duration 1000 ms —
 контрактный fixture, не измерение LocalDecisionClient или MLX latency.
 
 ## Доказательства и ограничения
