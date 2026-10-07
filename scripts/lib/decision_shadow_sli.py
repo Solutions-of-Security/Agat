@@ -1,9 +1,10 @@
 """Descriptive caller SLIs over provided coordinator traces; no SLO adoption."""
 from __future__ import annotations
 
+import hashlib
 import math
 import re
-from decision_runtime.contracts import fingerprint
+from decision_runtime.contracts import fingerprint, parse_json
 from scripts.lib.decision_stage_inventory import census
 from scripts.lib.decision_caller_inventory import census as caller_census
 
@@ -42,10 +43,16 @@ def same_json(expected, actual):
     return type(expected) is type(actual) and expected == actual
 
 
-def analyze(traces, profile, latency_threshold_ms):
+def analyze(traces, profile, latency_threshold_ms, *, profile_json_bytes=None):
     require(isinstance(profile, dict) and set(profile) in ({"schemaVersion", "runtimeVersion", "model", "policy", "calibration"},
              {"schemaVersion", "runtimeVersion", "model", "policy", "calibration", "inputFingerprintVersions"}), "Invalid expected profile fields")
     profile_sha256 = fingerprint(profile)
+    if profile_json_bytes is not None:
+        require(type(profile_json_bytes) is bytes and 0 < len(profile_json_bytes) <= 1024*1024,
+                "Use bounded UTF-8 coordinator profile bytes")
+        parsed = parse_json(profile_json_bytes.decode("utf-8"))
+        require(same_json(profile, parsed), "Profile JSON bytes differ from parsed profile")
+        profile_sha256 = hashlib.sha256(profile_json_bytes).hexdigest()
     require(isinstance(profile_sha256, str) and re.fullmatch(r"[a-f0-9]{64}", profile_sha256), "Pin the expected profile SHA")
     require(type(latency_threshold_ms) is int and 1 <= latency_threshold_ms <= 86_400_000, "Invalid latency threshold")
     require(isinstance(traces, list) and 1 <= len(traces) <= 32, "Use one to 32 complete trace inputs")

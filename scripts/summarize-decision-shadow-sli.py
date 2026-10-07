@@ -55,6 +55,8 @@ def main(argv=None):
     parser.add_argument("--trace", type=Path, action="append", required=True)
     parser.add_argument("--trace-sha256", action="append", required=True)
     parser.add_argument("--profile-sha256", required=True)
+    parser.add_argument("--profile-identity", choices=("runtime_fingerprint", "coordinator_json_bytes"), default="runtime_fingerprint",
+                        help="SHA binding: runtime fingerprint (default) or exact UTF-8 configured JSON bytes, including whitespace")
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--profile-file-sha256", required=True)
     parser.add_argument("--latency-threshold-ms", type=int, required=True)
@@ -69,6 +71,7 @@ def main(argv=None):
     except (OSError, ValueError) as error:
         print(f"Cannot prepare SLI output: {error}", file=sys.stderr); return 1
     report = {"schemaVersion": "agat.decision.shadow-caller-sli.v1", "status": "failed", "trafficKind": args.traffic_kind,
+              "profileIdentity": args.profile_identity,
               "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed", "failure": None}
     try:
         require(len(args.trace) == len(args.trace_sha256) and 1 <= len(args.trace) <= 32, "Match each trace with its independent file SHA")
@@ -77,8 +80,11 @@ def main(argv=None):
                 and args.profile.stat().st_size <= 1024*1024, "Pin a bounded regular profile file")
         profile_raw = bounded_bytes(args.profile, 1024*1024)
         require(hashlib.sha256(profile_raw).hexdigest() == args.profile_file_sha256, "Profile file pin differs")
-        profile = parse_json(profile_raw)
-        require(fingerprint(profile) == args.profile_sha256, "Expected profile content SHA differs")
+        coordinator_bytes = args.profile_identity == "coordinator_json_bytes"
+        profile = parse_json(profile_raw.decode("utf-8") if coordinator_bytes else profile_raw)
+        report["profileFingerprintSha256"] = fingerprint(profile)
+        expected = hashlib.sha256(profile_raw).hexdigest() if coordinator_bytes else report["profileFingerprintSha256"]
+        require(expected == args.profile_sha256, "Expected coordinator profile bytes SHA differs" if coordinator_bytes else "Expected profile content SHA differs")
         traces = []; inputs = []; total = 0
         for path, expected in zip(args.trace, args.trace_sha256):
             require(isinstance(expected, str) and re.fullmatch(r"[a-f0-9]{64}", expected), "Pin every trace file SHA")
@@ -86,7 +92,8 @@ def main(argv=None):
             raw = bounded_bytes(path, 16*1024*1024); total += len(raw)
             require(total <= 128*1024*1024 and hashlib.sha256(raw).hexdigest() == expected, "Trace size or independent SHA differs")
             traces.append(parse_json(raw)); inputs.append({"path": str(path.absolute()), "fileSha256": expected})
-        summary = analyze(traces, profile, args.latency_threshold_ms)
+        summary = analyze(traces, profile, args.latency_threshold_ms,
+                          profile_json_bytes=profile_raw if coordinator_bytes else None)
         report.update(summary, sourceCommit=commit, sourceFiles=files, inputs=inputs, profileSha256=args.profile_sha256,
                       profileFileSha256=args.profile_file_sha256,
                       status="diagnostic_only" if args.traffic_kind == "diagnostic_fixture" else summary["measurementStatus"])
