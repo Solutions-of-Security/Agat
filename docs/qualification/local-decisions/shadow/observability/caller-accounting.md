@@ -122,7 +122,8 @@ SHA-256 `b36386609476ea24437163f80a691e5258349d693adba4c39c2ce7a2ef16907c`.
 Все CRC/SHA/size и копия в исходном workspace проверены. Public export
 не содержит lease/run IDs, токенов, native paths, PID, prompt или state.
 
-Следующий transaction gate — два PostgreSQL coordinators, concurrent begin,
-row-lock expiry, persistence/COMMIT uncertainty и project isolation.
+[PostgreSQL transaction gate](./caller-postgres.md) прошёл concurrent begin,
+row/event-lock expiry, COMMIT uncertainty, restart и project isolation.
+Следующая проверка — настоящий Python caller после unknown PostgreSQL COMMIT.
 Actual boot/login, owner/SLO и independent human qualification остаются
 открытыми.

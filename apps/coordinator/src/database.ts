@@ -13018,8 +13018,11 @@ export class AgatStore {
     const events = eventRows.slice(0, 10_000).map((row) => this.eventDto(row));
     const artifacts = this.listRunArtifacts(runId);
     const goldenEvaluation = this.goldenEvaluationForRun(runId, project);
-    const decisionStages = (this.db.prepare("SELECT id, status, attempt, lease_id, activity_json FROM stages WHERE run_id = ? ORDER BY position")
-      .all(runId) as Row[]).map(stage => ({ stage,
+    const decisionStageRows = this.db.prepare("SELECT id, status, attempt, lease_id, lease_expires_at, activity_json FROM stages WHERE run_id = ? ORDER BY position")
+      .all(runId) as Row[];
+    const traceObservedAt = Date.now();
+    const decisionStages = decisionStageRows.map(stage => ({ stage,
+        activeLease: Boolean(stage.lease_id) && Date.parse(String(stage.lease_expires_at ?? "")) > traceObservedAt,
         activity: parseJson<Record<string, unknown>>(stage.activity_json, {}) }));
     return {
       run: this.runDto(run),
@@ -13029,15 +13032,15 @@ export class AgatStore {
       decisionCallerAccounting: {
         schemaVersion: DECISION_CALLER_INVENTORY, scope: "caller_operation_intents",
         stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
-          .map(({ stage, activity }) => ({ stageId: String(stage.id),
+          .map(({ stage, activity, activeLease }) => ({ stageId: String(stage.id),
             ...callerAccountingDto(activity.decisionShadowCallerAccounting, assignmentHistory(activity.decisionShadowAssignmentHistory),
-              Number(stage.attempt), String(stage.status), Boolean(stage.lease_id)) })),
+              Number(stage.attempt), String(stage.status), activeLease) })),
       },
       decisionAssignmentHistory: {
         schemaVersion: DECISION_ASSIGNMENT_INVENTORY, scope: "coordinator_shadow_assignments",
         stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
-          .map(({ stage, activity }) => ({ stageId: String(stage.id),
-            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), Boolean(stage.lease_id),
+          .map(({ stage, activity, activeLease }) => ({ stageId: String(stage.id),
+            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), activeLease,
               activity.decisionShadowObservation as DecisionShadowObservation | undefined) })),
       },
       decisionStageInventory: {

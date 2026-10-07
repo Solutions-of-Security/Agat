@@ -17,7 +17,8 @@ import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.j
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
-import { interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
+import { interceptCallerAccountingCommit, interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
+import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -71,7 +72,11 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
     const finished = await Promise.race([closed.then(() => true), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), 5_000); })]);
     clearTimeout(timer);
     if (!finished) child.kill("SIGKILL");
-    return closed;
+    const result = await closed;
+    if (process.env.AGAT_CALLER_POSTGRES_EVIDENCE_DIR) {
+      console.log(`AGAT_POSTGRES_COORDINATOR_EXIT ${JSON.stringify({ pid: child.pid, ...result })}`);
+    }
+    return result;
   };
   try {
     const port = await new Promise<number>((resolve, reject) => {
@@ -86,7 +91,7 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
       });
     });
     assert.ok(port > 0);
-    return { port, stop, closed, signal: () => child.kill("SIGTERM"),
+    return { port, pid: child.pid, stop, closed, signal: () => child.kill("SIGTERM"),
       diagnostic: () => diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>") };
   } catch (error) { await stop(); throw error; }
 }
@@ -2870,6 +2875,186 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           if (runId) first.cancelRun(runId, project);
           first.markWorkerPoolOffline(project); await writer.end(); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
         }
+      });
+    });
+  }
+
+  function processEnvCallerEvidence(): string | undefined {
+    const raw = process.env.AGAT_CALLER_POSTGRES_EVIDENCE_DIR;
+    if (!raw) return undefined;
+    const base = fileURLToPath(new URL("../../../docs/private/", import.meta.url));
+    const directory = path.resolve(raw), relative = path.relative(base, directory);
+    assert.ok(relative && !relative.startsWith("..") && !path.isAbsolute(relative), "Caller evidence must be private under docs/private");
+    assert.ok(fs.lstatSync(directory).isDirectory() && !fs.lstatSync(directory).isSymbolicLink());
+    return directory;
+  }
+
+  function callerFixture() {
+    const suffix = randomUUID().slice(0, 8), project = `caller-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-caller-"));
+    const first = store(`caller-parent-${suffix}`, artifacts);
+    try {
+    first.updateScheduler("parallel", 10);
+    first.createProject({ id: project, name: project, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const foreign = `${project}-other`;
+    first.createProject({ id: foreign, name: foreign, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model: project }, project);
+    const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
+      maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
+      labels: { decisionShadow: "local_decision_shadow_v2", decisionCallerAccounting: DECISION_CALLER_ACCOUNTING, pool: project } });
+    const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
+      kind: "boolean", question: "Confirmed?", options: [
+        { id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] });
+    const graph: ProcessGraph = { nodes: [
+      { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+      { id: "agent", name: "Agent", type: "agent", position: { x: 200, y: 0 }, config: { agentId: String(agent.id), decisionShadow: shadow } },
+      { id: "end", name: "End", type: "end", position: { x: 400, y: 0 }, config: {} },
+    ], edges: [{ id: "a", source: "start", target: "agent", branch: "default" }, { id: "b", source: "agent", target: "end", branch: "default" }] };
+    const process = first.createProcess({ name: `Caller accounting PostgreSQL ${suffix}`, graph }, project);
+    first.publishProcess(String(process.id), project);
+    const run = first.startProcess(String(process.id), { input: "Controlled caller fixture", priority: 100 }, project)!;
+    const lease = first.leaseNext(worker.id)!; assert.ok(lease?.decisionShadow); assert.equal(lease.run.id, String(run.runId));
+    const intent = { schemaVersion: DECISION_CALLER_ACCOUNTING, assignmentId: lease.decisionShadow.assignmentId };
+    const payload = { status: "unavailable", reason: "timeout", callerTiming: {
+      schemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call", durationMs: 1000 } };
+    const activity = () => JSON.parse(String(first.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(lease.stage.id)!.activity_json));
+    const events = () => first.db.prepare("SELECT id FROM events WHERE run_id=? AND type='decision.shadow'").all(String(run.runId));
+    const children: Awaited<ReturnType<typeof startCoordinatorProcess>>[] = [];
+    return { first, project, foreign, worker, lease, intent, payload, activity, events, artifacts, suffix, runId: String(run.runId),
+      persist: (name: string, details: Record<string, unknown>) => {
+        const raw = processEnvCallerEvidence();
+        if (!raw) return;
+        const file = path.join(raw, `${name}.json`);
+        fs.writeFileSync(file, JSON.stringify({ name, capturedAt: new Date().toISOString(), details, project, foreignProject: foreign,
+          stage: first.db.prepare("SELECT id,run_id,status,attempt,node_id,lease_id,lease_expires_at,activity_json FROM stages WHERE id=?").get(lease.stage.id),
+          trace: first.getRunTrace(String(run.runId), project), shadowEvents: events() }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      },
+      child: async (instance: string, overrides: NodeJS.ProcessEnv = {}) => {
+        const child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync", AGAT_DECISION_SHADOW_ENABLED: "true", ...overrides }));
+        children.push(child); return child;
+      },
+      post: (child: { port: number }, operation: "intent" | "return", body = operation === "intent" ? intent : payload) =>
+        fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${lease.leaseId}/decision-shadow${operation === "intent" ? "/intent" : ""}`, {
+          method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+        }).then(async response => ({ status: response.status, body: await response.json() as Record<string, unknown> })),
+      close: async () => { for (const child of children) assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        console.log(`AGAT_CALLER_POSTGRES_CLEANUP ${JSON.stringify({ pids: children.map(child => child.pid), closed: true })}`);
+        first.cancelRun(String(run.runId), project);
+        first.markWorkerPoolOffline(project); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); },
+    };
+    } catch (error) { first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error; }
+  }
+
+  it("caller accounting concurrent replicas allow one invocation and preserve return, restart and tenant RLS", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = callerFixture(); let reopened: AgatStore | undefined;
+      try {
+        const a = await f.child(`caller-a-${f.suffix}`), b = await f.child(`caller-b-${f.suffix}`);
+        const receipts = await Promise.all([f.post(a, "intent"), f.post(b, "intent")]);
+        assert.deepEqual(receipts.map(r => r.status), [200, 200]);
+        assert.deepEqual(receipts.map(r => r.body.mayInvoke).sort(), [false, true]);
+        assert.equal(f.activity().decisionShadowCallerAccounting.assignments.length, 1);
+        assert.equal(f.activity().decisionShadowCallerAccounting.assignments[0].intent, true);
+        const observed = await f.post(b, "return"); assert.equal(observed.status, 200);
+        assert.deepEqual(await f.post(a, "return"), observed); assert.equal(f.events().length, 1);
+        const complete = await fetch(`http://127.0.0.1:${a.port}/api/v1/leases/${f.lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${f.worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ output: "PRIMARY caller accounting" }), signal: AbortSignal.timeout(15_000) });
+        assert.equal(complete.status, 200); await complete.json();
+        reopened = store(`caller-reopened-${f.suffix}`, f.artifacts);
+        const trace = reopened.getRunTrace(f.runId, f.project)!;
+        const ledger = (trace.decisionCallerAccounting as any).stages[0];
+        assert.equal(ledger.coverage, "complete"); assert.equal(ledger.assignments[0].outcome, "returned");
+        assert.deepEqual(ledger.assignments[0].returned.callerTiming, f.payload.callerTiming);
+        assert.equal((reopened.getRun(f.runId, f.project)!.stages as any[])[0].output, "PRIMARY caller accounting");
+        assert.deepEqual(reopened.getRunTrace(f.runId, f.project), f.first.getRunTrace(f.runId, f.project));
+        assert.equal(reopened.getRunTrace(f.runId, f.foreign), null);
+        enterPostgresTenantScope(f.foreign);
+        assert.equal(reopened.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(f.lease.stage.id), undefined);
+        enterPostgresTenantScope(f.project);
+        assert.equal(JSON.parse(String(reopened.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(f.lease.stage.id)!.activity_json)).decisionShadowCallerAccounting.assignments[0].returned.status, "unavailable");
+        f.persist("concurrent", { receipts, restartVerified: true, tenantIsolationVerified: true, primaryPreserved: true });
+        context.diagnostic("Concurrent HTTP begin: permissions=false,true; one intent/return/event; restart and tenant RLS pass");
+      } finally { await runWithPostgresSystemScope(async () => { reopened?.close(); await f.close(); }); }
+    });
+  });
+
+  for (const boundary of ["stage lock", "duplicate intent", "return event insert"] as const) {
+    it(`caller accounting rejects expiry during ${boundary} and rolls back caller state`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+        const instance = `caller-expiry-${f.suffix}`; const pending: Promise<unknown>[] = [];
+        try {
+          await writer.connect(); const child = await f.child(instance);
+          if (boundary !== "stage lock") f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent);
+          const before = f.activity(); const expires = Date.now() + 5000;
+          f.first.db.prepare("UPDATE stages SET lease_expires_at=? WHERE id=?").run(new Date(expires).toISOString(), f.lease.stage.id);
+          await writer.query("BEGIN");
+          if (boundary === "return event insert") await writer.query("LOCK TABLE events IN SHARE MODE");
+          else await writer.query("SELECT id FROM stages WHERE id=$1 FOR UPDATE", [f.lease.stage.id]);
+          const response = f.post(child, boundary === "return event insert" ? "return" : "intent"); pending.push(response);
+          await eventually(async () => {
+            await writer.query("SELECT pg_stat_clear_snapshot()");
+            const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type='Lock'", [`agat-${instance}-system`]);
+            if (!waiting.rows.length) return false;
+            assert.match(waiting.rows[0].query, boundary === "return event insert" ? /INSERT INTO events/ : /FOR UPDATE OF s/); return true;
+          }, "Caller accounting HTTP request did not reach the real row/event lock");
+          assert.ok(Date.now() < expires); await delay(Math.max(0, expires - Date.now() + 50)); await writer.query("ROLLBACK");
+          const result = await within(response, 5000, "Caller accounting request did not finish after releasing the lock");
+          assert.equal(result.status, 400); assert.match(String(result.body.error), /Активная аренда не найдена/);
+          assert.deepEqual(f.activity(), before); assert.equal(f.events().length, 0);
+          assert.equal(f.first.renewLease(f.worker.id, f.lease.leaseId), false);
+          const expiredTrace = f.first.getRunTrace(f.runId, f.project)!;
+          assert.equal((expiredTrace.run as any).stages[0].status, "running");
+          assert.equal((expiredTrace.decisionAssignmentHistory as any).stages[0].assignments[0].outcome, "ended_without_observation");
+          assert.equal((expiredTrace.decisionCallerAccounting as any).stages[0].assignments[0].outcome,
+            boundary === "stage lock" ? "no_intent_recorded" : "return_missing");
+          assert.deepEqual(f.activity(), before);
+          f.persist(`expiry-${boundary.replaceAll(" ", "-")}`, { http: result, activityBefore: before, activityUnchanged: true,
+            sqlWaitPastExpiryVerified: true, readonlyExpiredOwnershipVerified: true });
+          context.diagnostic(`Caller ${boundary}: real SQL wait past expiry; HTTP 400; caller history/observation/event unchanged`);
+        } finally { await writer.query("ROLLBACK").catch(() => {}); await f.close(); await Promise.allSettled(pending); await writer.end(); }
+      });
+    });
+  }
+
+  for (const operation of ["intent", "return"] as const) for (const fault of ["disconnect", "withhold"] as const) {
+    it(`caller accounting preserves committed ${operation} after lost COMMIT acknowledgement (${fault})`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), instance = `caller-commit-${f.suffix}`;
+        if (operation === "return") f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent);
+        const proxy = await interceptCallerAccountingCommit(systemUrl, `agat-${instance}-system`);
+        const pending: Promise<unknown>[] = [];
+        try {
+          const child = await f.child(instance, { AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl),
+            ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) });
+          const response = f.post(child, operation); pending.push(response);
+          await within(Promise.race([proxy.committed, response.then(r => { throw new Error(`Caller HTTP ${r.status} returned before real COMMIT`); })]), 5000,
+            "Caller fault fixture did not retain a real successful COMMIT acknowledgement");
+          const committed = f.activity(); assert.equal(committed.decisionShadowCallerAccounting.assignments[0].intent, true);
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].returned !== null, operation === "return");
+          assert.equal(f.events().length, operation === "return" ? 1 : 0);
+          f.persist(`commit-${operation}-${fault}-before-ack`, { realSuccessfulCommitObserved: true, activityAtCommit: committed });
+          if (fault === "disconnect") proxy.disconnect();
+          const result = await within(response, fault === "withhold" ? 5000 : 2500, "Lost caller COMMIT acknowledgement did not yield a bounded response");
+          assert.equal(result.status, 503); assert.match(String(result.body.error), /COMMIT/);
+          assert.deepEqual(f.activity(), committed);
+          if (operation === "intent") assert.equal(f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent).mayInvoke, false);
+          else assert.deepEqual(f.first.recordDecisionShadow(f.worker.id, f.lease.leaseId, f.payload), committed.decisionShadowObservation);
+          assert.deepEqual(f.activity(), committed); assert.equal(f.events().length, operation === "return" ? 1 : 0);
+          f.first.completeLease(f.worker.id, f.lease.leaseId, "PRIMARY after unknown COMMIT");
+          assert.equal((f.first.getRun(f.runId, f.project)!.stages as any[])[0].output, "PRIMARY after unknown COMMIT");
+          const ledger = (f.first.getRunTrace(f.runId, f.project)!.decisionCallerAccounting as any).stages[0];
+          assert.equal(ledger.assignments[0].outcome, operation === "return" ? "returned" : "return_missing");
+          assert.deepEqual(proxy.errors, []);
+          f.persist(`commit-${operation}-${fault}-final`, { http: result, activityAtCommit: committed, primaryPreserved: true, noDuplicateVerified: true });
+          context.diagnostic(`Caller ${operation}/${fault}: successful COMMIT independently visible; HTTP 503; no duplicate; primary preserved`);
+        } catch (error) { context.diagnostic(`Caller accounting COMMIT scenario ${operation}/${fault} failed`); throw error; }
+        finally { await proxy.close(); await f.close(); await Promise.allSettled(pending); }
       });
     });
   }

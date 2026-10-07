@@ -13,6 +13,10 @@ export function interceptScheduledStartCommit(connectionString: string, applicat
   return interceptCommit(connectionString, applicationName, /^INSERT INTO process_scheduled_start_receipts\s*\(/i);
 }
 
+export function interceptCallerAccountingCommit(connectionString: string, applicationName: string) {
+  return interceptCommit(connectionString, applicationName, /^UPDATE stages\s+SET activity_json\s*=/i);
+}
+
 /** Loopback-only fault fixture: forward COMMIT, retain its real server reply.
  * Only the named connection after the selected transaction's write is affected.
  * Authentication bytes and SQL payloads are never logged or saved.
