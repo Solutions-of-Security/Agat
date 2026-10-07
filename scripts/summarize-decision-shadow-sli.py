@@ -23,6 +23,7 @@ SOURCES = ("scripts/summarize-decision-shadow-sli.py", "scripts/lib/decision_sha
            "workers/local_decisions.py", "apps/coordinator/src/local-decisions.ts", "apps/coordinator/src/database.ts",
            "apps/coordinator/src/decision-shadow-assignments.ts",
            "apps/coordinator/src/decision-caller-accounting.ts",
+           "apps/coordinator/src/decision-shadow-cohort.ts",
            "decision_runtime/contracts.py", "decision_runtime/artifacts.py", "decision_runtime/model_store.py")
 
 

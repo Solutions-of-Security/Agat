@@ -2109,6 +2109,22 @@ export function createCoordinatorServer(
         return;
       }
 
+      const cohortProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/decision-shadow-cohort$/);
+      if (request.method === "GET" && cohortProcessId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const fields = ["processVersion", "startAt", "endAt"];
+        if ([...url.searchParams.keys()].some(key => !fields.includes(key))
+            || fields.some(key => url.searchParams.getAll(key).length !== 1)
+            || !/^[1-9][0-9]*$/.test(url.searchParams.get("processVersion") ?? "")) {
+          throw new HttpError(400, "Укажите processVersion, startAt и endAt без дополнительных фильтров");
+        }
+        const cohort = store.getDecisionShadowCohort(cohortProcessId, { processVersion: Number(url.searchParams.get("processVersion")),
+          startAt: url.searchParams.get("startAt"), endAt: url.searchParams.get("endAt") }, auth.projectId);
+        if (!cohort) throw new HttpError(404, "Версия процесса не найдена");
+        json(response, 200, cohort);
+        return;
+      }
+
       const processId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)$/);
       if (request.method === "GET" && processId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);

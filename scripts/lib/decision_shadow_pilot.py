@@ -10,11 +10,11 @@ import re
 from decision_runtime.contracts import fingerprint
 from scripts.lib.decision_shadow_sli import same_json
 
-CONFIG_SCHEMA = "agat.decision.shadow-pilot-config.v1"
-PLAN_SCHEMA = "agat.decision.shadow-pilot-plan.v1"
+CONFIG_SCHEMA = "agat.decision.shadow-pilot-config.v2"
+PLAN_SCHEMA = "agat.decision.shadow-pilot-plan.v2"
 BOUNDARY = "process_instance_created_at_half_open"
 SHA = re.compile(r"[a-f0-9]{64}")
-FIELDS = {"schemaVersion", "pilotId", "projectId", "processId", "processVersionId", "owners",
+FIELDS = {"schemaVersion", "pilotId", "projectId", "processId", "processVersion", "owners",
           "window", "targets", "scenarioDescription", "dataUseReference", "trafficKind", "cohortBoundary"}
 
 
@@ -41,10 +41,14 @@ def validate_config(config):
     require(isinstance(config, dict) and set(config) == FIELDS and config["schemaVersion"] == CONFIG_SCHEMA,
             "Unsupported pilot configuration fields/schema")
     missing = []
-    for name in ("pilotId", "projectId", "processId", "processVersionId", "scenarioDescription", "dataUseReference"):
+    for name in ("pilotId", "projectId", "processId", "scenarioDescription", "dataUseReference"):
         text(config[name], name, 2000 if name in ("scenarioDescription", "dataUseReference") else 200)
         if config[name] is None:
             missing.append(name)
+    version = config["processVersion"]
+    require(version is None or type(version) is int and 1 <= version <= 2**53 - 1, "Use a positive integer processVersion")
+    if version is None:
+        missing.append("processVersion")
     require(config["trafficKind"] == "observed_workflow" and config["cohortBoundary"] == BOUNDARY,
             "Pilot scope must cover all stored process instances in the half-open creation window")
     owners = config["owners"]
