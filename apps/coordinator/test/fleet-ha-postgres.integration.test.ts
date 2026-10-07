@@ -3258,6 +3258,62 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   });
 
+  it("decision cohort preserves one repeatable read snapshot across replica changes and tenant RLS", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-cohort-"));
+      const first = store(`cohort-a-${suffix}`, artifacts); const second = store(`cohort-b-${suffix}`, artifacts);
+      const prepare = first.db.prepare.bind(first.db);
+      try {
+        const project = `cohort-${suffix}`; const foreign = `cohort-other-${suffix}`;
+        for (const id of [project, foreign]) first.createProject({ id, name: id, homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const agent = first.createAgent({ name: "Snapshot fixture", role: "Test", systemPrompt: "PRIVATE_PROMPT", model: `cohort-${suffix}` }, project);
+        const graph: ProcessGraph = { nodes: [
+          { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+          { id: "work", name: "Agent", type: "agent", position: { x: 100, y: 0 }, config: { agentId: String(agent.id),
+            decisionShadow: normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
+              kind: "boolean", question: "PRIVATE_QUESTION", options: [{ id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] }) } },
+          { id: "end", name: "End", type: "end", position: { x: 200, y: 0 }, config: {} },
+        ], edges: [{ id: "a", source: "start", target: "work", branch: "default" }, { id: "b", source: "work", target: "end", branch: "default" }] };
+        const process = String(first.createProcess({ name: "Snapshot", graph }, project).id); first.publishProcess(process, project);
+        const instance = first.startProcess(process, { input: "PRIVATE_INPUT" }, project)!;
+        const scope = { processVersion: 1, startAt: "2026-09-29T00:00:00.000Z", endAt: "2026-09-30T00:00:00.000Z" };
+        first.db.prepare("UPDATE process_instances SET created_at = ? WHERE id = ?").run(scope.startAt, String(instance.id));
+        const stage = first.db.prepare("SELECT id, status FROM stages WHERE run_id = ?").get(String(instance.runId))!;
+        enterPostgresTenantScope(project);
+        first.db.exec("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        try {
+          const settings = first.db.prepare("SELECT current_setting('transaction_isolation') AS isolation, current_setting('transaction_read_only') AS read_only").get()!;
+          assert.equal(settings.isolation, "repeatable read"); assert.equal(settings.read_only, "on");
+          assert.throws(() => first.db.prepare("UPDATE stages SET status = 'failed' WHERE id = ?").run(String(stage.id)), /read.only/i);
+        } finally { first.db.exec("ROLLBACK"); }
+        let changed = false;
+        first.db.prepare = sql => {
+          if (sql.includes("FROM stages s JOIN process_instances")) {
+            assert.equal(changed, false); changed = true;
+            second.db.prepare("UPDATE stages SET status = 'failed' WHERE id = ?").run(String(stage.id));
+            second.db.prepare("UPDATE process_instances SET created_at = ? WHERE id = ?").run(scope.endAt, String(instance.id));
+          }
+          return prepare(sql);
+        };
+        const snapshot = first.getDecisionShadowCohort(process, scope, project)!;
+        first.db.prepare = prepare;
+        assert.equal(changed, true); assert.equal(snapshot.counts.instances, 1); assert.equal(snapshot.counts.storedStages, 1);
+        assert.equal(snapshot.traces[0]!.decisionStageInventory.stages[0]!.stageStatus, stage.status);
+        assert.equal(second.db.prepare("SELECT status FROM stages WHERE id = ?").get(String(stage.id))!.status, "failed");
+        assert.equal(first.getDecisionShadowCohort(process, scope, project)!.counts.instances, 0);
+        assert.ok(!JSON.stringify(snapshot).includes("PRIVATE_INPUT") && !JSON.stringify(snapshot).includes("PRIVATE_QUESTION"));
+        enterPostgresTenantScope(foreign);
+        assert.equal(first.getDecisionShadowCohort(process, scope, project), null);
+      } finally {
+        first.db.prepare = prepare;
+        runWithPostgresSystemScope(() => { first.close(); second.close(); });
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("streams large valid RAG vectors, preserves cursor snapshots and rolls back failures across replicas", () => {
     runWithPostgresSystemScope(() => {
       const suffix = randomUUID().slice(0, 8);

@@ -296,6 +296,17 @@ Committed сбор `58bd7a5` вернул 145 вопросов; 129 включе
 заданий. Девять targeted и 776 Python / 12 Node docs checks прошли.
 Human review, эталонные метки и model calls — ноль; преобладает английский язык.
 
+[Census сохранённого shadow cohort](./qualification/local-decisions/shadow/observability/shadow-pilot-cohort.md),
+08.10 MSK: authenticated API закрепляет project/process/numeric version и
+completed half-open окно до семи дней. Все statuses/replay и caller ledgers
+читаются из одного SQLite / PostgreSQL REPEATABLE READ READ ONLY snapshot;
+превышение row/byte bounds отказывает целиком. Общий trace helper сохраняет
+прежнюю семантику. Pilot v2 исправляет version ID на настоящий numeric version.
+12 targeted Node, 18 Python и 324 coordinator checks прошли; реальный отдельный
+PostgreSQL 17.6 подтвердил конкурентное обновление/RLS/read-only/rollback.
+Следующий шаг — offline binding census к prospective plan и caller SLI;
+client population/owners/human qualification не подтверждены, routing выключен.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -21,7 +21,7 @@ class PilotTest(unittest.TestCase):
     def setUp(self):
         self.blank = json.loads((ROOT / "docs/qualification/local-decisions/shadow/observability/pilot-config.blank.json").read_text())
         self.config = {**copy.deepcopy(self.blank), "pilotId": "fixture-pilot", "projectId": "fixture-project",
-            "processId": "fixture-process", "processVersionId": "fixture-version", "scenarioDescription": "Synthetic test only",
+            "processId": "fixture-process", "processVersion": 1, "scenarioDescription": "Synthetic test only",
             "dataUseReference": "Synthetic test fixture", "owners": {"runtime": "fixture-runtime", "business": "fixture-business"},
             "window": {"startAt": "2026-10-09T00:00:00.000Z", "endAt": "2026-10-16T00:00:00.000Z"}}
         self.profile = {"schemaVersion": "agat.decision.v1", "runtimeVersion": "fixture",
@@ -66,6 +66,14 @@ class PilotTest(unittest.TestCase):
                            ("callerTimeoutMs", False), ("latencyThresholdMs", 5000.0)):
             config = copy.deepcopy(self.config); config["targets"][key] = value
             with self.subTest(key=key, value=value), self.assertRaises(ValueError): validate_config(config)
+
+    def test_process_version_matches_numeric_agat_version_and_rejects_v1_aliases(self):
+        for version in (True, "1", 1.0, 0, -1, 2**53):
+            config = copy.deepcopy(self.config); config["processVersion"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError): validate_config(config)
+        config = copy.deepcopy(self.config); config["processVersionId"] = config.pop("processVersion")
+        config["schemaVersion"] = "agat.decision.shadow-pilot-config.v1"
+        with self.assertRaises(ValueError): validate_config(config)
 
     def test_rehashed_artifact_cannot_hide_missing_scope_or_grant_acceptance(self):
         for mutate in (lambda p: p.update(sloAccepted=True), lambda p: p.update(agreementVerified=True),

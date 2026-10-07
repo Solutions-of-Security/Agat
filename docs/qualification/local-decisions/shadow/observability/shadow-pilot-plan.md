@@ -48,6 +48,14 @@ exit 1 — ошибка pins/schema/sources/path. При ошибке предв
 набор trace-файлов остаётся `provided_traces_only`; высокий success ratio
 на таком наборе не закрывает population gap.
 
+[Экспортер cohort](./shadow-pilot-cohort.md) реализует полный bounded census
+из одного SQLite/PostgreSQL snapshot. Contract **v2** использует числовой
+`processVersion`, соответствующий настоящей модели Agat. Ранний v1 от PR 151
+имел `processVersionId`, хотя отдельного version ID в базе нет. V1 артефакты
+сохранены как история вместе с источниками `e7a5e59`; они не переписываются.
+Для новой подготовки нужен v2 config/plan, v1 явно отклоняется. Это исправление
+технического контракта, не назначение workflow/owners или принятие SLO.
+
 Методика: [Google SRE Implementing SLOs](https://sre.google/workbook/implementing-slos/)
 рекомендует явно определить пользовательские события, good/total и согласовать
 targets; [Example SLO Document](https://sre.google/workbook/slo-document/) фиксирует

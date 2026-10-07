@@ -3,6 +3,10 @@
 [План реального shadow-пилота](./shadow-pilot-plan.md) закрепляет workflow,
 окно наблюдения и предлагаемые targets до сбора полного cohort.
 
+[Экспорт полного сохранённого cohort](./shadow-pilot-cohort.md) читает одну
+process/version/window популяцию из SQLite/PostgreSQL snapshot и сохраняет
+failed/cancelled/pending/replay и caller ledgers без task/primary текста.
+
 26.09.2026. Runtime **0.12.0** экспортирует Prometheus-метрики через `GET /metrics` на прежнем loopback-порту. Реальный MLX-прогон, официальный парсер и проверки правил прошли. Конфигурация подготовлена для оператора; постоянный scraper, Alertmanager и получатели уведомлений не устанавливались. Автоматическая маршрутизация остаётся выключенной.
 
 ## Контракт экспорта

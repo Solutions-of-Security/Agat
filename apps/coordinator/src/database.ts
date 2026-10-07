@@ -8,10 +8,11 @@ import type { SyncDatabase } from "./sync-database.js";
 import { createDecisionShadowLease, normalizeDecisionShadowConfig, supportsDecisionShadow,
   unavailableDecision, validateDecisionShadowResult, type DecisionShadowLease,
   type DecisionShadowConfig, type DecisionShadowObservation } from "./local-decisions.js";
-import { DECISION_ASSIGNMENT_INVENTORY, appendShadowAssignment, assignmentHistory, assignmentHistoryDto,
+import { appendShadowAssignment, assignmentHistory,
   newAssignmentHistory, recordAssignmentObservation } from "./decision-shadow-assignments.js";
-import { DECISION_CALLER_ACCOUNTING, DECISION_CALLER_INVENTORY, appendCallerAssignment, beginCallerIntent,
-  callerAccounting, callerAccountingDto, newCallerAccounting, recordCallerReturn } from "./decision-caller-accounting.js";
+import { DECISION_CALLER_ACCOUNTING, appendCallerAssignment, beginCallerIntent,
+  callerAccounting, newCallerAccounting, recordCallerReturn } from "./decision-caller-accounting.js";
+import { COHORT_LIMITS, cohortEnvelope, cohortScope, decisionTraceInventory } from "./decision-shadow-cohort.js";
 import {
   S3ArtifactObjectStoreSync,
   artifactObjectKey,
@@ -10717,6 +10718,43 @@ export class AgatStore {
     return rows.map((row) => this.processInstanceDto(row));
   }
 
+  getDecisionShadowCohort(processId: string, rawScope: unknown, projectId = "default") {
+    const project = normalizeProjectId(projectId);
+    const observedAt = nowIso();
+    const scope = cohortScope(rawScope, observedAt);
+    // Do not inherit an enclosing write transaction or change its isolation.
+    if (this.transactionDepth > 0) throw new Error("Decision cohort requires a separate read snapshot");
+    this.db.exec(this.db.dialect === "postgresql" ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
+    this.transactionDepth = 1;
+    try {
+      const version = this.db.prepare(`SELECT pv.version FROM process_versions pv
+        JOIN processes p ON p.id = pv.process_id
+        WHERE p.id = ? AND p.project_id = ? AND pv.version = ?`).get(processId, project, scope.processVersion);
+      if (!version) { this.db.exec("COMMIT"); return null; }
+      const params = [processId, project, scope.processVersion, scope.startAt, scope.endAt];
+      const instances = this.db.prepare(`SELECT pi.id, pi.run_id, pi.process_version, pi.status, pi.created_at,
+          pi.replay_of_instance_id, pi.replay_mode, r.project_id AS run_project_id
+        FROM process_instances pi JOIN processes p ON p.id = pi.process_id LEFT JOIN runs r ON r.id = pi.run_id
+        WHERE pi.process_id = ? AND p.project_id = ? AND pi.process_version = ? AND pi.created_at >= ? AND pi.created_at < ?
+        ORDER BY pi.created_at, pi.id LIMIT ?`).all(...params, COHORT_LIMITS.instances + 1) as Row[];
+      if (instances.length > COHORT_LIMITS.instances) throw new Error("Decision cohort instance limit exceeded; no partial export");
+      if (instances.some(row => row.run_project_id !== project)) throw new Error("Decision cohort has an inconsistent run/project binding");
+      const stages = this.db.prepare(`SELECT s.id, s.run_id, s.status, s.attempt, s.lease_id, s.lease_expires_at, s.activity_json
+        FROM stages s JOIN process_instances pi ON pi.run_id = s.run_id JOIN processes p ON p.id = pi.process_id
+        WHERE pi.process_id = ? AND p.project_id = ? AND pi.process_version = ? AND pi.created_at >= ? AND pi.created_at < ?
+        ORDER BY pi.created_at, pi.id, s.position, s.id LIMIT ?`).all(...params, COHORT_LIMITS.stages + 1) as Row[];
+      if (stages.length > COHORT_LIMITS.stages) throw new Error("Decision cohort stage limit exceeded; no partial export");
+      const result = cohortEnvelope(project, processId, scope, observedAt, this.db.dialect, instances, stages);
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* Preserve the snapshot/COMMIT failure; never emit its result. */ }
+      throw error;
+    } finally {
+      this.transactionDepth = 0;
+    }
+  }
+
   getProcessInstance(instanceId: string, projectId = "default"): Record<string, unknown> | null {
     const project = normalizeProjectId(projectId);
     const row = this.db
@@ -13029,41 +13067,7 @@ export class AgatStore {
       events,
       artifacts,
       manifest: this.executionManifest(run),
-      decisionCallerAccounting: {
-        schemaVersion: DECISION_CALLER_INVENTORY, scope: "caller_operation_intents",
-        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
-          .map(({ stage, activity, activeLease }) => ({ stageId: String(stage.id),
-            ...callerAccountingDto(activity.decisionShadowCallerAccounting, assignmentHistory(activity.decisionShadowAssignmentHistory),
-              Number(stage.attempt), String(stage.status), activeLease) })),
-      },
-      decisionAssignmentHistory: {
-        schemaVersion: DECISION_ASSIGNMENT_INVENTORY, scope: "coordinator_shadow_assignments",
-        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
-          .map(({ stage, activity, activeLease }) => ({ stageId: String(stage.id),
-            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), activeLease,
-              activity.decisionShadowObservation as DecisionShadowObservation | undefined) })),
-      },
-      decisionStageInventory: {
-        schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages",
-        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
-          .map(({ stage, activity }) => {
-            const lease = activity.decisionShadowLease as DecisionShadowLease | undefined;
-            return { stageId: String(stage.id), stageStatus: String(stage.status), assigned: Boolean(lease),
-              observationRecorded: Boolean(activity.decisionShadowObservation), profileSha256: lease?.profileSha256 ?? null,
-              inputSha256: lease?.inputSha256 ?? null, callerTimeoutMs: lease?.timeoutMs ?? null };
-          }),
-      },
-      decisionObservations: decisionStages.flatMap(({ stage, activity }) => {
-        const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
-        const decisionLease = activity.decisionShadowLease as DecisionShadowLease | undefined;
-        return activity.decisionShadowObservation ? [{ stageId: String(stage.id),
-          profileSha256: decisionLease?.profileSha256 ?? null,
-          inputSha256: decisionLease?.inputSha256 ?? null,
-          callerTimeoutMs: decisionLease?.timeoutMs ?? null,
-          context: decisionConfig ? { kind: decisionConfig.kind, question: decisionConfig.question,
-            options: decisionConfig.options } : null,
-          observation: activity.decisionShadowObservation }] : [];
-      }),
+      ...decisionTraceInventory(decisionStages),
       comparison: typeof run.evaluation_group_id === "string" && !goldenEvaluation
         ? this.evaluationComparison(run.evaluation_group_id, project)
         : null,
