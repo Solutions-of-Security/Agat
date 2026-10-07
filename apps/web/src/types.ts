@@ -1100,6 +1100,8 @@ export interface Artifact {
 export interface RunDecisionObservation {
   stageId: string;
   profileSha256: string | null;
+  inputSha256?: string | null;
+  callerTimeoutMs?: number | null;
   context?: {
     kind: "choice" | "boolean" | "score";
     question: string;
@@ -1111,6 +1113,8 @@ export interface RunDecisionObservation {
     status: "ok" | "abstain" | "error" | "unavailable";
     reason: string;
     reusedFromStageId?: string;
+    callerTiming?: { schemaVersion: "agat.decision.caller-timing.v1"; clock: "monotonic";
+      boundary: "local_http_call"; durationMs: number };
     result?: {
       value?: string | boolean | number | null;
       selectedOptionId?: string | null;
@@ -1148,6 +1152,12 @@ export interface RunTrace {
     gates: GoldenEvalGates;
   } | null;
   decisionObservations?: RunDecisionObservation[];
+  decisionStageInventory?: {
+    schemaVersion: "agat.decision.shadow-stage-inventory.v1";
+    scope: "stored_shadow_stages";
+    stages: Array<{ stageId: string; stageStatus: StageStatus; assigned: boolean;
+      observationRecorded: boolean; profileSha256: string | null; inputSha256: string | null; callerTimeoutMs: number | null }>;
+  };
   truncated: boolean;
   tracePolicy: {
     rawReasoningStored: false;

@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 from decision_runtime.contracts import fingerprint
+from scripts.lib.decision_stage_inventory import census
 
 TIMING_SCHEMA = "agat.decision.caller-timing.v1"
 
@@ -47,6 +48,8 @@ def analyze(traces, profile, latency_threshold_ms):
     require(isinstance(profile_sha256, str) and re.fullmatch(r"[a-f0-9]{64}", profile_sha256), "Pin the expected profile SHA")
     require(type(latency_threshold_ms) is int and 1 <= latency_threshold_ms <= 86_400_000, "Invalid latency threshold")
     require(isinstance(traces, list) and 1 <= len(traces) <= 32, "Use one to 32 complete trace inputs")
+    inventory = census(traces, profile_sha256)
+    assigned_bound = assigned_unknown_bound = assigned_timely = assigned_unknown_timely = 0
     counts = {"observedChecks": 0, "reusedChecks": 0, "safeReplayUnavailable": 0, "boundResults": 0,
               "unassignedChecks": 0, "missingLeaseBindings": 0, "boundResultsWithinCallerDeadline": 0,
               "lateBoundResults": 0, "boundResultsWithUnknownCallerDeadline": 0,
@@ -112,12 +115,35 @@ def analyze(traces, profile, latency_threshold_ms):
             counts["timelyBoundResults"] += int(within_deadline and caller_ms <= latency_threshold_ms)
             counts["boundResultsWithUnknownTimeliness"] += int(good and (caller_ms is None or caller_timeout is None)
                                                                and (caller_ms is None or caller_ms <= latency_threshold_ms))
+            if identity in inventory.assigned_recorded:
+                complete_binding = input_sha is not None and caller_timeout is not None
+                assigned_bound += int(good and complete_binding)
+                assigned_unknown_bound += int(good and not complete_binding)
+                assigned_timely += int(within_deadline and complete_binding and caller_ms <= latency_threshold_ms)
+                assigned_unknown_timely += int(good and (not complete_binding or caller_ms is None)
+                                              and (caller_ms is None or caller_ms <= latency_threshold_ms)
+                                              and (caller_ms is None or caller_timeout is None or caller_ms <= caller_timeout))
     total = counts["observedChecks"]
     reasons = []
     for condition, name in ((total == 0, "no_observed_checks"), (counts["missingCallerTimings"] > 0, "missing_caller_timings"),
                             (counts["missingLeaseBindings"] > 0, "missing_lease_bindings"),
                             (counts["profileBindingMismatches"] > 0, "profile_binding_mismatch"), (counts["truncatedTraces"] > 0, "truncated_trace")):
         if condition: reasons.append(name)
+    reasons.extend(inventory.gaps)
+    stage_total = inventory.counts["assignedStoredStages"]
+    pending = inventory.counts["pendingAssignedStages"]
+    stage_summary = {
+        "scope": "provided_stored_shadow_stages", "counts": inventory.counts,
+        "storedStageCoverageVerified": inventory.counts["tracesMissingInventory"] == 0 and counts["truncatedTraces"] == 0,
+        "inventoryBindingsVerified": inventory.counts["missingInventoryBindings"] == 0 and inventory.counts["inventoryProfileMismatches"] == 0,
+        "httpAttemptInventoryVerified": False,
+        "boundAssignedResults": assigned_bound, "unknownBoundAssignedResults": assigned_unknown_bound,
+        "timelyAssignedResults": assigned_timely, "unknownTimelyAssignedResults": assigned_unknown_timely,
+        "assignedStageBoundResultRatio": {"lower": assigned_bound/stage_total if stage_total else None,
+                                          "upper": (assigned_bound+assigned_unknown_bound+pending)/stage_total if stage_total else None},
+        "assignedStageTimelyResultRatio": {"lower": assigned_timely/stage_total if stage_total else None,
+                                           "upper": (assigned_timely+assigned_unknown_timely+pending)/stage_total if stage_total else None},
+    }
     return {"measurementStatus": "insufficient_data" if reasons else "provided_observations_measured", "dataGaps": reasons,
             "scope": "provided_traces_only", "populationCoverageVerified": False, "counts": counts,
             "leaseBindingCoverageVerified": counts["missingLeaseBindings"] == 0,
@@ -127,4 +153,5 @@ def analyze(traces, profile, latency_threshold_ms):
             "timelyBoundResultRatio": {"lower": counts["timelyBoundResults"]/total if total else None,
                                        "upper": (counts["timelyBoundResults"]+counts["boundResultsWithUnknownTimeliness"])/total if total else None},
             "latencyThresholdMs": latency_threshold_ms, "callerLatencyMs": quantiles(latencies), "scoringLatencyMs": quantiles(scoring),
+            "stageInventory": stage_summary,
             "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed"}

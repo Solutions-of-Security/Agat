@@ -284,6 +284,48 @@ test("opt-in shadow stores once, survives retry and preserves primary output, AC
   } finally { store.close(); }
 });
 
+test("stage inventory includes queued, assigned pending and cancelled stages without inventing observations", () => {
+  const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+  try {
+    const worker = node(store); const instance = start(store); const runId = String(instance.runId);
+    const before = store.getRunTrace(runId)!;
+    const queued = (before.decisionStageInventory as any).stages;
+    assert.equal(queued.length, 1); assert.equal(queued[0].assigned, false);
+    assert.equal(queued[0].observationRecorded, false); assert.equal(queued[0].profileSha256, null);
+    assert.deepEqual(before.decisionObservations, []);
+    const lease = store.leaseNext(worker)!;
+    const pending = store.getRunTrace(runId)!;
+    const assigned = (pending.decisionStageInventory as any).stages[0];
+    assert.deepEqual(pending.decisionStageInventory, { schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages", stages: [{
+      stageId: lease.stage.id, stageStatus: "running", assigned: true, observationRecorded: false,
+      profileSha256: lease.decisionShadow!.profileSha256, inputSha256: lease.decisionShadow!.inputSha256, callerTimeoutMs: lease.decisionShadow!.timeoutMs,
+    }] });
+    assert.deepEqual(pending.decisionObservations, []);
+    store.cancelRun(runId);
+    const cancelled = store.getRunTrace(runId)!;
+    assert.deepEqual(cancelled.decisionStageInventory, { schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages",
+      stages: [{ ...assigned, stageStatus: "cancelled" }] });
+    assert.deepEqual(cancelled.decisionObservations, []);
+    assert.equal(store.getRunTrace(runId, "isolated"), null);
+  } finally { store.close(); }
+});
+
+test("recorded and missing-result inventory markers match the saved observations", () => {
+  for (const record of [true, false]) {
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store); const instance = start(store); const runId = String(instance.runId); const lease = store.leaseNext(worker)!;
+      if (record) store.recordDecisionShadow(worker, lease.leaseId, { result: pythonResult(lease.decisionShadow!.request).result, callerTiming });
+      store.completeLease(worker, lease.leaseId, "PRIMARY");
+      const trace = store.getRunTrace(runId)!;
+      assert.equal((trace.decisionStageInventory as any).stages[0].observationRecorded, true);
+      assert.equal((trace.decisionStageInventory as any).stages[0].stageStatus, "completed");
+      assert.equal((trace.decisionObservations as any[])[0].observation.status, record ? "ok" : "unavailable");
+      assert.equal((trace.decisionStageInventory as any).stages[0].inputSha256, (trace.decisionObservations as any[])[0].inputSha256);
+    } finally { store.close(); }
+  }
+});
+
 test("process root trace exists before dispatch and remains stable after SQLite reopen", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-caller-trace-"));
   const database = path.join(directory, "trace.sqlite");

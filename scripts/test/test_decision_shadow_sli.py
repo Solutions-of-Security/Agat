@@ -21,7 +21,10 @@ class CallerSliTest(unittest.TestCase):
                 "callerTimeoutMs": 2000, "observation": observation}
 
     def trace(self, rows, run="run", truncated=False):
-        return {"run": {"id": run}, "decisionObservations": rows, "truncated": truncated}
+        stages = [{"stageId": row["stageId"], "stageStatus": "completed", "assigned": row.get("profileSha256") is not None,
+                   "observationRecorded": True, **{key: row.get(key) for key in ("profileSha256", "inputSha256", "callerTimeoutMs")}} for row in rows]
+        return {"run": {"id": run}, "decisionObservations": rows, "truncated": truncated,
+                "decisionStageInventory": {"schemaVersion": "agat.decision.shadow-stage-inventory.v1", "scope": "stored_shadow_stages", "stages": stages}}
 
     def test_failed_fast_calls_do_not_improve_successful_timeliness_ratio(self):
         result = analyze([self.trace([self.row("a"), self.row("b", "abstain", 1500), self.row("c", "error", 10), self.row("d", "unavailable", 100)])], self.profile, 1000)
@@ -59,7 +62,7 @@ class CallerSliTest(unittest.TestCase):
         changed = self.row(); changed["profileSha256"] = "b"*64
         result = analyze([self.trace([changed], truncated=True)], self.profile, 1000)
         self.assertEqual(result["boundResultRatio"], 0)
-        self.assertEqual(set(result["dataGaps"]), {"profile_binding_mismatch", "truncated_trace"})
+        self.assertEqual(set(result["dataGaps"]), {"profile_binding_mismatch", "truncated_trace", "inventory_profile_binding_mismatch"})
         for mutate in (lambda row: row["observation"]["result"]["model"].update(repository="changed"),
                        lambda row: row["observation"]["result"]["calibration"].update(temperature=True),
                        lambda row: row["observation"]["result"].update(id="foreign-stage")):

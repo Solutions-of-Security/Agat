@@ -60,7 +60,8 @@ class CallerSliCliTest(unittest.TestCase):
         self.assertIn("sources changed", read_json(self.output)["failure"]["message"])
 
     def test_no_traffic_returns_insufficient_data_even_for_a_diagnostic(self):
-        trace = read_json(self.trace); trace["decisionObservations"] = []; self.trace.write_text(json.dumps(trace))
+        trace = read_json(self.trace); trace["decisionObservations"] = []; trace["decisionStageInventory"]["stages"] = []
+        self.trace.write_text(json.dumps(trace))
         self.base[self.base.index("--trace-sha256")+1] = self.sha(self.trace)
         self.assertEqual(self.invoke(), 2); self.assertIsNone(read_json(self.output)["boundResultRatio"])
 
@@ -80,6 +81,30 @@ class CallerSliCliTest(unittest.TestCase):
         args = self.base.copy(); args[args.index("--trace")+1] = str(linked)
         self.assertEqual(self.invoke(args), 1)
         self.assertIn("bounded regular trace", read_json(self.output)["failure"]["message"])
+
+    def test_legacy_trace_keeps_observed_ratio_but_cannot_verify_stage_coverage(self):
+        trace = read_json(self.trace); del trace["decisionStageInventory"]; self.trace.write_text(json.dumps(trace))
+        self.base[self.base.index("--trace-sha256")+1] = self.sha(self.trace)
+        self.assertEqual(self.invoke(), 2)
+        report = read_json(self.output)
+        self.assertEqual(report["boundResultRatio"], 1)
+        self.assertIn("missing_stage_inventory", report["dataGaps"])
+        self.assertFalse(report["stageInventory"]["storedStageCoverageVerified"])
+
+    def test_pending_stage_is_not_a_synthetic_http_result(self):
+        trace = read_json(self.trace); original = trace["decisionStageInventory"]["stages"][0]
+        trace["decisionStageInventory"]["stages"].append({**original, "stageId": "pending", "stageStatus": "running", "observationRecorded": False})
+        self.trace.write_text(json.dumps(trace)); self.base[self.base.index("--trace-sha256")+1] = self.sha(self.trace)
+        self.assertEqual(self.invoke(), 2); report = read_json(self.output)
+        self.assertEqual(report["callerLatencyMs"]["count"], 1)
+        self.assertEqual(report["stageInventory"]["assignedStageBoundResultRatio"], {"lower": .5, "upper": 1.0})
+        self.assertFalse(report["stageInventory"]["httpAttemptInventoryVerified"])
+
+    def test_contradictory_inventory_saves_failed_receipt(self):
+        trace = read_json(self.trace); trace["decisionStageInventory"]["stages"][0]["observationRecorded"] = False
+        self.trace.write_text(json.dumps(trace)); self.base[self.base.index("--trace-sha256")+1] = self.sha(self.trace)
+        self.assertEqual(self.invoke(), 1)
+        self.assertIn("marker differ", read_json(self.output)["failure"]["message"])
 
 
 if __name__ == "__main__": unittest.main()

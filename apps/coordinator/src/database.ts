@@ -12970,14 +12970,25 @@ export class AgatStore {
     const events = eventRows.slice(0, 10_000).map((row) => this.eventDto(row));
     const artifacts = this.listRunArtifacts(runId);
     const goldenEvaluation = this.goldenEvaluationForRun(runId, project);
+    const decisionStages = (this.db.prepare("SELECT id, status, activity_json FROM stages WHERE run_id = ? ORDER BY position")
+      .all(runId) as Row[]).map(stage => ({ stage,
+        activity: parseJson<Record<string, unknown>>(stage.activity_json, {}) }));
     return {
       run: this.runDto(run),
       events,
       artifacts,
       manifest: this.executionManifest(run),
-      decisionObservations: (this.db.prepare("SELECT id, activity_json FROM stages WHERE run_id = ? ORDER BY position")
-        .all(runId) as Row[]).flatMap((stage) => {
-        const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      decisionStageInventory: {
+        schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages",
+        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
+          .map(({ stage, activity }) => {
+            const lease = activity.decisionShadowLease as DecisionShadowLease | undefined;
+            return { stageId: String(stage.id), stageStatus: String(stage.status), assigned: Boolean(lease),
+              observationRecorded: Boolean(activity.decisionShadowObservation), profileSha256: lease?.profileSha256 ?? null,
+              inputSha256: lease?.inputSha256 ?? null, callerTimeoutMs: lease?.timeoutMs ?? null };
+          }),
+      },
+      decisionObservations: decisionStages.flatMap(({ stage, activity }) => {
         const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
         const decisionLease = activity.decisionShadowLease as DecisionShadowLease | undefined;
         return activity.decisionShadowObservation ? [{ stageId: String(stage.id),

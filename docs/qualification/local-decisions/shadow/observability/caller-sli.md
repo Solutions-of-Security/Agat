@@ -50,12 +50,12 @@ trace дают `insufficient_data`. Scope всегда `provided_traces_only`;
 невозможно установить по произвольно выбранным trace exports.
 Этап, отменённый или ещё работающий до записи observation, может отсутствовать
 в этом массиве. Поэтому текущий CLI не подтверждает полный denominator
-назначенных attempts; следующий gate — inventory таких этапов и settlement
-pending records, отдельно от уже сохранённых observations.
+назначенных attempts. [Stage inventory](./stage-inventory.md) расширяет
+представление такими stages и отдельно отражает pending outcomes.
 
 [CLI](../../../../../scripts/summarize-decision-shadow-sli.py) требует
 независимые SHA-256 каждого input и profile file, content profile SHA,
-явные threshold и traffic kind. Восемь measurement/transport/validation
+явные threshold и traffic kind. Девять measurement/transport/validation
 sources должны совпадать с HEAD до и после расчёта. Новый sealed output
 создаётся только в `docs/private`, с mode 0600; прежний не перезаписывается.
 Source drift или нарушенный pin дают failed receipt и exit 1. Недостаток
