@@ -1,5 +1,5 @@
 """Observe real Python lease execution; replace only primary with fixed fixture text."""
-import json,os,sys,threading,time
+import contextlib,json,os,sys,threading,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]
 if not (ROOT/'workers').is_dir():ROOT=Path.cwd()
@@ -8,7 +8,9 @@ from agat_worker import ApiError,CoordinatorClient,LocalModelClient,_execute_lea
 from local_decisions import LocalDecisionClient
 from telemetry import ExecutionMetrics,WorkerTelemetry
 settings=json.loads(sys.stdin.readline());requests=[];completed=[];checkpointed=False
-def emit(kind,body):print(kind+' '+json.dumps(body),flush=True)
+print_lock=threading.Lock()
+def emit(kind,body):
+    with print_lock:print(kind+' '+json.dumps(body),file=sys.__stdout__,flush=True)
 def checkpoint(phase):
     global checkpointed
     if not checkpointed and settings['operation']==phase:
@@ -40,7 +42,8 @@ for line in sys.stdin:
     if command=={'stop':True}:break
     assert set(command)=={'lease'}
     lease=command['lease'];before={thread.ident for thread in threading.enumerate()}
-    _execute_lease_body(client,model,lease,settings['model'],False,ExecutionMetrics.start(settings['model'],'none'),WorkerTelemetry(enabled=False))
+    with contextlib.redirect_stdout(sys.stderr):
+        _execute_lease_body(client,model,lease,settings['model'],False,ExecutionMetrics.start(settings['model'],'none'),WorkerTelemetry(enabled=False))
     live=[thread.name for thread in threading.enumerate() if thread.ident not in before]
     assert live==[],f'Lease left worker threads: {live}'
     completed.append(lease['leaseId']);emit('AGAT_CALLER_WORKER_COMPLETED',{'leaseId':lease['leaseId'],'liveThreads':live})
