@@ -119,7 +119,9 @@ def verify_primary_plan(plan, sources, primary):
 
 
 def verify_primary_phase(phase, schedule, plan, primary):
-    require(phase['condition'] == schedule['condition'] and phase['schemaVersion'] == primary.PHASE_SCHEMA,
+    phase_schema = (primary.CONFIGURABLE_SCHEMAS[2] if plan.get('schemaVersion') == primary.CONFIGURABLE_SCHEMAS[0]
+                    else primary.PHASE_SCHEMA)
+    require(phase['condition'] == schedule['condition'] and phase['schemaVersion'] == phase_schema,
             'Mixed-load phase condition differs')
     number(phase['phaseOriginMonotonicMs'], 0, 86_400_000_000_000)
     rows = phase['primaryRows']
@@ -156,10 +158,19 @@ def verify_primary_phase(phase, schedule, plan, primary):
 def verify(directory):
     raw_plan = read_json(directory / 'plan.json')
     primary = None
-    if raw_plan.get('schemaVersion') == 'agat.decision.arrival-rate-plan.v2':
+    if raw_plan.get('schemaVersion') in {'agat.decision.arrival-rate-plan.v2', 'agat.decision.arrival-rate-plan.v3'}:
         from scripts.lib import decision_arrival_primary as primary
-    plan = verify_seal(raw_plan, primary.PLAN_SCHEMA if primary else PLAN_SCHEMA)
-    result = verify_seal(read_json(directory / 'result.json'), primary.RESULT_SCHEMA if primary else RESULT_SCHEMA)
+    configurable = bool(primary and raw_plan['schemaVersion'] == primary.CONFIGURABLE_SCHEMAS[0])
+    if configurable:
+        require(type(raw_plan.get('decisionRatePerSecond')) in (int, float)
+                and raw_plan['decisionRatePerSecond'] in (.5, 1), 'Invalid negotiated mixed decision rate')
+    else:
+        require('decisionRatePerSecond' not in raw_plan, 'Decision rate requires the v3 protocol')
+    plan_schema, result_schema, phase_schema = ((primary.CONFIGURABLE_SCHEMAS if configurable else
+        (primary.PLAN_SCHEMA, primary.RESULT_SCHEMA, primary.PHASE_SCHEMA)) if primary else
+        (PLAN_SCHEMA, RESULT_SCHEMA, PHASE_SCHEMA))
+    plan = verify_seal(raw_plan, plan_schema)
+    result = verify_seal(read_json(directory / 'result.json'), result_schema)
     require(result['status'] == 'observed' and result['planSha256'] == plan['sha256']
             and result['failure'] is None and result['cancelled'] is False
             and result['cleanupErrors'] == [] and result['remainingOwnedPids'] == [], 'Native gate or cleanup failed')
@@ -173,7 +184,7 @@ def verify(directory):
                            'clientSlots': slots, 'maxSchedulerLagMs': 100}
                           for i in range(2) for rate, slots in ((.5, 1), (1, 1), (2, 1), (2, 2))]
     if primary:
-        expected_schedules = primary.schedules(plan['phaseSeconds'])
+        expected_schedules = primary.schedules(plan['phaseSeconds'], plan['decisionRatePerSecond'] if configurable else 1)
     require(plan['schedules'] == expected_schedules, 'Open-arrival protocol changed')
     paths = list(plan['sourceSha256'])
     require(paths and all(not Path(p).is_absolute() and '..' not in Path(p).parts for p in paths), 'Unsafe source path')
@@ -209,7 +220,7 @@ def verify(directory):
         observation(row, request, plan['profile'], case['targetTokens'])
     summaries, primary_summaries = [], []
     for index, (phase, schedule) in enumerate(zip(report['phases'], plan['schedules'])):
-        phase_file = verify_seal(read_json(directory / f'phase-{index}.json'), primary.PHASE_SCHEMA if primary else PHASE_SCHEMA)
+        phase_file = verify_seal(read_json(directory / f'phase-{index}.json'), phase_schema)
         require({k: v for k, v in phase_file.items() if k != 'sha256'} == phase, 'Phase file drift')
         summaries.append(verify_phase(phase, schedule, plan['cases'][schedule['caseIndex']], plan))
         if primary:

@@ -59,11 +59,19 @@ def main():
     parser.add_argument('--phase-seconds', type=int, default=12, choices=range(4, 31))
     parser.add_argument('--primary-binaries', type=Path, help='Opt-in mixed load: verified native Ollama directory')
     parser.add_argument('--primary-models', type=Path, help='Existing verified local Ollama model cache')
+    parser.add_argument('--decision-rate', type=float, choices=(.5, 1),
+                        help='Opt-in v3 mixed protocol: scheduled decision arrivals/second')
     args = parser.parse_args()
     runtime.require(bool(args.primary_binaries) == bool(args.primary_models), 'Both primary paths are required')
+    runtime.require(args.decision_rate is None or bool(args.primary_binaries),
+                    'Decision rate requires both primary paths')
     primary_module = None
     if args.primary_binaries:
         from scripts.lib import decision_arrival_primary as primary_module
+    plan_schema, result_schema, phase_schema = PLAN_SCHEMA, RESULT_SCHEMA, None
+    if primary_module:
+        plan_schema, result_schema, phase_schema = ((primary_module.PLAN_SCHEMA, primary_module.RESULT_SCHEMA,
+            primary_module.PHASE_SCHEMA) if args.decision_rate is None else primary_module.CONFIGURABLE_SCHEMAS)
     directory = args.evidence_dir.resolve()
     runtime.require(directory.is_relative_to(ROOT / 'docs/private') and not directory.exists(),
                     'Choose new ignored private evidence directory')
@@ -103,8 +111,8 @@ print(json.dumps(cases,ensure_ascii=False))'''
                   'clientSlots': slots, 'maxSchedulerLagMs': 100}
                  for i in range(2) for rate, slots in ((.5, 1), (1, 1), (2, 1), (2, 2))]
     if primary_module:
-        schedules = primary_module.schedules(args.phase_seconds)
-    plan = sealed({'schemaVersion': primary_module.PLAN_SCHEMA if primary_module else PLAN_SCHEMA, 'implementationCommit': commit, 'sourceSha256': sources,
+        schedules = primary_module.schedules(args.phase_seconds, 1 if args.decision_rate is None else args.decision_rate)
+    plan = sealed({'schemaVersion': plan_schema, 'implementationCommit': commit, 'sourceSha256': sources,
         'profilePath': profile_path, 'policyPath': policy_path, 'profile': profile,
         'profileSha256': identity['profileSha256'], 'runtime': environment,
         'model': {k: v for k, v in manifest.items() if k != 'snapshot'},
@@ -113,7 +121,8 @@ print(json.dumps(cases,ensure_ascii=False))'''
         'arrivalPattern': 'fixed monotonic offsets; no waiting for previous result; no catch-up burst',
         'scope': 'controlled_synthetic_local_http_arrivals', 'sloAccepted': False,
         'customerPopulationMeasured': False, 'routingEnabled': False, 'qualification': 'not_assessed',
-        **({'primary': primary_plan} if primary_module else {})})
+        **({'primary': primary_plan} if primary_module else {}),
+        **({'decisionRatePerSecond': args.decision_rate} if args.decision_rate is not None else {})})
     os.umask(0o077)
     directory.mkdir(parents=True, mode=0o700)
     private_write(directory / 'plan.json', plan)  # Must succeed before any inference.
@@ -198,7 +207,7 @@ print(json.dumps(cases,ensure_ascii=False))'''
                 finally:
                     primary_rows = companion.finish() if companion else []
                 if primary_runtime:
-                    phase.update(schemaVersion=primary_module.PHASE_SCHEMA, condition=schedule['condition'],
+                    phase.update(schemaVersion=phase_schema, condition=schedule['condition'],
                                  phaseOriginMonotonicMs=round(origin * 1000, 3), primaryRows=primary_rows,
                                  elapsedMs=round((time.monotonic() - origin) * 1000, 3))
                 phases.append(phase)
@@ -229,7 +238,7 @@ print(json.dumps(cases,ensure_ascii=False))'''
                 and not any(row['status'] == 'measurement_error' for phase in phases for row in phase['rows']))
     if primary_runtime:
         complete = complete and not any(row['status'] == 'measurement_error' for phase in phases for row in phase['primaryRows'])
-    result = sealed({'schemaVersion': primary_module.RESULT_SCHEMA if primary_module else RESULT_SCHEMA, 'status': 'observed' if complete else 'failed',
+    result = sealed({'schemaVersion': result_schema, 'status': 'observed' if complete else 'failed',
         'planSha256': plan['sha256'], 'report': report or {'warmup': warmup, 'phases': phases, 'healthSamples': samples,
             **({'primaryWarmup': primary_runtime.warmup} if primary_runtime else {})},
         'failure': failure, 'cancelled': stopped[0],

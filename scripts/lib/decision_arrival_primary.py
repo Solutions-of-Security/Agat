@@ -21,6 +21,8 @@ PRIMARY_SOURCES = ['scripts/lib/decision_arrival_primary.py', 'scripts/test/test
 PLAN_SCHEMA = 'agat.decision.arrival-rate-plan.v2'
 RESULT_SCHEMA = 'agat.decision.arrival-rate-result.v2'
 PHASE_SCHEMA = 'agat.decision.arrival-rate-phase.v2'
+CONFIGURABLE_SCHEMAS = ('agat.decision.arrival-rate-plan.v3',
+                        'agat.decision.arrival-rate-result.v3', 'agat.decision.arrival-rate-phase.v3')
 MODEL = 'qwen3:8b'
 DIGEST = '500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41'
 REQUEST = {'model': MODEL, 'messages': [{'role': 'user', 'content':
@@ -36,8 +38,11 @@ def require(value, message):
     if not value: raise ValueError(message)
 
 
-def schedules(seconds):
-    return [{'caseIndex': i, 'condition': condition, 'ratePerSecond': 1, 'count': seconds,
+def schedules(seconds, decision_rate=1):
+    require(type(seconds) is int and 4 <= seconds <= 30
+            and type(decision_rate) in (int, float) and decision_rate in (.5, 1),
+            'Unsupported mixed decision schedule')
+    return [{'caseIndex': i, 'condition': condition, 'ratePerSecond': decision_rate, 'count': int(seconds * decision_rate),
              'clientSlots': 1, 'maxSchedulerLagMs': 100}
             for i in range(2) for condition in ('primary_idle_before', 'primary_active', 'primary_idle_after')]
 
