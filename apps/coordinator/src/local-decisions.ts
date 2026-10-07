@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export const DECISION_SHADOW_PROFILE = "local_decision_shadow_v1";
 export const DECISION_SHADOW_SCORE_PROFILE = "local_decision_shadow_v2";
 export const SCORE_FINGERPRINT_VERSION = "binary64-v1";
+export const DECISION_CALLER_TIMING_VERSION = "agat.decision.caller-timing.v1";
 const SCHEMA = "agat.decision.v1";
 type ObjectValue = Record<string, unknown>;
 
@@ -27,6 +28,7 @@ export interface DecisionShadowLease {
   profileSha256: string;
   timeoutMs: number;
   inputSha256: string;
+  callerTimingVersion?: typeof DECISION_CALLER_TIMING_VERSION;
   request: {
     schemaVersion: typeof SCHEMA;
     id: string;
@@ -45,6 +47,14 @@ export interface DecisionShadowObservation {
   reason: string;
   reusedFromStageId?: string;
   result?: ObjectValue;
+  callerTiming?: DecisionCallerTiming;
+}
+
+export interface DecisionCallerTiming {
+  schemaVersion: "agat.decision.caller-timing.v1";
+  clock: "monotonic";
+  boundary: "local_http_call";
+  durationMs: number;
 }
 
 function object(value: unknown): ObjectValue {
@@ -176,6 +186,7 @@ export function createDecisionShadowLease(config: DecisionShadowConfig, stageId:
   if (Buffer.byteLength(JSON.stringify(request)) > 128 * 1024) throw new Error("Decision input too large");
   return { profile: config.kind === "score" ? DECISION_SHADOW_SCORE_PROFILE : DECISION_SHADOW_PROFILE,
     profileSha256: decisionSha256(config.profileJson),
+    callerTimingVersion: DECISION_CALLER_TIMING_VERSION,
     timeoutMs: config.timeoutMs, inputSha256: decisionSha256(canonical(hashInput)), request };
 }
 
@@ -186,16 +197,26 @@ export function unavailableDecision(reason: string): DecisionShadowObservation {
 export function validateDecisionShadowResult(
   raw: unknown, lease: DecisionShadowLease, profileJson: string,
 ): DecisionShadowObservation {
+  let callerTiming: DecisionCallerTiming | undefined;
   try {
     const envelope = object(raw);
+    if (Object.hasOwn(envelope, "callerTiming")) {
+      if (lease.callerTimingVersion !== DECISION_CALLER_TIMING_VERSION) throw new Error("Decision caller timing was not negotiated");
+      const timing = fields(envelope.callerTiming, ["schemaVersion", "clock", "boundary", "durationMs"]);
+      if (timing.schemaVersion !== "agat.decision.caller-timing.v1" || timing.clock !== "monotonic" || timing.boundary !== "local_http_call") {
+        throw new Error("Invalid decision caller timing identity");
+      }
+      callerTiming = { schemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call",
+        durationMs: number(timing.durationMs, 0, 86_400_000) };
+    }
     if (envelope.status === "unavailable") {
-      fields(envelope, ["status", "reason"]);
+      fields(envelope, ["status", "reason"], ["callerTiming"]);
       if (!["timeout", "busy", "unreachable", "profile_mismatch", "invalid_response", "disabled", "dry_run", "cancelled"].includes(String(envelope.reason))) {
         throw new Error("Invalid availability reason");
       }
-      return unavailableDecision(String(envelope.reason));
+      return { ...unavailableDecision(String(envelope.reason)), ...(callerTiming ? { callerTiming } : {}) };
     }
-    fields(envelope, ["result"]);
+    fields(envelope, ["result"], ["callerTiming"]);
     const result = fields(envelope.result,
       ["schemaVersion", "runtimeVersion", "id", "mode", "inputSha256", "model", "policy", "calibration", "status", "reason", "selectedOptionId", "value", "distribution", "durationMs"],
       ["selectedProbability", "margin", "inputTokens", "generatedTokens", "inputFingerprintVersions", "inputFingerprintVersion"]);
@@ -262,9 +283,9 @@ export function validateDecisionShadowResult(
       }
     }
     return { mode: "shadow", fallback: "primary", status: result.status as "ok" | "abstain" | "error",
-      reason: String(result.reason), result };
+      reason: String(result.reason), result, ...(callerTiming ? { callerTiming } : {}) };
   } catch {
     // Untrusted responses must neither fail the primary stage nor enter logs.
-    return unavailableDecision("invalid_response");
+    return { ...unavailableDecision("invalid_response"), ...(callerTiming ? { callerTiming } : {}) };
   }
 }

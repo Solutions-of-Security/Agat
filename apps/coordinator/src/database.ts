@@ -1102,6 +1102,7 @@ export class AgatStore {
   private readonly artifactObjectLockMode: "none" | "GOVERNANCE" | "COMPLIANCE";
   private artifactObjectStore: ArtifactObjectStore | null;
   private transactionDepth = 0;
+  private readonly transactionProcessSpans = new Set<string>();
 
   constructor(dbPath: string, options: StoreOptions = {}) {
     this.knowledgeSearchMaxCandidates = normalizeKnowledgeSearchMaxCandidates(options.knowledgeSearchMaxCandidates);
@@ -10397,14 +10398,16 @@ export class AgatStore {
         node.type === "approval" || (node.type === "agent" && node.config.approvalRequired === true)
       );
       const placement = this.assertProjectQueueCapacity(project);
-
+      const runTrace = this.telemetry.startRun({ runId, projectId: project });
+      if (this.transactionDepth > 0) this.transactionProcessSpans.add(runId);
+    try {
       this.db
         .prepare(`
           INSERT INTO runs(
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, created_at, updated_at
-            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain
-          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain, trace_id, root_span_id
+          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           runId,
@@ -10421,6 +10424,8 @@ export class AgatStore {
           String(placement.queue_name),
           String(placement.home_region),
           String(placement.residency_domain),
+          runTrace.traceId,
+          runTrace.spanId,
         );
       this.db
         .prepare(`
@@ -10488,6 +10493,10 @@ export class AgatStore {
         this.advanceProcessToken(instanceId, tokenId, start.id, requestedStartNodeId ? processInput : null);
       }
       return this.getProcessInstance(instanceId, project)!;
+    } catch (error) {
+      this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      throw error;
+    }
   }
 
   replayProcessInstance(
@@ -12970,8 +12979,11 @@ export class AgatStore {
         .all(runId) as Row[]).flatMap((stage) => {
         const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
         const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
+        const decisionLease = activity.decisionShadowLease as DecisionShadowLease | undefined;
         return activity.decisionShadowObservation ? [{ stageId: String(stage.id),
-          profileSha256: (activity.decisionShadowLease as DecisionShadowLease | undefined)?.profileSha256 ?? null,
+          profileSha256: decisionLease?.profileSha256 ?? null,
+          inputSha256: decisionLease?.inputSha256 ?? null,
+          callerTimeoutMs: decisionLease?.timeoutMs ?? null,
           context: decisionConfig ? { kind: decisionConfig.kind, question: decisionConfig.question,
             options: decisionConfig.options } : null,
           observation: activity.decisionShadowObservation }] : [];
@@ -16445,11 +16457,15 @@ export class AgatStore {
     if (this.transactionDepth > 0) return callback();
     this.db.exec("BEGIN IMMEDIATE");
     this.transactionDepth = 1;
+    this.transactionProcessSpans.clear();
     try {
       const result = callback();
       this.db.exec("COMMIT");
       return result;
     } catch (error) {
+      for (const runId of this.transactionProcessSpans) {
+        this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      }
       try { this.db.exec("ROLLBACK"); }
       catch (rollbackError) {
         // A failed COMMIT may already have released a broken connection. Its
@@ -16458,6 +16474,7 @@ export class AgatStore {
       }
       throw error;
     } finally {
+      this.transactionProcessSpans.clear();
       this.transactionDepth = 0;
     }
   }

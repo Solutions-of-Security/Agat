@@ -105,6 +105,12 @@ frozen baseline source в Application Support и проверяет boot/login �
 отдельного `RunAtLoad`, `KeepAlive=false` job. Pending observation остаётся
 pending; snapshot и его Git objects не зависят от временного checkout.
 
+[Caller timing/SLI](./caller-sli.md) добавляет negotiated monotonic timing
+локального HTTP call и pinned offline анализ сохранённых coordinator traces.
+Ошибки, late/missing результаты, legacy gaps и replay имеют явное accounting.
+[Owner/SLO proposal](./resident-service-acceptance.md) остаётся draft;
+диагностические ratios не подтверждают пользовательский SLO.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \

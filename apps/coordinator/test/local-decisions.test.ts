@@ -6,12 +6,15 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
 
 import { AgatStore } from "../src/database.js";
 import { createDecisionShadowLease, decisionSha256, normalizeDecisionShadowConfig, validateDecisionShadowResult,
   SCORE_FINGERPRINT_VERSION,
+  DECISION_CALLER_TIMING_VERSION,
   type DecisionShadowConfig, type DecisionShadowLease } from "../src/local-decisions.js";
 import { normalizeProcessGraph } from "../src/process-engine.js";
+import { CoordinatorTelemetry } from "../src/telemetry.js";
 import type { ProcessGraph } from "../src/types.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -32,6 +35,7 @@ print(canonical_json({"profileJson": canonical_json(engine.profile()),
 `], { cwd: root, input: JSON.stringify({ request, logits }), encoding: "utf8" }));
 }
 const profileJson = pythonResult().profileJson as string;
+const callerTiming = { schemaVersion: DECISION_CALLER_TIMING_VERSION, clock: "monotonic", boundary: "local_http_call", durationMs: 42.125 };
 function config(): DecisionShadowConfig {
   return normalizeDecisionShadowConfig({ mode: "shadow", profileJson, timeoutMs: 1000,
     question: "Подтверждено?", kind: "boolean", options: [
@@ -74,6 +78,35 @@ test("Python and TypeScript agree on Unicode request identity and Boolean false"
   assert.equal(checked.status, "ok");
   assert.equal(checked.result?.value, false);
   assert.equal(checked.fallback, "primary");
+});
+
+test("negotiated caller timing survives computed, unavailable and invalid-result observations", () => {
+  const lease = createDecisionShadowLease(config(), "timing", "private state");
+  const result = pythonResult(lease.request).result;
+  assert.equal(lease.callerTimingVersion, DECISION_CALLER_TIMING_VERSION);
+  assert.deepEqual(validateDecisionShadowResult({ result, callerTiming }, lease, profileJson).callerTiming, callerTiming);
+  assert.deepEqual(validateDecisionShadowResult({ status: "unavailable", reason: "timeout", callerTiming }, lease, profileJson),
+    { mode: "shadow", fallback: "primary", status: "unavailable", reason: "timeout", callerTiming });
+  const invalid = validateDecisionShadowResult({ result: { ...result, inputSha256: "0".repeat(64) }, callerTiming }, lease, profileJson);
+  assert.equal(invalid.reason, "invalid_response"); assert.deepEqual(invalid.callerTiming, callerTiming);
+  const legacy = { ...lease }; delete legacy.callerTimingVersion;
+  assert.equal(validateDecisionShadowResult({ result }, legacy, profileJson).status, "ok");
+  assert.equal(validateDecisionShadowResult({ result, callerTiming }, legacy, profileJson).reason, "invalid_response");
+});
+
+test("malformed caller timing cannot enter the stored observation", () => {
+  const lease = createDecisionShadowLease(config(), "timing", "private state");
+  const result = pythonResult(lease.request).result;
+  const mutations = [
+    ...[false, "0", -1, NaN, Infinity, 86_400_001].map((durationMs) => ({ ...callerTiming, durationMs })),
+    { ...callerTiming, clock: "wall" }, { ...callerTiming, boundary: "inference" },
+    { ...callerTiming, schemaVersion: "unknown" }, { ...callerTiming, privateText: "secret" }, null,
+  ];
+  for (const timing of mutations) {
+    assert.deepEqual(validateDecisionShadowResult({ result, callerTiming: timing }, lease, profileJson),
+      { mode: "shadow", fallback: "primary", status: "unavailable", reason: "invalid_response" });
+  }
+  assert.equal(validateDecisionShadowResult({ result, callerTiming: { ...callerTiming, durationMs: 0 } }, lease, profileJson).callerTiming?.durationMs, 0);
 });
 
 test("coordinator recomputes abstention and rejects identity, probability, candidate and policy tampering", () => {
@@ -236,7 +269,10 @@ test("opt-in shadow stores once, survives retry and preserves primary output, AC
     assert.equal(store.getRun(runId)!.status, "completed");
     assert.equal((store.getRun(runId)!.stages as any[])[0].output, "PRIMARY OUTPUT");
     assert.deepEqual(observation(store, runId), saved);
-    const context = (store.getRunTrace(runId)!.decisionObservations as any[])[0].context;
+    const traceObservation = (store.getRunTrace(runId)!.decisionObservations as any[])[0];
+    assert.equal(traceObservation.inputSha256, lease.decisionShadow!.inputSha256);
+    assert.equal(traceObservation.callerTimeoutMs, lease.decisionShadow!.timeoutMs);
+    const context = traceObservation.context;
     assert.deepEqual(context, { kind: config().kind, question: config().question, options: config().options });
     assert.ok(!("state" in context) && !("profileJson" in context));
     assert.equal(store.getRunTrace(runId, "isolated"), null);
@@ -246,6 +282,53 @@ test("opt-in shadow stores once, survives retry and preserves primary output, AC
     assert.ok(!JSON.stringify(events).includes("Приватный текст"));
     assert.ok(!JSON.stringify(events).includes("profileJson"));
   } finally { store.close(); }
+});
+
+test("process root trace exists before dispatch and remains stable after SQLite reopen", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-caller-trace-"));
+  const database = path.join(directory, "trace.sqlite");
+  let store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+  try {
+    const worker = node(store); const instance = start(store); const runId = String(instance.runId);
+    const initial = store.getRunTrace(runId)!;
+    assert.match(String((initial.run as any).traceId), /^[a-f0-9]{32}$/);
+    assert.notEqual((initial.run as any).traceId, "0".repeat(32));
+    const lease = store.leaseNext(worker)!;
+    assert.equal(lease.traceContext.traceId, (initial.run as any).traceId);
+    store.recordDecisionShadow(worker, lease.leaseId, { result: pythonResult(lease.decisionShadow!.request).result, callerTiming });
+    store.completeLease(worker, lease.leaseId, "PRIMARY");
+    const before = store.getRunTrace(runId)!;
+    store.close(); store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+    assert.deepEqual(store.getRunTrace(runId), before);
+  } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("process root span ends when the enclosing start transaction rolls back", async () => {
+  const exporter = new InMemorySpanExporter();
+  const telemetry = new CoordinatorTelemetry({ enabled: true, serviceName: "agat-caller-rollback", exporterEndpoint: "", exporter });
+  const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true, telemetry });
+  const prepare = store.db.prepare.bind(store.db);
+  try {
+    node(store);
+    store.db.prepare = sql => {
+      const statement = prepare(sql);
+      if (/INSERT INTO events/.test(sql)) {
+        const get = statement.get.bind(statement);
+        statement.get = (...args) => {
+          if (args.includes("process.scenario.started")) throw new Error("Controlled post-start event fault");
+          return get(...args);
+        };
+      }
+      return statement;
+    };
+    assert.throws(() => start(store), /Controlled post-start event fault/);
+    store.db.prepare = prepare;
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM runs").get() as any).count, 0);
+    await telemetry.forceFlush();
+    const spans = exporter.getFinishedSpans().filter(span => span.name === "invoke_workflow agat");
+    assert.equal(spans.length, 1);
+    assert.equal(spans[0]!.attributes["agat.run.status"], "failed");
+  } finally { store.db.prepare = prepare; store.close(); await telemetry.shutdown(); }
 });
 
 test("feature flag, old workers, malformed responses and missing observations always retain the primary path", () => {
@@ -345,7 +428,7 @@ test("safe replay reuses the recorded shadow with provenance; live replay starts
   try {
     const worker = node(store); const source = start(store); const lease = store.leaseNext(worker)!;
     const result = pythonResult(lease.decisionShadow!.request).result;
-    store.recordDecisionShadow(worker, lease.leaseId, { result });
+    store.recordDecisionShadow(worker, lease.leaseId, { result, callerTiming });
     store.completeLease(worker, lease.leaseId, "PRIMARY");
     const replay = store.replayProcessInstance(String(source.id), { mode: "safe" })!;
     const repeated = store.leaseNext(worker)!;
@@ -353,6 +436,7 @@ test("safe replay reuses the recorded shadow with provenance; live replay starts
     const reused = observation(store, String(replay.runId));
     assert.equal(reused.reusedFromStageId, lease.stage.id);
     assert.deepEqual(reused.result, result);
+    assert.deepEqual(reused.callerTiming, callerTiming);
     store.completeLease(worker, repeated.leaseId, "PRIMARY AGAIN");
     const live = store.replayProcessInstance(String(source.id), { mode: "live" })!;
     assert.ok(store.leaseNext(worker)!.decisionShadow);
