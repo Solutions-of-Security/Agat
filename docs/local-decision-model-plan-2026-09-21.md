@@ -307,6 +307,16 @@ PostgreSQL 17.6 подтвердил конкурентное обновлени
 Следующий шаг — offline binding census к prospective plan и caller SLI;
 client population/owners/human qualification не подтверждены, routing выключен.
 
+[Offline сверка shadow-пилота](./qualification/local-decisions/shadow/observability/shadow-pilot-evaluation.md),
+08.10 MSK: новый CLI требует independent plan/cohort/profile file SHA,
+prospective v2 plan и exact instance/run/stage inventories. Caller ratios
+включают errors и unknown returns; все assignment profiles/timeouts сверяются
+с plan, quantiles считаются по whole cohort до 1000 runs. Default provided
+trace limit 32 сохранён. Draft target comparison не утверждает owners/SLO;
+zero/legacy data не проходят как успешный пилот. Следующие внешние gates —
+реальный permitted workflow/owners и human review/calibration/holdout;
+actual boot/login остаётся открытым. Routing false, qualification not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

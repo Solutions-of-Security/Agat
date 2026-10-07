@@ -43,7 +43,7 @@ def same_json(expected, actual):
     return type(expected) is type(actual) and expected == actual
 
 
-def analyze(traces, profile, latency_threshold_ms, *, profile_json_bytes=None):
+def analyze(traces, profile, latency_threshold_ms, *, profile_json_bytes=None, trace_limit=32, allow_empty=False):
     require(isinstance(profile, dict) and set(profile) in ({"schemaVersion", "runtimeVersion", "model", "policy", "calibration"},
              {"schemaVersion", "runtimeVersion", "model", "policy", "calibration", "inputFingerprintVersions"}), "Invalid expected profile fields")
     profile_sha256 = fingerprint(profile)
@@ -55,7 +55,9 @@ def analyze(traces, profile, latency_threshold_ms, *, profile_json_bytes=None):
         profile_sha256 = hashlib.sha256(profile_json_bytes).hexdigest()
     require(isinstance(profile_sha256, str) and re.fullmatch(r"[a-f0-9]{64}", profile_sha256), "Pin the expected profile SHA")
     require(type(latency_threshold_ms) is int and 1 <= latency_threshold_ms <= 86_400_000, "Invalid latency threshold")
-    require(isinstance(traces, list) and 1 <= len(traces) <= 32, "Use one to 32 complete trace inputs")
+    require(type(trace_limit) is int and 1 <= trace_limit <= 1000 and type(allow_empty) is bool, "Invalid analysis trace bound")
+    require(isinstance(traces, list) and (0 if allow_empty else 1) <= len(traces) <= trace_limit,
+            "Trace count exceeds the bounded analysis scope")
     inventory = census(traces, profile_sha256)
     assigned_bound = assigned_unknown_bound = assigned_timely = assigned_unknown_timely = 0
     counts = {"observedChecks": 0, "reusedChecks": 0, "safeReplayUnavailable": 0, "boundResults": 0,
