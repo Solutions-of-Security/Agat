@@ -10,6 +10,8 @@ import { createDecisionShadowLease, normalizeDecisionShadowConfig, supportsDecis
   type DecisionShadowConfig, type DecisionShadowObservation } from "./local-decisions.js";
 import { DECISION_ASSIGNMENT_INVENTORY, appendShadowAssignment, assignmentHistory, assignmentHistoryDto,
   newAssignmentHistory, recordAssignmentObservation } from "./decision-shadow-assignments.js";
+import { DECISION_CALLER_ACCOUNTING, DECISION_CALLER_INVENTORY, appendCallerAssignment, beginCallerIntent,
+  callerAccounting, callerAccountingDto, newCallerAccounting, recordCallerReturn } from "./decision-caller-accounting.js";
 import {
   S3ArtifactObjectStoreSync,
   artifactObjectKey,
@@ -12068,8 +12070,14 @@ export class AgatStore {
                 typeof candidate.stage_input === "string" ? candidate.stage_input : String(candidate.run_input));
               const history = assignmentHistory(rawActivity.decisionShadowAssignmentHistory)
                 ?? newAssignmentHistory(Number(candidate.attempt) === 0 ? "complete" : "legacy_gap");
-              const updated = appendShadowAssignment(history, randomUUID(), Number(candidate.attempt) + 1, nextShadow);
+              const assignmentId = randomUUID(); const stageAttempt = Number(candidate.attempt) + 1;
+              const negotiated = labels.decisionCallerAccounting === DECISION_CALLER_ACCOUNTING;
+              const updated = appendShadowAssignment(history, assignmentId, stageAttempt, nextShadow);
+              const accounting = appendCallerAssignment(callerAccounting(rawActivity.decisionShadowCallerAccounting)
+                ?? newCallerAccounting(Number(candidate.attempt) === 0 ? "complete" : "legacy_gap"), assignmentId, stageAttempt, negotiated);
+              if (negotiated) { nextShadow.callerAccountingVersion = DECISION_CALLER_ACCOUNTING; nextShadow.assignmentId = assignmentId; }
               rawActivity.decisionShadowAssignmentHistory = updated;
+              rawActivity.decisionShadowCallerAccounting = accounting;
               rawActivity.decisionShadowLease = nextShadow;
               decisionShadow = nextShadow;
             }
@@ -12271,11 +12279,12 @@ export class AgatStore {
     if (!node.config.decisionShadow) return {};
     const config = node.config.decisionShadow;
     const activity: Record<string, unknown> = { decisionShadowConfig: config,
-      decisionShadowAssignmentHistory: newAssignmentHistory() };
+      decisionShadowAssignmentHistory: newAssignmentHistory(), decisionShadowCallerAccounting: newCallerAccounting() };
     const instance = this.db.prepare("SELECT replay_mode, replay_of_instance_id FROM process_instances WHERE id = ?")
       .get(instanceId) as Row;
     if (instance.replay_mode !== "safe") return activity;
     activity.decisionShadowAssignmentHistory = newAssignmentHistory("replay");
+    activity.decisionShadowCallerAccounting = newCallerAccounting("replay");
     const visit = Number((this.db.prepare("SELECT COUNT(*) AS count FROM stages WHERE run_id = ? AND process_node_id = ?")
       .get(runId, node.id) as Row).count);
     const source = this.db.prepare(`
@@ -12303,6 +12312,29 @@ export class AgatStore {
     return activity;
   }
 
+  beginDecisionShadow(nodeId: string, leaseId: string, raw: unknown) {
+    return this.transaction(() => {
+      const stage = this.db.prepare(`
+        SELECT s.id, s.activity_json, s.attempt, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
+        WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ? AND r.status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
+      `).get(nodeId, leaseId, nowIso()) as Row | undefined;
+      if (!stage) throw new Error("Активная аренда не найдена");
+      const expiresAt = Date.parse(String(stage.lease_expires_at));
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+      const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      const lease = activity.decisionShadowLease as DecisionShadowLease | undefined;
+      if (lease?.callerAccountingVersion !== DECISION_CALLER_ACCOUNTING || activity.decisionShadowObservation) {
+        throw new Error("Caller accounting was not negotiated for an active shadow call");
+      }
+      const begun = beginCallerIntent(callerAccounting(activity.decisionShadowCallerAccounting), Number(stage.attempt), raw);
+      activity.decisionShadowCallerAccounting = begun.history;
+      this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
+      if (expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+      return begun.receipt;
+    });
+  }
+
   recordDecisionShadow(nodeId: string, leaseId: string, raw: unknown): DecisionShadowObservation {
     return this.transaction(() => {
       const stage = this.db.prepare(`
@@ -12323,6 +12355,8 @@ export class AgatStore {
       activity.decisionShadowObservation = observation;
       const history = recordAssignmentObservation(assignmentHistory(activity.decisionShadowAssignmentHistory), Number(stage.attempt), observation);
       if (history) activity.decisionShadowAssignmentHistory = history;
+      const accounting = recordCallerReturn(callerAccounting(activity.decisionShadowCallerAccounting), Number(stage.attempt), observation);
+      if (accounting) activity.decisionShadowCallerAccounting = accounting;
       this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
       this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId, observation);
       // Roll back both writes if persistence outlasted ownership, before COMMIT.
@@ -12992,6 +13026,13 @@ export class AgatStore {
       events,
       artifacts,
       manifest: this.executionManifest(run),
+      decisionCallerAccounting: {
+        schemaVersion: DECISION_CALLER_INVENTORY, scope: "caller_operation_intents",
+        stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
+          .map(({ stage, activity }) => ({ stageId: String(stage.id),
+            ...callerAccountingDto(activity.decisionShadowCallerAccounting, assignmentHistory(activity.decisionShadowAssignmentHistory),
+              Number(stage.attempt), String(stage.status), Boolean(stage.lease_id)) })),
+      },
       decisionAssignmentHistory: {
         schemaVersion: DECISION_ASSIGNMENT_INVENTORY, scope: "coordinator_shadow_assignments",
         stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)

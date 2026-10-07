@@ -2677,6 +2677,14 @@ export function createCoordinatorServer(
         return;
       }
 
+      const shadowIntentLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/decision-shadow\/intent$/);
+      if (request.method === "POST" && shadowIntentLeaseId) {
+        const node = requireWorker(request, store);
+        const body = await readJson<unknown>(request);
+        json(response, 200, store.beginDecisionShadow(String(node.id), shadowIntentLeaseId, body));
+        return;
+      }
+
       const shadowLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/decision-shadow$/);
       if (request.method === "POST" && shadowLeaseId) {
         const node = requireWorker(request, store);

@@ -5,6 +5,7 @@ import math
 import re
 from decision_runtime.contracts import fingerprint
 from scripts.lib.decision_stage_inventory import census
+from scripts.lib.decision_caller_inventory import census as caller_census
 
 TIMING_SCHEMA = "agat.decision.caller-timing.v1"
 
@@ -144,6 +145,10 @@ def analyze(traces, profile, latency_threshold_ms):
         "assignedStageTimelyResultRatio": {"lower": assigned_timely/stage_total if stage_total else None,
                                            "upper": (assigned_timely+assigned_unknown_timely+pending)/stage_total if stage_total else None},
     }
+    caller_summary = caller_census(traces, profile, profile_sha256, latency_threshold_ms, timing, same_json)
+    caller_summary["callerLatencyMs"] = quantiles(caller_summary.pop("latencySamplesMs"))
+    if caller_summary["counts"]["tracesWithAccounting"]:
+        reasons.extend(caller_summary["dataGaps"])
     return {"measurementStatus": "insufficient_data" if reasons else "provided_observations_measured", "dataGaps": reasons,
             "scope": "provided_traces_only", "populationCoverageVerified": False, "counts": counts,
             "leaseBindingCoverageVerified": counts["missingLeaseBindings"] == 0,
@@ -153,5 +158,5 @@ def analyze(traces, profile, latency_threshold_ms):
             "timelyBoundResultRatio": {"lower": counts["timelyBoundResults"]/total if total else None,
                                        "upper": (counts["timelyBoundResults"]+counts["boundResultsWithUnknownTimeliness"])/total if total else None},
             "latencyThresholdMs": latency_threshold_ms, "callerLatencyMs": quantiles(latencies), "scoringLatencyMs": quantiles(scoring),
-            "stageInventory": stage_summary,
+            "stageInventory": stage_summary, "callerAccounting": caller_summary,
             "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed"}
