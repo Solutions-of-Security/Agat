@@ -29,3 +29,15 @@ test('duplicate identities, reversed attempts, replay assignments and numeric al
   assert.equal(assignmentHistoryDto(undefined, 3, 'failed', false).coverage, 'legacy_gap');
   assert.deepEqual(assignmentHistoryDto(newAssignmentHistory('replay'), 1, 'completed', false).assignments, []);
 });
+
+test('an older writer cannot leave complete coverage after untracked dispatch or observation', () => {
+  const first = appendShadowAssignment(newAssignmentHistory(), randomUUID(), 1, lease);
+  const observation = { mode:'shadow' as const,fallback:'primary' as const,status:'unavailable' as const,reason:'busy' };
+  assert.equal(assignmentHistoryDto(first, 1, 'completed', false, observation).coverage, 'legacy_gap');
+  assert.equal(first.coverage, 'complete'); assert.equal(first.assignments[0]!.observation, null);
+  assert.equal(assignmentHistoryDto(first, 2, 'running', true).coverage, 'legacy_gap');
+  const resumed = appendShadowAssignment(first, randomUUID(), 3, lease);
+  assert.equal(resumed.coverage, 'legacy_gap'); assert.equal(resumed.assignments.length, 2);
+  const recorded = recordAssignmentObservation(first, 1, observation)!;
+  assert.equal(assignmentHistoryDto(recorded, 2, 'completed', false, { reason:'busy',status:'unavailable',fallback:'primary',mode:'shadow' }).coverage, 'complete');
+});

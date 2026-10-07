@@ -43,6 +43,13 @@ Ended assignment не объявляется HTTP timeout или backend failure
 stages и safe replay имеют отдельный coverage. Unknown schema, duplicate
 IDs, неверный порядок attempts и numeric aliases отклоняются.
 
+При rollback старый coordinator может обновить observation, сохранив ledger
+без новых rows. Неучтённое observation или пропущенный stageAttempt понижает
+readonly coverage до legacy_gap. Новый dispatch после разрыва сохраняет
+legacy_gap; metadata не считается полной только из-за прежнего marker.
+Существующие rows и primary result сохраняются, historical timing не
+восстанавливается. Regression на прежнем helper failed до fix.
+
 [Helper](../../../../../apps/coordinator/src/decision-shadow-assignments.ts)
 не копирует state, question, profileJson или node identity. Caller SLI
 по-прежнему считает observations и stored stages; assignment history

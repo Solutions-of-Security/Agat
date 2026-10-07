@@ -39,7 +39,9 @@ export function assignmentHistory(value: unknown): DecisionAssignmentHistory | u
 export function appendShadowAssignment(history: DecisionAssignmentHistory, assignmentId: string, stageAttempt: number,
   lease: DecisionShadowLease): DecisionAssignmentHistory {
   requireValue(history.coverage !== 'replay', 'Replay cannot dispatch shadow');
-  const updated = { ...history, assignments: [...history.assignments, { assignmentId, stageAttempt,
+  const previousAttempt = history.assignments.at(-1)?.stageAttempt ?? 0;
+  const coverage = history.coverage === 'complete' && stageAttempt !== previousAttempt + 1 ? 'legacy_gap' as const : history.coverage;
+  const updated = { ...history, coverage, assignments: [...history.assignments, { assignmentId, stageAttempt,
     profileSha256: lease.profileSha256, inputSha256: lease.inputSha256, callerTimeoutMs: lease.timeoutMs, observation: null }] };
   assignmentHistory(updated); return updated;
 }
@@ -52,9 +54,22 @@ export function recordAssignmentObservation(history: DecisionAssignmentHistory |
   const assignments = history.assignments.map((row,i) => i === index ? { ...row, observation } : row);
   return { ...history, assignments };
 }
-export function assignmentHistoryDto(value: unknown, currentAttempt: number, status: string, activeLease: boolean) {
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (record(value)) return Object.fromEntries(Object.keys(value).sort().map(key => [key,canonical(value[key])]));
+  return value;
+}
+export function assignmentHistoryDto(value: unknown, currentAttempt: number, status: string, activeLease: boolean,
+  observation?: DecisionShadowObservation) {
   const history = assignmentHistory(value);
-  return { coverage: history?.coverage ?? 'legacy_gap', assignments: (history?.assignments ?? []).map(row => {
+  let coverage = history?.coverage ?? 'legacy_gap';
+  const unassigned = observation?.status === 'unavailable' && ['disabled','unsupported_worker','invalid_input'].includes(observation.reason);
+  if (coverage === 'complete' && history) {
+    if (observation && !unassigned && !history.assignments.some(row => row.observation
+      && JSON.stringify(canonical(row.observation)) === JSON.stringify(canonical(observation)))) coverage = 'legacy_gap';
+    else if (!observation && currentAttempt > (history.assignments.at(-1)?.stageAttempt ?? 0)) coverage = 'legacy_gap';
+  }
+  return { coverage, assignments: (history?.assignments ?? []).map(row => {
     requireValue(row.stageAttempt <= currentAttempt, 'Shadow assignment exceeds stage attempt');
     return { ...row, outcome: row.observation ? 'recorded' as const
       : row.stageAttempt === currentAttempt && activeLease && !['completed','failed','cancelled'].includes(status)

@@ -12996,7 +12996,8 @@ export class AgatStore {
         schemaVersion: DECISION_ASSIGNMENT_INVENTORY, scope: "coordinator_shadow_assignments",
         stages: decisionStages.filter(({ activity }) => activity.decisionShadowConfig || activity.decisionShadowLease || activity.decisionShadowObservation)
           .map(({ stage, activity }) => ({ stageId: String(stage.id),
-            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), Boolean(stage.lease_id)) })),
+            ...assignmentHistoryDto(activity.decisionShadowAssignmentHistory, Number(stage.attempt), String(stage.status), Boolean(stage.lease_id),
+              activity.decisionShadowObservation as DecisionShadowObservation | undefined) })),
       },
       decisionStageInventory: {
         schemaVersion: "agat.decision.shadow-stage-inventory.v1", scope: "stored_shadow_stages",
