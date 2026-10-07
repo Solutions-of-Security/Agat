@@ -155,7 +155,8 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
 
 type CallerWorkerObservation = {
   pid: number; python: string; completed: string[]; primaryCalls: string[]; liveThreads: string[];
-  requests: Array<{ method: string; path: string; status: number; startedNs: number; finishedNs: number; threadId: number }>;
+  requests: Array<{ method: string; path: string; status: number | null; responseReceived: boolean;
+    startedNs: number; finishedNs: number; threadId: number }>;
 };
 function startObservedCallerWorker(input: { coordinator: string; token: string; model: string;
   decisionUrl: string; operation: "intent" | "return" }) {
@@ -3046,7 +3047,11 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           assert.ok([...firstRequests, ...nextRequests].every(r => !r.path.endsWith("/fail")));
           assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow/intent") && r.status === 200).length, 1);
           assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow") && r.status === 200).length, 1);
-          assert.equal(observed.requests.filter(r => r.path.endsWith("/complete") && r.status === 200).length, 2);
+        assert.equal(observed.requests.filter(r => r.path.endsWith("/complete") && r.status === 200).length, 2);
+        const renewals = observed.requests.filter(r => r.path.endsWith("/renew"));
+        assert.ok(renewals.length >= 2);
+        assert.ok(renewals.every(r => r.status === 204 && r.responseReceived), "Observe actual renewal HTTP 204 rather than a default success status");
+        assert.ok(observed.requests.every(r => r.responseReceived && r.status !== null));
           const nextTrace = f.first.getRunTrace(following.runId, f.project)!;
           assert.equal((nextTrace.run as any).status, "completed"); assert.equal((nextTrace.run as any).stages[0].output, `PRIMARY ${following.runId}`);
           const returned = (nextTrace.decisionCallerAccounting as any).stages[0].assignments[0];

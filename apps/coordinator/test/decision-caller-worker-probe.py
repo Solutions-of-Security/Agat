@@ -1,5 +1,5 @@
 """Observe real Python lease execution; replace only primary with fixed fixture text."""
-import contextlib,json,os,sys,threading,time
+import contextlib,json,os,sys,threading,time,urllib.error
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]
 if not (ROOT/'workers').is_dir():ROOT=Path.cwd()
@@ -9,6 +9,18 @@ from local_decisions import LocalDecisionClient
 from telemetry import ExecutionMetrics,WorkerTelemetry
 settings=json.loads(sys.stdin.readline());requests=[];completed=[];checkpointed=False
 print_lock=threading.Lock()
+response_status=threading.local()
+request_code=CoordinatorClient.request.__code__;error_code=ApiError.__init__.__code__
+def observe_http_status(frame,event,_result):
+    if event=='return' and frame.f_code is request_code:
+        response=frame.f_locals.get('response')
+        if response is not None:response_status.code=response.status
+    elif event=='call' and frame.f_code is error_code:
+        parent=frame.f_back
+        if parent is not None and parent.f_code is request_code:
+            error=parent.f_locals.get('error')
+            if isinstance(error,urllib.error.HTTPError):response_status.code=error.code
+sys.setprofile(observe_http_status);threading.setprofile(observe_http_status)
 def emit(kind,body):
     with print_lock:print(kind+' '+json.dumps(body),file=sys.__stdout__,flush=True)
 def checkpoint(phase):
@@ -18,12 +30,11 @@ def checkpoint(phase):
         assert json.loads(sys.stdin.readline())=={'continue':True}
 class ObservedClient(CoordinatorClient):
     def request(self,method,path,body=None,**kwargs):
-        started=time.monotonic_ns();status=200
+        started=time.monotonic_ns();response_status.code=None
         try:return super().request(method,path,body,**kwargs)
-        except ApiError as error:
-            status=error.status;raise
         finally:
-            row={'method':method,'path':path,'status':status,'startedNs':started,'finishedNs':time.monotonic_ns(),
+            row={'method':method,'path':path,'status':response_status.code,'responseReceived':response_status.code is not None,
+                 'startedNs':started,'finishedNs':time.monotonic_ns(),
                  'threadId':threading.get_ident()}
             requests.append(row);emit('AGAT_CALLER_WORKER_REQUEST',row)
     def begin_decision_shadow(self,lease_id,assignment_id):
