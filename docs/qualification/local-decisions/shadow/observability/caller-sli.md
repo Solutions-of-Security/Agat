@@ -53,9 +53,13 @@ trace дают `insufficient_data`. Scope всегда `provided_traces_only`;
 назначенных attempts. [Stage inventory](./stage-inventory.md) расширяет
 представление такими stages и отдельно отражает pending outcomes.
 
+[Caller accounting](./caller-accounting.md) добавляет negotiated intent/return
+ledger и отдельные ratios по сохранённым caller intents. Unknown returns
+расширяют интервалы, не добавляя выдуманные latency samples.
+
 [CLI](../../../../../scripts/summarize-decision-shadow-sli.py) требует
 независимые SHA-256 каждого input и profile file, content profile SHA,
-явные threshold и traffic kind. Десять measurement/transport/validation
+явные threshold и traffic kind. Четырнадцать measurement/worker/API/validation
 sources должны совпадать с HEAD до и после расчёта. Новый sealed output
 создаётся только в `docs/private`, с mode 0600; прежний не перезаписывается.
 Source drift или нарушенный pin дают failed receipt и exit 1. Недостаток

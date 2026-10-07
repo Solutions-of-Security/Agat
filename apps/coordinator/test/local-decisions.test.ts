@@ -16,6 +16,7 @@ import { createDecisionShadowLease, decisionSha256, normalizeDecisionShadowConfi
 import { normalizeProcessGraph } from "../src/process-engine.js";
 import { CoordinatorTelemetry } from "../src/telemetry.js";
 import type { ProcessGraph } from "../src/types.js";
+import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 function pythonResult(request?: unknown, logits = [8, 0]) {
@@ -56,9 +57,10 @@ function graph(shadow = config(), approval = false): ProcessGraph {
     { id: "b", source: "agent", target: "end", branch: "default" }] };
 }
 let nodeNumber = 0;
-function node(store: AgatStore, capable: boolean | "v2" = true) {
+function node(store: AgatStore, capable: boolean | "v2" = true, accounting?: string) {
   return store.registerNode({ enrollmentToken: "test", name: `Shadow worker ${++nodeNumber}`, platform: "test", models: ["test-model"],
-    maxConcurrency: 1, labels: capable ? { decisionShadow: capable === "v2" ? "local_decision_shadow_v2" : "local_decision_shadow_v1" } : {} }).id;
+    maxConcurrency: 1, labels: capable ? { decisionShadow: capable === "v2" ? "local_decision_shadow_v2" : "local_decision_shadow_v1",
+      ...(accounting ? { decisionCallerAccounting: accounting } : {}) } : {} }).id;
 }
 function start(store: AgatStore, approval = false) {
   const process = store.createProcess({ name: "Shadow test", graph: graph(config(), approval) });
@@ -630,3 +632,106 @@ test("a recorded decision survives coordinator restart without recomputation", (
     assert.deepEqual(observation(store, String(instance.runId)), saved);
   } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+function callerInventory(store: AgatStore, runId: string) {
+  return (store.getRunTrace(runId)!.decisionCallerAccounting as any).stages[0];
+}
+function intent(lease: any) { return { schemaVersion: DECISION_CALLER_ACCOUNTING, assignmentId: lease.decisionShadow.assignmentId }; }
+
+test("caller intents negotiate exact capabilities, enforce assignment ownership, and survive reopening", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agat-caller-intent-")); const database = path.join(directory, "state.sqlite");
+  let store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+  try {
+    const worker = node(store, true, DECISION_CALLER_ACCOUNTING); const other = node(store, true, DECISION_CALLER_ACCOUNTING);
+    const instance = start(store); const id = String(instance.runId); const lease = store.leaseNext(worker)!;
+    assert.equal(lease.decisionShadow!.callerAccountingVersion, DECISION_CALLER_ACCOUNTING);
+    assert.throws(() => store.beginDecisionShadow(other, lease.leaseId, intent(lease)), /аренда/);
+    assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, { ...intent(lease), assignmentId: "00000000-0000-4000-8000-000000000000" }), /negotiated/);
+    assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, { ...intent(lease), extra: true }), /identity/);
+    assert.equal(callerInventory(store, id).assignments[0].intent, false);
+    assert.equal(store.beginDecisionShadow(worker, lease.leaseId, intent(lease)).mayInvoke, true);
+    assert.equal(store.beginDecisionShadow(worker, lease.leaseId, intent(lease)).mayInvoke, false);
+    assert.equal(callerInventory(store, id).assignments[0].outcome, "intent_pending");
+    store.close(); store = new AgatStore(database, { seedDemo: false, decisionShadowEnabled: true });
+    assert.equal(store.beginDecisionShadow(worker, lease.leaseId, intent(lease)).mayInvoke, false);
+    const payload = { result: pythonResult(lease.decisionShadow!.request).result, callerTiming };
+    store.recordDecisionShadow(worker, lease.leaseId, payload);
+    const accepted = callerInventory(store, id);
+    assert.equal(accepted.coverage, "complete"); assert.equal(accepted.assignments[0].outcome, "returned");
+    assert.deepEqual(accepted.assignments[0].returned.callerTiming, callerTiming);
+    store.recordDecisionShadow(worker, lease.leaseId, { result: {} }); assert.deepEqual(callerInventory(store, id), accepted);
+    assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, intent(lease)), /active shadow/);
+    store.completeLease(worker, lease.leaseId, "PRIMARY preserved");
+    assert.equal((store.getRun(id)!.stages as any[])[0].output, "PRIMARY preserved");
+    assert.deepEqual(callerInventory(store, id), accepted);
+  } finally { store.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("legacy and unknown capabilities still accept observations without inventing caller intents", () => {
+  for (const capability of [undefined, "agat.decision.caller-accounting.v2", "true"]) {
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store, true, capability); const instance = start(store); const lease = store.leaseNext(worker)!;
+      assert.equal(lease.decisionShadow!.callerAccountingVersion, undefined); assert.equal(lease.decisionShadow!.assignmentId, undefined);
+      assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, { schemaVersion: DECISION_CALLER_ACCOUNTING,
+        assignmentId: (store.getRunTrace(String(instance.runId))!.decisionAssignmentHistory as any).stages[0].assignments[0].assignmentId }), /negotiated/);
+      store.recordDecisionShadow(worker, lease.leaseId, { result: pythonResult(lease.decisionShadow!.request).result, callerTiming });
+      store.completeLease(worker, lease.leaseId, "PRIMARY legacy");
+      const row = callerInventory(store, String(instance.runId)).assignments[0];
+      assert.equal(row.outcome, "unnegotiated"); assert.equal(row.intent, false); assert.equal(row.returned, null);
+    } finally { store.close(); }
+  }
+});
+
+test("missing returns and callbacks without intents remain unknown across completion, cancellation and primary retry", () => {
+  for (const variant of ["missing", "cancelled", "retry", "untracked", "dry_run"]) {
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store, true, DECISION_CALLER_ACCOUNTING); const instance = start(store); const id = String(instance.runId);
+      const lease = store.leaseNext(worker)!;
+      if (!["untracked", "dry_run"].includes(variant)) store.beginDecisionShadow(worker, lease.leaseId, intent(lease));
+      if (variant === "untracked") store.recordDecisionShadow(worker, lease.leaseId, { result: pythonResult(lease.decisionShadow!.request).result, callerTiming });
+      if (variant === "dry_run") store.recordDecisionShadow(worker, lease.leaseId, { status: "unavailable", reason: "dry_run" });
+      if (variant === "cancelled") store.cancelRun(id);
+      else if (variant === "retry") {
+        assert.equal(store.failLease(worker, lease.leaseId, "primary retry after intent").retrying, true);
+        const retry = store.leaseNext(worker)!; assert.notEqual(retry.decisionShadow!.assignmentId, lease.decisionShadow!.assignmentId);
+        store.completeLease(worker, retry.leaseId, "PRIMARY retry");
+      } else store.completeLease(worker, lease.leaseId, "PRIMARY done");
+      const inventory = callerInventory(store, id); const row = inventory.assignments[0];
+      assert.equal(row.outcome, variant === "untracked" ? "data_gap" : variant === "dry_run" ? "no_intent_recorded" : "return_missing");
+      assert.equal(row.returned, null); assert.equal(inventory.coverage, variant === "untracked" ? "legacy_gap" : "complete");
+      if (variant === "retry") assert.equal(inventory.assignments[1].outcome, "no_intent_recorded");
+    } finally { store.close(); }
+  }
+});
+
+for (const boundary of ["stage read", "activity write", "duplicate intent"] as const) {
+  test(`caller intent rolls back when ownership expires during ${boundary}`, context => {
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
+    try {
+      const worker = node(store, true, DECISION_CALLER_ACCOUNTING); const instance = start(store); const id = String(instance.runId);
+      const lease = store.leaseNext(worker)!;
+      if (boundary === "duplicate intent") store.beginDecisionShadow(worker, lease.leaseId, intent(lease));
+      const before = callerInventory(store, id); const prepare = store.db.prepare.bind(store.db); let reached = false;
+      store.db.prepare = sql => {
+        const statement = prepare(sql);
+        if (boundary === "activity write" && sql === "UPDATE stages SET activity_json = ? WHERE id = ?") {
+          const run = statement.run.bind(statement); statement.run = (...params) => {
+            const result = run(...params); reached = true; context.mock.timers.tick(Date.parse(lease.expiresAt) - Date.now()); return result;
+          };
+        } else if (boundary !== "activity write" && /FROM stages s JOIN runs r/.test(sql) && /s\.activity_json/.test(sql)) {
+          const get = statement.get.bind(statement); statement.get = (...params) => {
+            const result = get(...params); reached = true; context.mock.timers.tick(Date.parse(lease.expiresAt) - Date.now()); return result;
+          };
+        }
+        return statement;
+      };
+      try { assert.throws(() => store.beginDecisionShadow(worker, lease.leaseId, intent(lease)), /аренда/); }
+      finally { store.db.prepare = prepare; }
+      assert.ok(reached); assert.deepEqual(callerInventory(store, id).assignments, before.assignments);
+      assert.equal(store.renewLease(worker, lease.leaseId), false);
+    } finally { store.close(); }
+  });
+}

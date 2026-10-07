@@ -49,6 +49,7 @@ from web_tools import (
 
 VERSION = "1.7.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
+DECISION_CALLER_ACCOUNTING = "agat.decision.caller-accounting.v1"
 # Covers the supported 32 x 4096 finite-float batch with JSON overhead.
 MAX_EMBEDDING_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_EMBEDDING_ERROR_BYTES = 4096
@@ -500,6 +501,15 @@ class CoordinatorClient:
 
     def record_decision_shadow(self, lease_id: str, observation: dict[str, Any]) -> None:
         self.request("POST", f"/api/v1/leases/{lease_id}/decision-shadow", observation, timeout=5)
+
+    def begin_decision_shadow(self, lease_id: str, assignment_id: str) -> bool:
+        receipt = self.request("POST", f"/api/v1/leases/{lease_id}/decision-shadow/intent",
+                               {"schemaVersion": DECISION_CALLER_ACCOUNTING, "assignmentId": assignment_id}, timeout=5)
+        if (not isinstance(receipt, dict) or set(receipt) != {"schemaVersion", "assignmentId", "mayInvoke"}
+                or receipt["schemaVersion"] != DECISION_CALLER_ACCOUNTING or receipt["assignmentId"] != assignment_id
+                or type(receipt["mayInvoke"]) is not bool):
+            raise ValueError("Invalid decision caller intent receipt")
+        return receipt["mayInvoke"]
 
     def mcp_call(
         self,
@@ -2175,8 +2185,10 @@ def worker_labels(config: WorkerConfig) -> dict[str, str]:
         labels["tools"] = "mcp_gateway"
     labels["toolSchemaVersion"] = TOOL_SCHEMA_VERSION
     labels.pop("decisionShadow", None)
+    labels.pop("decisionCallerAccounting", None)
     if config.decision_url:
         labels["decisionShadow"] = DECISION_SHADOW_PROFILE
+        labels["decisionCallerAccounting"] = DECISION_CALLER_ACCOUNTING
     return labels
 
 
@@ -2910,8 +2922,11 @@ def _execute_lease_body(
                 else:
                     # Refresh ownership before extra work after a potentially long primary call.
                     client.renew(lease_id, timeout=5)
-                    observation = model_client.decision_client.decide(shadow, cancelled)
-                client.record_decision_shadow(lease_id, observation)
+                    may_invoke = (shadow.get("callerAccountingVersion") != DECISION_CALLER_ACCOUNTING
+                                  or client.begin_decision_shadow(lease_id, shadow.get("assignmentId")))
+                    observation = model_client.decision_client.decide(shadow, cancelled) if may_invoke else None
+                if observation is not None:
+                    client.record_decision_shadow(lease_id, observation)
             except Exception:
                 # No shadow exception, source text or raw model response enters the primary error path.
                 print(f"[{lease_id[:8]}] shadow observation unavailable", file=sys.stderr, flush=True)

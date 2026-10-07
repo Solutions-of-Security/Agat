@@ -29,6 +29,8 @@ export interface DecisionShadowLease {
   timeoutMs: number;
   inputSha256: string;
   callerTimingVersion?: typeof DECISION_CALLER_TIMING_VERSION;
+  callerAccountingVersion?: "agat.decision.caller-accounting.v1";
+  assignmentId?: string;
   request: {
     schemaVersion: typeof SCHEMA;
     id: string;
@@ -55,6 +57,15 @@ export interface DecisionCallerTiming {
   clock: "monotonic";
   boundary: "local_http_call";
   durationMs: number;
+}
+
+export function decisionCallerTiming(raw: unknown): DecisionCallerTiming {
+  const timing = fields(raw, ["schemaVersion", "clock", "boundary", "durationMs"]);
+  if (timing.schemaVersion !== DECISION_CALLER_TIMING_VERSION || timing.clock !== "monotonic" || timing.boundary !== "local_http_call") {
+    throw new Error("Invalid decision caller timing identity");
+  }
+  return { schemaVersion: DECISION_CALLER_TIMING_VERSION, clock: "monotonic", boundary: "local_http_call",
+    durationMs: number(timing.durationMs, 0, 86_400_000) };
 }
 
 function object(value: unknown): ObjectValue {
@@ -202,12 +213,7 @@ export function validateDecisionShadowResult(
     const envelope = object(raw);
     if (Object.hasOwn(envelope, "callerTiming")) {
       if (lease.callerTimingVersion !== DECISION_CALLER_TIMING_VERSION) throw new Error("Decision caller timing was not negotiated");
-      const timing = fields(envelope.callerTiming, ["schemaVersion", "clock", "boundary", "durationMs"]);
-      if (timing.schemaVersion !== "agat.decision.caller-timing.v1" || timing.clock !== "monotonic" || timing.boundary !== "local_http_call") {
-        throw new Error("Invalid decision caller timing identity");
-      }
-      callerTiming = { schemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call",
-        durationMs: number(timing.durationMs, 0, 86_400_000) };
+      callerTiming = decisionCallerTiming(envelope.callerTiming);
     }
     if (envelope.status === "unavailable") {
       fields(envelope, ["status", "reason"], ["callerTiming"]);
