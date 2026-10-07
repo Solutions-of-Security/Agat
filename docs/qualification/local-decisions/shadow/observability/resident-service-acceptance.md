@@ -61,3 +61,5 @@ good/total и error budget policy; [Service Level Objectives](https://sre.google
 engineering workloads; согласование user-facing SLO на них не выполнено.
 
 [Controlled arrivals](../../performance/arrival-rate-4096.md), 07.10: два отдельных wired 4096 МиБ runtime на 2048 tokens дали 24/24 при 1 arrival/с, p95 874.733 мс; при 2 arrivals/с — 50% computed, с явными drops/busy. Краткий synthetic опыт добавляет данные к planning envelope; owners, real traffic, targets и burst policy по-прежнему не согласованы.
+
+[Mixed-primary arrivals](../../performance/arrival-primary-4096.md), 07.10: на 2048 tokens при 1 decision arrival/с active дал 12/24, p95 1116.329 мс, idle — 48/48. Поэтому 1 arrival/с остаётся неподтверждённым planning envelope под совместной нагрузкой. Следующая bounded проверка — 0.5 decision arrival/с; targets, owners и customer traffic требуют согласования.

@@ -97,7 +97,7 @@ def summarize(rows, threshold_ms):
 
 
 def run_phase(client, case, profile, *, rate, count, slots=1, late_ms=100,
-              timeout_ms=10000, threshold_ms=5000, cancelled=lambda: False, journal=None):
+              timeout_ms=10000, threshold_ms=5000, cancelled=lambda: False, journal=None, origin=None):
     validate_schedule(rate, count, slots, late_ms)
     if (type(timeout_ms) is not int or not 100 <= timeout_ms <= 10000
             or type(threshold_ms) is not int or not 1 <= threshold_ms <= timeout_ms):
@@ -110,7 +110,7 @@ def run_phase(client, case, profile, *, rate, count, slots=1, late_ms=100,
     rows = [None] * count
     lock = threading.Lock()
     futures = []
-    origin = time.monotonic()
+    origin = time.monotonic() if origin is None else number(origin, 0, 86_400_000_000)
 
     def save(index, row):
         with lock:

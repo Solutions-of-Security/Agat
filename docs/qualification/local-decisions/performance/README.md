@@ -268,3 +268,5 @@ v5 gate прошёл оба transports, recovery и независимый repla
 подтверждены; owner/SLO, actual boot/login и human qualification открыты.
 
 [Fixed arrivals wired 4096 МиБ](./arrival-rate-4096.md): два native repeats, 264 scheduled / 216 computed, 24 client drops / 24 busy. На 2048 tokens при 1 arrival/с — 24/24 и caller p95 874.733 мс, при 2 arrivals/с — 50%. Это diagnostic capacity без owner/SLO или customer-population acceptance.
+
+[Arrivals при работе primary](./arrival-primary-4096.md): два native repeats, 144 scheduled / 132 computed. На 2048 tokens при 1 decision arrival/с active дал 12/24, p95 1116.329 мс; idle дал 48/48. Следующая диагностическая проверка — 0.5 arrival/с с тем же primary; owner/SLO не согласован.
