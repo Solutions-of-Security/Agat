@@ -322,6 +322,15 @@ zero/legacy data не проходят как успешный пилот. На�
 реальный permitted workflow/owners и human review/calibration/holdout;
 actual boot/login остаётся открытым. Routing false, qualification not_assessed.
 
+[Authenticated capture shadow cohort](./qualification/local-decisions/shadow/observability/shadow-pilot-collection.md),
+08.10 MSK: новый collector получает exact HTTP bytes по pinned completed plan
+одним direct GET, без redirects/retries/ambient proxy. Remote HTTPS сохраняет
+certificate/hostname checks; loopback допускает HTTP. Отдельный network child
+ограничен общим deadline и reaped при timeout. Raw export до 16 MiB, private
+immutable receipt, source pins и plan/census binding проверяются до сохранения.
+Server build, owners, eligibility и population этим не аттестуются; SLO/routing
+false, qualification not_assessed. Семь новых transport/CLI regressions прошли.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

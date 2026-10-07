@@ -1,5 +1,8 @@
 # Сверка cohort с prospective plan и targets
 
+[Collector](./shadow-pilot-collection.md) получает точные bytes census из API
+по заранее закреплённому plan и сохраняет acquisition receipt отдельно от SLI.
+
 08.10.2026 MSK. [Evaluator CLI](../../../../../scripts/evaluate-decision-shadow-pilot.py)
 принимает complete [cohort export](./shadow-pilot-cohort.md), заранее подготовленный
 [plan v2](./shadow-pilot-plan.md), точные bytes профиля и **отдельные SHA всех трёх

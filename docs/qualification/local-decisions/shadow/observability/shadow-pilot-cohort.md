@@ -1,5 +1,8 @@
 # Полный сохранённый cohort shadow-пилота
 
+Для воспроизводимого capture используйте [pinned collector](./shadow-pilot-collection.md),
+затем [offline evaluator](./shadow-pilot-evaluation.md).
+
 08.10.2026 MSK. Новый authenticated endpoint:
 
 ```text
