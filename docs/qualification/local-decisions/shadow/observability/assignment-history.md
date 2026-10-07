@@ -67,3 +67,39 @@ resend_count при повторе. Dispatch history поэтому не мар�
 HTTP attempt ledger. Следующий caller accounting gate требует отдельных
 intent/return receipts с идемпотентной записью и unknown outcomes при worker
 death. [Owner/SLO proposal](./resident-service-acceptance.md) остаётся draft.
+
+## Native proof
+
+Первый committed повтор прошёл восемь commands, девять current и три legacy
+traces, три реальных HTTP fixture calls; independent audit — девять checks.
+Финальный повтор после compatibility fix прошёл восемь commands, десять current
+и три legacy traces, четыре HTTP calls; audit — 11 checks. SQLite snapshots
+созданы `VACUUM INTO`, raw rows и DTO независимо сверены; reopen сохранил
+traces полностью. Три primary failures до shadow оставили три разные UUID /
+stageAttempt rows, без HTTP. Accepted observation и последующий primary retry
+сохранили одну assignment. Safe replay не добавил rows. Pending/queued cleanup
+прошёл, все 11 recorded temporary PID отсутствуют.
+
+В final snapshot десять assignments: четыре recorded, пять ended_without_observation
+и одна pending. Три traces из настоящей старой SQLite snapshot имеют legacy_gap
+с пустыми arrays; исходный файл остался неизменным. Отдельный старый coordinator
+из frozen Git snapshot выполнил record/complete над новым stage: primary и
+bound result сохранены, raw ledger marker остался complete с observation=null.
+Новый reader корректно понизил coverage до legacy_gap. Все 47 sources старого
+writer и package lock проверены до/после. Это отдельная current gap, не
+восстановленный caller attempt или модельный timeout.
+
+32 targeted checks, полный coordinator набор 335 tests (307 pass, 28 optional
+skips), typecheck и 713 Python / 12 Node docs checks прошли. Полный npm test
+прошёл до compatibility fix; после fix повторён весь затронутый coordinator
+набор. Regression на прежнем helper failed, затем прошёл с исправлением.
+Permanent resident сохранил четыре PID, 34 dependencies, fresh scrape и
+counters 1/0/0 без дополнительных inference.
+
+Все 167 files private ZIP, включая четыре Git states, проверены по CRC,
+SHA/size; identical copy сохранена в исходном workspace `docs/private`.
+[Allowlist summary](../evidence/2026-10-07/assignment-history/result-summary.json)
+публикует counts, source hashes и audit/archive pins, без native paths,
+run/stage/lease identities, prompts, state и PID. Следующий telemetry gate —
+negotiated caller intent/return accounting; assignments по-прежнему не
+доказывают полный HTTP или customer denominator.
