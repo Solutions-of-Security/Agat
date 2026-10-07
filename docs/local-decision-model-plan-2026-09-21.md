@@ -313,7 +313,12 @@ prospective v2 plan и exact instance/run/stage inventories. Caller ratios
 включают errors и unknown returns; все assignment profiles/timeouts сверяются
 с plan, quantiles считаются по whole cohort до 1000 runs. Default provided
 trace limit 32 сохранён. Draft target comparison не утверждает owners/SLO;
-zero/legacy data не проходят как успешный пилот. Следующие внешние gates —
+zero/legacy data не проходят как успешный пилот. Нативный SQLite/HTTP fixture
+включил четыре intents: ok, timeout, missing и pending; target ratios
+`[0.25, 0.75]`, diagnostic_only / insufficient_data, model calls 0.
+47 независимых audit, 53 targeted и 786 Python / 12 Node docs checks прошли.
+Следующий инженерный шаг — bounded authenticated collector exact cohort bytes
+для последующей offline сверки. Следующие внешние gates —
 реальный permitted workflow/owners и human review/calibration/holdout;
 actual boot/login остаётся открытым. Routing false, qualification not_assessed.
 

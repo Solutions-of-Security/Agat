@@ -83,3 +83,27 @@ acceptance, timeout drift, private receipts и source drift. Корпус из 4
 Совместные regressions включают прежние SLI, caller inventory и pilot v2.
 Synthetic tests не заменяют реальный permitted workflow, human reviews,
 calibration или holdout измерение.
+
+## Нативная проверка цепочки
+
+08.10 MSK, committed implementation `f8dbc0b`: настоящий SQLite coordinator
+и authenticated HTTP endpoint сохранили четыре синтетических process instances.
+Один вернул bound `ok`, один — timeout; cancelled intent сохранился как
+`return_missing`, активный — `intent_pending`. Неавторизованный запрос получил
+401. Task/primary text не вошли в ответ. Модели не вызывались.
+
+CLI обработал точные HTTP bytes, profile bytes с пробелами и literal `1.0`,
+и test plan с явно синтетическими owners, preparedAt/window. Это проверка
+протокола с тестовыми часами, **не реально заранее закреплённый пилот**.
+Все четыре intents вошли в denominator: обе целевые доли находятся в
+`[0.25, 0.75]`, `target_not_met`. Два unknown returns не получили выдуманного
+времени; caller quantiles рассчитаны только по двум записанным durations
+400/2000 ms. Durations здесь синтетические, не результат performance benchmark.
+
+Отчёт `diagnostic_only / insufficient_data`, exit 2. Отдельный audit прошёл
+47 проверок source/input SHA, ordered run census, profile byte identity,
+outcomes, ratios и private file modes. [Машинный итог](./pilot-evaluation-native-summary.json)
+содержит hashes, счётчики и ограничения; raw evidence остаётся в `docs/private`.
+Совместно прошли 53 targeted Python checks; полный `docs:check` —
+786 Python (4 ожидаемых skips), 12 Node, 2474 links / 279 Markdown,
+7 process categories / 13 templates. CI и merge отслеживаются отдельно.
