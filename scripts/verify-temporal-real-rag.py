@@ -58,7 +58,7 @@ def verify_caller_accounting(phase, profile):
     observations = {row['stageId']: row for row in trace['decisionObservations']}
     history = trace['decisionAssignmentHistory']; caller = trace['decisionCallerAccounting']
     assert history['schemaVersion'] == 'agat.decision.shadow-assignment-inventory.v1' and history['scope'] == 'coordinator_shadow_assignments'
-    assert caller['schemaVersion'] == 'agat.decision.shadow-caller-inventory.v1' and caller['scope'] == 'caller_operation_intents'
+    assert caller['schemaVersion'] == 'agat.decision.caller-inventory.v1' and caller['scope'] == 'caller_operation_intents'
     histories = {row['stageId']: row for row in history['stages']}; callers = {row['stageId']: row for row in caller['stages']}
     assert len(raw_stages) == len(phase['callerAccountingSql']) == len(calls) == len(phase['decisionCalls']) == 3
     assert set(raw_stages) == set(calls) == set(observations) == set(histories) == set(callers)

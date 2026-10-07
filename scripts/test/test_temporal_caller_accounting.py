@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import math
+import re
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -17,7 +18,7 @@ class TemporalCallerAccountingTests(unittest.TestCase):
         self.profile={'profileJson':'{"fixture":true}'};self.profile['profileSha256']=verifier.sha(self.profile['profileJson'])
         trace={'decisionObservations':[], 'events':[],
           'decisionAssignmentHistory':{'schemaVersion':'agat.decision.shadow-assignment-inventory.v1','scope':'coordinator_shadow_assignments','stages':[]},
-          'decisionCallerAccounting':{'schemaVersion':'agat.decision.shadow-caller-inventory.v1','scope':'caller_operation_intents','stages':[]}}
+          'decisionCallerAccounting':{'schemaVersion':'agat.decision.caller-inventory.v1','scope':'caller_operation_intents','stages':[]}}
         self.phase={'trace':trace,'decisionCalls':[],'callerAccountingSql':[]}
         for index in range(3):
             stage=f'stage-{index}';assignment_id=f'{index+1:08x}-0000-4000-8000-000000000000'
@@ -46,6 +47,11 @@ class TemporalCallerAccountingTests(unittest.TestCase):
 
     def test_three_complete_receipts_are_bound_to_sql_request_and_profile(self):
         self.assertEqual(verifier.verify_caller_accounting(self.phase,self.profile),{'assignments':3,'intents':3,'returns':3,'knownCallerTimings':3,'unknownReturns':0})
+
+    def test_inventory_fixture_matches_the_actual_coordinator_contract(self):
+        source=(ROOT/'apps/coordinator/src/decision-caller-accounting.ts').read_text()
+        exported=re.search(r"DECISION_CALLER_INVENTORY\s*=\s*['\"]([^'\"]+)['\"]",source).group(1)
+        self.assertEqual(self.phase['trace']['decisionCallerAccounting']['schemaVersion'],exported)
 
     def test_missing_duplicate_or_foreign_sql_stage_is_rejected(self):
         for change in (lambda p:p['callerAccountingSql'].pop(),lambda p:p['callerAccountingSql'].append(p['callerAccountingSql'][0]),

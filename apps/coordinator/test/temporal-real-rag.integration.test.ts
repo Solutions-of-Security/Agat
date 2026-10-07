@@ -13,6 +13,7 @@ import { root, cleanEnv, processChild, within, eventually, listen, close } from 
 import { AgatStore } from "../src/database.js";
 import type { ProcessGraph } from "../src/types.js";
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
+import { DECISION_CALLER_INVENTORY } from "../src/decision-caller-accounting.js";
 import { decisionProfile, digest, generation, json, origin, primaryIdentity, type Fixture } from "../../../scripts/lib/decision-primary-workflow.js";
 import { embeddingIdentity, forwardEmbedding, verifyIngestion, verifyRetrieval } from "../../../scripts/lib/decision-rag.js";
 import { forwardDecisionRequest } from "../../../scripts/lib/decision-shadow-proxy.js";
@@ -354,7 +355,7 @@ for (const transport of ["isolated", "session"] as const) {
           assert.equal(calls[0]!.request.state, stage.input ?? fixture.input);
         }
         if (callerAccountingEnabled) {
-          assert.equal(trace.decisionCallerAccounting.schemaVersion, "agat.decision.shadow-caller-inventory.v1");
+          assert.equal(trace.decisionCallerAccounting.schemaVersion, DECISION_CALLER_INVENTORY);
           assert.equal(trace.decisionCallerAccounting.scope, "caller_operation_intents");
           assert.equal(trace.decisionCallerAccounting.stages.length, 3);
           assert.equal(trace.events.filter((row: any) => row.type === "decision.shadow").length, 3);
