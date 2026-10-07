@@ -62,6 +62,14 @@ class StageInventoryTest(unittest.TestCase):
         self.assertIn("missing_stage_inventory", result["dataGaps"])
         self.assertFalse(result["stageInventory"]["storedStageCoverageVerified"])
 
+    def test_reason_alone_does_not_turn_a_recorded_result_into_replay(self):
+        trace = self.trace(); observation = trace["decisionObservations"][0]["observation"]
+        observation["reason"] = observation["result"]["reason"] = "safe_replay_unavailable"
+        result = analyze([trace], self.profile, 1000)
+        self.assertEqual(result["counts"]["observedChecks"], 1)
+        self.assertEqual(result["stageInventory"]["counts"]["assignedStoredStages"], 1)
+        self.assertEqual(result["stageInventory"]["counts"]["replayedStoredStages"], 0)
+
     def test_omitted_or_fabricated_observation_markers_are_rejected(self):
         mutations = [lambda t: t["decisionStageInventory"].update(stages=[]),
                      lambda t: t["decisionStageInventory"]["stages"][0].update(observationRecorded=False),

@@ -73,7 +73,7 @@ def census(traces, profile_sha):
                 for key in ("profileSha256", "inputSha256", "callerTimeoutMs"):
                     actual = recorded[stage].get(key)
                     require(type(actual) is type(row[key]) and actual == row[key], "Inventory and recorded lease bindings differ")
-                if "reusedFromStageId" in observation or observation.get("reason") == "safe_replay_unavailable":
+                if "reusedFromStageId" in observation or (observation.get("status") == "unavailable" and observation.get("reason") == "safe_replay_unavailable"):
                     counts["replayedStoredStages"] += 1
                     continue
             if not row["assigned"]:
