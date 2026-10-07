@@ -71,3 +71,44 @@ completed с observation, cancelled без observation и running без observa
 содержит все три stages. [SQLite documentation](https://www.sqlite.org/lang_vacuum.html#vacuum_with_an_into_clause)
 описывает transactional snapshot этого метода. Этот опыт — controlled
 fixture, он не свидетельствует о частоте отказов на клиентском потоке.
+
+## Native proof и повторная проверка
+
+Два committed source states прошли по восемь native-команд. В каждом повторе
+настоящий SQLite coordinator сохранил восемь traces: computed, cancelled без
+observation, failed после трёх primary lease assignments, missing_result
+после completion, safe replay, live replay, assigned running и unassigned
+queued. Два настоящих LocalDecisionClient calls использовали контролируемый
+HTTP backend fixture. Primary failure произошёл до shadow HTTP; три retry
+оставили один failed stored stage. Это подтверждает ограничение stage census.
+
+Consistent `VACUUM INTO` snapshot независимо сверена с trace и raw SQL rows;
+reopen сохранил traces полностью. После capture pending/queued jobs отменены.
+Settled CLI дал exit 0, mixed/pending-only/legacy/replay-only — exit 2,
+contradictory marker и duplicate pending — exit 1. Functional caller ratio
+settled равен 2/2; assigned-stage ratio — 2/4, поскольку две terminal stages
+не записали observation. Mixed inventory содержит шесть assigned stages,
+три recorded, два terminal missing и один pending: stage ratio 2/6 → 3/6.
+Pending-only даёт interval 0 → 1 без caller sample; legacy trace сохраняет
+прежнее observation ratio и получает missing_stage_inventory.
+
+Independent native audit прошёл восемь checks, before audit — 22. Перепроверены
+raw SHA, десять native sources, девять CLI sources, отдельные caller/scoring
+quantiles, SQLite rows, fallback/replay и все recorded temporary PID.
+Постоянный resident сохранил четыре PID, 34 dependencies и fresh scrape;
+computed/rejected/failed counters остались 1/0/0 без новых inference.
+
+24 coordinator targeted checks, полный coordinator набор 327 tests
+(299 pass, 28 optional skips), полный npm test/typecheck и 713 Python /
+12 Node docs checks прошли. Дополнительный regression проверяет, что reason
+сам по себе не превращает computed observation в safe replay. Первый
+успешный повтор, ранние неудачные fixtures и их frozen sources сохранены.
+Все 170 files private ZIP, включая три Git source states, проверены по
+CRC/SHA/size; идентичная копия сохранена в исходном workspace `docs/private`.
+[Allowlist summary](../evidence/2026-10-07/stage-inventory/result-summary.json)
+не экспортирует native paths, run/stage identities, state, prompts или PID.
+
+Дальнейший telemetry gate — отдельная история shadow lease assignments и
+caller attempts при retry; существующий stage census и provided traces
+не дают полной production denominator. Owner/SLO, фактический boot/login
+и human reviews/calibration/holdout остаются открытыми.
