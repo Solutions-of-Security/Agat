@@ -43,6 +43,53 @@ def positive(value):
     return value
 
 
+def verify_caller_timing(value, timeout_ms):
+    assert isinstance(value, dict) and set(value) == {'schemaVersion', 'clock', 'boundary', 'durationMs'}
+    assert value['schemaVersion'] == 'agat.decision.caller-timing.v1' and value['clock'] == 'monotonic' and value['boundary'] == 'local_http_call'
+    ms = value['durationMs']
+    assert type(timeout_ms) is int and 100 <= timeout_ms <= 10_000
+    assert type(ms) in (int, float) and math.isfinite(ms) and 0 <= ms <= timeout_ms
+    return ms
+
+
+def verify_caller_accounting(phase, profile):
+    trace = phase['trace']; calls = {row['stageId']: row for row in phase['decisionCalls']}
+    raw_stages = {row['id']: row for row in phase['callerAccountingSql']}
+    observations = {row['stageId']: row for row in trace['decisionObservations']}
+    history = trace['decisionAssignmentHistory']; caller = trace['decisionCallerAccounting']
+    assert history['schemaVersion'] == 'agat.decision.shadow-assignment-inventory.v1' and history['scope'] == 'coordinator_shadow_assignments'
+    assert caller['schemaVersion'] == 'agat.decision.shadow-caller-inventory.v1' and caller['scope'] == 'caller_operation_intents'
+    histories = {row['stageId']: row for row in history['stages']}; callers = {row['stageId']: row for row in caller['stages']}
+    assert len(raw_stages) == len(phase['callerAccountingSql']) == len(calls) == len(phase['decisionCalls']) == 3
+    assert set(raw_stages) == set(calls) == set(observations) == set(histories) == set(callers)
+    assert len(history['stages']) == len(caller['stages']) == 3
+    assert len([row for row in trace['events'] if row['type'] == 'decision.shadow']) == 3
+    for stage_id, stage in raw_stages.items():
+        assert set(stage) == {'id', 'status', 'attempt', 'activity_json'} and stage['status'] == 'completed' and type(stage['attempt']) is int and stage['attempt'] == 1
+        activity = json.loads(stage['activity_json']); stored_history = activity['decisionShadowAssignmentHistory']; stored_caller = activity['decisionShadowCallerAccounting']
+        assert stored_history['schemaVersion'] == 'agat.decision.shadow-assignment-history.v1' and stored_caller['schemaVersion'] == 'agat.decision.caller-accounting.v1'
+        assert stored_history['coverage'] == stored_caller['coverage'] == histories[stage_id]['coverage'] == callers[stage_id]['coverage'] == 'complete'
+        assert len(stored_history['assignments']) == len(stored_caller['assignments']) == len(histories[stage_id]['assignments']) == len(callers[stage_id]['assignments']) == 1
+        assignment, intent = stored_history['assignments'][0], stored_caller['assignments'][0]
+        assert set(assignment) == {'assignmentId', 'stageAttempt', 'profileSha256', 'inputSha256', 'callerTimeoutMs', 'observation'}
+        assert set(intent) == {'assignmentId', 'stageAttempt', 'negotiated', 'intent', 'returned'}
+        assert re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', assignment['assignmentId'])
+        assert intent['assignmentId'] == assignment['assignmentId'] and type(intent['stageAttempt']) is int and type(assignment['stageAttempt']) is int and intent['stageAttempt'] == assignment['stageAttempt'] == stage['attempt']
+        assert intent['negotiated'] is True and intent['intent'] is True
+        lease = activity['decisionShadowLease']; request = Request.from_dict(lease['request'])
+        assert lease['assignmentId'] == assignment['assignmentId'] and lease['callerAccountingVersion'] == 'agat.decision.caller-accounting.v1' and lease['callerTimingVersion'] == 'agat.decision.caller-timing.v1'
+        assert lease['inputSha256'] == request.input_sha256
+        assert request.id == stage_id and request.to_dict() == calls[stage_id]['request'] and request.input_sha256 == assignment['inputSha256'] == observations[stage_id]['inputSha256']
+        assert activity['decisionShadowConfig']['profileJson'] == profile['profileJson'] and sha(profile['profileJson']) == profile['profileSha256'] == assignment['profileSha256'] == lease['profileSha256'] == observations[stage_id]['profileSha256']
+        assert assignment['callerTimeoutMs'] == lease['timeoutMs'] == observations[stage_id]['callerTimeoutMs']
+        observation = observations[stage_id]['observation']; assert assignment['observation'] == activity['decisionShadowObservation'] == observation
+        verify_caller_timing(observation['callerTiming'], assignment['callerTimeoutMs'])
+        assert intent['returned'] == {k: observation[k] for k in ('status', 'reason', 'callerTiming')}
+        assert histories[stage_id]['assignments'] == [{**assignment, 'outcome': 'recorded'}]
+        assert callers[stage_id]['assignments'] == [{**intent, 'outcome': 'returned'}]
+    return {'assignments': 3, 'intents': 3, 'returns': 3, 'knownCallerTimings': 3, 'unknownReturns': 0}
+
+
 def payload(value):
     assert len(value['payloads']) == 1
     item = value['payloads'][0]
@@ -210,17 +257,22 @@ def verify(directory):
     directory = directory.resolve()
     assert directory.is_relative_to(ROOT / 'docs')
     plan, launcher = [json.loads((directory / f'{name}.json').read_text()) for name in ('plan', 'launcher')]
-    assert plan['schema'] in [f'agat.temporal.real-rag-plan.v{v}' for v in (1, 2, 3, 4)]
+    assert plan['schema'] in [f'agat.temporal.real-rag-plan.v{v}' for v in (1, 2, 3, 4, 5)]
     version = int(plan['schema'][-1])
     shadow, runtime_recovery = version >= 2, version >= 3
     resource_sources = []
-    if version == 4:
+    if version >= 4:
         from scripts.lib.shadow_resource_sample import SOURCE_PATHS
         resource_sources = SOURCE_PATHS
     assert plan['schema'] == f'agat.temporal.real-rag-plan.v{version}'
     assert re.fullmatch('[0-9a-f]{40}', plan['implementationCommit'])
     paths = [*SOURCES, *(launcher_module.SHADOW_SOURCES if shadow else []),
-             *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else []), *resource_sources]
+             *(launcher_module.SHADOW_RECOVERY_SOURCES if runtime_recovery else []), *resource_sources,
+             *(launcher_module.CALLER_ACCOUNTING_SOURCES if version == 5 else [])]
+    if version == 5:
+        assert plan['callerAccounting'] == launcher_module.CALLER_ACCOUNTING_PLAN
+    else:
+        assert 'callerAccounting' not in plan
     if shadow and 'referenceFormat' in plan['decision']:
         reference = plan['decision']['referencePath']
         assert isinstance(reference, str) and reference.startswith('docs/')
@@ -410,6 +462,9 @@ def verify(directory):
             assert phase['shadowRecovery']['firstAcceptedObservationSha256'] == sha(compact(observations[stages[0]['id']]))
             for index, stage in enumerate(stages):
                 call = decision_calls[stage['id']]; observation = observations[stage['id']]['observation']
+                if version == 5 or 'callerTiming' in observation:
+                    verify_caller_timing(observation['callerTiming'], observations[stage['id']]['callerTimeoutMs'])
+                without_timing = {key: value for key, value in observation.items() if key != 'callerTiming'}
                 request = Request.from_dict({'schemaVersion': 'agat.decision.v1', 'id': stage['id'],
                                              'state': stage['input'] if index else fixture['input'], **fixture['shadow']})
                 assert call['request'] == request.to_dict()
@@ -418,17 +473,19 @@ def verify(directory):
                 if runtime_recovery and index == 1:
                     assert call['status'] == 'unavailable' and call['transportError'] == 'ECONNREFUSED'
                     assert 'httpStatus' not in call and 'result' not in call
-                    assert observation == {'mode': 'shadow', 'fallback': 'primary', 'status': 'unavailable', 'reason': 'unreachable'}
+                    assert without_timing == {'mode': 'shadow', 'fallback': 'primary', 'status': 'unavailable', 'reason': 'unreachable'}
                     continue
                 assert call['httpStatus'] == 200
                 validate_result(call['result'], request, profile)
                 assert call['result']['status'] in ['ok', 'abstain']
-                assert observation == {'mode': 'shadow', 'fallback': 'primary', 'status': call['result']['status'],
+                assert without_timing == {'mode': 'shadow', 'fallback': 'primary', 'status': call['result']['status'],
                                        'reason': call['result']['reason'], 'result': call['result']}
             assert decision_calls[stages[0]['id']]['finishedMs'] < recovery['heldResponseAtMs']
             assert decision_calls[stages[1]['id']]['startedMs'] > recovery['releasedAtMs']
             if runtime_recovery:
                 verify_runtime_phase(phase, launcher, stages, observations, decision_calls)
+            if version == 5:
+                verify_caller_accounting(phase, plan['decision']['profile'])
         assert phase['database'] == {'driver': 'postgresql', 'runtimeRole': 'agat_system', 'tenantRole': 'agat_tenant',
             'visibility': {'own': [1, 3, 2], 'foreign': [0, 0, 0]}, 'releaseRegistryDenied': True, 'retrievalExecution': 'isolated'}
         assert len(phase['children']) == 4 and {row['pid'] for row in phase['children']} <= owned
@@ -476,7 +533,9 @@ def verify(directory):
             **({'shadowCalls': 6, 'profileSha256': plan['decision']['profile']['profileSha256']} if shadow else {}),
             **({'shadowInferenceCalls': 4, 'unavailableObservations': 2, 'separateWarmupCalls': 3, 'runtimeRestarts': 2}
                if runtime_recovery else {}),
-            **({'resources': verify_resources(plan, launcher, owned, elapsed)} if version == 4 else {})}
+            **({'resources': verify_resources(plan, launcher, owned, elapsed)} if version >= 4 else {}),
+            **({'callerAccounting': {'scope': 'provided_workflows_only', 'assignments': 6, 'intents': 6,
+                'returns': 6, 'knownCallerTimings': 6, 'unknownReturns': 0, 'profileIdentity': 'coordinator_json_bytes'}} if version == 5 else {})}
 
 
 if __name__ == '__main__':
@@ -487,7 +546,7 @@ if __name__ == '__main__':
     result = verify(args.directory)
     if args.output:
         assert args.output.resolve().is_relative_to(ROOT / 'docs')
-        if result['schema'] == 'agat.temporal.real-rag-verification.v4':
+        if result['schema'] in ('agat.temporal.real-rag-verification.v4', 'agat.temporal.real-rag-verification.v5'):
             assert args.output.resolve().is_relative_to(ROOT / 'docs/private')
         with args.output.open('x') as stream:
             json.dump(result, stream, ensure_ascii=False, indent=2, allow_nan=False); stream.write('\n')

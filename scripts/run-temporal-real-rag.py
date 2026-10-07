@@ -36,6 +36,10 @@ SHADOW_POLICY = 'docs/qualification/local-decisions/policy.shadow.v1.json'
 SHADOW_REFERENCE = 'docs/qualification/local-decisions/performance/evidence/2026-09-28/rag-http-isolation/resident-isolated/rag-workflow-plan.json'
 SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
 SHADOW_RECOVERY_SOURCES = ['scripts/lib/temporal_shadow_control.py', 'scripts/test/test_temporal_shadow_control.py']
+CALLER_ACCOUNTING_SOURCES = ['scripts/verify-temporal-real-rag.py', 'scripts/test/test_temporal_caller_accounting.py']
+CALLER_ACCOUNTING_PLAN = {'capability': 'agat.decision.caller-accounting.v1',
+    'timingSchemaVersion': 'agat.decision.caller-timing.v1', 'clock': 'monotonic',
+    'boundary': 'local_http_call', 'profileIdentity': 'coordinator_json_bytes'}
 
 
 def shadow_profile(path, *, wired_limit_mib=None):
@@ -212,6 +216,7 @@ def main(*, check_cancelled=lambda: None):
     parser.add_argument('--shadow-wired-limit-mib', type=int, help='Explicit per-process wired budget; requires a matching committed shadow profile')
     parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
     parser.add_argument('--shadow-resources', action='store_true', help='Observe owned-process and system memory during shadow recovery')
+    parser.add_argument('--caller-accounting', action='store_true', help='Require real caller timing and SQL intent/return receipts; enables the v5 gate')
     args = parser.parse_args()
     wired_limit_bytes(args.shadow_wired_limit_mib)
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
@@ -222,7 +227,8 @@ def main(*, check_cancelled=lambda: None):
     reference_path, explicit_profile = shadow_profile(args.shadow_profile, wired_limit_mib=args.shadow_wired_limit_mib) if args.shadow_profile else (SHADOW_REFERENCE, None)
     require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
     require(not args.shadow_resources or args.shadow_recovery, 'Shadow resource diagnostics requires recovery mode')
-    version_number = 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
+    require(not args.caller_accounting or args.shadow_resources, 'Caller accounting requires shadow resource/recovery mode')
+    version_number = 5 if args.caller_accounting else 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
     resource_sources = []
     if args.shadow_resources:
         from scripts.lib.shadow_resource_sample import ResourceSampler, PLAN as RESOURCE_PLAN, SOURCE_PATHS
@@ -234,7 +240,8 @@ def main(*, check_cancelled=lambda: None):
     require(platform.system() == 'Darwin', 'This installed-model experiment requires the macOS host')
     commit = command(['git', 'rev-parse', 'HEAD'])
     measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else []),
-                      *resource_sources, *([reference_path] if explicit_profile else [])]
+                      *resource_sources, *([reference_path] if explicit_profile else []),
+                      *(CALLER_ACCOUNTING_SOURCES if args.caller_accounting else [])]
     snapshot = subprocess.check_output(['git', 'archive', commit, '--', *measured_paths], cwd=ROOT, timeout=15)
     sources = {}
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -293,6 +300,8 @@ def main(*, check_cancelled=lambda: None):
             'actions': [f'{transport}/{action}' for transport in plan['transports'] for action in ['kill', 'restart']]}
     if args.shadow_resources:
         plan['resources'] = RESOURCE_PLAN
+    if args.caller_accounting:
+        plan['callerAccounting'] = CALLER_ACCOUNTING_PLAN
     directory.mkdir(parents=True)
     write(directory / 'plan.json', plan)
     started = time.monotonic()
@@ -333,6 +342,8 @@ def main(*, check_cancelled=lambda: None):
                     require(not resources.errors, 'Resource counters unavailable')
                     require(before['pressureDispatchLevel'] != 4, 'Critical memory pressure before model admission')
                     shadow_environment['AGAT_TEMPORAL_SHADOW_RESOURCES'] = 'true'
+                if args.caller_accounting:
+                    shadow_environment['AGAT_TEMPORAL_SHADOW_CALLER_ACCOUNTING'] = 'true'
                 if shadow_enabled:
                     with socket.socket() as shadow_bound:
                         shadow_bound.bind(('127.0.0.1', 0)); shadow_port = shadow_bound.getsockname()[1]
