@@ -31,6 +31,58 @@ def active_phase():
 
 
 class PrimaryArrivalTest(unittest.TestCase):
+    def test_configurable_schedule_is_bounded_and_legacy_default_is_unchanged(self):
+        legacy = primary.schedules(12)
+        lower = primary.schedules(12, .5)
+        self.assertEqual([(r['ratePerSecond'], r['count']) for r in legacy], [(1, 12)] * 6)
+        self.assertEqual([(r['ratePerSecond'], r['count']) for r in lower], [(.5, 6)] * 6)
+        for seconds, rate in ((True, .5), (31, .5), (12, True), (12, float('nan')), (12, 2)):
+            with self.subTest(seconds=seconds, rate=rate), self.assertRaises(ValueError): primary.schedules(seconds, rate)
+
+    def test_decision_rate_requires_primary_before_any_measurement_effect(self):
+        entry = Path(__file__).resolve().parents[1] / 'run-decision-arrival-rate.py'
+        spec = importlib.util.spec_from_file_location('lower_arrival_cli', entry)
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        args = ['probe', '--evidence-dir', 'docs/private/not-created-lower-fixture', '--runtime-python', sys.executable,
+                '--manifest', 'missing-manifest', '--profile', 'missing-profile', '--decision-rate', '.5']
+        with patch.object(sys, 'argv', args), patch.object(cli, 'frozen_sources') as sources, \
+                self.assertRaisesRegex(ValueError, 'requires both primary paths'):
+            cli.main()
+        sources.assert_not_called()
+
+    def test_bad_negotiated_rate_and_legacy_rate_override_fail_before_source_io(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for schema, rate in ((primary.CONFIGURABLE_SCHEMAS[0], True),
+                                 (primary.CONFIGURABLE_SCHEMAS[0], 2), (primary.PLAN_SCHEMA, .5)):
+                (directory / 'plan.json').write_text(json.dumps({'schemaVersion': schema, 'decisionRatePerSecond': rate}))
+                with self.subTest(schema=schema, rate=rate), patch.object(verifier.subprocess, 'check_output') as source_io, \
+                        self.assertRaises(ValueError): verifier.verify(directory)
+                source_io.assert_not_called()
+
+    def test_v3_real_half_rate_intervals_verify_against_fixed_schedule(self):
+        def transport(*_):
+            time.sleep(.1)
+            value = response(); value['total_duration'] = 1_000_000
+            return value
+        origin = time.monotonic()
+        companion = primary.PrimaryArrivals(transport, origin, 4, lambda: False); companion.start()
+        client = Client(.15)
+        phase = run_phase(client, case(), client.engine.profile(), rate=.5, count=2, origin=origin)
+        primary_rows = companion.finish()
+        phase.update(schemaVersion=primary.CONFIGURABLE_SCHEMAS[2], condition='primary_active',
+                     phaseOriginMonotonicMs=origin * 1000, primaryRows=primary_rows,
+                     elapsedMs=(time.monotonic() - origin) * 1000)
+        plan = {'schemaVersion': primary.CONFIGURABLE_SCHEMAS[0], 'phaseSeconds': 4,
+                'decisionRatePerSecond': .5, 'profile': client.engine.profile(),
+                'callerTimeoutMs': 10000, 'thresholdMs': 5000}
+        schedule = primary.schedules(4, .5)[1]
+        verifier.verify_phase(phase, schedule, case(), plan)
+        result = verifier.verify_primary_phase(phase, schedule, plan, primary)
+        self.assertEqual(result['overlapPairs'], 2)
+        changed = copy.deepcopy(schedule); changed['ratePerSecond'] = 1
+        with self.assertRaises(ValueError): verifier.verify_phase(phase, changed, case(), plan)
+
     def test_primary_response_requires_complete_local_model_and_exact_budget(self):
         primary.validate_response(response())
         for mutate in (lambda r: r.update(model='foreign'), lambda r: r.update(done=False),

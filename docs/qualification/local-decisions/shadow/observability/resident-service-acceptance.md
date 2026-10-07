@@ -8,9 +8,13 @@ shadow-only, routing false, not_assessed. После
 
 Предлагаю начать с семи дней наблюдения реального shadow-потока на
 проверенном M1 Max / 32 GiB, [sealed profile](../../performance/profiles/runtime-0.12.3-wired-4096.json), wired 4096 MiB,
-input ≤ 2048 tokens, один inference slot. Начальный planning envelope —
-один запрос в секунду, один активный запрос; это ограничение пилота для
-обсуждения, не утверждение о существующем клиентском потоке.
+input ≤ 2048 tokens, один inference slot. Текущий planning envelope для обсуждения —
+0.5 decision arrivals/с (один каждые две секунды), один активный запрос.
+Предложение уточнено после [двух mixed-primary repeats](../../performance/arrival-primary-half-4096.md):
+72/72 computed без drops, на длинном active input p95/max 1110.362 мс.
+Прежнее 1/s расписание дало 50% computed на длинной active-фазе.
+Это диагностические данные для обсуждения пилота; клиентский поток и
+согласованный SLO ещё не заданы.
 
 | Показатель | Предлагаемый target | Граница измерения |
 |---|---|---|
@@ -63,3 +67,5 @@ engineering workloads; согласование user-facing SLO на них не
 [Controlled arrivals](../../performance/arrival-rate-4096.md), 07.10: два отдельных wired 4096 МиБ runtime на 2048 tokens дали 24/24 при 1 arrival/с, p95 874.733 мс; при 2 arrivals/с — 50% computed, с явными drops/busy. Краткий synthetic опыт добавляет данные к planning envelope; owners, real traffic, targets и burst policy по-прежнему не согласованы.
 
 [Mixed-primary arrivals](../../performance/arrival-primary-4096.md), 07.10: на 2048 tokens при 1 decision arrival/с active дал 12/24, p95 1116.329 мс, idle — 48/48. Поэтому 1 arrival/с остаётся неподтверждённым planning envelope под совместной нагрузкой. Следующая bounded проверка — 0.5 decision arrival/с; targets, owners и customer traffic требуют согласования.
+
+[Half-rate mixed arrivals](../../performance/arrival-primary-half-4096.md), 07.10: два repeat дали 72/72 computed, 12/12 long active и p95/max 1110.362 мс. Primary вернул 10/24 planned calls; actual overlap подтверждён. Все settings/inputs и computed signatures сверены с прежним 1/s опытом. Proposal 0.5 arrival/с не является runtime rate limiter, customer SLO или подтверждением burst tolerance; owners и реальные eligible attempts остаются открытыми.
