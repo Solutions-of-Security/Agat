@@ -276,6 +276,14 @@ Development-сравнение не закрывает qualification: decider п
 
 ## Вывод: что именно можно воспроизвести
 
+[Контракт реального shadow-пилота](./qualification/local-decisions/shadow/observability/shadow-pilot-plan.md),
+08.10 MSK: CLI закрепляет project/process/version, future UTC window до семи дней,
+profile bytes/fingerprint и предлагаемые targets. Blank owners/data scope остаются
+явными; filled plan — только `ready_for_review`, без принятия SLO или qualification.
+Восемь regression checks проверяют pins, prospective window, private output,
+source drift и отсутствие ложной готовности. Следующий инженерный шаг — census
+полного сохранённого cohort; независимые публичные данные подбираются отдельно.
+
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
 
 В изученных [официальных пояснениях RLCD](https://docs.typesafe.ai/introduction/machine-learning-primer) и [публичных репозиториях TypeSafe](https://github.com/typesafe-ai) не найден полный комплект весов, архитектуры и рецепта обучения Jev, достаточный для точного воспроизведения. Поэтому равенство Jev по широкому набору задач, скорости и вероятностям нельзя обещать. Доступность SDK не означает доступность модели.
