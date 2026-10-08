@@ -34,3 +34,34 @@ live наблюдения: `reportedCleanupComplete=true / liveCleanupVerified=f
 threshold switch с одним accepted value, whole/mixed admission,
 actual temporary Git/CLI replay с запретом model/network/native Popen,
 artifact mutation между replay, source drift и output permissions.
+
+## Native offline replay 08.10 MSK
+
+Из `e9487b3` CLI дважды проверил сохранённый native report: **pass / exact**,
+**107 measured / 101 current verifier sources**, **343 scheduled physical
+handlers / 345 с warmup**. Inference/network/live PID calls отсутствовали.
+Подтверждены весь inventory **49 cases / 44 groups**, 46 fully computed
+cases из 42 groups и три wholly context-rejected cases; 343 variants не
+выданы за независимые задачи. [Allowlisted summary](./public-option-diagnostic-replay-summary.json)
+закрепляет raw SHA/seals и отдельную posthoc decomposition.
+
+| Наблюдение среди 46 fully computed original cases | Cases |
+| --- | ---: |
+| Argmax semantic ID меняется | 8 |
+| Status/reason/value меняются; accepted и abstained orders | 11 |
+| Несколько разных ненулевых accepted values | 0 |
+| Accepted с одним и тем же value во всех orders | 26 |
+| Abstained во всех orders | 9 |
+| Original accepted, другой order abstained | 5 |
+| Original abstained, другой order accepted | 6 |
+
+Эти группы пересекаются: восемь argmax changes и одиннадцать status changes
+вместе охватывают прежние 18 semantic-outcome changes. 31 original accepted
+case / 37 cases с хотя бы одним observed accepted order не являются
+числом корректно размеченных случаев. Ноль conflicting accepted values
+в этом run не устанавливает correctness или safety на другой population.
+
+Independent audit — **201 checks**, saved source повторно дал идентичные
+audit bytes. Шесть новых / 14 joint tests, full **891 Python / 4 optional
+skips, 12 Node**, links/catalog прошли. Cleanup report остаётся historical,
+live false; labels/calibration/holdout/owners/SLO не добавлены.
