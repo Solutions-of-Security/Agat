@@ -71,7 +71,6 @@ def main(argv=None, *, input_stream=None, output_stream=None):
         started = utc_now()
         directory = private_directory(ROOT, args.output_dir)
         review["reviewerId"] = args.reviewer_id
-        checkpoint(directory, review)
         report = {"schemaVersion": "agat.decision.blind-review-session.v1", "status": "failed",
                   "startedAt": started, "finishedAt": None, "endReason": None,
                   "sourceCommit": identity[0], "sourceFiles": identity[1],
@@ -81,6 +80,7 @@ def main(argv=None, *, input_stream=None, output_stream=None):
                   "reviewerIdentityVerified": False, "humanExecutionVerified": False,
                   "independentReviewVerified": False, "expertQualificationsVerified": False,
                   "modelCalls": 0, "routingEnabled": False, "qualification": "not_assessed", "failureType": None}
+        checkpoint(directory, review)
 
         def save(candidate):
             require(source_identity(ROOT) == identity, "Review sources changed during the session")
@@ -105,7 +105,7 @@ def main(argv=None, *, input_stream=None, output_stream=None):
         return 0 if remaining == 0 else 2
     except Exception as error:
         if directory is not None and report is not None:
-            report.update(finishedAt=utc_now(), failureType=type(error).__name__)
+            report.update(status="failed", finishedAt=utc_now(), failureType=type(error).__name__)
             if (directory / "review.json").is_file():
                 report["outputReviewFileSha256"] = hashlib.sha256((directory / "review.json").read_bytes()).hexdigest()
             if not (directory / "session.json").exists():
