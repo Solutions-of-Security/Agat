@@ -508,6 +508,21 @@ sources / fresh counters unchanged. Full 885 Python / 12 Node checks.
 accepted outputs / argmax / abstention; human qualification, applicable
 calibration/holdout, owner/SLO и actual boot/login остаются открытыми.
 
+[Reusable offline option diagnostic replay](./qualification/local-decisions/performance/public-option-diagnostic-replay.md),
+08.10 MSK: independent raw pins и два полных replay сохранили 343 scheduled
+physical handlers / 345 с warmup, 107 measured / 101 current sources.
+Posthoc разбор 46 fully computed original cases: argmax меняется у 8,
+accepted/abstain status — у 11, conflicting accepted values — 0; sets
+пересекаются. 26 always accepted same value / 9 always abstained / 11 mixed,
+original accepted→abstained 5 / abstained→accepted 6. Полный denominator
+49 cases / 44 groups сохранён, три context-rejected cases не получили
+выдуманных comparison flags. 201 independent audit checks, 14 joint и
+full 891 Python / 12 Node checks; новых model/network/live PID calls нет.
+Следующий runtime gate — interrupted in-flight handler и owned recovery
+на том же endpoint: прежний loss v2 проверял SIGTERM между completed
+instances, без crash/recovery. Human/owner/SLO, applicable calibration/
+holdout и actual boot/login остаются открытыми; routing false.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
