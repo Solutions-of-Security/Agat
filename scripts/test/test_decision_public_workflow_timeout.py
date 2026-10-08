@@ -63,6 +63,16 @@ def fixture():
 
 
 class TimeoutInventoryTest(unittest.TestCase):
+    def test_explicit_default_abstain_flags_preserve_contract_input_identity(self):
+        context, plan, cohort, routes, transport = fixture()
+        for row in transport["rows"]:
+            request=json.loads(row["requestBody"])
+            for option in request["options"]: option.setdefault("abstain",False)
+            body=encoded(request);row.update(requestBody=body.decode(),requestBodySha256=sha(body))
+        result=workflow.verify_inventory(context,plan,cohort,routes,reseal(transport))
+        self.assertEqual(result["physicalScheduledHttpHandlers"],6)
+        self.assertTrue(result["caseInputsUnchanged"])
+
     def test_full_denominator_separates_computed_delivered_and_completed_undelivered(self):
         context, plan, cohort, routes, transport = fixture()
         result = workflow.verify_inventory(context, plan, cohort, routes, transport)
@@ -197,7 +207,7 @@ class TimeoutProxySocketTest(unittest.TestCase):
             def do_POST(self):
                 body=self.rfile.read(int(self.headers["Content-Length"])); request=json.loads(body)
                 index=len(requests); requests.append((body,self.headers["X-Agat-Decision-Cancel-On-Disconnect"]))
-                result={**results[index],"id":request["id"]}; response=encoded(result)
+                result={**results[index],"id":request["id"],"durationMs":0.0}; response=encoded(result)
                 self.send_response(200 if context["inputs"][index]["contextEligible"] else 422)
                 self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(response)))
                 self.end_headers();self.wfile.write(response)
@@ -208,8 +218,9 @@ class TimeoutProxySocketTest(unittest.TestCase):
             client=LocalDecisionClient(f"http://127.0.0.1:{proxy.port}")
             received=[]
             for case,route in zip(context["inputs"],routes):
+                request={**case["request"],"id":route["stageId"],"options":[{**option,"abstain":option.get("abstain",False)} for option in case["request"]["options"]]}
                 received.append(client.decide({"profile":PROFILE,"profileSha256":context["profileSha256"],
-                    "request":{**case["request"],"id":route["stageId"]},"timeoutMs":10000,"callerTimingVersion":CALLER_TIMING_VERSION}))
+                    "request":request,"timeoutMs":10000,"callerTimingVersion":CALLER_TIMING_VERSION}))
                 if len(received)==3:
                     stop=time.monotonic()+2
                     while proxy.target_receipt() is None and time.monotonic()<stop:time.sleep(.01)
@@ -237,4 +248,3 @@ class TimeoutProxySocketTest(unittest.TestCase):
 
 
 if __name__=="__main__":unittest.main()
-

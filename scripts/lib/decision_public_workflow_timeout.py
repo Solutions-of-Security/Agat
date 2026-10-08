@@ -80,7 +80,7 @@ def verify_transport(context, spec, transport, cohort, routes):
                 and hashlib.sha256(body).hexdigest() == row["requestBodySha256"]
                 and hashlib.sha256(response).hexdigest() == row["responseBodySha256"], "Raw proxy body pin differs")
         request = Request.from_dict(parse_json(body))
-        require(fingerprint(parse_json(body)) == fingerprint({**case["request"], "id": route["stageId"]})
+        require(request == Request.from_dict({**case["request"], "id": route["stageId"]})
                 and request.input_sha256 == case["inputSha256"], "Proxy forwarded transformed input")
         result = parse_json(response); validate_result(result, request, context["profile"])
         eligible = case["contextEligible"]
@@ -191,7 +191,8 @@ class DeadlineProxy:
         handler.connection.settimeout(self.spec["upstreamTimeoutMs"]/1000)
         body = handler.rfile.read(length); require(len(body) == length, "Incomplete POST")
         request = Request.from_dict(parse_json(body))
-        require(fingerprint(parse_json(body)) == fingerprint({**case["request"], "id": request.id}), "Reordered or changed proxy input")
+        require(request == Request.from_dict({**case["request"], "id": request.id})
+                and request.input_sha256 == case["inputSha256"], "Reordered or changed proxy input")
         status, content_type, response = self.forward("POST", handler.path, body, {
             "Content-Type": "application/json", "Accept": "application/json", "X-Agat-Decision-Profile": self.context["profileSha256"],
             "X-Agat-Decision-Cancel-On-Disconnect": "1", "Connection": "close"})
