@@ -461,6 +461,17 @@ historical cleanup claim отделён от current live PID verification. Че
 новых / 10 targeted и 861 Python / 12 Node docs checks прошли. Human labels,
 appointed owners/customer workflow, SLO и actual boot/login остаются открытыми.
 
+[Whole public workflow при потере owned decider](./qualification/local-decisions/performance/public-workflow-runtime-loss.md),
+08.10 MSK: prospective v2 N=5, все 49 instances сохранили primary route и
+durable caller return; 5 computed, затем 44 unavailable/unreachable и
+44 measured TCP resets без payload reads. 7 physical model handlers
+включают 2 warmup; transport failures не выданы за model responses.
+180 sources / 30 temporary PIDs, fresh cleanup и resident unchanged;
+868 Python / 12 Node docs checks. Контролируемый SIGTERM между completed
+instances не доказывает crash-in-flight/recovery или customer SLO.
+Следующий шаг — offline replay этого v2 evidence; human/owner/workflow,
+calibration/holdout и actual boot/login gates остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
@@ -613,14 +624,3 @@ Rollout: offline → shadow без влияния на маршрут → огр
 | SRC-008 | [Предыдущая оценка](./system-one-automation-assessment-2026-09-21.md), код Агат на `63bd93d` с рабочими изменениями | Реальный интеграционный контекст и ограничения |
 
 Проверка исходного документа 21.09.2026: `architecture_audit.py --profile assessment` — PASS, 0 ошибок и 0 предупреждений. Repository link checker проверил 624 локальные ссылки в 101 Markdown-файле без ошибок; удалённые URL и anchors в этот счётчик не входят. В рамках того анализа был добавлен только документ, без benchmark, model deployment, модельных тестов и обучения. Последующая реализация и измерения отражены в разделе прогресса выше и связанных протоколах.
-
-[Whole public workflow при потере owned decider](./qualification/local-decisions/performance/public-workflow-runtime-loss.md),
-08.10 MSK: prospective v2 N=5, все 49 instances сохранили primary route и
-durable caller return; 5 computed, затем 44 unavailable/unreachable и
-44 measured TCP resets без payload reads. 7 physical model handlers
-включают 2 warmup; transport failures не выданы за model responses.
-180 sources / 30 temporary PIDs, fresh cleanup и resident unchanged;
-868 Python / 12 Node docs checks. Контролируемый SIGTERM между completed
-instances не доказывает crash-in-flight/recovery или customer SLO.
-Следующий шаг — offline replay этого v2 evidence; human/owner/workflow,
-calibration/holdout и actual boot/login gates остаются открытыми.
