@@ -483,6 +483,18 @@ public development inventory; labels/calibration/holdout не подменяют
 наблюдениями о стабильности. Owner/customer/SLO и actual boot/login gates
 остаются открытыми.
 
+[Whole public option-order preflight](./qualification/local-decisions/performance/public-option-permutation-context.md),
+08.10 MSK: полный development inventory 49 cases / 44 groups сохранён в
+343 case-blocked variants: пять balanced cyclic positions, distinct reverse
+и original repeat. Pinned offline tokenizer измерил каждый full prompt:
+322 eligible / 21 whole over-limit, tokens 188–9253; original/repeat parts
+точно совпали с прежним context. 102 current sources / 34 dependencies,
+1941 independent audit checks; шесть новых tests и full 877 Python / 12 Node
+checks прошли. Inference/predictions/labels и calibration/holdout access — 0.
+Следующий шаг — native serial diagnostic с уже закреплённым 600 s budget,
+двумя warmup и retry 0. Agreement зависимых variants не подменяет accuracy,
+назначение owners, customer SLO или предметную qualification.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
