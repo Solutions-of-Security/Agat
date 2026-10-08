@@ -553,6 +553,19 @@ independent audit checks закреплены. Шесть новых / full 905 
 applicable calibration/holdout и actual boot/login остаются открытыми;
 routing false / not_assessed.
 
+[Shadow response boundary checks](./qualification/local-decisions/shadow/response-boundaries.md),
+09.10 MSK: в подготовке caller deadline gate воспроизведено принятие HTTP
+200 result и быстрых 409/503 reasons после cancellation Event, пока watchdog
+ещё не получил CPU. Worker теперь проверяет отмену/deadline после connect,
+headers, body и JSON parsing, с cancelled precedence при socket timeout.
+Восемь новых socket regressions сохраняют primary output и следующий
+здоровый вызов; обычный watchdog repeat подтвердил четыре cancelled
+responses. Full 160 worker / 905 Python docs / 12 Node checks, typecheck,
+links/catalog прошли; optional skips 3/4 явно сохранены. Следующий gate —
+prospective timeout полного public workflow с physical/caller accounting
+и здоровым suffix. Human/owner/SLO и calibration/holdout остаются открытыми;
+routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

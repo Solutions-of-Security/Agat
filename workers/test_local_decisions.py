@@ -6,7 +6,8 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from agat_worker import LocalModelClient, _execute_lease_body
 from local_decisions import CALLER_TIMING_VERSION, LocalDecisionClient, validate_decision_url
@@ -228,6 +229,137 @@ class UntrustedServerTest(unittest.TestCase):
         for url in ["http://localhost:8766", "http://127.0.0.2:8766", "https://127.0.0.1:8766",
                     "http://127.0.0.1:8766/api", "http://user@127.0.0.1:8766", "http://127.0.0.1:8766?x=1"]:
             with self.subTest(url=url), self.assertRaises(ValueError): validate_decision_url(url)
+
+
+class ResponseBoundaryTest(unittest.TestCase):
+    """Real sockets with a watchdog that the OS has not yet scheduled."""
+    def setUp(self):
+        self.status = 200; self.content_type = "application/json"; self.calls = []
+        owner = self
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_POST(self):
+                owner.calls.append(self.rfile.read(int(self.headers["Content-Length"])))
+                body = b'{"fixture":true}'
+                self.send_response(owner.status)
+                self.send_header("Content-Type", owner.content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers(); self.wfile.write(body)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
+        self.client = LocalDecisionClient(f"http://127.0.0.1:{self.server.server_port}")
+        self.shadow = {"profile": "local_decision_shadow_v2", "timeoutMs": 1000, "profileSha256": "1"*64,
+                       "request": request(), "callerTimingVersion": CALLER_TIMING_VERSION}
+        self.cancelled = threading.Event(); self.watchdog = Mock()
+        self.unscheduled = SimpleNamespace(Event=threading.Event, Thread=Mock(return_value=self.watchdog))
+
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close(); self.thread.join(timeout=2)
+        self.assertFalse(self.thread.is_alive())
+
+    def call(self):
+        with patch("local_decisions.threading", self.unscheduled):
+            return self.client.decide(self.shadow, self.cancelled)
+
+    def assert_cancelled(self, result):
+        self.assertEqual((result["status"], result["reason"]), ("unavailable", "cancelled"))
+        self.assertNotIn("result", result)
+        self.assertGreaterEqual(result["callerTiming"]["durationMs"], 0)
+
+    def test_cancel_after_connect_prevents_dispatch_without_waiting_for_watchdog(self):
+        actual = http.client.HTTPConnection.connect
+        def cancel(connection):
+            actual(connection); self.cancelled.set()
+        with patch.object(http.client.HTTPConnection, "connect", cancel):
+            self.assert_cancelled(self.call())
+        self.assertEqual(self.calls, [])
+
+    def test_cancel_after_headers_preempts_success_denial_and_invalid_headers(self):
+        actual = http.client.HTTPConnection.getresponse
+        def cancel(connection):
+            response = actual(connection); self.cancelled.set(); return response
+        for status, content_type in ((200, "application/json"), (409, "application/json"),
+                                     (503, "application/json"), (302, "application/json"), (200, "text/plain")):
+            with self.subTest(status=status, content_type=content_type):
+                self.status = status; self.content_type = content_type; self.cancelled.clear()
+                with patch.object(http.client.HTTPConnection, "getresponse", cancel):
+                    self.assert_cancelled(self.call())
+        self.assertEqual(len(self.calls), 5)
+
+    def test_cancel_after_body_read_discards_result(self):
+        actual = http.client.HTTPResponse.read
+        def cancel(response, *args, **kwargs):
+            data = actual(response, *args, **kwargs); self.cancelled.set(); return data
+        with patch.object(http.client.HTTPResponse, "read", cancel):
+            self.assert_cancelled(self.call())
+
+    def test_cancel_after_json_parsing_discards_result(self):
+        actual = json.loads
+        def cancel(*args, **kwargs):
+            value = actual(*args, **kwargs); self.cancelled.set(); return value
+        with patch("local_decisions.json.loads", cancel):
+            self.assert_cancelled(self.call())
+
+    def test_deadline_after_headers_preempts_status_shortcuts(self):
+        actual = http.client.HTTPConnection.getresponse; monotonic = time.monotonic
+        for status in (200, 409, 503, 302):
+            with self.subTest(status=status):
+                self.status = status; advanced = [False]
+                def late(connection):
+                    response = actual(connection); advanced[0] = True; return response
+                clock = SimpleNamespace(monotonic=lambda: monotonic()+(2 if advanced[0] else 0))
+                with patch("local_decisions.time", clock), patch.object(http.client.HTTPConnection, "getresponse", late):
+                    result = self.call()
+                self.assertEqual((result["status"], result["reason"]), ("unavailable", "timeout"))
+                self.assertNotIn("result", result)
+        self.assertEqual(len(self.calls), 4)
+
+    def test_timeout_with_observed_cancellation_keeps_cancelled_reason(self):
+        actual = http.client.HTTPConnection.getresponse
+        def cancel(connection):
+            actual(connection); self.cancelled.set(); raise TimeoutError("Synthetic socket timeout after cancellation")
+        with patch.object(http.client.HTTPConnection, "getresponse", cancel):
+            self.assert_cancelled(self.call())
+
+    def test_fresh_call_recovers_without_retrying_cancelled_response(self):
+        actual = http.client.HTTPConnection.getresponse
+        def cancel(connection):
+            response = actual(connection); self.cancelled.set(); return response
+        with patch.object(http.client.HTTPConnection, "getresponse", cancel):
+            self.assert_cancelled(self.call())
+        self.cancelled.clear()
+        result = self.call()
+        self.assertEqual(result["result"], {"fixture": True})
+        self.assertEqual(len(self.calls), 2)
+
+    def test_cancelled_shadow_response_preserves_completed_primary_output(self):
+        class Coordinator:
+            def __init__(self): self.outputs = []; self.observations = []; self.failures = []
+            def event(self, *_args, **_kwargs): pass
+            def renew(self, *_args, **_kwargs): pass
+            def record_decision_shadow(self, _lease_id, observation): self.observations.append(observation)
+            def complete(self, _lease_id, output, **_kwargs): self.outputs.append(output)
+            def fail(self, *_args): self.failures.append(_args)
+        coordinator = Coordinator()
+        owner = self
+        class Shadow:
+            def decide(self, shadow, _cancelled): return owner.client.decide(shadow, owner.cancelled)
+        model = LocalModelClient("http://unused.invalid", "", decision_client=Shadow())
+        model.retrieve_knowledge = lambda *_args, **_kwargs: ""
+        model.complete = lambda *_args, **_kwargs: "PRIMARY"
+        lease = {"leaseId": "lease", "run": {"name": "Test", "input": "fixture"}, "stage": {"attempt": 1},
+                 "agent": {"name": "Test", "model": "local"}, "decisionShadow": self.shadow}
+        actual = http.client.HTTPConnection.getresponse
+        def cancel(connection):
+            response = actual(connection); self.cancelled.set(); return response
+        with patch("local_decisions.threading", self.unscheduled), patch.object(http.client.HTTPConnection, "getresponse", cancel):
+            _execute_lease_body(coordinator, model, lease, "local", False,
+                               ExecutionMetrics.start("local", "none"), WorkerTelemetry(enabled=False))
+        self.assertEqual(coordinator.outputs, ["PRIMARY"])
+        self.assertEqual(coordinator.failures, [])
+        self.assertEqual(len(coordinator.observations), 1)
+        self.assert_cancelled(coordinator.observations[0])
+        self.assertEqual(len(self.calls), 1)
 
 
 class WorkerFallbackTest(unittest.TestCase):
