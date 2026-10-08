@@ -3025,9 +3025,13 @@ def _worker_loop_with_telemetry(
         embedding_request=embedding_request,
     )
     stop = threading.Event()
+    signal_stop_requested = False
 
     def request_stop(_signum: int, _frame: Any) -> None:
-        stop.set()
+        # Event.set acquires a nonreentrant Condition. A handler may interrupt
+        # Event.wait while that same main thread owns it, so only set a flag here.
+        nonlocal signal_stop_requested
+        signal_stop_requested = True
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
@@ -3051,7 +3055,7 @@ def _worker_loop_with_telemetry(
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=config.concurrency, thread_name_prefix="agat-work"
         ) as executor:
-            while not stop.is_set():
+            while not signal_stop_requested and not stop.is_set():
                 if check_embedding_transport is not None:
                     check_embedding_transport()
                 done = {future for future in futures if future.done()}
@@ -3060,7 +3064,7 @@ def _worker_loop_with_telemetry(
                 futures -= done
 
                 leased_any = False
-                while len(futures) < config.concurrency and not stop.is_set():
+                while len(futures) < config.concurrency and not signal_stop_requested and not stop.is_set():
                     if check_embedding_transport is not None:
                         check_embedding_transport()
                     try:
@@ -3085,7 +3089,7 @@ def _worker_loop_with_telemetry(
                                 telemetry,
                             )
                         )
-                    elif config.embedding_models:
+                    elif config.embedding_models and not signal_stop_requested and not stop.is_set():
                         try:
                             knowledge_lease = client.knowledge_lease()
                         except ApiError as error:
@@ -3117,10 +3121,17 @@ def _worker_loop_with_telemetry(
                         stop.set()
                         break
 
-                if stop.is_set():
+                if signal_stop_requested or stop.is_set():
                     break
-                stop.wait(0.2 if leased_any else config.poll_interval)
+                # Check the signal flag promptly without increasing lease polling.
+                poll_until = time.monotonic() + (0.2 if leased_any else config.poll_interval)
+                while not signal_stop_requested and not stop.is_set():
+                    remaining = poll_until - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    stop.wait(min(remaining, 0.2))
 
+            stop.set()
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         if check_embedding_transport is not None:

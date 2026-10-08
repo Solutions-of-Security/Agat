@@ -1245,6 +1245,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const entered = new Promise<void>(resolve => { enteredSecond = resolve; });
       const modelInputs: string[][] = [], modelErrors: unknown[] = [];
       let secondClosed = false;
+      let testFailed = false;
       const model = http.createServer((request, response) => {
         void (async () => {
           assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
@@ -1330,11 +1331,22 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(snapshot(), saved); assert.equal(modelInputs.length, 2);
         context.diagnostic(`idle=${idleTimeout}: two exact vectors/leases, ${expectedHelpers} helpers reaped, SIGTERM drain and restart without replay`);
         assert.deepEqual(await child.stop(), { code: 0, signal: null });
-      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
+      } catch (error) {
+        testFailed = true;
+        context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}\n${successor?.diagnostic() ?? "Successor did not start"}`);
+        throw error;
+      }
       finally {
-        releaseSecond(); await worker?.stop(); await successor?.stop(); await child?.stop(); model.closeAllConnections();
-        await new Promise<void>(resolve => model.close(() => resolve()));
-        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+        releaseSecond();
+        const errors: unknown[] = [];
+        const cleanup = [() => worker?.stop(), () => successor?.stop(), () => child?.stop(),
+          () => { model.closeAllConnections(); return new Promise<void>(resolve => model.close(() => resolve())); },
+          () => f.first.deleteKnowledgeCollection(collection, f.project), () => f.close()];
+        for (const release of cleanup) { try { await release(); } catch (error) { errors.push(error); } }
+        if (errors.length) {
+          context.diagnostic(`Idle worker cleanup errors: ${errors.map(error => String(error)).join("; ")}`);
+          if (!testFailed) throw new AggregateError(errors, "Idle worker cleanup failed");
+        }
       }
     });
   });
