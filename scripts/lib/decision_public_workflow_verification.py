@@ -24,8 +24,12 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     raw = {"context": pinned_input(context_path, context_sha, 32*1024*1024),
            "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
            "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}
+    plan = parse_json(raw["plan"])
+    if plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v3":
+        from scripts.lib.decision_public_workflow_recovery_verification import verify as verify_recovery
+        return verify_recovery(root, directory, context_path, context_sha=context_sha, plan_sha=plan_sha, result_sha=result_sha)
     context = validate_context(parse_json(raw["context"]))
-    plan = parse_json(raw["plan"]); loss = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v2"
+    loss = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v2"
     plan = verify_seal(plan, "agat.decision.public-workflow-launch-plan.v2" if loss else PLAN_SCHEMA)
     result = verify_seal(parse_json(raw["result"]), "agat.decision.public-workflow-launch-result.v2" if loss else RESULT_SCHEMA)
     fields(plan, {"schemaVersion", "sha256", "createdAt", "sourceCommit", "sourceFiles", "contextProfileFileSha256", "context", "config", "runtime",

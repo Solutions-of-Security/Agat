@@ -539,6 +539,20 @@ applicable calibration/holdout и actual boot/login остаются откры�
 routing false. По просьбе пользователя работа остановится после commit,
 push и merge этого этапа; новый этап не начинается.
 
+[Reusable offline crash/recovery replay](./qualification/local-decisions/performance/public-workflow-recovery-verification.md),
+09.10 MSK: после нового запроса пользователя работа возобновлена. Общий
+CLI принимает v3 и сохраняет v1/v2 semantics, raw input pins, historical
+Git contributors и source drift gate. Все три сохранённых native reports
+прошли с полным denominator 49; v3 сохранил 48 completed scheduled / один
+interrupted unknown handler / четыре warmup, epochs 5/47. Содержательные
+поля прежних reports совпали; 105 current verifier contributors и 360
+independent audit checks закреплены. Шесть новых / full 905 Python tests,
+12 Node checks, links/catalog прошли. Model/network/live PID calls — 0.
+Следующий runtime gate — active shadow caller deadline и восстановление
+полного процесса на frozen development inventory. Human/owner/SLO,
+applicable calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
