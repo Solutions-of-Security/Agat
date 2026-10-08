@@ -47,3 +47,41 @@ Customer workflow/owners, human reference labels/calibration/holdout и
 actual boot/login остаются внешними gates. Routing false, qualification
 not_assessed; меньшая частота отдельного diagnostic опыта не меняет draft
 SLO или прежний capacity result.
+
+## Native результат 08.10 MSK
+
+Из commit `623612d` измерены все **49 scheduled / 49 admitted**; **46
+computed** (31 ok, 15 abstain), **3 context_too_long**, decision drops **0**.
+Все computed завершились за 5000 ms. Computed caller p50 **852.303 ms**,
+p95 **2063.062 ms**, max **2234.359 ms**. Dispatch lag p95 **8.105 ms**,
+max **9.737 ms**. Полный good denominator **46/49 = 0.9387755**; заранее
+context-eligible denominator **46/46 = 1.0**. Последний не исключает
+неудачные попытки по результату — admission определён до model calls.
+
+Primary: **98 scheduled / 49 returned / 49 client_capacity drops**, каждый
+returned response завершил 128 decode tokens, суммарно **6272**. Один
+primary warmup отдельно. Caller wall p50 **3418.580 ms**, p95 **3955.621 ms**,
+max **3989.909 ms**. Подтверждены **49 HTTP overlap pairs**; phase elapsed
+**195963.806 ms** включает drain. Nominal window 196 s и scheduled rate
+не выдаются за достигнутую primary throughput.
+
+Decision admission loss исчез в этом отдельном run. При этом measured
+caller p95 выше прежних 1126.021 ms при 0.5/s. Последовательные опыты с
+неконтролируемым фоном, фиксированным порядком и phase alignment не
+устанавливают причину изменения latency и не подтверждают устойчивую
+production capacity. Исходный drop и оба результата сохранены.
+
+Source-bound offline verifier: **pass / exact**, 64 measured sources и 58
+verifier sources. Independent audit: **386 checks**; все **49** typed
+signatures совпали со standalone baseline без duration, selected outcomes
+и distributions не изменились. Это повторяемость, не classification accuracy.
+Physical metrics: **51** handlers — 48 computed с двумя warmup и три
+context rejection. Fresh census подтвердил отсутствие всех **5** owned
+PIDs; resident сохранил прежние 4 процесса, 35 sources и counters 1/0/0.
+Actual boot/login остаётся awaiting_event.
+
+Full docs checks: **851 Python / 4 optional skips, 12 Node**, links/catalog
+pass. [Allowlisted summary](./public-support-quarter-rate-summary.json)
+сохраняет все denominators, предыдущий run и raw artifact SHA. Плановый
+0.5/s envelope/SLO не заменён; customer workflow, appointed owners и human
+review/calibration/holdout остаются открытыми, routing false / not_assessed.
