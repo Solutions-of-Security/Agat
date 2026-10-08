@@ -49,8 +49,9 @@ max **2284.683 мс**; все computed уложились в 5000 мс. Полн
 **45/49 = 0.9183673**, заранее context-eligible denominator **45/46 = 0.9782609**.
 Это наблюдаемый capacity result; отсутствие retries сохраняет потерянный arrival.
 
-Первый input, занимавший slot 2284.683 мс, перекрыл следующий arrival на offset
-28000 мс. Его полный case/input binding остаётся в journal с `client_capacity`,
+Caller duration предшествующего request составила 2284.683 мс; он перекрыл
+следующий arrival на offset 28000 мс. Binding пропущенного case/input остаётся
+в journal с `client_capacity`,
 без выдуманного latency. Standalone run того же inventory имел 49 admitted /
 46 computed. Фиксированный порядок и неконтролируемый фон ограничивают
 сравнение; перенос прежних synthetic результатов на весь реальный public
