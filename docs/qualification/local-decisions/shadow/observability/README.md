@@ -7,6 +7,10 @@
 process/version/window популяцию из SQLite/PostgreSQL snapshot и сохраняет
 failed/cancelled/pending/replay и caller ledgers без task/primary текста.
 
+[Сверка pilot SLI](./shadow-pilot-evaluation.md) связывает весь cohort с
+prospective plan и профилем, сохраняет неизвестные returns и сравнивает
+диапазоны с draft targets без принятия SLO.
+
 26.09.2026. Runtime **0.12.0** экспортирует Prometheus-метрики через `GET /metrics` на прежнем loopback-порту. Реальный MLX-прогон, официальный парсер и проверки правил прошли. Конфигурация подготовлена для оператора; постоянный scraper, Alertmanager и получатели уведомлений не устанавливались. Автоматическая маршрутизация остаётся выключенной.
 
 ## Контракт экспорта

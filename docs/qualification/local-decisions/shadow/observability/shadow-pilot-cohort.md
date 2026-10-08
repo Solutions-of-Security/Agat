@@ -59,7 +59,7 @@ metadata: option IDs, вероятности, числовые/boolean values, t
 и machine reasons. Их также следует хранить приватно: endpoint не подтверждает
 разрешение на распространение данных. Malformed metadata прерывает export.
 
-Следующий шаг — offline evaluator: independent SHA всего export, exact scope
+Реализован [offline evaluator](./shadow-pilot-evaluation.md): independent SHA всего export, exact scope
 с **prospective plan**, полный набор run IDs и профиль, затем caller ratios/gaps.
 Старый CLI произвольных traces сохраняет предел 32 и provided_traces_only;
 он не превращает ручную выборку в полный cohort.
