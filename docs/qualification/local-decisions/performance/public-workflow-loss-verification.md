@@ -75,3 +75,10 @@ sources и 99 новых verifier source bindings, прежние 5/49 scheduled
 handlers и 44/0 transport resets. [Correction summary](./public-workflow-loss-verification-ci-fixed-summary.json)
 закрепляет raw SHA/seals новых reports. 14 joint tests и полный набор
 871 Python / 4 optional skips, 12 Node, links/catalog прошли после исправления.
+
+Новый private ZIP сохранил failed CI log, исправленные tests/replays и оба
+Git source states: **12 entries / 552 878 bytes**, SHA
+`185b25a731feb2ebfdfcd55834eec400fa969a55ce5b06545c605336b317c166`.
+Обе копии проверены по CRC и каждому entry SHA/size; parent archives
+повторно сверены, прежние файлы сохранены.
+[Correction archive receipt](./public-workflow-loss-verifier-ci-fixed-archive-summary.json).
