@@ -33,5 +33,17 @@ steps даже при отказе одного. Cleanup errors не замен�
 удерживаемого Event lock; третий случай прерывает пустой primary poll и проверяет
 отсутствие новой embedding admission. До fix: два timeout/deadlock и одна
 failed assertion. После: 3/3 pass без live threads; timed-out children reaped.
-Полные worker checks: 152 tests, 149 pass / 3 optional skips. Повторный
-PostgreSQL/CI результат фиксируется после завершения обязательных jobs.
+Полные worker checks: 152 tests, 149 pass / 3 optional skips. Полный отдельный
+PostgreSQL 17.6 Fleet/HA прогон: 113/113 pass без skips. Он включает restart,
+drain, lease races, RLS и конкурентное обновление census snapshot; все jobs
+[CI PR 154](https://github.com/Solutions-of-Security/Agat/pull/154) на commit
+`51a853a7436d6c719722832befbc57d3260d8a4d` прошли, включая PostgreSQL,
+browser, required и CodeQL. PR слит в main как
+`84950c7b72a766558ec2d9197562a8b6195ac792`.
+
+Повторный docs check после fix: 786 Python tests / 4 expected skips,
+12 Node tests, link checker и process catalog — pass. Logs и source snapshots
+сохранены в отдельном private evidence ZIP; его
+[публичная сводка](../shadow/observability/pilot-evidence-archive-summary.json)
+содержит SHA/size и перечень закреплённых Git states. SHA каждого файла и CRC
+проверены до и после копирования в `docs/private` исходного workspace.

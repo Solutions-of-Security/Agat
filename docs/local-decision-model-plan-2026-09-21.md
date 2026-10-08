@@ -338,11 +338,21 @@ false, qualification not_assessed. Семь новых transport/CLI regressions
 CI evaluator обнаружил отказ worker restart/shutdown. [Signal shutdown fix](./qualification/local-decisions/performance/worker-signal-shutdown.md)
 устраняет подтверждённый Event-lock deadlock: настоящий SIGTERM/SIGINT
 больше не вызывает synchronization внутри handler; admission прекращается,
-активные futures drain. Три before/after regressions и 152 worker checks
+активные futures drain. Три before/after regressions, 149/152 worker checks
+(3 optional skips) и полный native PostgreSQL Fleet/HA 113/113 без skips
 прошли; failed CI log сохранён, successor/cleanup diagnostics усилены.
+Все CI/CodeQL checks PR 154 прошли, этап слит в main.
 [Owner source review](./qualification/local-decisions/shadow/observability/owner-source-evidence.md)
 подтвердил public maintainer @TitanUser по pinned CODEOWNERS/Git bytes/API;
 это runtime owner candidate, не business appointment или SLO acceptance.
+
+[Evidence archive](./qualification/local-decisions/shadow/observability/pilot-evidence-archive-summary.json):
+63 files / четыре закреплённых Git states, 5 073 370 bytes; CRC и SHA каждого
+файла проверены после копирования ZIP в `docs/private` исходного workspace.
+Архив сохраняет native census/evaluator/collector, TLS refusal, worker signals,
+PostgreSQL logs и первичные owner sources; customer traces, model weights и
+TLS private key в этот архив не включались. Это инженерный протокол, без
+human reference labels, qualification или принятия SLO.
 
 ## Вывод: что именно можно воспроизвести
 
