@@ -59,4 +59,35 @@ Grafana k6: расписание задаётся независимо от resp
 cancellation/lag, over-limit rejection и ранний отказ CLI до Popen. Новый
 набор вместе с context и существующими arrival tests — 26 checks.
 
-Native результат и независимая сверка добавляются после фактического запуска.
+## Native результат 08.10 MSK
+
+Из commit `a642578` выполнен отдельный owned runtime: **49/49 arrivals admitted**,
+**46 computed** (31 `ok`, 15 `abstain`), три `context_too_long`; drops,
+measurement errors и остальные runtime failures — 0. Два warmup сохранены
+отдельно. Physical metrics подтверждают 51 POST handler: 48 computed и три
+context rejection. Calibration/holdout calls и reference labels — 0.
+
+Caller timings всех 46 computed: p50 **293.887 мс**, p95 **637.588 мс**,
+max **719.935 мс**; все 46 уложились в engineering threshold 5000 мс.
+Observed phase elapsed — 96439.040 мс; max dispatch lag — 46.920 мс.
+Показатель по полному scheduled inventory — **46/49 = 0.9387755**; по заранее
+выделенным context-eligible случаям — **46/46**. Эти два знаменателя нельзя
+заменять друг другом или использовать для утверждения принятого SLO.
+Abstain здесь означает корректно вычисленное распределение/отказ политики,
+а не проверенный человеком правильный ответ или разрешённую маршрутизацию.
+
+Независимая сверка прошла **701 checks**: seals/raw pins, historical/current
+57 load sources, все 49 ordered journal rows, input/profile/token bindings,
+softmax/policy semantics, nearest-rank quantiles, полные знаменатели,
+metrics и отдельный warmup. Все три observed temporary PID отсутствуют.
+Read-only resident recheck подтвердил прежние четыре PID, 35 protected
+sources, profile/registration/plists и counters **1 computed / 0 rejected /
+0 failed**. Actual boot/login event по-прежнему не наблюдался.
+
+Полный docs check: **820 Python tests** / четыре expected optional skips,
+**12 Node tests**, local links и process catalog — pass.
+[Allowlisted summary](./public-support-http-load-summary.json) сохраняет
+counts, timings и evidence pins; исходные вопросы/ответы остаются private.
+Следующий инженерный шаг — повторяемая source-bound проверка такого evidence
+и реальный public inventory при явно учтённом primary workload. Human review,
+calibration/holdout и real permitted workflow/owners/SLO остаются внешними gates.
