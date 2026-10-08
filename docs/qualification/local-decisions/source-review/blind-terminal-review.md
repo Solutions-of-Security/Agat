@@ -93,3 +93,17 @@ atomic write failure, source drift и совместимость с `finalize-re
 без успешного receipt не объявляется завершённой сессией.
 Все размеченные тестовые ответы — явно synthetic fixtures; они не используются
 как human gold для реальных публичных вопросов.
+
+[Нативная сводка](./blind-terminal-native-summary.json), commit
+`85a656eb4954f4cce0551b0df845a46be17f5da7`: настоящий PTY прошёл 65 audit checks.
+Public pool: 129 cases, только skip/quit, новых меток 0. Отдельный synthetic
+process был завершён SIGKILL после первого сохранённого ответа; child reaped,
+checkpoint сохранился, новый process продолжил два оставшихся задания и
+прошёл прежний finalize на synthetic fixture. Источники/raw controls/input
+SHA неизменны, seed/group IDs в terminal transcript отсутствуют. Первый
+harness timeout из-за чтения длинного PTY output сохранён отдельно; corrected
+harness читает output до выхода child. Этот отказ не доказывает product defect.
+
+Финальный full docs check после persistence regressions: 806 Python tests,
+4 expected optional skips, 12 Node tests, links и process catalog — pass.
+Public human/reference labels — 0; модель и resident не вызывались.

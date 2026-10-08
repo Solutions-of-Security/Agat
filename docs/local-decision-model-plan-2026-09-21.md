@@ -362,6 +362,10 @@ human reference labels, qualification или принятия SLO.
 прежний review v1/finalize contract. 13 новых / 33 совместная targeted check
 прошли. Reviewer ID/TTY не аутентифицируют человека; human execution,
 independence/qualification остаются непроверенными, model calls 0/routing false.
+Native PTY/SIGKILL/resume прошёл 65 audit checks; public 129-case pool получил
+только skip/quit, меток 0, инженерные заполненные ответы относятся к отдельным
+synthetic fixtures. Финальный docs check: 806 Python / 4 optional skips,
+12 Node и links/catalog — pass.
 
 ## Вывод: что именно можно воспроизвести
 
