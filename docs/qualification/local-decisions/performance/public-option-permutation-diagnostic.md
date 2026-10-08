@@ -34,6 +34,8 @@ Offline verifier проверяет каждый caller result/token/interval, w
 journal и summaries, exact zero-origin counters, два warmup, три quiescent
 snapshots и отсутствие recorded restart. Historical code читается через
 Git, не исполняется. Consumed raw files повторно читаются до публикации.
+Warmup caller/wall durations ограничены timeout; сумма warmup и полная
+измеренная фаза должны помещаться между соответствующими snapshots.
 `reportedCleanupComplete=true / liveCleanupVerified=false` отделяют
 recorded cleanup от нового live PID наблюдения. Native producer завершает
 собственный Popen и сверяет fresh absence до записи результата.

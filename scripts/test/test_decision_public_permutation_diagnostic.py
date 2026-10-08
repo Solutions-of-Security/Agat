@@ -182,7 +182,9 @@ class PublicPermutationDiagnosticTest(unittest.TestCase):
             self.assertTrue(report['reportedCleanupComplete']);self.assertFalse(report['liveCleanupVerified']);self.assertFalse(report['classificationAccuracyMeasured'])
             changes=(lambda p,r:r['phase']['summary'].update(changedSemanticOutcomeSourceCases=1),lambda p,r:r.update(ownersAppointed=True),
                      lambda p,r:p['budget'].update(timeBudgetSeconds=601),lambda p,r:p['sourceFiles'].pop('scripts/lib/decision_public_permutation_diagnostic.py'),
-                     lambda p,r:r['samples'][0].update(ownedPids=[True]),lambda p,r:r['samples'][0].update(ownedPids=[42,42]))
+                     lambda p,r:r['samples'][0].update(ownedPids=[True]),lambda p,r:r['samples'][0].update(ownedPids=[42,42]),
+                     lambda p,r:r['samples'][1].update(elapsedMs=10),lambda p,r:r['samples'][-1].update(elapsedMs=81),
+                     lambda p,r:r['warmup'][0].update(wallMs=10002))
             for change in changes:
                 directory,pins=write_fixture(root,commit,mutation=change)
                 with self.assertRaises(ValueError):diagnostic.verify(root,directory,directory/'context.json',directory/'permutation.json',**pins)

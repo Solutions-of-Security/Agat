@@ -209,6 +209,7 @@ def verify(root, directory, context_path, permutation_path, *, context_sha, perm
         same({key:row[key] for key in ("variantId","inputSha256","inputTokens","iteration")},
              {"variantId":first["id"],"inputSha256":first["inputSha256"],"inputTokens":first["inputTokens"],"iteration":iteration}, "Warmup binding changed")
         require(row["status"] in {"ok","abstain"}, "Warmup failed")
+        number(row["callerMs"],0,10001);number(row["wallMs"],0,10001)
         warmup_known[observation(row,first,plan["profile"])] += 1
     samples = result["samples"]; require(isinstance(samples,list) and len(samples)==3, "Missing quiescent physical snapshots")
     counts = []; start_times = []; previous = -1
@@ -222,6 +223,8 @@ def verify(root, directory, context_path, permutation_path, *, context_sha, perm
                 and set(sample["ownedPids"])<=set(result["ownedPids"]), "Snapshot identity differs")
         value,start = counters(sample); counts.append(value); start_times.append(start)
     require(len(set(start_times))==1 and all(value==0 for value in counts[0].values()), "Non-zero origin or runtime restart")
+    require(samples[1]["elapsedMs"]-samples[0]["elapsedMs"]+.1>=sum(row["wallMs"] for row in warmup)
+            and samples[2]["elapsedMs"]-samples[1]["elapsedMs"]+.1>=result["phase"]["elapsedMs"], "Call durations do not fit quiescent snapshot chronology")
     same(counts[1],{key:warmup_known[key] for key in OUTCOMES},"Physical warmup accounting differs")
     same(counts[2],{key:warmup_known[key]+known[key] for key in OUTCOMES},"Physical scheduled accounting differs")
     require(sum(counts[2].values())==len(plan["inputs"])+2 and samples[-1]["elapsedMs"]>=result["phase"]["elapsedMs"], "Whole handler denominator or elapsed time differs")
