@@ -12,6 +12,7 @@ from scripts.lib.decision_public_load_verification import CONTEXT_PATHS, sources
 from scripts.lib.decision_public_load import validate_context
 from scripts.lib.decision_performance import profile_from_health
 from scripts.lib.decision_shadow_pilot import require, timestamp
+from scripts.lib.decision_public_workflow_loss import loss_spec, verify_boundary
 
 SCHEMA = "agat.decision.public-workflow-verification.v1"
 PLAN_SCHEMA = "agat.decision.public-workflow-launch-plan.v1"
@@ -24,12 +25,14 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
            "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
            "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}
     context = validate_context(parse_json(raw["context"]))
-    plan = verify_seal(parse_json(raw["plan"]), PLAN_SCHEMA); result = verify_seal(parse_json(raw["result"]), RESULT_SCHEMA)
+    plan = parse_json(raw["plan"]); loss = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v2"
+    plan = verify_seal(plan, "agat.decision.public-workflow-launch-plan.v2" if loss else PLAN_SCHEMA)
+    result = verify_seal(parse_json(raw["result"]), "agat.decision.public-workflow-launch-result.v2" if loss else RESULT_SCHEMA)
     fields(plan, {"schemaVersion", "sha256", "createdAt", "sourceCommit", "sourceFiles", "contextProfileFileSha256", "context", "config", "runtime",
-                  "manifestFileSha256", "mode", "primary", "warmupCount", "ownersAppointed", "referenceLabels", "sloAccepted", "routingEnabled", "qualification"})
+                  "manifestFileSha256", "mode", "primary", "warmupCount", "ownersAppointed", "referenceLabels", "sloAccepted", "routingEnabled", "qualification"} | ({"runtimeLoss"} if loss else set()))
     fields(result, {"schemaVersion", "sha256", "status", "planSha256", "evidence", "warmup", "samples", "failure", "ownedPids", "remainingOwnedPids",
                     "cleanupErrors", "runtimeExitCode", "driverExitCode", "artifactSha256", "elapsedMs", "referenceLabels", "classificationAccuracyMeasured",
-                    "ownersAppointed", "sloAccepted", "routingEnabled", "qualification"})
+                    "ownersAppointed", "sloAccepted", "routingEnabled", "qualification"} | ({"runtimeLoss"} if loss else set()))
     for value in (plan, result):
         require(type(value["referenceLabels"]) is int and value["referenceLabels"] == 0 and value["ownersAppointed"] is False
                 and value["sloAccepted"] is False and value["routingEnabled"] is False and value["qualification"] == "not_assessed",
@@ -49,7 +52,12 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     require(isinstance(result["ownedPids"], list) and result["ownedPids"] and len(set(result["ownedPids"])) == len(result["ownedPids"])
             and all(type(pid) is int and 0 < pid < 2**31 for pid in result["ownedPids"]), "Invalid reported process ownership")
     sources_at(root, context["sourceCommit"], context["sourceFiles"], CONTEXT_PATHS)
-    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], SOURCE_PATHS)
+    if loss:
+        same(plan["runtimeLoss"], loss_spec(context, plan["runtimeLoss"]["beforeIndex"]), "Unsupported prospective runtime loss")
+    paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else [])
+    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], paths)
+    if loss:
+        require({"scripts/lib/decision_public_workflow_loss.py", "scripts/test/test_decision_public_workflow_loss.py"} <= set(sources), "Runtime-loss contributors omitted")
     require(hashlib.sha256(sources[PROFILE_PATH]).hexdigest() == context["profileFileSha256"], "Historical profile bytes differ")
     same(parse_json(sources[PROFILE_PATH]), context["profile"], "Historical profile semantics differ")
     implementation = hashlib.sha256()
@@ -58,13 +66,14 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     require(implementation.hexdigest() == context["profile"]["model"]["implementationSha256"], "Historical runtime implementation differs")
     requirements = dict(line.split("==") for line in sources["decision_runtime/requirements-mlx.txt"].decode().splitlines() if line and not line.startswith("#"))
     same(plan["runtime"], {"python": "3.13.12", "machine": "arm64", "packages": requirements}, "Historical runtime pins differ")
-    fields(result["artifactSha256"], ARTIFACTS)
-    artifacts = {name: pinned_input(directory/name, result["artifactSha256"][name], 16*1024*1024) for name in ARTIFACTS}
+    artifact_names = ARTIFACTS | ({"runtime-loss-request.json", "runtime-loss-applied.json", "runtime-loss-transport.json"} if loss else set())
+    fields(result["artifactSha256"], artifact_names)
+    artifacts = {name: pinned_input(directory/name, result["artifactSha256"][name], 16*1024*1024) for name in artifact_names}
     recipe = parse_json(artifacts["workflow-plan.json"]); driver = parse_json(artifacts["workflow-driver.json"]); cohort = parse_json(artifacts["cohort.http.json"])
     fields(recipe, {"schemaVersion", "mode", "primary", "processId", "processVersion", "projectId", "startAt", "scopeEndRule", "config",
-                    "profileSha256", "inputs", "ownersAppointed", "routingEnabled", "qualification", "graphSha256"})
+                    "profileSha256", "inputs", "ownersAppointed", "routingEnabled", "qualification", "graphSha256"} | ({"runtimeLoss"} if loss else set()))
     fields(driver, {"status", "primary", "primaryCalls", "routes", "nodeVersion", "ownedPids", "workerExitCode", "actualWindow",
-                    "unauthenticatedStatus", "authenticatedStatus", "ownersAppointed", "routingEnabled", "qualification"})
+                    "unauthenticatedStatus", "authenticatedStatus", "ownersAppointed", "routingEnabled", "qualification"} | ({"runtimeLossApplied"} if loss else set()))
     fields(cohort, {"schemaVersion", "snapshotId", "observedAt", "scope", "snapshot", "limits", "counts", "runIdsSha256", "instances", "traces", "dataPolicy",
                     "populationCoverageVerified", "eligibleWorkloadVerified", "httpAttemptInventoryVerified", "sloAccepted", "routingEnabled", "qualification"})
     require(all(cohort[key] is False for key in ("populationCoverageVerified", "eligibleWorkloadVerified", "httpAttemptInventoryVerified")),
@@ -94,6 +103,23 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
             and all(type(pid) is int and pid in result["ownedPids"] for pid in driver["ownedPids"]), "Missing driver/worker ownership record")
     evidence = verify_inventory(context, recipe, cohort, records)
     same(result["evidence"], evidence, "Embedded inventory result differs from independently replayed cohort")
+    if loss:
+        same(recipe["runtimeLoss"], plan["runtimeLoss"], "Recipe changed the prospective runtime loss")
+        fields(result["runtimeLoss"], {"spec", "applied"})
+        same(result["runtimeLoss"]["spec"], plan["runtimeLoss"], "Result changed prospective runtime loss")
+        request = parse_json(artifacts["runtime-loss-request.json"])
+        applied = parse_json(artifacts["runtime-loss-applied.json"])
+        transport = fields(parse_json(artifacts["runtime-loss-transport.json"]), {"schemaVersion", "acceptedConnections", "resetConnections", "errors", "payloadsRead"})
+        same(applied, result["runtimeLoss"]["applied"], "Result loss acknowledgement differs")
+        same(applied, driver["runtimeLossApplied"], "Driver loss acknowledgement differs")
+        verify_boundary(context, plan["runtimeLoss"], request, applied, cohort, records)
+        require(applied["requestFileSha256"] == hashlib.sha256(artifacts["runtime-loss-request.json"]).hexdigest()
+                and applied["runtimePid"] in result["ownedPids"] and applied["runtimePid"] not in driver["ownedPids"]
+                and applied["runtimeExitCode"] == result["runtimeExitCode"], "Loss ownership, exit or request pin differs")
+        require(transport["schemaVersion"] == "agat.decision.public-workflow-reset-guard.v1"
+                and type(transport["acceptedConnections"]) is int and type(transport["resetConnections"]) is int
+                and transport["acceptedConnections"] == transport["resetConnections"] == evidence["unavailableReturns"]
+                and transport["errors"] == [] and transport["payloadsRead"] is False, "TCP resets disagree with durable unavailable returns")
     warmup = result["warmup"]; require(isinstance(warmup, list) and len(warmup) == 2, "Warmup denominator differs")
     case = next(row for row in context["inputs"] if row["contextEligible"]); warm_outcomes = Counter()
     for index, row in enumerate(warmup):
@@ -103,7 +129,7 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
         warm_outcomes[observation(row, case, context["profile"])] += 1
     samples = result["samples"]; require(isinstance(samples, list) and len(samples) == 3, "Missing physical snapshots")
     values = []; starts = []; elapsed = -1
-    for label, sample in zip(("ready_before_scoring", "after_warmup", "after_inventory"), samples):
+    for label, sample in zip(("ready_before_scoring", "after_warmup", "before_runtime_loss" if loss else "after_inventory"), samples):
         fields(sample, {"label", "elapsedMs", "health", "metricsRaw", "ownedPids", "processRaw", "counters", "serverStart"})
         number(sample["elapsedMs"], 0, result["elapsedMs"])
         require(sample["label"] == label and sample["elapsedMs"] > elapsed
@@ -124,8 +150,9 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
                     "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}, "Artifact changed during replay")
     for name, expected in artifacts.items():
         require(pinned_input(directory/name, result["artifactSha256"][name], 16*1024*1024) == expected, "Consumed artifact changed")
-    return sealed({"schemaVersion": SCHEMA, "status": "pass", "contextProfileFileSha256": context_sha,
+    return sealed({"schemaVersion": "agat.decision.public-workflow-verification.v2" if loss else SCHEMA, "status": "pass", "contextProfileFileSha256": context_sha,
         "planFileSha256": plan_sha, "resultFileSha256": result_sha, "sourceCommit": plan["sourceCommit"], "sourceFilesCount": len(sources),
-        "inventory": evidence, "warmupCalls": 2, "physicalScheduledHttpHandlers": len(context["inputs"]), "physicalHttpCounters": values[2],
+        "inventory": evidence, "warmupCalls": 2, "physicalScheduledHttpHandlers": sum(evidence["physicalScheduledOutcomes"].values()),
+        **({"transportUnavailableReturns": evidence["unavailableReturns"], "transportResetConnections": transport["resetConnections"]} if loss else {}), "physicalHttpCounters": values[2],
         "physicalHttpAccounting": "exact", "reportedCleanupComplete": True, "liveCleanupVerified": False, "ownersAppointed": False,
         "classificationAccuracyMeasured": False, "referenceLabels": 0, "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed"})
