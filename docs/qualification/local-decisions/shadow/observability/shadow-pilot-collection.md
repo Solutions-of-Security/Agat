@@ -79,3 +79,25 @@ token omission, future window, independent input SHA и source drift.
 verification и `SSLKEYLOGFILE`; [subprocess.run](https://docs.python.org/3/library/subprocess.html)
 документирует timeout с kill/wait. Источники проверены 08.10 MSK; сеть и
 deadline дополнительно проверены executable tests.
+
+## Нативный итог
+
+Committed implementation `1dc769d`, 08.10 MSK: живой SQLite coordinator
+отдал census четырёх явно синтетических instances. Collector CLI получил
+его одним authenticated GET; raw bytes, run IDs и все ledgers сохранились.
+Затем evaluator включил ok/timeout/missing/pending intents в denominator,
+получил прежние `[0.25, 0.75]`, diagnostic_only / insufficient_data, exit 2.
+80 отдельных audit checks сверили обе receipt seals, exact file/source SHA,
+profile bytes, inventories, outcomes, ratios и private/token-free outputs.
+
+Owners, timestamps и durations в этом опыте — test fixtures; actual model
+calls — 0. Отдельный настоящий self-signed TLS server был отклонён как
+`SSLCertVerificationError`; collector exit 1, HTTP requests 0, usable raw
+output отсутствует. `SSLKEYLOGFILE` не создал файл. Все собственные server
+threads/connections и network children завершены; resident не менялся.
+[Машинный итог](./pilot-collector-native-summary.json) содержит hashes и границы.
+
+16 targeted Python checks прошли (семь collector и девять evaluator).
+Полный `docs:check`: 793 Python, 4 ожидаемых skips, 12 Node;
+2483 local targets / 280 Markdown и catalog 7 categories / 13 templates.
+Последующее добавление ссылки на machine summary проверяется отдельно.

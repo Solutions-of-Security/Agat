@@ -330,6 +330,10 @@ certificate/hostname checks; loopback допускает HTTP. Отдельны�
 immutable receipt, source pins и plan/census binding проверяются до сохранения.
 Server build, owners, eligibility и population этим не аттестуются; SLO/routing
 false, qualification not_assessed. Семь новых transport/CLI regressions прошли.
+Нативная цепочка coordinator → collector → evaluator сохранила четыре intents;
+80 audit checks подтвердили pins и ratios. Настоящий self-signed TLS server
+отклонён до HTTP request, без keylog/usable export. Model calls 0,
+793 Python / 12 Node docs checks прошли; timings/window/owners — fixtures.
 
 ## Вывод: что именно можно воспроизвести
 
