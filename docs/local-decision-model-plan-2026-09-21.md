@@ -354,6 +354,15 @@ PostgreSQL logs и первичные owner sources; customer traces, model weig
 TLS private key в этот архив не включались. Это инженерный протокол, без
 human reference labels, qualification или принятия SLO.
 
+[Терминальная независимая разметка](./qualification/local-decisions/source-review/blind-terminal-review.md),
+08.10 MSK: pinned blank/partial review показывает исходный вопрос, атрибуцию и
+разрешённые варианты, скрывая split/group metadata и чужие ответы. Каждый
+выбор требует обоснование и `y`; skips остаются null. Atomic private checkpoint
+после подтверждения, partial resume и input/source SHA binding сохраняют
+прежний review v1/finalize contract. 11 новых / 31 совместная targeted check
+прошли. Reviewer ID/TTY не аутентифицируют человека; human execution,
+independence/qualification остаются непроверенными, model calls 0/routing false.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
