@@ -61,7 +61,7 @@ Computed caller p50 **199.027 ms**, p95 **576.571 ms**, max **657.463 ms**.
 ms** включает startup, warmup, workflow и teardown. Эти значения не являются
 open-arrival capacity или latency production workflow.
 
-Физические counters: **51** handlers, включая два отдельные warmup — 31 ok,
+Физические counters: **51** handlers, включая два отдельных warmup — 31 ok,
 17 abstain, три context rejection, прочие outcomes zero. Source snapshot:
 **177** files. Independent audit: **553 checks**, все **30** наблюдавшихся
 owned PIDs, включая transient helpers, отсутствуют при свежем census.
@@ -80,7 +80,10 @@ normalization; bool не превращается в число. Правило 
 
 Full docs: **857 Python / 4 optional skips, 12 Node**, links/catalog pass.
 [Allowlisted summary](./public-support-workflow-summary.json) связывает
-scope, source/receipt SHA и полный denominator. Следующий технический шаг —
+scope, source/receipt SHA и полный denominator.
+[Проверенный постоянный архив](./public-workflow-archive-summary.json)
+содержит 31 файл; CRC, размер и SHA каждого entry и полного ZIP сверены
+после копирования. Следующий технический шаг —
 публичный offline receipt verifier для этого workflow evidence; owners,
 human review/calibration/holdout, customer SLO и actual boot/login остаются
 открытыми, routing false / not_assessed.
