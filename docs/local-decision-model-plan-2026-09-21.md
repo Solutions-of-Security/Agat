@@ -380,6 +380,22 @@ Native tokenizer получил 49 cases / 44 development groups: 46 помещ�
 Context/profile/source pins сохранены; model calls и calibration/holdout
 tokenization — 0, resident counters 1/0/0 без дополнительных inference.
 
+[Полный public development HTTP inventory](./qualification/local-decisions/performance/public-support-http-load.md),
+08.10 MSK: отдельный owned 0.12.3 / wired 4096 MiB runtime получил все 49
+fixed arrivals при 0.5/с / одном client slot. 46 computed (31 ok, 15 abstain),
+три context_too_long, drops/errors измерения 0; два warmup отдельно.
+Caller computed p95 637.588 мс, max 719.935 мс, все 46 в 5000 мс.
+Полный denominator 46/49 и заранее определённый eligible 46/46 сохранены
+отдельно. 701 independent audit checks сверили raw journal, profile/input/
+source pins, policy/softmax, quantiles и все 51 physical POST handlers.
+Все три owned PID отсутствуют, resident сохранил четыре PID, 35 protected
+sources и counters 1/0/0. 26 targeted / 820 Python / 12 Node docs checks
+прошли. Primary companion здесь не запускался, background неконтролируемый;
+accuracy без human labels не измерена, qualification not_assessed/routing false.
+Следующий шаг — воспроизводимый source-bound verifier и public inventory
+с явно наблюдаемым primary; real workflow/owners/SLO, human calibration/
+holdout и actual boot/login остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
