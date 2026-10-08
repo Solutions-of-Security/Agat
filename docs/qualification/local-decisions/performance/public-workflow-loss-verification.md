@@ -69,3 +69,9 @@ Native producer уже закрывал guard перед публикацией 
 прежний v2 evidence остаётся действительным. Исправление требует нового
 source-bound offline replay и новой проверки CI, без повторного inference.
 Исходный failed CI log и прежний архив сохраняются отдельно.
+
+Из `7e1a6d1` оба native offline replay снова прошли: те же 180/177 measured
+sources и 99 новых verifier source bindings, прежние 5/49 scheduled physical
+handlers и 44/0 transport resets. [Correction summary](./public-workflow-loss-verification-ci-fixed-summary.json)
+закрепляет raw SHA/seals новых reports. 14 joint tests и полный набор
+871 Python / 4 optional skips, 12 Node, links/catalog прошли после исправления.
