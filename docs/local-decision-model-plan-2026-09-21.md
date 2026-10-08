@@ -396,6 +396,19 @@ accuracy без human labels не измерена, qualification not_assessed/r
 с явно наблюдаемым primary; real workflow/owners/SLO, human calibration/
 holdout и actual boot/login остаются открытыми.
 
+[Offline verifier public HTTP inventory](./qualification/local-decisions/performance/public-support-load-verification.md),
+08.10 MSK: independently pinned context/plan/result и полные historical Git
+sources проходят strict replay. Typed replies, tokens, input/profile, fixed
+offsets, one slot, raw journal, nearest-rank quantiles и physical counters
+пересчитываются; unknown transport outcome остаётся insufficient_data, а
+старый cleanup receipt не выдаётся за новый live PID check. 13 новых / 39
+targeted tests, 833 Python / 12 Node docs checks прошли. Настоящий offline CLI
+из bf47ef3 дал pass/exact: прежние 49 scheduled, 46 computed, три rejection,
+два warmup и 40/57 historical contributors; 53 verifier sources закреплены.
+Новые model calls/labels — 0, SLO/routing false / qualification not_assessed.
+Следующий capacity этап — весь public development inventory при явно
+наблюдаемом primary workload; внешние предметные и boot/login gates сохранены.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

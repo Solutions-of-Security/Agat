@@ -61,3 +61,19 @@ python3 scripts/verify-public-support-load.py \
 rehashed corruptions, bounds/aliases, неизвестный transport outcome, counters,
 artifact drift и exclusive private CLI output. Fixtures полностью synthetic;
 меток предметных экспертов и новых model calls они не создают.
+
+## Native CLI replay 08.10 MSK
+
+Из committed verifier `bf47ef3` выполнен новый offline CLI replay настоящего
+публичного native inventory. Report — **pass / exact**, 49 scheduled/admitted,
+46 computed, три context rejections, два warmup, те же quantiles и ratios.
+Сверены все 40 historical context и 57 load contributors; сам verifier и
+53 его sources закреплены отдельно, Python **3.14.3 / Darwin**. Это версия
+проверяющего процесса; исходный MLX runtime остаётся Python 3.13.12 / arm64.
+
+Новых model calls, live process assertions и human labels — 0. Сохранённое
+cleanup утверждение согласовано, `liveCleanupVerified=false`; прежний live
+audit находится в исходном measurement evidence. 39 targeted tests и полный
+docs check **833 Python / 4 optional skips, 12 Node**, links/catalog — pass.
+[Allowlisted report summary](./public-support-load-verification-summary.json)
+закрепляет raw pins и result seal, не раскрывая вопросы или распределения.
