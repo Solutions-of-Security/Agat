@@ -54,3 +54,31 @@ Private ZIP **11 entries / 540 129 bytes**, SHA
 snapshot; обе parent archive SHA повторно сверены.
 [Archive receipt](./public-workflow-loss-verifier-archive-summary.json)
 содержит allowlisted metadata, raw v1/v2 reports остаются private.
+
+## CI counter drain correction
+
+Linux CI PR 165 обнаружил гонку в socket regression: клиент уже получил
+TCP reset, а guard thread ещё не увеличил `resetConnections`. Итоговая
+квитанция теперь отвергается до `close()` и подтверждённого завершения
+потока. Проверка active guard явно ожидает отказ; после drain сохраняется
+реальная сверка одного accept/reset и независимого живого listener.
+[Python Thread.join](https://docs.python.org/3/library/threading.html#threading.Thread.join)
+закрепляет требуемое ожидание завершения, без sleep/retry угадывания.
+
+Native producer уже закрывал guard перед публикацией квитанции, поэтому
+прежний v2 evidence остаётся действительным. Исправление требует нового
+source-bound offline replay и новой проверки CI, без повторного inference.
+Исходный failed CI log и прежний архив сохраняются отдельно.
+
+Из `7e1a6d1` оба native offline replay снова прошли: те же 180/177 measured
+sources и 99 новых verifier source bindings, прежние 5/49 scheduled physical
+handlers и 44/0 transport resets. [Correction summary](./public-workflow-loss-verification-ci-fixed-summary.json)
+закрепляет raw SHA/seals новых reports. 14 joint tests и полный набор
+871 Python / 4 optional skips, 12 Node, links/catalog прошли после исправления.
+
+Новый private ZIP сохранил failed CI log, исправленные tests/replays и оба
+Git source states: **12 entries / 552 878 bytes**, SHA
+`185b25a731feb2ebfdfcd55834eec400fa969a55ce5b06545c605336b317c166`.
+Обе копии проверены по CRC и каждому entry SHA/size; parent archives
+повторно сверены, прежние файлы сохранены.
+[Correction archive receipt](./public-workflow-loss-verifier-ci-fixed-archive-summary.json).
