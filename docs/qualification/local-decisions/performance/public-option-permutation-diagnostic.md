@@ -73,3 +73,10 @@ case/group/order/repeat summaries, raw files, metrics и fresh cleanup.
 skips, 12 Node**, links/catalog прошли. [Allowlisted native summary](./public-option-permutation-diagnostic-summary.json)
 закрепляет raw SHA/seals и результаты; labels/owners/SLO/qualification
 остаются открытыми, routing false.
+
+Private ZIP **30 entries / 917 372 bytes**, SHA
+`c5bf8bd38c11000b0c0417e0da6fbfe585143334b49aef89836f3006f224d8ba`
+сохранён в исходном workspace с 0600. Обе копии проверены по CRC и каждому
+entry SHA/size, оба parent archive SHA сверены. Raw measured files,
+audit/initial fixture failures, resident snapshots и два 107-source
+committed states сохранены. [Archive receipt](./public-option-permutation-diagnostic-archive-summary.json).
