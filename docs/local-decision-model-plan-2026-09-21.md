@@ -523,6 +523,22 @@ full 891 Python / 12 Node checks; новых model/network/live PID calls нет
 instances, без crash/recovery. Human/owner/SLO, applicable calibration/
 holdout и actual boot/login остаются открытыми; routing false.
 
+[Public in-flight HTTP crash и owned recovery](./qualification/local-decisions/performance/public-workflow-inflight-recovery.md),
+08.10 MSK: prospective index 3 / 1337 tokens, active handler snapshot и
+SIGKILL в собственной group; actual exit -9. Same-endpoint replacement
+прошёл zero origin и два warmup до suffix. Все 49 instances/returns/primary
+routes сохранены: 45 computed (31 ok / 14 abstain), один actual unavailable,
+три whole context rejection. Два completed counter epochs 5/47 дают 52
+handlers, включая четыре warmup; один attested active handler остаётся
+с unknown terminal outcome, без выдуманного GPU interruption или reset.
+741 independent audit checks / 186 contributors, 48 noninterrupted
+controls совпали по binary64 JSON semantics. Все 57 temporary PID
+отсутствуют, resident 4 PID / 35 sources / fresh metrics unchanged.
+Восемь новых / full 899 Python / 12 Node checks прошли. Human/owner/SLO,
+applicable calibration/holdout и actual boot/login остаются открытыми;
+routing false. По просьбе пользователя работа остановится после commit,
+push и merge этого этапа; новый этап не начинается.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
