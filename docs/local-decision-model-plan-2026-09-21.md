@@ -495,6 +495,19 @@ checks прошли. Inference/predictions/labels и calibration/holdout access 
 двумя warmup и retry 0. Agreement зависимых variants не подменяет accuracy,
 назначение owners, customer SLO или предметную qualification.
 
+[Whole public option-order native diagnostic](./qualification/local-decisions/performance/public-option-permutation-diagnostic.md),
+08.10 MSK: все 343 variants из 49 cases / 44 groups завершены: 322 computed
+(219 ok / 103 abstain), 21 whole context rejection, zero omission. У 18/46
+fully computed cases меняется status/reason/selected ID/value между orders,
+у 28/46 поля стабильны; 46/46 original repeats совпали, probability delta
+повтора 0. Fixed dependent orders не дают causal bias/accuracy выводов.
+343 physical scheduled / 345 с warmup, 107 sources, 2653 independent audit
+checks; три временных PID отсутствуют, protected resident 4 PID / 35
+sources / fresh counters unchanged. Full 885 Python / 12 Node checks.
+Следующий шаг — reusable independent raw-pinned replay и разбор различий
+accepted outputs / argmax / abstention; human qualification, applicable
+calibration/holdout, owner/SLO и actual boot/login остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
