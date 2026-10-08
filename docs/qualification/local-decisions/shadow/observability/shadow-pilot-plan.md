@@ -1,5 +1,9 @@
 # План реального shadow-пилота
 
+[Public maintainer найден и перепроверен](./owner-source-evidence.md):
+CODEOWNERS указывает @TitanUser. Это runtime/release candidate, не
+подтверждение business ownership, permitted workflow или SLO appointment.
+
 08.10.2026 MSK. [CLI подготовки](../../../../../scripts/prepare-decision-shadow-pilot.py)
 закрепляет scope и targets до начала наблюдения. [Шаблон](./pilot-config.blank.json)
 сохраняет пустые owners, workflow, разрешённые данные и даты. Значения 99% / 95%,

@@ -322,6 +322,15 @@ zero/legacy data не проходят как успешный пилот. На�
 реальный permitted workflow/owners и human review/calibration/holdout;
 actual boot/login остаётся открытым. Routing false, qualification not_assessed.
 
+CI evaluator обнаружил отказ worker restart/shutdown. [Signal shutdown fix](./qualification/local-decisions/performance/worker-signal-shutdown.md)
+устраняет подтверждённый Event-lock deadlock: настоящий SIGTERM/SIGINT
+больше не вызывает synchronization внутри handler; admission прекращается,
+активные futures drain. Три before/after regressions и 152 worker checks
+прошли; failed CI log сохранён, successor/cleanup diagnostics усилены.
+[Owner source review](./qualification/local-decisions/shadow/observability/owner-source-evidence.md)
+подтвердил public maintainer @TitanUser по pinned CODEOWNERS/Git bytes/API;
+это runtime owner candidate, не business appointment или SLO acceptance.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
