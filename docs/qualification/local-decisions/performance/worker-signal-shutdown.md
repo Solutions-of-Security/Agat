@@ -28,7 +28,7 @@ steps даже при отказе одного. Cleanup errors не замен�
 если основная проверка прошла, cleanup errors сами дают failure. Таймауты
 не увеличены и assertions не исключены.
 
-[Три регрессии](../../../../../workers/test_worker_signal_shutdown.py) отправляют
+[Три регрессии](../../../../workers/test_worker_signal_shutdown.py) отправляют
 настоящие POSIX signals в собственный child. SIGTERM/SIGINT вводятся на границе
 удерживаемого Event lock; третий случай прерывает пустой primary poll и проверяет
 отсутствие новой embedding admission. До fix: два timeout/deadlock и одна
