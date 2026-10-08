@@ -9,6 +9,7 @@ from scripts.lib.decision_performance import validate_result
 from scripts.lib.decision_public_load import validate_context
 from scripts.lib.decision_public_load_verification import distribution
 from scripts.lib.decision_shadow_pilot import require, timestamp
+from scripts.lib.decision_public_workflow_loss import PLAN_SCHEMA as LOSS_PLAN_SCHEMA, RESULT_SCHEMA as LOSS_RESULT_SCHEMA, loss_spec
 
 PLAN_SCHEMA = "agat.decision.public-workflow-plan.v1"
 RESULT_SCHEMA = "agat.decision.public-workflow-result.v1"
@@ -34,7 +35,12 @@ def shared_config(context):
 def verify_inventory(context, plan, cohort, routes):
     """Account against the original case list, not just returned observations."""
     validate_context(context); config = shared_config(context); count = len(context["inputs"])
-    require(plan["schemaVersion"] == PLAN_SCHEMA and plan["mode"] == "serial_closed_model_integration"
+    loss = plan["schemaVersion"] == LOSS_PLAN_SCHEMA
+    if loss:
+        require(fingerprint(plan.get("runtimeLoss")) == fingerprint(loss_spec(context, plan["runtimeLoss"]["beforeIndex"])), "Runtime loss was not prospectively specified")
+    else:
+        require("runtimeLoss" not in plan, "Historical v1 cannot admit a runtime loss")
+    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
             and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
             and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
             and type(plan["processVersion"]) is int and plan["processVersion"] == 1
@@ -64,7 +70,7 @@ def verify_inventory(context, plan, cohort, routes):
             "Missing, extra or repeated workflow records")
     instances = {row["runId"]: row for row in cohort["instances"]}; traces = {row["run"]["id"]: row for row in cohort["traces"]}
     require(set(instances) == set(traces) == {row["runId"] for row in routes}, "Cohort run identities differ")
-    statuses = Counter(); physical = Counter(); timings = []; expected_profiles = context["profile"]
+    statuses = Counter(); physical = Counter(); timings = []; unavailable_timings = []; expected_profiles = context["profile"]
     for index, (case, route) in enumerate(zip(context["inputs"], routes)):
         fields(route, {"index", "caseId", "inputSha256", "instanceId", "runId", "stageId", "primaryCalls", "primaryBranch", "wrongBranch", "runStatus"})
         require(type(route["index"]) is int and route["index"] == index and route["caseId"] == case["id"]
@@ -98,24 +104,32 @@ def verify_inventory(context, plan, cohort, routes):
                 and exported["profileSha256"] == assigned["profileSha256"] == context["profileSha256"]
                 and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == 10000
                 and fingerprint(exported["observation"]) == fingerprint(assigned["observation"]), "Observation binding differs")
-        observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "result", "callerTiming"})
+        lost = loss and index >= plan["runtimeLoss"]["beforeIndex"]
+        observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "callerTiming"} | (set() if lost else {"result"}))
         require(observation["mode"] == "shadow" and observation["fallback"] == "primary", "Shadow routing changed")
-        request = Request.from_dict({**case["request"], "id": route["stageId"]})
-        validate_result(observation["result"], request, expected_profiles)
-        result = observation["result"]
-        require(observation["status"] == result["status"] and observation["reason"] == result["reason"], "Stored status differs")
-        require((result["status"] in {"ok", "abstain"} and case["contextEligible"] is True and result["inputTokens"] == case["inputTokens"])
-                or (result["status"] == "error" and result["reason"] == "context_too_long" and case["contextEligible"] is False),
-                "Unexpected computation or missing whole-input rejection")
+        if lost:
+            require(observation["status"] == "unavailable" and observation["reason"] == "unreachable", "Runtime loss return was not recorded as actual transport unavailability")
+            result = observation
+        else:
+            request = Request.from_dict({**case["request"], "id": route["stageId"]})
+            validate_result(observation["result"], request, expected_profiles)
+            result = observation["result"]
+            require(observation["status"] == result["status"] and observation["reason"] == result["reason"], "Stored status differs")
+            require((result["status"] in {"ok", "abstain"} and case["contextEligible"] is True and result["inputTokens"] == case["inputTokens"])
+                    or (result["status"] == "error" and result["reason"] == "context_too_long" and case["contextEligible"] is False),
+                    "Unexpected computation or missing whole-input rejection")
         timing = fields(observation["callerTiming"], {"schemaVersion", "clock", "boundary", "durationMs"})
         require(timing["schemaVersion"] == "agat.decision.caller-timing.v1" and timing["clock"] == "monotonic"
-                and timing["boundary"] == "local_http_call" and number(timing["durationMs"], 0, 10001) >= result["durationMs"]-.1
+                and timing["boundary"] == "local_http_call" and number(timing["durationMs"], 0, 10001) >= (0 if lost else result["durationMs"]-.1)
                 and fingerprint(intent["returned"]) == fingerprint({"callerTiming": timing, "status": result["status"], "reason": result["reason"]}),
                 "Caller timing or durable return differs")
-        statuses[result["status"]] += 1; physical[outcome(result)] += 1
+        statuses[result["status"]] += 1
+        if lost: unavailable_timings.append(timing["durationMs"])
+        else: physical[outcome(result)] += 1
         if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
-    return sealed({"schemaVersion": RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+    return sealed({"schemaVersion": LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
         "completedInstances": count, "boundCallerReturns": count, "computed": len(timings), "statuses": dict(statuses),
+        **({"runtimeLoss": plan["runtimeLoss"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if loss else {}),
         "callerMsComputed": distribution(timings), "physicalScheduledOutcomes": dict(physical), "primaryFixtureCalls": count,
         "primaryRoutePreserved": True, "caseInputsUnchanged": True, "referenceLabels": 0, "classificationAccuracyMeasured": False,
         "primary": "fixture_chat_completions", "mode": "serial_closed_model_integration", "ownersAppointed": False,
