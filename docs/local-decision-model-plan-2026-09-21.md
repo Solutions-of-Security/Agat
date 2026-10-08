@@ -359,7 +359,7 @@ human reference labels, qualification или принятия SLO.
 разрешённые варианты, скрывая split/group metadata и чужие ответы. Каждый
 выбор требует обоснование и `y`; skips остаются null. Atomic private checkpoint
 после подтверждения, partial resume и input/source SHA binding сохраняют
-прежний review v1/finalize contract. 11 новых / 31 совместная targeted check
+прежний review v1/finalize contract. 13 новых / 33 совместная targeted check
 прошли. Reviewer ID/TTY не аутентифицируют человека; human execution,
 independence/qualification остаются непроверенными, model calls 0/routing false.
 

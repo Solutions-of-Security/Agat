@@ -84,10 +84,12 @@ Model calls — 0, routing false, qualification not_assessed.
 
 ## Проверка реализации
 
-11 новых проверок покрывают повреждённый pool/input binding, чужую/незавершённую
+13 новых проверок покрывают повреждённый pool/input binding, чужую/незавершённую
 разметку, скрытые splits, реальные terminal-control символы, обязательное
 подтверждение, skip/EOF/interrupt, длинный paste, частичное продолжение,
 atomic write failure, source drift и совместимость с `finalize-review`.
-Совместно с существующими calibration/review checks: 31 pass.
+Совместно с существующими calibration/review checks: 33 pass. Startup checkpoint
+и submission receipt write failures сохраняют failed status; completed review
+без успешного receipt не объявляется завершённой сессией.
 Все размеченные тестовые ответы — явно synthetic fixtures; они не используются
 как human gold для реальных публичных вопросов.

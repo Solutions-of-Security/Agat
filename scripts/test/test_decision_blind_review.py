@@ -127,7 +127,7 @@ class ReviewCliTest(unittest.TestCase):
                                                                   return_value=self.identity):
             code = cli.main(args, input_stream=Terminal(answers) if tty else io.StringIO(answers), output_stream=output)
         report = verify_seal(json.loads((directory / "session.json").read_text()), "agat.decision.blind-review-session.v1") if directory.exists() else None
-        review = json.loads((directory / "review.json").read_text()) if directory.exists() else None
+        review = json.loads((directory / "review.json").read_text()) if (directory / "review.json").is_file() else None
         return code, directory, report, review, output.getvalue()
 
     def test_partial_resume_fingerprints_private_files_and_finalize_interoperate(self):
@@ -172,6 +172,26 @@ class ReviewCliTest(unittest.TestCase):
         self.assertEqual(code, 1); self.assertEqual(report["status"], "failed")
         self.assertEqual(report["failureType"], "ValueError")
         self.assertTrue(all(x["expectedOptionId"] is None for x in review["labels"]))
+
+    def test_startup_checkpoint_failure_has_failed_receipt_without_usable_review(self):
+        with patch.object(cli, "checkpoint", side_effect=OSError("fixture startup failure")):
+            code, _d, report, review, text = self.invoke("1\nfixture\ny\n")
+        self.assertEqual(code, 1); self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["failureType"], "OSError"); self.assertIsNone(review)
+        self.assertIsNone(report["outputReviewFileSha256"]); self.assertFalse(text)
+
+    def test_submission_receipt_write_failure_cannot_claim_completed_status(self):
+        original = cli.write_json_new; count = 0
+        def failing_once(*args):
+            nonlocal count
+            count += 1
+            if count == 1: raise OSError("fixture submission failure")
+            return original(*args)
+        with patch.object(cli, "write_json_new", side_effect=failing_once):
+            code, _d, report, review, _text = self.invoke("1\nfixture\ny\n2\nfixture\ny\n1\nfixture\ny\n")
+        self.assertEqual(code, 1); self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["failureType"], "OSError"); self.assertIsNotNone(review["reviewedAt"])
+        self.assertEqual(report["newAnswers"], 3)
 
     def test_atomic_replace_failure_does_not_corrupt_existing_checkpoint(self):
         directory = self.private / "checkpoint"; directory.mkdir(mode=0o700)
