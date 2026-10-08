@@ -94,3 +94,11 @@ worker profile tag в synthetic socket fixture; исправление пров�
 сохранены отдельно; native run выполнен один раз после исправления.
 v1/v2 compatibility, customer owner/SLO и independent human/calibration/
 holdout gates сохраняют прежний статус; routing false / not_assessed.
+
+Private evidence ZIP сохранён в original workspace: **40 entries /
+1695633 bytes**, SHA-256
+`24141516b6eb1a2ee53f7229f8463505191ef238d390099873cacc1d2d30373d`.
+Обе копии проверены по CRC, каждому SHA/size; source inventory сверён с
+двумя committed states, три parent archives повторно прочитаны.
+[Archive summary](./public-workflow-inflight-recovery-archive-summary.json)
+публикует только metadata.
