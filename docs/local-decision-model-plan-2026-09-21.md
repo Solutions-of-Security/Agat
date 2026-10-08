@@ -473,7 +473,7 @@ instances не доказывает crash-in-flight/recovery или customer SLO
 calibration/holdout и actual boot/login gates остаются открытыми.
 
 [Offline public workflow loss replay](./qualification/local-decisions/performance/public-workflow-loss-verification.md),
-08.10 MSK: reusable v2 CLI подтвердил полный denominator 49, five healthy
+08.10 MSK: reusable v2 CLI подтвердил полный denominator 49, пять healthy
 physical scheduled handlers и 44 durable unavailable/TCP resets. 180
 measured / 99 verifier sources; v1 compatibility replay сохранил прежние
 49 scheduled / 51 с warmup и 177 sources. Native inference не повторялся;

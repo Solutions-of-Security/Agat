@@ -46,3 +46,11 @@ physical handlers / 51 с warmup**, 177 measured sources, exact accounting.
 optional skips, 12 Node**, links/catalog. Обе проверки сохраняют
 `reportedCleanupComplete=true / liveCleanupVerified=false`, no labels /
 unappointed owners / SLO unaccepted / routing false / not_assessed.
+
+Private ZIP **11 entries / 540 129 bytes**, SHA
+`7357af1a0715005d4a9898cc6af887e2fbbeeac8e4a8b28ec0526e5df790606b`
+сохранён в исходном workspace (0600), CRC/size/SHA каждого entry проверены
+после обеих записей. 99 verifier contributors сохранены в двух Git
+snapshot; обе parent archive SHA повторно сверены.
+[Archive receipt](./public-workflow-loss-verifier-archive-summary.json)
+содержит allowlisted metadata, raw v1/v2 reports остаются private.
