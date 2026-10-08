@@ -44,3 +44,35 @@ macOS даёт `EAGAIN` по timeout, а не `ECONNREFUSED`. Поэтому т�
 Permanent resident не участвует в остановке. Ownership, accuracy,
 calibration/holdout, SLO и actual boot/login этим экспериментом не
 подтверждаются; routing false / not_assessed.
+
+## Native experiment 08.10 MSK
+
+Из `c5b9268`, N=5 до запуска: **49 original inputs / 49 completed instances /
+49 durable caller returns**, все 49 fixture primary calls и primary routes
+сохранены. Healthy prefix: **5 computed (1 ok / 4 abstain)**. После exit
+owned decider: **44 unavailable/unreachable**, result/token metadata
+отсутствует, TCP guard измерил ровно **44 accepts / 44 resets / 0 errors**,
+payloads не читал. Три long-context inputs после границы не были admitted
+и не выдаются за physical context rejections.
+
+Caller local HTTP p50/p95/max: healthy prefix **360.614 / 587.021 / 587.021
+ms**, post-loss **0.559 / 0.644 / 1.533 ms**. Это serial integration с fixture
+primary; queue/workflow latency, real primary model overhead и customer
+SLO здесь не измеряются. Последний quiescent raw snapshot до остановки:
+**7 physical model handlers**, включая два warmup и пять scheduled calls;
+44 transport failures посчитаны отдельно. Native elapsed **22 935.487 ms**,
+actual decider exit **130** (controlled SIGTERM, не crash во время inference).
+
+[Allowlisted summary](./public-workflow-runtime-loss-summary.json) закрепляет
+raw pins и independent audit. **180 sources**, все **30 observed owned PIDs**
+отсутствуют после cleanup; ephemeral worker credentials удалены. Четыре
+permanent resident PID, 35 protected sources и counters **1/0/0** сохранены;
+raw counters совпали с retained previous native audit baseline и свежим
+post-run scrape. Actual boot/login остаётся `awaiting_event`.
+
+Семь новых regressions и полный docs check: **868 Python / 4 optional skips,
+12 Node**, links/catalog pass. Initial failed socket expectation сохранена
+в private logs; corrected real-client test прошёл до model experiment.
+Accuracy, owners, calibration/holdout и SLO не выводятся из этого результата.
+Следующий инженерный этап — reusable offline verifier v2 для новых
+loss receipts, с отдельным учётом server handlers и transport resets.
