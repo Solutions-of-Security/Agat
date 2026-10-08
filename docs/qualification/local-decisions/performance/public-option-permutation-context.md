@@ -36,3 +36,24 @@ caller 10000 ms, inference deadline 5000 ms, два warmup, общий 600 s,
 retry 0, без primary companion. Это local robustness observation;
 calibration/holdout не токенизируются, accuracy/human review и SLO не
 выводятся из option agreement. Policy, weights и routing не меняются.
+
+## Native preflight 08.10 MSK
+
+Из committed `b75f6dd` profiler измерил весь corpus: **49 original cases /
+44 original groups**, семь orders на каждый case, **343 variants**.
+**322 eligible / 21 whole context-too-long**, tokens **188–9253**.
+Original и repeat token parts/counts совпали с прежним context; каждый
+semantic option занял каждую позицию в пяти cyclic orders.
+
+Независимый audit выполнил **1941 checks**: full request preservation,
+case/group/order bindings, balanced positions, whole token inventory,
+raw artifact SHA, complete historical/current **40/102** source pins и
+private permissions. Exact pinned checkpoint/profile/34 dependencies
+сохранились; model calls, predictions, human labels и calibration/holdout
+tokenization — **0**. [Allowlisted summary](./public-option-permutation-context-summary.json)
+закрепляет independent raw SHA, seals и prospective budget.
+
+Шесть новых targeted tests и полный объединённый набор **877 Python /
+4 optional skips, 12 Node**, links/catalog прошли. Первоначальный сбой
+synthetic fixture из-за несовпадающего profile SHA сохранён вместе с
+исправленными tests; native tokenizer запускался после исправления.
