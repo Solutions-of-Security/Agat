@@ -65,3 +65,10 @@ Independent audit — **201 checks**, saved source повторно дал ид�
 audit bytes. Шесть новых / 14 joint tests, full **891 Python / 4 optional
 skips, 12 Node**, links/catalog прошли. Cleanup report остаётся historical,
 live false; labels/calibration/holdout/owners/SLO не добавлены.
+
+Private archive сохранён в original workspace: **16 entries / 558363 bytes**,
+SHA-256 `c6c8733763c50694f2d84169c86366b0dc8c573aa807d9620419338129c65e5a`.
+Обе копии проверены по CRC, размеру и SHA каждого файла; source inventory
+сверен с двумя Git states, parent archives повторно прочитаны и проверены.
+[Archive summary](./public-option-diagnostic-replay-archive-summary.json)
+содержит только allowlisted metadata.
