@@ -14,6 +14,7 @@ from decision_runtime.metrics import OUTCOMES, outcome
 from scripts.lib.decision_arrival_rate import SOURCE_PATHS
 from scripts.lib.decision_performance import profile_from_health, validate_result
 from scripts.lib.decision_public_load import PLAN_SCHEMA, RESULT_SCHEMA, PHASE_SCHEMA, validate_context
+from scripts.lib import decision_public_primary as companion
 from scripts.lib.decision_public_sources import pinned_input
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from workers.local_decisions import CALLER_TIMING_VERSION
@@ -100,11 +101,13 @@ def distribution(values):
 
 
 def verify_phase(phase, plan):
-    fields(phase, {"schemaVersion", "ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs", "elapsedMs", "rows", "summary"})
-    require(phase["schemaVersion"] == PHASE_SCHEMA, "Unsupported public load phase")
+    mixed = plan.get("schemaVersion") == companion.SCHEMAS[0]
+    fields(phase, {"schemaVersion", "ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs", "elapsedMs", "rows", "summary"}
+           | ({"condition", "phaseOriginMonotonicMs", "primaryRows"} if mixed else set()))
+    require(phase["schemaVersion"] == (companion.SCHEMAS[2] if mixed else PHASE_SCHEMA), "Unsupported public load phase")
     same({key: phase[key] for key in ("ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs")},
          {key: plan["schedule"][key] for key in ("ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs")}, "Phase budget differs")
-    elapsed = number(phase["elapsedMs"], 0, len(plan["inputs"])*2000 + 11000)
+    elapsed = number(phase["elapsedMs"], 0, len(plan["inputs"])*2000 + (31000 if mixed else 11000))
     rows = phase["rows"]
     require(isinstance(rows, list) and len(rows) == len(plan["inputs"]), "Incomplete scheduled denominator")
     admitted = []; scored = []; good = []; drops = Counter(); intervals = []; known = Counter(); unknown = 0
@@ -145,8 +148,8 @@ def verify_phase(phase, plan):
     return expected, known, unknown
 
 
-def counters(sample):
-    fields(sample, {"label", "elapsedMs", "health", "metricsRaw", "ownedPids", "processRaw"})
+def counters(sample, mixed=False):
+    fields(sample, {"label", "elapsedMs", "health", "metricsRaw", "ownedPids", "processRaw"} | ({"primaryResidence"} if mixed else set()))
     require(isinstance(sample["metricsRaw"], str) and len(sample["metricsRaw"].encode()) <= 1024*1024, "Invalid metrics body")
     values = {}; gauges = {}
     for line in sample["metricsRaw"].splitlines():
@@ -170,8 +173,11 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
            "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
            "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}
     context = validate_context(parse_json(raw["context"]))
-    plan = verify_seal(parse_json(raw["plan"]), PLAN_SCHEMA); fields(plan, PLAN_FIELDS)
-    result = verify_seal(parse_json(raw["result"]), RESULT_SCHEMA); fields(result, RESULT_FIELDS)
+    parsed_plan = parse_json(raw["plan"]); mixed = parsed_plan.get("schemaVersion") == companion.SCHEMAS[0]
+    plan = verify_seal(parsed_plan, companion.SCHEMAS[0] if mixed else PLAN_SCHEMA)
+    fields(plan, PLAN_FIELDS | ({"primary", "condition"} if mixed else set()))
+    result = verify_seal(parse_json(raw["result"]), companion.SCHEMAS[1] if mixed else RESULT_SCHEMA)
+    fields(result, RESULT_FIELDS | ({"primaryWarmup", "primaryRows"} if mixed else set()))
     unqualified(plan); unqualified(result)
     require(result["status"] == "observed" and result["planSha256"] == plan["sha256"] and result["failure"] is None
             and result["cancelled"] is False and result["cleanupErrors"] == [] and result["remainingOwnedPids"] == []
@@ -180,14 +186,17 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     require(timestamp(context["createdAt"], "context.createdAt") <= timestamp(plan["createdAt"], "plan.createdAt"), "Load plan predates context")
     require(plan["contextProfileFileSha256"] == context_sha and plan["contextProfileSealSha256"] == context["sha256"]
             and type(plan["warmupCount"]) is int and plan["warmupCount"] == 2 and plan["scope"] == "whole_unlabelled_public_development_http_inventory"
-            and plan["overLimitBehavior"] == "send_full_input_expect_context_too_long" and plan["primaryCompanionStarted"] is False
+            and plan["overLimitBehavior"] == "send_full_input_expect_context_too_long" and plan["primaryCompanionStarted"] is mixed
             and plan["backgroundWorkloadControlled"] is False, "Context binding or workload scope differs")
     for key, source_key in (("profile", "profile"), ("profileFileSha256", "profileFileSha256"), ("profileSha256", "profileSha256"),
                             ("manifestFileSha256", "manifestFileSha256"), ("model", "model"), ("runtime", "tokenizerEnvironment"),
                             ("inputs", "inputs"), ("schedule", "proposedDiagnosticSchedule")):
         same(plan[key], context[source_key], "Plan differs from pinned context inventory/profile")
     sources_at(root, context["sourceCommit"], context["sourceFiles"], CONTEXT_PATHS)
-    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], LOAD_PATHS)
+    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], LOAD_PATHS + (companion.SOURCE_PATHS if mixed else []))
+    if mixed:
+        require(plan["condition"] == "primary_active", "Wrong primary load condition")
+        companion.verify_plan(plan["primary"], sources)
     profile_raw = sources[PROFILE_PATH]
     require(hashlib.sha256(profile_raw).hexdigest() == plan["profileFileSha256"]
             and fingerprint(parse_json(profile_raw)) == plan["profileSha256"], "Committed profile bytes differ")
@@ -199,17 +208,29 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     requirements = dict(line.split("==") for line in sources["decision_runtime/requirements-mlx.txt"].decode().splitlines() if line and not line.startswith("#"))
     same(plan["runtime"], {"python":"3.13.12", "machine":"arm64", "packages":requirements}, "Historical runtime dependencies differ")
     artifacts = {}
-    fields(result["logSha256"], {"runtime.log", "requests.jsonl"})
+    fields(result["logSha256"], {"runtime.log", "requests.jsonl"} | ({"primary.log", "primary-requests.jsonl"} if mixed else set()))
     for name, digest in result["logSha256"].items(): artifacts[name] = pinned_input(directory/name, digest, 16*1024*1024)
     with (directory/"phase.json").open("rb") as stream:
         artifacts["phase.json"] = stream.read(32*1024*1024+1)
     require(0 < len(artifacts["phase.json"]) <= 32*1024*1024, "Phase file exceeds verification bound")
-    phase_file = verify_seal(parse_json(artifacts["phase.json"]), PHASE_SCHEMA)
+    phase_file = verify_seal(parse_json(artifacts["phase.json"]), companion.SCHEMAS[2] if mixed else PHASE_SCHEMA)
     same({key:value for key,value in phase_file.items() if key != "sha256"}, result["phase"], "Embedded phase differs from phase file")
     summary, known, unknown = verify_phase(result["phase"], plan)
     records = [parse_json(line) for line in artifacts["requests.jsonl"].splitlines()]
     require(len(records) == len(plan["inputs"]) and all(isinstance(row, dict) and type(row.get("index")) is int for row in records), "Raw journal denominator differs")
     same(sorted(records, key=lambda row:row["index"]), result["phase"]["rows"], "Raw journal rows drift, duplicate or disappear")
+    primary_summary = None
+    if mixed:
+        same(result["primaryRows"], result["phase"]["primaryRows"], "Primary result/phase inventories differ")
+        primary_records = [parse_json(line) for line in artifacts["primary-requests.jsonl"].splitlines()]
+        require(len(primary_records) == len(plan["inputs"]) and all(isinstance(row,dict) and type(row.get("index")) is int for row in primary_records), "Primary raw journal denominator differs")
+        same(sorted(primary_records,key=lambda row:row["index"]), result["primaryRows"], "Primary raw journal rows differ")
+        primary_summary = companion.verify_phase(result["phase"],len(plan["inputs"]))
+        fields(result["primaryWarmup"], {"status", "response", "wallMs"})
+        require(result["primaryWarmup"]["status"] == "returned", "Primary warmup did not return")
+        companion.primary.validate_response(result["primaryWarmup"]["response"])
+        require(result["primaryWarmup"]["response"]["total_duration"]/1_000_000 <= number(result["primaryWarmup"]["wallMs"],0,30000.1)+.1,
+                "Primary warmup server duration exceeds caller wall")
     require(isinstance(result["warmup"], list) and len(result["warmup"]) == 2, "Incomplete separate warmup")
     first = next(case for case in plan["inputs"] if case["contextEligible"])
     warmup_outcomes = Counter()
@@ -231,7 +252,11 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
         same(profile_from_health(sample["health"]), plan["profile"], "Runtime profile drift")
         require(isinstance(sample["ownedPids"], list) and sample["ownedPids"] and all(type(pid) is int for pid in sample["ownedPids"])
                 and sample["ownedPids"] == sorted(set(sample["ownedPids"])) and set(sample["ownedPids"]) <= set(pids), "Sample process census differs")
-        counter, start = counters(sample); values.append(counter); starts.append(start)
+        if mixed:
+            models = sample["primaryResidence"]["models"]
+            require(isinstance(models,list) and len(models) == 1 and models[0].get("digest") == companion.primary.DIGEST
+                    and type(models[0].get("context_length")) is int and models[0]["context_length"] == 8192, "Primary residence/model/context differs")
+        counter, start = counters(sample,mixed); values.append(counter); starts.append(start)
     require(len(set(starts)) == 1 and starts[0] > 0, "Runtime restarted during measurements")
     same(values[0], dict.fromkeys(OUTCOMES, 0), "Owned runtime received prior traffic")
     same(values[1], {key:warmup_outcomes[key] for key in OUTCOMES}, "Warmup physical HTTP counters differ")
@@ -253,4 +278,5 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
         "unknownPhysicalOutcomes":unknown,"physicalScheduledHttpHandlers":sum(delta.values()),"physicalHttpCounters":values[2],
         "reportedCleanupComplete":True,"liveCleanupVerified":False,"classificationAccuracyMeasured":False,
         "referenceLabels":0,"calibrationRequests":0,"holdoutRequests":0,"representativeAgatTraffic":False,
-        "sloAccepted":False,"routingEnabled":False,"qualification":"not_assessed"})
+        "sloAccepted":False,"routingEnabled":False,"qualification":"not_assessed",
+        **({"primarySummary":primary_summary,"primaryWarmupCalls":1,"condition":"primary_active"} if mixed else {})})

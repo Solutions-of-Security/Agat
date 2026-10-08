@@ -409,6 +409,20 @@ targeted tests, 833 Python / 12 Node docs checks прошли. Настоящи�
 Следующий capacity этап — весь public development inventory при явно
 наблюдаемом primary workload; внешние предметные и boot/login gates сохранены.
 
+[Public development при активном primary](./qualification/local-decisions/performance/public-support-primary-load.md),
+08.10 MSK: opt-in v2 закрепляет прежние 49 полных inputs, профиль 0.12.3/wired
+4096 MiB и отдельный pinned Qwen3:8b workload на общей monotonic origin.
+При 0.5/s decider: 49 scheduled / 48 admitted / 45 computed, три context
+rejection и один client_capacity drop; caller p95 1126.021 мс, max 2284.683 мс.
+Primary: 25/49 returned, 24 drops, 49 actual HTTP overlap pairs; warmups
+сохранены отдельно. Source-bound verifier pass/exact и 307 independent checks
+подтвердили все denominators, прежние 48 response signatures, source/model pins,
+fresh owned cleanup и неизменный resident. Девять новых / 42 targeted и 842
+Python / 12 Node docs checks прошли. Drop показывает ограничение переноса
+synthetic envelope на full public inventory; более редкий arrival требует
+отдельного prospective протокола. SLO не принят, human accuracy не измерена,
+routing false / not_assessed; реальные owners/workflow и boot/login открыты.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -15,7 +15,7 @@ from scripts.lib.decision_public_sources import private_directory, write_json_ne
 
 VERIFIER_PATHS = ["scripts/verify-public-support-load.py", "scripts/lib/decision_public_load_verification.py",
     "scripts/test/test_decision_public_load_verification.py", "decision_runtime", "scripts/run-decision-arrival-rate.py",
-    "scripts/run-temporal-real-rag.py", "scripts/profile-embedding-rag.py"]
+    "scripts/run-temporal-real-rag.py", "scripts/profile-embedding-rag.py", "scripts/test/test_decision_public_primary.py"]
 SPEC = importlib.util.spec_from_file_location("public_verification_sources", ROOT/"scripts/run-decision-arrival-rate.py")
 launcher = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(launcher)
 
