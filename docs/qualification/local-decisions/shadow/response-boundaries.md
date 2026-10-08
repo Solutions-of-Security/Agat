@@ -55,3 +55,9 @@ workspace typecheck, 2572 локальные ссылки и каталог пр
 workflow с сохранением primary, полным denominator и здоровым suffix;
 физически завершённый ответ модели нужно отличать от доставленного caller
 ответа. Эти локальные проверки не закрывают такой полный native run.
+
+Private ZIP сохранён в исходном workspace: **13 entries / 362544 bytes**,
+SHA-256 `fa9565e7a77e3c785898d5fc1b08754328846f55622927d4169c0c3ce8626061`.
+Обе копии проверены по CRC, каждому SHA/size и committed worker source
+bindings. [Archive receipt](./response-boundaries-archive-summary.json)
+содержит только metadata.
