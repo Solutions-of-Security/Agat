@@ -23,6 +23,15 @@ const healthResponse = await fetch(url.origin+"/health", { signal: AbortSignal.t
 assert.equal(healthResponse.status, 200);
 const health = await healthResponse.json() as any;
 assert.equal(health.profileSha256, input.context.profileSha256);
+const loss = input.runtimeLoss;
+if (loss) {
+  assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v2");
+  assert.ok(Number.isInteger(loss.beforeIndex) && loss.beforeIndex > 0 && loss.beforeIndex < input.context.inputs.length);
+  assert.equal(loss.kind, "stop_owned_runtime"); assert.equal(loss.restart, false);
+  assert.equal(loss.boundary, "after_completed_previous_instance_before_next_creation");
+  assert.equal(loss.endpoint, "reserve_original_loopback_port_with_tcp_reset_guard");
+} else assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v1");
+let runtimeLossApplied: any;
 const config = { mode: "shadow", profileJson: health.profileJson, timeoutMs: 10000, ...input.config };
 const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
 store.updateModelRouterPolicy({ enabled: false });
@@ -75,7 +84,7 @@ try {
   const processId = String(store.createProcess({ name: "Whole public inventory integration; fixture primary", graph }).id);
   store.publishProcess(processId);
   const startAt = new Date(Date.now()+1000).toISOString();
-  const recipe = { schemaVersion: "agat.decision.public-workflow-plan.v1", mode: "serial_closed_model_integration",
+  const recipe = { schemaVersion: loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), mode: "serial_closed_model_integration",
     primary: "fixture_chat_completions", processId, processVersion: 1, projectId: "default", startAt,
     scopeEndRule: "after_full_input_inventory_and_worker_drain", config: input.config, profileSha256: health.profileSha256,
     inputs: input.context.inputs.map((row: any) => ({ caseId: row.id, inputSha256: row.inputSha256 })),
@@ -91,6 +100,26 @@ try {
   const globalDeadline = Date.now()+240000;
   for (const [index, item] of input.context.inputs.entries()) {
     assert.equal(worker.exitCode, null, "Owned worker exited early"); assert.equal(worker.signalCode, null);
+    if (loss && index === loss.beforeIndex) {
+      const request = { schemaVersion: "agat.decision.public-workflow-loss-request.v1", beforeIndex: index,
+        afterCaseId: routes.at(-1).caseId, afterRunId: routes.at(-1).runId, createdAt: new Date().toISOString() };
+      save("runtime-loss-request.pending.json", request);
+      fs.linkSync(path.join(directory, "runtime-loss-request.pending.json"), path.join(directory, "runtime-loss-request.json"));
+      fs.unlinkSync(path.join(directory, "runtime-loss-request.pending.json"));
+      const requestSha = createHash("sha256").update(fs.readFileSync(path.join(directory, "runtime-loss-request.json"))).digest("hex");
+      const deadline = Math.min(Date.now()+30000, globalDeadline);
+      while (!fs.existsSync(path.join(directory, "runtime-loss-applied.json"))) {
+        assert.ok(Date.now()<deadline, "Owned runtime loss was not acknowledged");
+        assert.equal(worker.exitCode, null); assert.equal(worker.signalCode, null);
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      runtimeLossApplied = JSON.parse(fs.readFileSync(path.join(directory, "runtime-loss-applied.json"), "utf8"));
+      assert.equal(runtimeLossApplied.schemaVersion, "agat.decision.public-workflow-loss-applied.v1");
+      assert.equal(runtimeLossApplied.beforeIndex, index); assert.equal(runtimeLossApplied.requestFileSha256, requestSha);
+      assert.equal(runtimeLossApplied.runtimeExited, true); assert.equal(runtimeLossApplied.endpointGuardedWithTcpReset, true);
+      assert.ok(Number.isInteger(runtimeLossApplied.runtimeExitCode));
+      assert.ok(Date.parse(runtimeLossApplied.appliedAt) >= Date.parse(request.createdAt));
+    }
     const beforeCalls = primaryCalls; const instance = store.startProcess(processId, { input: item.request.state })!;
     const runId = String(instance.runId); const deadline = Math.min(Date.now()+20000, globalDeadline);
     while (store.getRun(runId)!.status !== "completed") {
@@ -118,7 +147,7 @@ try {
   const raw = await response.text(); assert.ok(Buffer.byteLength(raw)<=16*1024*1024);
   fs.writeFileSync(path.join(directory, "cohort.http.json"), raw, { flag: "wx", mode: 0o600 });
   save("workflow-driver.json", { status: "observed", primary: "fixture_chat_completions", primaryCalls, routes, nodeVersion: process.version,
-    ownedPids: [process.pid, worker.pid], workerExitCode: worker.exitCode, actualWindow: { startAt, endAt },
+    ...(loss ? { runtimeLossApplied } : {}), ownedPids: [process.pid, worker.pid], workerExitCode: worker.exitCode, actualWindow: { startAt, endAt },
     unauthenticatedStatus: 401, authenticatedStatus: response.status, ownersAppointed: false, routingEnabled: false, qualification: "not_assessed" });
   console.log(JSON.stringify({ status: "observed", inputs: routes.length, primaryFixtureCalls: primaryCalls }));
 } finally {

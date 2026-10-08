@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime, timezone
 import http.client
+import hashlib
 import importlib.util
 import json
 import os
@@ -26,6 +27,7 @@ from scripts.lib.decision_public_load import historical_context_sources, validat
 from scripts.lib.decision_public_load_verification import counters
 from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
 from scripts.lib.decision_public_workflow import PROFILE_PATH, SOURCE_PATHS, shared_config, verify_inventory
+from scripts.lib.decision_public_workflow_loss import loss_spec, validate_request, verify_boundary, APPLIED_SCHEMA, stop_and_reserve, publish_applied
 from workers.local_decisions import LocalDecisionClient
 
 SPEC = importlib.util.spec_from_file_location("public_workflow_sources", ROOT/"scripts/run-decision-arrival-rate.py")
@@ -38,6 +40,7 @@ def main(argv=None):
     for name in ("context-profile", "runtime-python", "manifest", "evidence-dir"):
         parser.add_argument("--"+name, type=Path, required=True)
     parser.add_argument("--context-profile-file-sha256", required=True)
+    parser.add_argument("--stop-runtime-before-index", type=int, default=None, help="Prospectively stop only this launcher-owned runtime before this zero-based case")
     args = parser.parse_args(argv)
     try:
         private = (ROOT/"docs/private").resolve()
@@ -45,7 +48,9 @@ def main(argv=None):
                         and not args.evidence_dir.exists() and not args.evidence_dir.is_symlink(), "Use a new private evidence directory")
         raw = pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024)
         context = validate_context(parse_json(raw)); historical_context_sources(ROOT, context); config = shared_config(context)
-        commit, sources = launcher.frozen_sources(SOURCE_PATHS)
+        loss = loss_spec(context, args.stop_runtime_before_index) if args.stop_runtime_before_index is not None else None
+        source_paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else [])
+        commit, sources = launcher.frozen_sources(source_paths)
         profile_raw = pinned_input(ROOT/PROFILE_PATH, context["profileFileSha256"], 1024*1024)
         profile = parse_json(profile_raw); manifest, _ = verify_manifest(args.manifest.resolve()); verify_profile(profile, manifest)
         runtime.require(sha256_file(args.manifest) == context["manifestFileSha256"] and fingerprint(profile) == context["profileSha256"], "Frozen model/profile differs")
@@ -54,7 +59,7 @@ def main(argv=None):
         environment = parse_json(subprocess.check_output([str(args.runtime_python.absolute()), "-B", "-c", code, *requirements], cwd=ROOT, timeout=15))
         runtime.require(environment == context["tokenizerEnvironment"], "Frozen runtime dependencies differ")
         directory = private_directory(ROOT, args.evidence_dir)
-        plan = sealed({"schemaVersion": "agat.decision.public-workflow-launch-plan.v1", "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        plan = sealed({"schemaVersion": "agat.decision.public-workflow-launch-plan.v2" if loss else "agat.decision.public-workflow-launch-plan.v1", **({"runtimeLoss": loss} if loss else {}), "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "sourceCommit": commit, "sourceFiles": sources, "contextProfileFileSha256": args.context_profile_file_sha256,
             "context": context, "config": config, "runtime": environment, "manifestFileSha256": context["manifestFileSha256"],
             "mode": "serial_closed_model_integration", "primary": "fixture_chat_completions", "warmupCount": 2,
@@ -65,6 +70,7 @@ def main(argv=None):
         print("Cannot prepare public workflow: "+type(error).__name__, file=sys.stderr); return 1
     stopped = [False]; previous = {sig: signal.signal(sig, lambda *_: stopped.__setitem__(0, True)) for sig in (signal.SIGINT, signal.SIGTERM)}
     process = None; driver = None; owned = set(); errors = []; samples = []; warmup = []; evidence = None; failure = None
+    loss_applied = None; reservation = None; reservation_closed = False
     old_umask = os.umask(0o077); start = time.monotonic()
     try:
         with runtime.open_private_log(directory/"runtime.log") as log, runtime.open_private_log(directory/"driver.log") as driver_log:
@@ -113,21 +119,47 @@ def main(argv=None):
             owned.add(driver.pid); deadline = time.monotonic()+270
             while driver.poll() is None:
                 owned.update(runtime.shared.inventory(driver.pid)[0])
-                runtime.require(process.poll() is None and not stopped[0] and time.monotonic()<deadline, "Workflow child exited, cancelled or exceeded deadline")
+                runtime.require((process.poll() is None or loss_applied is not None) and not stopped[0] and time.monotonic()<deadline, "Workflow child exited, cancelled or exceeded deadline")
+                if loss and loss_applied is None and (directory/"runtime-loss-request.json").exists():
+                    request_raw = (directory/"runtime-loss-request.json").read_bytes()
+                    runtime.require(len(request_raw) <= 65536, "Loss request is excessive")
+                    request_sha = hashlib.sha256(request_raw).hexdigest()
+                    request = parse_json(request_raw)
+                    prefix = [parse_json(line) for line in (directory/"workflow-routes.jsonl").read_bytes().splitlines()]
+                    validate_request(context, loss, request, prefix)
+                    sample("before_runtime_loss")
+                    reservation = stop_and_reserve(process, port, runtime, owned, errors)
+                    loss_applied = sealed({"schemaVersion": APPLIED_SCHEMA, "beforeIndex": loss["beforeIndex"],
+                        "requestFileSha256": request_sha, "runtimePid": process.pid,
+                        "runtimeExitCode": process.returncode, "runtimeExited": True, "endpointGuardedWithTcpReset": True,
+                        "appliedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
+                    runtime.require(pinned_input(directory/"runtime-loss-request.json", request_sha, 65536) == request_raw, "Loss request changed")
+                    publish_applied(directory, loss_applied)
                 time.sleep(.1)
             runtime.require(driver.returncode == 0, "Workflow driver failed")
             recipe = parse_json((directory/"workflow-plan.json").read_bytes())
             cohort = parse_json((directory/"cohort.http.json").read_bytes())
             observed = parse_json((directory/"workflow-driver.json").read_bytes())
             owned.update(observed["ownedPids"])
+            runtime.require((recipe.get("runtimeLoss") is None and loss is None) or fingerprint(recipe.get("runtimeLoss")) == fingerprint(loss), "Recipe changed the prospective loss")
             evidence = verify_inventory(context, recipe, cohort, observed["routes"])
             runtime.require(observed["status"] == "observed" and observed["primaryCalls"] == len(context["inputs"])
                             and observed["workerExitCode"] == 0 and observed["unauthenticatedStatus"] == 401, "Driver audit failed")
-            sample("after_inventory")
+            if loss:
+                runtime.require(loss_applied is not None and fingerprint(observed.get("runtimeLossApplied")) == fingerprint(loss_applied), "Driver did not acknowledge the owned loss")
+                verify_boundary(context, loss, request, loss_applied, cohort, observed["routes"])
+                reservation.close(); reservation_closed = True
+                transport = reservation.receipt()
+                runtime.require(transport["acceptedConnections"] == transport["resetConnections"] == evidence["unavailableReturns"]
+                                and not transport["errors"], "TCP resets differ from durable unavailability")
+                runtime.require(pinned_input(directory/"runtime-loss-request.json", request_sha, 65536) == request_raw
+                                and fingerprint(parse_json((directory/"runtime-loss-applied.json").read_bytes())) == fingerprint(loss_applied), "Loss receipts changed")
+                write_json_new(directory/"runtime-loss-transport.json", transport)
+            else: sample("after_inventory")
             runtime.require(len({entry["serverStart"] for entry in samples}) == 1, "Runtime counters restarted")
             delta = {key: samples[2]["counters"][key]-samples[1]["counters"][key] for key in OUTCOMES}
             runtime.require(all(delta[key] == evidence["physicalScheduledOutcomes"].get(key, 0) for key in OUTCOMES), "Physical handlers differ from durable cohort")
-            runtime.require(launcher.frozen_sources(SOURCE_PATHS) == (commit, sources)
+            runtime.require(launcher.frozen_sources(source_paths) == (commit, sources)
                 and pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024) == raw
                 and sha256_file(directory/"plan.json") == plan_file_sha
                 and pinned_input(ROOT/PROFILE_PATH, context["profileFileSha256"], 1024*1024) == profile_raw
@@ -137,13 +169,18 @@ def main(argv=None):
         failure = {"type": type(error).__name__, "reason": str(error)[:200]}
     finally:
         if driver is not None: runtime.stop_owned_process(driver, owned, errors)
-        if process is not None: runtime.stop_owned_process(process, owned, errors)
+        if process is not None and process.poll() is None: runtime.stop_owned_process(process, owned, errors)
+        if reservation is not None and not reservation_closed:
+            try: reservation.close()
+            except Exception as error: errors.append("transportGuardStop:"+type(error).__name__)
         remaining = runtime.remaining_owned_processes(owned, errors)
         for sig, handler in previous.items(): signal.signal(sig, handler)
         os.umask(old_umask)
     complete = evidence is not None and failure is None and not errors and not remaining and not stopped[0]
     artifacts = ("workflow-plan.json", "workflow-driver.json", "workflow-routes.jsonl", "cohort.http.json", "worker.log", "runtime.log", "driver.log")
-    result = sealed({"schemaVersion": "agat.decision.public-workflow-launch-result.v1", "status": "observed" if complete else "failed",
+    if loss: artifacts += ("runtime-loss-request.json", "runtime-loss-applied.json", "runtime-loss-transport.json")
+    result = sealed({"schemaVersion": "agat.decision.public-workflow-launch-result.v2" if loss else "agat.decision.public-workflow-launch-result.v1",
+        **({"runtimeLoss": {"spec": loss, "applied": loss_applied}} if loss else {}), "status": "observed" if complete else "failed",
         "planSha256": plan["sha256"], "evidence": evidence, "warmup": warmup, "samples": samples, "failure": failure,
         "ownedPids": sorted(owned), "remainingOwnedPids": remaining, "cleanupErrors": errors,
         "runtimeExitCode": process.returncode if process else None, "driverExitCode": driver.returncode if driver else None,
