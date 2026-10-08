@@ -76,3 +76,10 @@ post-run scrape. Actual boot/login остаётся `awaiting_event`.
 Accuracy, owners, calibration/holdout и SLO не выводятся из этого результата.
 Следующий инженерный этап — reusable offline verifier v2 для новых
 loss receipts, с отдельным учётом server handlers и transport resets.
+
+Private ZIP **33 entries / 1 676 190 bytes**, SHA
+`b4fe67a2c8bd32998aaee2e84f68c09eaada0d948bb3b9e8248d5265852097f2`
+сохранён в исходном workspace с mode 0600. После обеих записей проверены
+CRC/size/SHA каждого entry; обе parent archive SHA перепроверены.
+[Archive receipt](./public-workflow-loss-archive-summary.json) содержит
+allowlisted metadata; raw traces, logs и полные source snapshots private.
