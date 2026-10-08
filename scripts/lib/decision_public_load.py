@@ -9,7 +9,7 @@ import subprocess
 
 from decision_runtime.annotations import group_split
 from decision_runtime.artifacts import verify_seal
-from decision_runtime.contracts import Request, fields, fingerprint, string
+from decision_runtime.contracts import Request, fields, fingerprint, number, string
 from scripts.lib.decision_arrival_rate import drive_arrivals, measure_one, summarize
 from scripts.lib.decision_public_context import PROFILE_SCHEMA
 from scripts.lib.decision_public_sources import SPLIT_SEED
@@ -88,13 +88,13 @@ def historical_context_sources(root, value):
         require(hashlib.sha256(raw).hexdigest() == digest, "Context historical source bytes differ")
 
 
-def run_inventory(client, inputs, profile, *, cancelled=lambda: False, journal=None, driver=drive_arrivals):
+def run_inventory(client, inputs, profile, *, cancelled=lambda: False, journal=None, driver=drive_arrivals, origin=None):
     require(isinstance(inputs, list) and 1 <= len(inputs) <= 60, "Unsupported corpus arrival inventory")
     requests = [Request.from_dict(row["request"]) for row in inputs]
     require(all(request.id == case["id"] and request.input_sha256 == case["inputSha256"]
                 for request, case in zip(requests, inputs)), "Corpus request binding differs")
     rows = [None] * len(inputs); capacity = threading.BoundedSemaphore(1); lock = threading.Lock(); futures = []
-    origin = time.monotonic()
+    origin = time.monotonic() if origin is None else number(origin, 0, 86_400_000_000)
     def save(index, row):
         with lock:
             rows[index] = row
