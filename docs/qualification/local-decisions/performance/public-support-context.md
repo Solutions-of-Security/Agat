@@ -82,8 +82,7 @@ requests, reference labels, predictions и model calls — 0.
 
 Независимый audit повторил grouping/input hashes и tokenization своим prompt
 wrapper: **257 checks pass**. Он сверил полный ordered inventory, raw profile,
-import/model/source pins и private modes. Первый failed PTY harness относится
-к прежнему review этапу и сюда не переносится как product failure.
+import/model/source pins и private modes.
 Full docs check: 813 Python tests / 4 expected optional skips, 12 Node,
 links и process catalog — pass. Последующее чтение `/metrics` подтвердило
 resident counters computed 1 / rejected 0 / failed 0 без новых inference.
