@@ -39,3 +39,37 @@ Warmup caller/wall durations ограничены timeout; сумма warmup и 
 `reportedCleanupComplete=true / liveCleanupVerified=false` отделяют
 recorded cleanup от нового live PID наблюдения. Native producer завершает
 собственный Popen и сверяет fresh absence до записи результата.
+
+## Native diagnostic 08.10 MSK
+
+Из `c1b44cc` завершены все **343 variants / 49 original cases / 44 groups**:
+**322 computed** (219 ok / 103 abstain), **21 full context rejections**,
+ноль not-attempted. 46 original cases из 42 groups вычислены во всех семи
+orders, три original cases целиком отклонены по длине.
+
+У **28/46** fully computed cases все `(status, reason, selected ID, value)`
+одинаковы; у **18/46** (18 groups) хотя бы одно поле меняется между orders.
+**46/46** original/repeat comparisons совпали, maximum probability delta
+у repeat — **0**. Maximum semantic probability delta относительно
+original order — **0,466296**. Cyclic argmax counts по positions 0–4:
+**44 / 47 / 48 / 50 / 41**, denominator 230 computed cyclic variants.
+Эти marginal counts не доказывают отсутствие order sensitivity; fixed
+order и отсутствие reference labels не позволяют выводить causal bias
+или classification accuracy.
+
+Измеренная фаза — **78 319,744 ms**; computed caller p50 **198,720 ms**,
+p95 **579,983 ms**, max **696,437 ms**. Physical accounting — **343**
+scheduled handlers / **345** с двумя warmup, zero origin / no recorded
+restart. **107** source bindings и 34 native dependencies сохранились.
+Все 46 original computed typed results совпали с прежним standalone
+run после удаления transport ID/duration; три original context errors
+тоже сохранились. Это контроль прежних responses, не gold labels.
+
+Independent audit — **2653 checks**, включая независимые softmax/policy,
+case/group/order/repeat summaries, raw files, metrics и fresh cleanup.
+Все три recorded owned PIDs отсутствуют. Protected resident сохранил
+четыре PID, 35 source pins и fresh before/after counters; actual boot/login
+не наблюдался. Восемь targeted tests и full **885 Python / 4 optional
+skips, 12 Node**, links/catalog прошли. [Allowlisted native summary](./public-option-permutation-diagnostic-summary.json)
+закрепляет raw SHA/seals и результаты; labels/owners/SLO/qualification
+остаются открытыми, routing false.
