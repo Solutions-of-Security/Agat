@@ -53,3 +53,10 @@ independent raw pins и новый sealed report. Full docs: **861 Python / 4
 optional skips, 12 Node**, links/catalog pass; 10 joint targeted tests.
 Owners/human review/calibration/holdout и actual boot/login остаются
 открытыми; routing false / not_assessed, success не меняет customer SLO.
+
+Private ZIP сохранён в исходном workspace: **9 entries / 524 381 bytes**,
+SHA `910fc62624313d6b72bb0d9eacb34b5f1c68e299ef30d30c859e1fd5da8d1523`.
+CRC, size и SHA каждого entry проверены после обоих записей. Два Git
+snapshot сохраняют все 97 verifier contributors; parent workflow archive
+повторно сверен по независимому raw SHA. [Archive receipt](./public-workflow-verifier-archive-summary.json)
+публикует только allowlisted metadata.
