@@ -367,6 +367,19 @@ Native PTY/SIGKILL/resume прошёл 65 audit checks; public 129-case pool п�
 synthetic fixtures. Финальный docs check: 806 Python / 4 optional skips,
 12 Node и links/catalog — pass.
 
+[Контекст публичных development-вопросов](./qualification/local-decisions/performance/public-support-context.md),
+08.10 MSK: profiler реконструирует pinned raw API/import corpus и выбирает
+весь прежний development split для offline tokenization. Точный prompt wrapper,
+профиль 0.12.3 / wired 4096 MiB и tokenizer/package pins сохраняются; длинные
+тексты остаются в inventory без усечения. Никакие reference labels или
+предсказания не создаются; следующий этап — capacity measurement на этом
+закреплённом наборе. Семь новых / 16 совместных targeted checks прошли.
+Native tokenizer получил 49 cases / 44 development groups: 46 помещаются
+в 2048 tokens, три имеют context_too_long; полный диапазон 188–9253 tokens.
+257 independent audit checks и 813 Python / 12 Node docs checks прошли.
+Context/profile/source pins сохранены; model calls и calibration/holdout
+tokenization — 0, resident counters 1/0/0 без дополнительных inference.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
