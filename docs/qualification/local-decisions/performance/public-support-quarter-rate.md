@@ -82,7 +82,7 @@ Actual boot/login остаётся awaiting_event.
 
 Full docs checks: **851 Python / 4 optional skips, 12 Node**, links/catalog
 pass. [Allowlisted summary](./public-support-quarter-rate-summary.json)
-сохраняет все denominators, предыдущий run и raw artifact SHA. Плановый
+сохраняет все denominators, предыдущий run и raw artifact SHA.
 [Постоянный архив](./public-quarter-archive-summary.json) сверяет CRC и SHA
 каждого файла после копирования и связывает предшествующие archives.
 Плановый
