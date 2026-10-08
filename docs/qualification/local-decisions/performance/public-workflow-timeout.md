@@ -69,6 +69,13 @@ preserved its evidence. A dedicated regression reproduced the mismatch before
 the contract comparison was corrected. This preparation failure is not a
 successful timeout experiment and does not enter the native denominator.
 
+The second attempt completed all 49 scheduled upstream POSTs and recorded the
+target timeout, but failed its final receipt comparison: the coordinator's
+JavaScript JSON writes integral floating-point values as integers. The verifier
+now reuses the existing strict JSON-number comparison from the caller SLI tools;
+booleans remain distinct from numbers and values cannot change. That failed run
+also remains separate. A new committed-source run supplies successful evidence.
+
 Native measurements and full-suite results are recorded after execution. All
 human labels, named owners, applicable calibration/holdout and customer SLO gates
 remain open; routing is false and qualification remains `not_assessed`.

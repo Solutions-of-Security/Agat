@@ -63,6 +63,20 @@ def fixture():
 
 
 class TimeoutInventoryTest(unittest.TestCase):
+    def test_coordinator_integer_serialization_of_integral_floats_preserves_result(self):
+        def numbers(value):
+            if type(value) is float and value.is_integer():return int(value)
+            if isinstance(value,dict):return {k:numbers(v) for k,v in value.items()}
+            if isinstance(value,list):return [numbers(v) for v in value]
+            return value
+        context, plan, cohort, routes, transport = fixture()
+        result=workflow.verify_inventory(context,plan,numbers(cohort),routes,transport)
+        self.assertEqual(result["physicalScheduledHttpHandlers"],6)
+        cohort=numbers(cohort)
+        cohort["traces"][0]["decisionObservations"][0]["observation"]["result"]["calibration"]["temperature"]=True
+        cohort["traces"][0]["decisionAssignmentHistory"]["stages"][0]["assignments"][0]["observation"]=copy.deepcopy(cohort["traces"][0]["decisionObservations"][0]["observation"])
+        with self.assertRaises(ValueError):workflow.verify_inventory(context,plan,cohort,routes,transport)
+
     def test_explicit_default_abstain_flags_preserve_contract_input_identity(self):
         context, plan, cohort, routes, transport = fixture()
         for row in transport["rows"]:

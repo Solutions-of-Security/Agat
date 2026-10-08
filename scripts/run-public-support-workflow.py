@@ -187,6 +187,10 @@ def main(argv=None):
         failure = {"type": type(error).__name__, "reason": str(error)[:200]}
     finally:
         if driver is not None: runtime.stop_owned_process(driver, owned, errors)
+        # A terminated Node driver cannot run its JavaScript finally block.
+        # This directory and its enrollment credential belong to this launch.
+        try: (directory/"worker-credentials.json").unlink(missing_ok=True)
+        except OSError as error: errors.append("workerCredentialStop:"+type(error).__name__)
         if process is not None and process.poll() is None: runtime.stop_owned_process(process, owned, errors)
         if reservation is not None and not reservation_closed:
             try: reservation.close()

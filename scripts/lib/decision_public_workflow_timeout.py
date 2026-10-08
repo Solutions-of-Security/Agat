@@ -13,6 +13,7 @@ from decision_runtime.contracts import Request, fields, fingerprint, number, par
 from decision_runtime.metrics import outcome
 from scripts.lib.decision_performance import validate_result
 from scripts.lib.decision_shadow_pilot import require, timestamp
+from scripts.lib.decision_shadow_sli import same_json
 
 PLAN_SCHEMA = "agat.decision.public-workflow-plan.v4"
 RESULT_SCHEMA = "agat.decision.public-workflow-result.v4"
@@ -114,7 +115,7 @@ def verify_transport(context, spec, transport, cohort, routes):
         else:
             require(row["withheld"] is False and row["downstreamWriteCompleted"] is True and row["clientEofObserved"] is False
                     and type(row["responseBytesWritten"]) is int and row["responseBytesWritten"] == len(response)
-                    and fingerprint(observation["result"]) == fingerprint(result), "Delivered response differs from durable result")
+                    and same_json(result, observation["result"]), "Delivered response differs from durable result")
         physical[outcome(result)] += 1; last_end = finished
     require(target is not None, "Timeout target is missing")
     return {"physicalScheduledOutcomes": dict(physical), "physicalScheduledHttpHandlers": count,
