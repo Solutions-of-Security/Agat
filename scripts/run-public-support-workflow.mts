@@ -24,14 +24,33 @@ assert.equal(healthResponse.status, 200);
 const health = await healthResponse.json() as any;
 assert.equal(health.profileSha256, input.context.profileSha256);
 const loss = input.runtimeLoss;
+const recovery = input.runtimeRecovery;
+assert.ok(!(loss && recovery));
 if (loss) {
   assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v2");
   assert.ok(Number.isInteger(loss.beforeIndex) && loss.beforeIndex > 0 && loss.beforeIndex < input.context.inputs.length);
   assert.equal(loss.kind, "stop_owned_runtime"); assert.equal(loss.restart, false);
   assert.equal(loss.boundary, "after_completed_previous_instance_before_next_creation");
   assert.equal(loss.endpoint, "reserve_original_loopback_port_with_tcp_reset_guard");
+} else if (recovery) {
+  assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v3");
+  assert.ok(Number.isInteger(recovery.targetIndex) && recovery.targetIndex > 0 && recovery.targetIndex < input.context.inputs.length-1);
+  const target = input.context.inputs[recovery.targetIndex];
+  assert.equal(target.contextEligible, true); assert.equal(recovery.targetCaseId, target.id); assert.equal(recovery.targetInputSha256, target.inputSha256);
+  assert.equal(recovery.kind, "crash_owned_runtime_during_active_http_handler"); assert.equal(recovery.signal, "SIGKILL");
+  assert.equal(recovery.trigger, "exactly_one_active_http_handler"); assert.equal(recovery.restart, true);
+  assert.equal(recovery.endpoint, "same_loopback_port_same_frozen_profile"); assert.equal(recovery.retryCount, 0);
+  assert.equal(recovery.warmupPerRuntime, 2); assert.equal(recovery.armDeadlineMs, 30000); assert.equal(recovery.recoveryDeadlineMs, 90000);
+  assert.equal(recovery.workflowDeadlineMs, 240000);
 } else assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v1");
 let runtimeLossApplied: any;
+let crashArmed: any; let crashApplied: any; let recoveryApplied: any;
+function publish(name: string, data: unknown) {
+  const pending = name.replace(/\.json$/, ".pending.json"); save(pending, data);
+  try { fs.linkSync(path.join(directory, pending), path.join(directory, name)); }
+  finally { fs.unlinkSync(path.join(directory, pending)); }
+}
+function digest(name: string) { return createHash("sha256").update(fs.readFileSync(path.join(directory, name))).digest("hex"); }
 const config = { mode: "shadow", profileJson: health.profileJson, timeoutMs: 10000, ...input.config };
 const store = new AgatStore(":memory:", { seedDemo: false, decisionShadowEnabled: true });
 store.updateModelRouterPolicy({ enabled: false });
@@ -84,7 +103,7 @@ try {
   const processId = String(store.createProcess({ name: "Whole public inventory integration; fixture primary", graph }).id);
   store.publishProcess(processId);
   const startAt = new Date(Date.now()+1000).toISOString();
-  const recipe = { schemaVersion: loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), mode: "serial_closed_model_integration",
+  const recipe = { schemaVersion: recovery ? "agat.decision.public-workflow-plan.v3" : loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), ...(recovery ? { runtimeRecovery: recovery } : {}), mode: "serial_closed_model_integration",
     primary: "fixture_chat_completions", processId, processVersion: 1, projectId: "default", startAt,
     scopeEndRule: "after_full_input_inventory_and_worker_drain", config: input.config, profileSha256: health.profileSha256,
     inputs: input.context.inputs.map((row: any) => ({ caseId: row.id, inputSha256: row.inputSha256 })),
@@ -97,7 +116,16 @@ try {
     { cwd: process.cwd(), stdio: ["ignore", workerLog, workerLog], env: { ...environment, AGAT_ENROLLMENT_TOKEN: enrollmentToken,
       OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" } });
   await new Promise(resolve => setTimeout(resolve, Math.max(0, Date.parse(startAt)-Date.now())));
-  const globalDeadline = Date.now()+240000;
+  const globalDeadline = Date.now()+(recovery?.workflowDeadlineMs ?? 240000);
+  async function waitReceipt(name: string, budget: number) {
+    const deadline = Math.min(Date.now()+budget, globalDeadline);
+    while (!fs.existsSync(path.join(directory, name))) {
+      assert.ok(Date.now()<deadline, `Owned runtime barrier ${name} was not acknowledged`);
+      assert.equal(worker!.exitCode, null); assert.equal(worker!.signalCode, null);
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return JSON.parse(fs.readFileSync(path.join(directory, name), "utf8"));
+  }
   for (const [index, item] of input.context.inputs.entries()) {
     assert.equal(worker.exitCode, null, "Owned worker exited early"); assert.equal(worker.signalCode, null);
     if (loss && index === loss.beforeIndex) {
@@ -120,7 +148,21 @@ try {
       assert.ok(Number.isInteger(runtimeLossApplied.runtimeExitCode));
       assert.ok(Date.parse(runtimeLossApplied.appliedAt) >= Date.parse(request.createdAt));
     }
+    if (recovery && index === recovery.targetIndex) {
+      const request = { schemaVersion: "agat.decision.public-workflow-crash-request.v1", targetIndex: index,
+        afterCaseId: routes.at(-1).caseId, afterRunId: routes.at(-1).runId, createdAt: new Date().toISOString() };
+      publish("runtime-crash-request.json", request);
+      crashArmed = await waitReceipt("runtime-crash-armed.json", recovery.armDeadlineMs);
+      assert.equal(crashArmed.schemaVersion, "agat.decision.public-workflow-crash-armed.v1");
+      assert.equal(crashArmed.targetIndex, index); assert.equal(crashArmed.requestFileSha256, digest("runtime-crash-request.json"));
+      assert.equal(crashArmed.port, Number(url.port)); assert.equal(crashArmed.profileSha256, health.profileSha256);
+      assert.ok(Number.isInteger(crashArmed.runtimePid) && crashArmed.runtimePid > 0);
+      assert.ok(Date.parse(crashArmed.armedAt) >= Date.parse(request.createdAt));
+    }
     const beforeCalls = primaryCalls; const instance = store.startProcess(processId, { input: item.request.state })!;
+    if (recovery && index === recovery.targetIndex) publish("runtime-crash-started.json", {
+      schemaVersion: "agat.decision.public-workflow-crash-started.v1", targetIndex: index, caseId: item.id,
+      inputSha256: item.inputSha256, instanceId: String(instance.id), runId: String(instance.runId), createdAt: new Date().toISOString() });
     const runId = String(instance.runId); const deadline = Math.min(Date.now()+20000, globalDeadline);
     while (store.getRun(runId)!.status !== "completed") {
       assert.equal(worker.exitCode, null); assert.ok(Date.now()<deadline, "Workflow inventory deadline exceeded");
@@ -136,6 +178,26 @@ try {
       wrongBranch: stages.some(s => s.processNodeId === "wrong"), runStatus: run.status };
     routes.push(route);
     fs.appendFileSync(path.join(directory, "workflow-routes.jsonl"), JSON.stringify(route)+"\n", { mode: 0o600 });
+    if (recovery && index === recovery.targetIndex) {
+      assert.equal(observations[0].observation.status, "unavailable"); assert.equal(observations[0].observation.reason, "unreachable");
+      assert.equal(Object.hasOwn(observations[0].observation, "result"), false);
+      crashApplied = await waitReceipt("runtime-crash-applied.json", recovery.armDeadlineMs);
+      assert.equal(crashApplied.schemaVersion, "agat.decision.public-workflow-crash-applied.v1");
+      assert.equal(crashApplied.targetIndex, index); assert.equal(crashApplied.runtimePid, crashArmed.runtimePid);
+      assert.equal(crashApplied.runtimeExitCode, -9); assert.equal(crashApplied.runtimeExited, true); assert.equal(crashApplied.signal, "SIGKILL");
+      assert.equal(crashApplied.port, Number(url.port)); assert.equal(crashApplied.profileSha256, health.profileSha256);
+      assert.equal(crashApplied.startedFileSha256, digest("runtime-crash-started.json"));
+      const request = { schemaVersion: "agat.decision.public-workflow-recovery-request.v1", targetIndex: index,
+        afterCaseId: item.id, afterRunId: runId, stageId: route.stageId, observation: observations[0].observation, createdAt: new Date().toISOString() };
+      publish("runtime-recovery-request.json", request);
+      recoveryApplied = await waitReceipt("runtime-recovery-applied.json", recovery.recoveryDeadlineMs);
+      assert.equal(recoveryApplied.schemaVersion, "agat.decision.public-workflow-recovery-applied.v1");
+      assert.equal(recoveryApplied.targetIndex, index); assert.equal(recoveryApplied.requestFileSha256, digest("runtime-recovery-request.json"));
+      assert.equal(recoveryApplied.crashSealSha256, crashApplied.sha256); assert.equal(recoveryApplied.port, Number(url.port));
+      assert.equal(recoveryApplied.profileSha256, health.profileSha256); assert.equal(recoveryApplied.warmupCount, 2);
+      assert.ok(Number.isInteger(recoveryApplied.runtimePid) && recoveryApplied.runtimePid > 0 && recoveryApplied.runtimePid !== crashArmed.runtimePid);
+      assert.ok(Date.parse(recoveryApplied.appliedAt) >= Date.parse(request.createdAt));
+    }
   }
   await stopWorker(); assert.equal(worker.exitCode, 0, "Worker did not drain cleanly");
   await new Promise(resolve => setTimeout(resolve, 5));
@@ -148,6 +210,7 @@ try {
   fs.writeFileSync(path.join(directory, "cohort.http.json"), raw, { flag: "wx", mode: 0o600 });
   save("workflow-driver.json", { status: "observed", primary: "fixture_chat_completions", primaryCalls, routes, nodeVersion: process.version,
     ...(loss ? { runtimeLossApplied } : {}), ownedPids: [process.pid, worker.pid], workerExitCode: worker.exitCode, actualWindow: { startAt, endAt },
+    ...(recovery ? { runtimeRecovery: { armed: crashArmed, crashed: crashApplied, recovered: recoveryApplied } } : {}),
     unauthenticatedStatus: 401, authenticatedStatus: response.status, ownersAppointed: false, routingEnabled: false, qualification: "not_assessed" });
   console.log(JSON.stringify({ status: "observed", inputs: routes.length, primaryFixtureCalls: primaryCalls }));
 } finally {

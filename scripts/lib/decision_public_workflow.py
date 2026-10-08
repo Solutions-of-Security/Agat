@@ -10,6 +10,7 @@ from scripts.lib.decision_public_load import validate_context
 from scripts.lib.decision_public_load_verification import distribution
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from scripts.lib.decision_public_workflow_loss import PLAN_SCHEMA as LOSS_PLAN_SCHEMA, RESULT_SCHEMA as LOSS_RESULT_SCHEMA, loss_spec
+from scripts.lib import decision_public_workflow_recovery as recovery
 
 PLAN_SCHEMA = "agat.decision.public-workflow-plan.v1"
 RESULT_SCHEMA = "agat.decision.public-workflow-result.v1"
@@ -36,11 +37,17 @@ def verify_inventory(context, plan, cohort, routes):
     """Account against the original case list, not just returned observations."""
     validate_context(context); config = shared_config(context); count = len(context["inputs"])
     loss = plan["schemaVersion"] == LOSS_PLAN_SCHEMA
+    recovering = plan["schemaVersion"] == recovery.PLAN_SCHEMA
     if loss:
         require(fingerprint(plan.get("runtimeLoss")) == fingerprint(loss_spec(context, plan["runtimeLoss"]["beforeIndex"])), "Runtime loss was not prospectively specified")
     else:
         require("runtimeLoss" not in plan, "Historical v1 cannot admit a runtime loss")
-    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
+    if recovering:
+        require(fingerprint(plan.get("runtimeRecovery")) == fingerprint(recovery.recovery_spec(context, plan["runtimeRecovery"]["targetIndex"])),
+                "Runtime recovery was not prospectively specified")
+    else:
+        require("runtimeRecovery" not in plan, "Historical v1/v2 cannot admit crash/recovery")
+    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
             and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
             and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
             and type(plan["processVersion"]) is int and plan["processVersion"] == 1
@@ -104,7 +111,7 @@ def verify_inventory(context, plan, cohort, routes):
                 and exported["profileSha256"] == assigned["profileSha256"] == context["profileSha256"]
                 and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == 10000
                 and fingerprint(exported["observation"]) == fingerprint(assigned["observation"]), "Observation binding differs")
-        lost = loss and index >= plan["runtimeLoss"]["beforeIndex"]
+        lost = (loss and index >= plan["runtimeLoss"]["beforeIndex"]) or (recovering and index == plan["runtimeRecovery"]["targetIndex"])
         observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "callerTiming"} | (set() if lost else {"result"}))
         require(observation["mode"] == "shadow" and observation["fallback"] == "primary", "Shadow routing changed")
         if lost:
@@ -127,9 +134,10 @@ def verify_inventory(context, plan, cohort, routes):
         if lost: unavailable_timings.append(timing["durationMs"])
         else: physical[outcome(result)] += 1
         if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
-    return sealed({"schemaVersion": LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+    return sealed({"schemaVersion": recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
         "completedInstances": count, "boundCallerReturns": count, "computed": len(timings), "statuses": dict(statuses),
         **({"runtimeLoss": plan["runtimeLoss"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if loss else {}),
+        **({"runtimeRecovery": plan["runtimeRecovery"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if recovering else {}),
         "callerMsComputed": distribution(timings), "physicalScheduledOutcomes": dict(physical), "primaryFixtureCalls": count,
         "primaryRoutePreserved": True, "caseInputsUnchanged": True, "referenceLabels": 0, "classificationAccuracyMeasured": False,
         "primary": "fixture_chat_completions", "mode": "serial_closed_model_integration", "ownersAppointed": False,
