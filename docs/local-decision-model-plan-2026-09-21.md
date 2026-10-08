@@ -322,14 +322,37 @@ zero/legacy data не проходят как успешный пилот. На�
 реальный permitted workflow/owners и human review/calibration/holdout;
 actual boot/login остаётся открытым. Routing false, qualification not_assessed.
 
+[Authenticated capture shadow cohort](./qualification/local-decisions/shadow/observability/shadow-pilot-collection.md),
+08.10 MSK: новый collector получает exact HTTP bytes по pinned completed plan
+одним direct GET, без redirects/retries/ambient proxy. Remote HTTPS сохраняет
+certificate/hostname checks; loopback допускает HTTP. Отдельный network child
+ограничен общим deadline и reaped при timeout. Raw export до 16 MiB, private
+immutable receipt, source pins и plan/census binding проверяются до сохранения.
+Server build, owners, eligibility и population этим не аттестуются; SLO/routing
+false, qualification not_assessed. Семь новых transport/CLI regressions прошли.
+Нативная цепочка coordinator → collector → evaluator сохранила четыре intents;
+80 audit checks подтвердили pins и ratios. Настоящий self-signed TLS server
+отклонён до HTTP request, без keylog/usable export. Model calls 0,
+793 Python / 12 Node docs checks прошли; timings/window/owners — fixtures.
+
 CI evaluator обнаружил отказ worker restart/shutdown. [Signal shutdown fix](./qualification/local-decisions/performance/worker-signal-shutdown.md)
 устраняет подтверждённый Event-lock deadlock: настоящий SIGTERM/SIGINT
 больше не вызывает synchronization внутри handler; admission прекращается,
-активные futures drain. Три before/after regressions и 152 worker checks
+активные futures drain. Три before/after regressions, 149/152 worker checks
+(3 optional skips) и полный native PostgreSQL Fleet/HA 113/113 без skips
 прошли; failed CI log сохранён, successor/cleanup diagnostics усилены.
+Все CI/CodeQL checks PR 154 прошли, этап слит в main.
 [Owner source review](./qualification/local-decisions/shadow/observability/owner-source-evidence.md)
 подтвердил public maintainer @TitanUser по pinned CODEOWNERS/Git bytes/API;
 это runtime owner candidate, не business appointment или SLO acceptance.
+
+[Evidence archive](./qualification/local-decisions/shadow/observability/pilot-evidence-archive-summary.json):
+63 files / четыре закреплённых Git states, 5 073 370 bytes; CRC и SHA каждого
+файла проверены после копирования ZIP в `docs/private` исходного workspace.
+Архив сохраняет native census/evaluator/collector, TLS refusal, worker signals,
+PostgreSQL logs и первичные owner sources; customer traces, model weights и
+TLS private key в этот архив не включались. Это инженерный протокол, без
+human reference labels, qualification или принятия SLO.
 
 ## Вывод: что именно можно воспроизвести
 
