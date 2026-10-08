@@ -88,6 +88,11 @@ sources, profile/registration/plists и counters **1 computed / 0 rejected /
 **12 Node tests**, local links и process catalog — pass.
 [Allowlisted summary](./public-support-http-load-summary.json) сохраняет
 counts, timings и evidence pins; исходные вопросы/ответы остаются private.
+[Проверенный evidence archive](./public-performance-archive-summary.json)
+сохраняет raw API/import/context/load, independent audit, resident checks,
+test logs и четыре Git states. CRC/SHA/size каждого файла повторно проверены
+после новой копии в `docs/private` исходного workspace; предыдущие архивы
+не заменяются.
 Следующий инженерный шаг — повторяемая source-bound проверка такого evidence
 и реальный public inventory при явно учтённом primary workload. Human review,
 calibration/holdout и real permitted workflow/owners/SLO остаются внешними gates.
