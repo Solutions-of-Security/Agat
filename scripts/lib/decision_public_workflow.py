@@ -1,0 +1,122 @@
+"""Whole public inventory through worker/coordinator; primary is a fixture."""
+from collections import Counter
+from copy import deepcopy
+
+from decision_runtime.contracts import Request, fields, fingerprint, number
+from decision_runtime.artifacts import sealed
+from decision_runtime.metrics import outcome
+from scripts.lib.decision_performance import validate_result
+from scripts.lib.decision_public_load import validate_context
+from scripts.lib.decision_public_load_verification import distribution
+from scripts.lib.decision_shadow_pilot import require, timestamp
+
+PLAN_SCHEMA = "agat.decision.public-workflow-plan.v1"
+RESULT_SCHEMA = "agat.decision.public-workflow-result.v1"
+PROFILE_PATH = "docs/qualification/local-decisions/performance/profiles/runtime-0.12.3-wired-4096.json"
+SOURCE_PATHS = ["decision_runtime", "workers", "apps/coordinator/src", "scripts/lib",
+    "scripts/run-public-support-workflow.py", "scripts/run-public-support-workflow.mts",
+    "scripts/test/test_decision_public_workflow.py", "scripts/run-public-support-load.py",
+    "scripts/run-decision-arrival-rate.py", "scripts/verify-decision-arrival-rate.py",
+    "scripts/run-temporal-real-rag.py", "scripts/profile-embedding-rag.py", "package.json", "package-lock.json",
+    "apps/coordinator/package.json", PROFILE_PATH, "docs/qualification/local-decisions/policy.shadow.v1.json",
+    "docs/qualification/local-decisions/performance/evidence/2026-09-28/rag-http-isolation/resident-isolated/rag-workflow-plan.json"]
+
+
+def shared_config(context):
+    validate_context(context)
+    first = context["inputs"][0]["request"]
+    config = {key: deepcopy(first[key]) for key in ("kind", "question", "options")}
+    require(all(fingerprint({key: row["request"][key] for key in config}) == fingerprint(config)
+                for row in context["inputs"]), "One published workflow requires identical decision configuration")
+    return config
+
+
+def verify_inventory(context, plan, cohort, routes):
+    """Account against the original case list, not just returned observations."""
+    validate_context(context); config = shared_config(context); count = len(context["inputs"])
+    require(plan["schemaVersion"] == PLAN_SCHEMA and plan["mode"] == "serial_closed_model_integration"
+            and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
+            and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
+            and type(plan["processVersion"]) is int and plan["processVersion"] == 1
+            and plan["profileSha256"] == context["profileSha256"] and fingerprint(plan["config"]) == fingerprint(config)
+            and plan["inputs"] == [{"caseId": row["id"], "inputSha256": row["inputSha256"]} for row in context["inputs"]],
+            "Workflow plan changed inventory, profile, primary or authority")
+    start = timestamp(plan["startAt"], "plan.startAt")
+    require(cohort["schemaVersion"] == "agat.decision.shadow-cohort.v1" and cohort["snapshot"]["storedCohortComplete"] is True
+            and cohort["snapshot"]["truncated"] is False and cohort["snapshot"]["consistency"] == "single_database_snapshot"
+            and all(type(cohort["counts"][key]) is int for key in ("instances", "runs", "storedShadowStages"))
+            and cohort["counts"]["instances"] == cohort["counts"]["runs"] == cohort["counts"]["storedShadowStages"] == count,
+            "Whole stored cohort was not captured")
+    scope = cohort["scope"]
+    require(scope["projectId"] == plan["projectId"] and scope["processId"] == plan["processId"]
+            and type(scope["processVersion"]) is int and scope["processVersion"] == 1 and scope["startAt"] == plan["startAt"]
+            and scope["boundary"] == "process_instance_created_at_half_open", "Wrong workflow scope")
+    end = timestamp(scope["endAt"], "scope.endAt")
+    require(start < end <= timestamp(cohort["observedAt"], "observedAt") and (end-start).total_seconds() <= 300,
+            "Incomplete or excessive actual creation window")
+    require(cohort["sloAccepted"] is False and cohort["routingEnabled"] is False and cohort["qualification"] == "not_assessed",
+            "Lab cohort promoted to customer qualification")
+    require(fingerprint(cohort["dataPolicy"]) == fingerprint({"taskInputsIncluded": False, "questionOptionsIncluded": False,
+            "primaryOutputsIncluded": False, "eventsIncluded": False, "artifactsIncluded": False,
+            "decisionProfileAndResultMetadataIncluded": True}), "Cohort exports task or primary content")
+    require(len(routes) == len(cohort["instances"]) == len(cohort["traces"]) == count
+            and len({row["runId"] for row in routes}) == len({row["instanceId"] for row in routes}) == count,
+            "Missing, extra or repeated workflow records")
+    instances = {row["runId"]: row for row in cohort["instances"]}; traces = {row["run"]["id"]: row for row in cohort["traces"]}
+    require(set(instances) == set(traces) == {row["runId"] for row in routes}, "Cohort run identities differ")
+    statuses = Counter(); physical = Counter(); timings = []; expected_profiles = context["profile"]
+    for index, (case, route) in enumerate(zip(context["inputs"], routes)):
+        fields(route, {"index", "caseId", "inputSha256", "instanceId", "runId", "stageId", "primaryCalls", "primaryBranch", "wrongBranch", "runStatus"})
+        require(type(route["index"]) is int and route["index"] == index and route["caseId"] == case["id"]
+                and route["inputSha256"] == case["inputSha256"] and type(route["primaryCalls"]) is int and route["primaryCalls"] == 1
+                and route["primaryBranch"] is True and route["wrongBranch"] is False and route["runStatus"] == "completed",
+                "Reordered input, retried primary or changed primary branch")
+        instance = instances[route["runId"]]
+        require(instance["instanceId"] == route["instanceId"] and type(instance["processVersion"]) is int and instance["processVersion"] == 1
+                and instance["status"] == "completed" and instance["replayOfInstanceId"] is None and instance["replayMode"] != "safe"
+                and start <= timestamp(instance["createdAt"], "instance.createdAt") < end, "Wrong instance or replay in creation cohort")
+        trace = traces[route["runId"]]
+        require(trace["truncated"] is False, "Truncated cohort trace")
+        inventories = [trace[key]["stages"] for key in ("decisionStageInventory", "decisionCallerAccounting", "decisionAssignmentHistory")]
+        require(all(len(rows) == 1 and rows[0]["stageId"] == route["stageId"] for rows in inventories)
+                and len(trace["decisionObservations"]) == 1, "Shadow stage omitted, repeated or rebound")
+        stage, caller, history = (rows[0] for rows in inventories)
+        require(stage["stageStatus"] == "completed" and stage["assigned"] is True and stage["observationRecorded"] is True
+                and stage["inputSha256"] == case["inputSha256"] and stage["profileSha256"] == context["profileSha256"]
+                and type(stage["callerTimeoutMs"]) is int and stage["callerTimeoutMs"] == 10000,
+                "Input was transformed, profile changed or shadow not recorded")
+        require(caller["coverage"] == history["coverage"] == "complete" and len(caller["assignments"]) == len(history["assignments"]) == 1,
+                "Incomplete or retried assignment ledger")
+        intent = caller["assignments"][0]; assigned = history["assignments"][0]
+        require(intent["assignmentId"] == assigned["assignmentId"] and type(intent["stageAttempt"]) is int and intent["stageAttempt"] == 1
+                and type(assigned["stageAttempt"]) is int and assigned["stageAttempt"] == 1
+                and intent["negotiated"] is True and intent["intent"] is True and intent["outcome"] == "returned"
+                and assigned["outcome"] == "recorded", "Missing actual caller intent or return")
+        exported = trace["decisionObservations"][0]
+        fields(exported, {"stageId", "profileSha256", "inputSha256", "callerTimeoutMs", "observation"})
+        require(exported["stageId"] == route["stageId"] and exported["inputSha256"] == assigned["inputSha256"] == case["inputSha256"]
+                and exported["profileSha256"] == assigned["profileSha256"] == context["profileSha256"]
+                and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == 10000
+                and fingerprint(exported["observation"]) == fingerprint(assigned["observation"]), "Observation binding differs")
+        observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "result", "callerTiming"})
+        require(observation["mode"] == "shadow" and observation["fallback"] == "primary", "Shadow routing changed")
+        request = Request.from_dict({**case["request"], "id": route["stageId"]})
+        validate_result(observation["result"], request, expected_profiles)
+        result = observation["result"]
+        require(observation["status"] == result["status"] and observation["reason"] == result["reason"], "Stored status differs")
+        require((result["status"] in {"ok", "abstain"} and case["contextEligible"] is True and result["inputTokens"] == case["inputTokens"])
+                or (result["status"] == "error" and result["reason"] == "context_too_long" and case["contextEligible"] is False),
+                "Unexpected computation or missing whole-input rejection")
+        timing = fields(observation["callerTiming"], {"schemaVersion", "clock", "boundary", "durationMs"})
+        require(timing["schemaVersion"] == "agat.decision.caller-timing.v1" and timing["clock"] == "monotonic"
+                and timing["boundary"] == "local_http_call" and number(timing["durationMs"], 0, 10001) >= result["durationMs"]-.1
+                and fingerprint(intent["returned"]) == fingerprint({"callerTiming": timing, "status": result["status"], "reason": result["reason"]}),
+                "Caller timing or durable return differs")
+        statuses[result["status"]] += 1; physical[outcome(result)] += 1
+        if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
+    return sealed({"schemaVersion": RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+        "completedInstances": count, "boundCallerReturns": count, "computed": len(timings), "statuses": dict(statuses),
+        "callerMsComputed": distribution(timings), "physicalScheduledOutcomes": dict(physical), "primaryFixtureCalls": count,
+        "primaryRoutePreserved": True, "caseInputsUnchanged": True, "referenceLabels": 0, "classificationAccuracyMeasured": False,
+        "primary": "fixture_chat_completions", "mode": "serial_closed_model_integration", "ownersAppointed": False,
+        "sloAccepted": False, "representativeAgatTraffic": False, "routingEnabled": False, "qualification": "not_assessed"})
