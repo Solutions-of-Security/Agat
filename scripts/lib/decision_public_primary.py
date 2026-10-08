@@ -14,8 +14,14 @@ SOURCE_PATHS = [*primary.PRIMARY_SOURCES, "scripts/lib/decision_public_primary.p
 
 
 class PrimaryInventory:
-    def __init__(self, transport, origin, count, cancelled, journal=None, driver=drive_arrivals):
-        require(type(count) is int and 1 <= count <= 60 and callable(transport) and callable(cancelled), "Unsupported public primary inventory")
+    def __init__(self, transport, origin, count, cancelled, journal=None, driver=None, *, extended=False):
+        require(type(extended) is bool and type(count) is int and 1 <= count <= (120 if extended else 60)
+                and callable(transport) and callable(cancelled), "Unsupported public primary inventory")
+        if extended:
+            from scripts.lib.decision_public_schedule import drive_extended_arrivals
+            driver = drive_extended_arrivals if driver is None else driver
+        else:
+            driver = drive_arrivals if driver is None else driver
         number(origin, 0, 86_400_000_000)
         self.transport,self.origin,self.count,self.cancelled,self.journal,self.driver = transport,origin,count,cancelled,journal,driver
         self.rows = [None]*count; self.failure = None; self.lock = threading.Lock()
@@ -62,14 +68,22 @@ def verify_plan(config, sources):
 
 
 def verify_phase(phase, count):
-    require(phase["schemaVersion"] == SCHEMAS[2] and phase["condition"] == "primary_active", "Wrong public primary condition")
+    extended = phase["schemaVersion"] != SCHEMAS[2]
+    if extended:
+        from scripts.lib.decision_public_schedule import SCHEMAS as extended_schemas
+        require(phase["schemaVersion"] == extended_schemas[2], "Unsupported public primary phase")
+    require(type(count) is int and 1 <= count <= (120 if extended else 60)
+            and phase["condition"] == "primary_active",
+            "Wrong public primary condition")
+    if extended:
+        require(count == len(phase["rows"])*2 and phase["ratePerSecond"] == .25, "Primary does not cover the whole quarter-rate window")
     number(phase["phaseOriginMonotonicMs"],0,86_400_000_000_000)
     rows = phase["primaryRows"]
     require(isinstance(rows,list) and len(rows) == count, "Primary scheduled denominator differs")
     intervals = []; drops = Counter(); returned = []
     for index,row in enumerate(rows):
         fields(row,{"index","scheduledMs","dispatchMs","status"},{"reason","startedMs","finishedMs","wallMs","response"})
-        require(type(row["index"]) is int and row["index"] == index and abs(number(row["scheduledMs"],0,120000)-index*2000) <= .0011, "Primary fixed offsets differ")
+        require(type(row["index"]) is int and row["index"] == index and abs(number(row["scheduledMs"],0,240000 if extended else 120000)-index*2000) <= .0011, "Primary fixed offsets differ")
         lag = number(row["dispatchMs"],0,phase["elapsedMs"]+.0011)-row["scheduledMs"]
         require(lag >= -.0011,"Primary dispatched early")
         if row["status"] == "dropped":

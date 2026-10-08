@@ -88,8 +88,17 @@ def historical_context_sources(root, value):
         require(hashlib.sha256(raw).hexdigest() == digest, "Context historical source bytes differ")
 
 
-def run_inventory(client, inputs, profile, *, cancelled=lambda: False, journal=None, driver=drive_arrivals, origin=None):
+def run_inventory(client, inputs, profile, *, cancelled=lambda: False, journal=None, driver=None, origin=None, schedule=None):
     require(isinstance(inputs, list) and 1 <= len(inputs) <= 60, "Unsupported corpus arrival inventory")
+    rate = .5; phase_schema = PHASE_SCHEMA
+    if schedule is not None:
+        from scripts.lib import decision_public_schedule as extended
+        original = {**schedule, "ratePerSecond": .5, "windowSeconds": len(inputs)*2}
+        require(fingerprint(schedule) == fingerprint(extended.lower_schedule(original, len(inputs))), "Invalid prospective public schedule")
+        rate = .25; phase_schema = extended.SCHEMAS[2]
+        driver = extended.drive_extended_arrivals if driver is None else driver
+    else:
+        driver = drive_arrivals if driver is None else driver
     requests = [Request.from_dict(row["request"]) for row in inputs]
     require(all(request.id == case["id"] and request.input_sha256 == case["inputSha256"]
                 for request, case in zip(requests, inputs)), "Corpus request binding differs")
@@ -121,8 +130,8 @@ def run_inventory(client, inputs, profile, *, cancelled=lambda: False, journal=N
             if reason or not capacity.acquire(blocking=False):
                 save(index, {**base, "status": "dropped", "reason": reason or "client_capacity"})
             else: futures.append(pool.submit(one,index,base))
-        driver(.5,len(inputs),1,100,dispatch,cancelled=cancelled,start=origin)
+        driver(rate,len(inputs),1,100,dispatch,cancelled=cancelled,start=origin)
         for future in futures: future.result()
-    return {"schemaVersion": PHASE_SCHEMA, "ratePerSecond": .5, "clientSlots": 1, "maxSchedulerLagMs": 100,
+    return {"schemaVersion": phase_schema, "ratePerSecond": rate, "clientSlots": 1, "maxSchedulerLagMs": 100,
             "callerTimeoutMs": 10000, "thresholdMs": 5000, "elapsedMs": round((time.monotonic()-origin)*1000,3),
             "rows": rows, "summary": summarize(rows,5000)}

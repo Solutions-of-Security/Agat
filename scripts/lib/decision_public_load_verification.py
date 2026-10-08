@@ -15,6 +15,7 @@ from scripts.lib.decision_arrival_rate import SOURCE_PATHS
 from scripts.lib.decision_performance import profile_from_health, validate_result
 from scripts.lib.decision_public_load import PLAN_SCHEMA, RESULT_SCHEMA, PHASE_SCHEMA, validate_context
 from scripts.lib import decision_public_primary as companion
+from scripts.lib import decision_public_schedule as extended
 from scripts.lib.decision_public_sources import pinned_input
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from workers.local_decisions import CALLER_TIMING_VERSION
@@ -101,13 +102,15 @@ def distribution(values):
 
 
 def verify_phase(phase, plan):
-    mixed = plan.get("schemaVersion") == companion.SCHEMAS[0]
+    reduced = plan.get("schemaVersion") == extended.SCHEMAS[0]
+    mixed = reduced or plan.get("schemaVersion") == companion.SCHEMAS[0]
     fields(phase, {"schemaVersion", "ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs", "elapsedMs", "rows", "summary"}
            | ({"condition", "phaseOriginMonotonicMs", "primaryRows"} if mixed else set()))
-    require(phase["schemaVersion"] == (companion.SCHEMAS[2] if mixed else PHASE_SCHEMA), "Unsupported public load phase")
+    require(phase["schemaVersion"] == (extended.SCHEMAS[2] if reduced else companion.SCHEMAS[2] if mixed else PHASE_SCHEMA), "Unsupported public load phase")
     same({key: phase[key] for key in ("ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs")},
          {key: plan["schedule"][key] for key in ("ratePerSecond", "clientSlots", "maxSchedulerLagMs", "callerTimeoutMs", "thresholdMs")}, "Phase budget differs")
-    elapsed = number(phase["elapsedMs"], 0, len(plan["inputs"])*2000 + (31000 if mixed else 11000))
+    interval = 4000 if reduced else 2000
+    elapsed = number(phase["elapsedMs"], 0, len(plan["inputs"])*interval + (31000 if mixed else 11000))
     rows = phase["rows"]
     require(isinstance(rows, list) and len(rows) == len(plan["inputs"]), "Incomplete scheduled denominator")
     admitted = []; scored = []; good = []; drops = Counter(); intervals = []; known = Counter(); unknown = 0
@@ -116,7 +119,7 @@ def verify_phase(phase, plan):
         same({key: row[key] for key in ("index", "caseId", "inputSha256", "inputTokens", "contextEligible")},
              {"index": index, "caseId": case["id"], "inputSha256": case["inputSha256"], "inputTokens": case["inputTokens"],
               "contextEligible": case["contextEligible"]}, "Reordered or rebound input row")
-        require(abs(number(row["scheduledMs"], 0, 120000) - index * 2000) <= .0011, "Response-paced arrival schedule")
+        require(abs(number(row["scheduledMs"], 0, 240000 if reduced else 120000) - index * interval) <= .0011, "Response-paced arrival schedule")
         lag = number(row["dispatchMs"], 0, elapsed + .0011) - row["scheduledMs"]
         require(lag >= -.0011, "Arrival dispatched early")
         if row["status"] == "dropped":
@@ -173,10 +176,12 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
            "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
            "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}
     context = validate_context(parse_json(raw["context"]))
-    parsed_plan = parse_json(raw["plan"]); mixed = parsed_plan.get("schemaVersion") == companion.SCHEMAS[0]
-    plan = verify_seal(parsed_plan, companion.SCHEMAS[0] if mixed else PLAN_SCHEMA)
-    fields(plan, PLAN_FIELDS | ({"primary", "condition"} if mixed else set()))
-    result = verify_seal(parse_json(raw["result"]), companion.SCHEMAS[1] if mixed else RESULT_SCHEMA)
+    parsed_plan = parse_json(raw["plan"]); reduced = parsed_plan.get("schemaVersion") == extended.SCHEMAS[0]
+    mixed = reduced or parsed_plan.get("schemaVersion") == companion.SCHEMAS[0]
+    schemas = extended.SCHEMAS if reduced else companion.SCHEMAS if mixed else (PLAN_SCHEMA, RESULT_SCHEMA, PHASE_SCHEMA)
+    plan = verify_seal(parsed_plan, schemas[0])
+    fields(plan, PLAN_FIELDS | ({"primary", "condition"} if mixed else set()) | ({"scheduleAdjustment"} if reduced else set()))
+    result = verify_seal(parse_json(raw["result"]), schemas[1])
     fields(result, RESULT_FIELDS | ({"primaryWarmup", "primaryRows"} if mixed else set()))
     unqualified(plan); unqualified(result)
     require(result["status"] == "observed" and result["planSha256"] == plan["sha256"] and result["failure"] is None
@@ -190,10 +195,12 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
             and plan["backgroundWorkloadControlled"] is False, "Context binding or workload scope differs")
     for key, source_key in (("profile", "profile"), ("profileFileSha256", "profileFileSha256"), ("profileSha256", "profileSha256"),
                             ("manifestFileSha256", "manifestFileSha256"), ("model", "model"), ("runtime", "tokenizerEnvironment"),
-                            ("inputs", "inputs"), ("schedule", "proposedDiagnosticSchedule")):
+                            ("inputs", "inputs")):
         same(plan[key], context[source_key], "Plan differs from pinned context inventory/profile")
+    primary_count = extended.verify_plan(plan, context) if reduced else len(plan["inputs"])
+    if not reduced: same(plan["schedule"], context["proposedDiagnosticSchedule"], "Plan schedule differs from pinned context")
     sources_at(root, context["sourceCommit"], context["sourceFiles"], CONTEXT_PATHS)
-    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], LOAD_PATHS + (companion.SOURCE_PATHS if mixed else []))
+    sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], LOAD_PATHS + (companion.SOURCE_PATHS if mixed else []) + (extended.SOURCE_PATHS if reduced else []))
     if mixed:
         require(plan["condition"] == "primary_active", "Wrong primary load condition")
         companion.verify_plan(plan["primary"], sources)
@@ -213,7 +220,7 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     with (directory/"phase.json").open("rb") as stream:
         artifacts["phase.json"] = stream.read(32*1024*1024+1)
     require(0 < len(artifacts["phase.json"]) <= 32*1024*1024, "Phase file exceeds verification bound")
-    phase_file = verify_seal(parse_json(artifacts["phase.json"]), companion.SCHEMAS[2] if mixed else PHASE_SCHEMA)
+    phase_file = verify_seal(parse_json(artifacts["phase.json"]), schemas[2])
     same({key:value for key,value in phase_file.items() if key != "sha256"}, result["phase"], "Embedded phase differs from phase file")
     summary, known, unknown = verify_phase(result["phase"], plan)
     records = [parse_json(line) for line in artifacts["requests.jsonl"].splitlines()]
@@ -223,9 +230,9 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     if mixed:
         same(result["primaryRows"], result["phase"]["primaryRows"], "Primary result/phase inventories differ")
         primary_records = [parse_json(line) for line in artifacts["primary-requests.jsonl"].splitlines()]
-        require(len(primary_records) == len(plan["inputs"]) and all(isinstance(row,dict) and type(row.get("index")) is int for row in primary_records), "Primary raw journal denominator differs")
+        require(len(primary_records) == primary_count and all(isinstance(row,dict) and type(row.get("index")) is int for row in primary_records), "Primary raw journal denominator differs")
         same(sorted(primary_records,key=lambda row:row["index"]), result["primaryRows"], "Primary raw journal rows differ")
-        primary_summary = companion.verify_phase(result["phase"],len(plan["inputs"]))
+        primary_summary = companion.verify_phase(result["phase"],primary_count)
         fields(result["primaryWarmup"], {"status", "response", "wallMs"})
         require(result["primaryWarmup"]["status"] == "returned", "Primary warmup did not return")
         companion.primary.validate_response(result["primaryWarmup"]["response"])
@@ -279,4 +286,5 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
         "reportedCleanupComplete":True,"liveCleanupVerified":False,"classificationAccuracyMeasured":False,
         "referenceLabels":0,"calibrationRequests":0,"holdoutRequests":0,"representativeAgatTraffic":False,
         "sloAccepted":False,"routingEnabled":False,"qualification":"not_assessed",
-        **({"primarySummary":primary_summary,"primaryWarmupCalls":1,"condition":"primary_active"} if mixed else {})})
+        **({"primarySummary":primary_summary,"primaryWarmupCalls":1,"condition":"primary_active"} if mixed else {}),
+        **({"scheduleAdjustment":plan["scheduleAdjustment"]} if reduced else {})})
