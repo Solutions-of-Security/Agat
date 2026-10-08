@@ -72,3 +72,24 @@ customer population и SLO не устанавливаются, routing false / 
 omission/reorder/rebinding, токены/continuations, profile/resource binding,
 raw snapshot/import reconstruction, historical source checks, scope/bounds
 и private CLI output. Совместно с source acquisition/import — 16 pass.
+
+## Native результат 08.10 MSK
+
+Из commit `5ac6504` выполнена новая local tokenization всего development split:
+**49 cases / 44 groups**, 46 cases в пределах 2048 tokens и три `context_too_long`.
+Полный диапазон — 188–9253 tokens. Ни один input не усечён; calibration/holdout
+requests, reference labels, predictions и model calls — 0.
+
+Независимый audit повторил grouping/input hashes и tokenization своим prompt
+wrapper: **257 checks pass**. Он сверил полный ordered inventory, raw profile,
+import/model/source pins и private modes. Первый failed PTY harness относится
+к прежнему review этапу и сюда не переносится как product failure.
+Full docs check: 813 Python tests / 4 expected optional skips, 12 Node,
+links и process catalog — pass. Последующее чтение `/metrics` подтвердило
+resident counters computed 1 / rejected 0 / failed 0 без новых inference.
+
+[Публичная сводка](./public-support-context-summary.json) содержит counts и
+file/seal pins без исходных вопросов. Private `context-profile.json` сохраняет
+все 49 полных inputs, включая три длинных. Следующий шаг — отдельный owned
+HTTP capacity/rejection опыт на этом inventory; заранее известные lengths
+не доказывают ни фактическую latency, ни правильность классификации.
