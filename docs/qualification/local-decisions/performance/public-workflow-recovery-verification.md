@@ -74,3 +74,10 @@ Human labels, owners, customer SLO, calibration/holdout и actual boot/login
 не возникают из проверки свидетельств. Маршрутизация остаётся выключенной.
 Следующий runtime gate — deadline активного shadow HTTP-вызова и
 восстановление полного процесса на закреплённом development inventory.
+
+Private ZIP сохранён в исходном workspace: **20 entries / 586391 bytes**,
+SHA-256 `bc19a5a6e091e3bef7652487067bc937143430dfde37e7e48ee9b8735db88e4c`.
+Обе копии проверены по CRC и SHA/size каждого entry, два committed source
+states и три parent archive SHA сохранены.
+[Archive receipt](./public-workflow-recovery-replay-archive-summary.json)
+содержит только metadata; сырые reports и логи остаются в `docs/private/`.
