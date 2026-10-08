@@ -73,6 +73,9 @@ Fresh owned PID census и resident source/process/counter preservation
 Full docs check: **842 Python / 4 optional skips, 12 Node**, links/catalog pass.
 [Allowlisted summary](./public-support-primary-load-summary.json) сохраняет
 полные denominators, primary pins, timings, drop и raw evidence bindings.
+[Проверенный постоянный архив](./public-primary-archive-summary.json) содержит
+28 файлов с исходными journals, source receipts и независимыми проверками;
+CRC, SHA каждого файла и полный SHA архива сверены после копирования.
 Planning envelope 0.5/s остаётся draft. Следующий инженерный вопрос —
 отдельно закреплённая более редкая decision arrival rate для этого resource
 envelope; менять исходный результат или ограничивать тексты ради успешной
