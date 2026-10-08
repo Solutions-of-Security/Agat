@@ -45,3 +45,42 @@ ledger/input/profile/route corruption, half-open window/privacy/authority,
 mixed configuration и early output guard. Classification accuracy не
 измеряется. Owners не назначены; customer workflow, human review,
 calibration/holdout и actual boot/login остаются внешними gates.
+
+## Native результат 08.10 MSK
+
+Из `23249ec` получены **49 completed instances / 49 durable caller returns**,
+**46 computed** (31 ok, 15 abstain), **3 context_too_long**. Все **49** original
+input SHA сохранены; каждый run имеет один assigned shadow stage и один
+negotiated intent/returned ledger. Все **49** primary branches сохранены,
+fixture primary выполнен ровно 49 раз. Cohort включает 49 runs, 98 stored
+stages, 49 shadow stages; authenticated HTTP 200 / unauthenticated 401.
+
+Computed caller p50 **199.027 ms**, p95 **576.571 ms**, max **657.463 ms**.
+Это HTTP caller timing внутри serial integration, без workflow queue delay
+и без inference настоящей primary модели. Total launcher elapsed **32001.797
+ms** включает startup, warmup, workflow и teardown. Эти значения не являются
+open-arrival capacity или latency production workflow.
+
+Физические counters: **51** handlers, включая два отдельные warmup — 31 ok,
+17 abstain, три context rejection, прочие outcomes zero. Source snapshot:
+**177** files. Independent audit: **553 checks**, все **30** наблюдавшихся
+owned PIDs, включая transient helpers, отсутствуют при свежем census.
+Ephemeral credentials удалены; resident сохранил 4 процесса, 35 sources и
+counters 1/0/0. Actual boot/login остаётся awaiting_event.
+
+Числовые значения/distributions/выборы всех **49** responses совпали со
+standalone baseline без id/duration. Raw representation signatures — **0/49**:
+Node сериализует temperature `1.0` как `1` и integral logits без десятичной
+части. Для сравнения использованы binary64 JSON number semantics с zero
+normalization; bool не превращается в число. Правило сверено с
+[RFC 8785 §3.2.2.3](https://www.rfc-editor.org/rfc/rfc8785#section-3.2.2.3).
+Это отдельная семантическая проверка; исходные bytes/SHA artifacts сохранены.
+Первоначальное неверное ожидание byte-signature equality и его correction
+сохранены в private audit logs. Classification accuracy не измерена.
+
+Full docs: **857 Python / 4 optional skips, 12 Node**, links/catalog pass.
+[Allowlisted summary](./public-support-workflow-summary.json) связывает
+scope, source/receipt SHA и полный denominator. Следующий технический шаг —
+публичный offline receipt verifier для этого workflow evidence; owners,
+human review/calibration/holdout, customer SLO и actual boot/login остаются
+открытыми, routing false / not_assessed.

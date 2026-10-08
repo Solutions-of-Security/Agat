@@ -440,6 +440,18 @@ loss в этом опыте, но не улучшила p95; причинный 
 PIDs отсутствуют; next gate — full public inventory через настоящий worker
 и coordinator census, без назначения owners или выдуманных human labels.
 
+[Public inventory через worker/coordinator](./qualification/local-decisions/performance/public-support-workflow.md),
+08.10 MSK: serial integration с fixture primary и отдельным owned MLX runtime
+подтвердила все 49 completed instances и caller returns. 46 computed,
+три context rejection; original input SHA и все 49 primary routes сохранены.
+Cohort 49 runs / 98 stored stages / 49 shadow stages, HTTP auth 401/200,
+physical 51 handlers с двумя warmup. Source snapshot 177 files, 553 independent
+checks, fresh cleanup всех 30 owned PID, resident 4 processes/35 sources/counters
+неизменен. 857 Python / 12 Node docs checks прошли. Все 49 числовых responses
+совпали с baseline; Node JSON normalization отличает raw signatures и
+отражена отдельно. Следующий этап — reusable offline receipt replay,
+без GPU/HTTP и без превращения lab workflow в назначенный customer pilot.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
