@@ -57,3 +57,10 @@ tokenization — **0**. [Allowlisted summary](./public-option-permutation-contex
 4 optional skips, 12 Node**, links/catalog прошли. Первоначальный сбой
 synthetic fixture из-за несовпадающего profile SHA сохранён вместе с
 исправленными tests; native tokenizer запускался после исправления.
+
+Private ZIP **14 entries / 631 722 bytes**, SHA
+`9899a9a32f3d41d4602cba60203355604f19b94d32bc41381c3b520bffcf594e`
+сохранён в исходном workspace с 0600. Обе копии проверены по CRC, каждому
+entry SHA/size и двум parent archive SHA. Native receipt/audit и оба
+102-file committed source snapshots сохранены.
+[Archive receipt](./public-option-permutation-context-archive-summary.json).
