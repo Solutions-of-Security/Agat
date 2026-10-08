@@ -82,6 +82,7 @@ class ResetGuard:
         require(not self.thread.is_alive(), "Transport reset guard did not stop")
 
     def receipt(self):
+        require(self.stopped.is_set() and not self.thread.is_alive(), "Only a drained reset guard can publish final accounting")
         return {"schemaVersion": "agat.decision.public-workflow-reset-guard.v1", "acceptedConnections": self.accepted,
                 "resetConnections": self.reset, "errors": list(self.errors), "payloadsRead": False}
 

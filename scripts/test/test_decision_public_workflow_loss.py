@@ -96,9 +96,11 @@ class PublicWorkflowLossTest(unittest.TestCase):
                     'request':request,'timeoutMs':10000,'callerTimingVersion':CALLER_TIMING_VERSION})
                 self.assertEqual(response['status'],'unavailable');self.assertEqual(response['reason'],'unreachable')
                 self.assertNotIn('result',response);self.assertLess(response['callerTiming']['durationMs'],10000)
-                self.assertEqual(reservation.receipt(),{'schemaVersion':'agat.decision.public-workflow-reset-guard.v1','acceptedConnections':1,'resetConnections':1,'errors':[],'payloadsRead':False})
+                with self.assertRaises(ValueError):reservation.receipt()
                 with self.assertRaises(ValueError):loss.stop_and_reserve(server,port,fixtures.cli.runtime,owned,errors)
                 with socket.socket() as replacement, self.assertRaises(OSError):replacement.bind(('127.0.0.1',port))
+                drained=reservation;drained.close();reservation=None
+                self.assertEqual(drained.receipt(),{'schemaVersion':'agat.decision.public-workflow-reset-guard.v1','acceptedConnections':1,'resetConnections':1,'errors':[],'payloadsRead':False})
             finally:
                 if reservation is not None:reservation.close()
                 if server is not None:

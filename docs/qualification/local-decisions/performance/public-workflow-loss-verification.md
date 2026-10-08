@@ -54,3 +54,18 @@ Private ZIP **11 entries / 540 129 bytes**, SHA
 snapshot; обе parent archive SHA повторно сверены.
 [Archive receipt](./public-workflow-loss-verifier-archive-summary.json)
 содержит allowlisted metadata, raw v1/v2 reports остаются private.
+
+## CI counter drain correction
+
+Linux CI PR 165 обнаружил гонку в socket regression: клиент уже получил
+TCP reset, а guard thread ещё не увеличил `resetConnections`. Итоговая
+квитанция теперь отвергается до `close()` и подтверждённого завершения
+потока. Проверка active guard явно ожидает отказ; после drain сохраняется
+реальная сверка одного accept/reset и независимого живого listener.
+[Python Thread.join](https://docs.python.org/3/library/threading.html#threading.Thread.join)
+закрепляет требуемое ожидание завершения, без sleep/retry угадывания.
+
+Native producer уже закрывал guard перед публикацией квитанции, поэтому
+прежний v2 evidence остаётся действительным. Исправление требует нового
+source-bound offline replay и новой проверки CI, без повторного inference.
+Исходный failed CI log и прежний архив сохраняются отдельно.
