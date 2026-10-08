@@ -18,6 +18,7 @@ launcher = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(launch
 PATHS = ["decision_runtime", "scripts/lib", "scripts/verify-public-support-workflow.py",
     "scripts/test/test_decision_public_workflow_verification.py", "scripts/test/test_decision_public_workflow_loss_verification.py", "scripts/run-decision-arrival-rate.py",
     "scripts/test/test_decision_public_workflow_recovery_verification.py",
+    "scripts/test/test_decision_public_workflow_timeout.py",
     "scripts/run-temporal-real-rag.py", "scripts/profile-embedding-rag.py"]
 
 

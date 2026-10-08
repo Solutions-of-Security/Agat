@@ -11,6 +11,7 @@ from scripts.lib.decision_public_load_verification import distribution
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from scripts.lib.decision_public_workflow_loss import PLAN_SCHEMA as LOSS_PLAN_SCHEMA, RESULT_SCHEMA as LOSS_RESULT_SCHEMA, loss_spec
 from scripts.lib import decision_public_workflow_recovery as recovery
+from scripts.lib import decision_public_workflow_timeout as timeout
 
 PLAN_SCHEMA = "agat.decision.public-workflow-plan.v1"
 RESULT_SCHEMA = "agat.decision.public-workflow-result.v1"
@@ -33,11 +34,12 @@ def shared_config(context):
     return config
 
 
-def verify_inventory(context, plan, cohort, routes):
+def verify_inventory(context, plan, cohort, routes, transport=None):
     """Account against the original case list, not just returned observations."""
     validate_context(context); config = shared_config(context); count = len(context["inputs"])
     loss = plan["schemaVersion"] == LOSS_PLAN_SCHEMA
     recovering = plan["schemaVersion"] == recovery.PLAN_SCHEMA
+    timing_out = plan["schemaVersion"] == timeout.PLAN_SCHEMA
     if loss:
         require(fingerprint(plan.get("runtimeLoss")) == fingerprint(loss_spec(context, plan["runtimeLoss"]["beforeIndex"])), "Runtime loss was not prospectively specified")
     else:
@@ -47,7 +49,12 @@ def verify_inventory(context, plan, cohort, routes):
                 "Runtime recovery was not prospectively specified")
     else:
         require("runtimeRecovery" not in plan, "Historical v1/v2 cannot admit crash/recovery")
-    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
+    if timing_out:
+        require(fingerprint(plan.get("callerTimeout")) == fingerprint(timeout.timeout_spec(context, plan["callerTimeout"]["targetIndex"])),
+                "Caller timeout was not prospectively specified")
+    else:
+        require("callerTimeout" not in plan and transport is None, "Historical protocols cannot admit a caller timeout")
+    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA, timeout.PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
             and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
             and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
             and type(plan["processVersion"]) is int and plan["processVersion"] == 1
@@ -111,11 +118,12 @@ def verify_inventory(context, plan, cohort, routes):
                 and exported["profileSha256"] == assigned["profileSha256"] == context["profileSha256"]
                 and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == 10000
                 and fingerprint(exported["observation"]) == fingerprint(assigned["observation"]), "Observation binding differs")
-        lost = (loss and index >= plan["runtimeLoss"]["beforeIndex"]) or (recovering and index == plan["runtimeRecovery"]["targetIndex"])
+        timed_out = timing_out and index == plan["callerTimeout"]["targetIndex"]
+        lost = (loss and index >= plan["runtimeLoss"]["beforeIndex"]) or (recovering and index == plan["runtimeRecovery"]["targetIndex"]) or timed_out
         observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "callerTiming"} | (set() if lost else {"result"}))
         require(observation["mode"] == "shadow" and observation["fallback"] == "primary", "Shadow routing changed")
         if lost:
-            require(observation["status"] == "unavailable" and observation["reason"] == "unreachable", "Runtime loss return was not recorded as actual transport unavailability")
+            require(observation["status"] == "unavailable" and observation["reason"] == ("timeout" if timed_out else "unreachable"), "Fault return was not recorded as actual transport unavailability")
             result = observation
         else:
             request = Request.from_dict({**case["request"], "id": route["stageId"]})
@@ -127,18 +135,21 @@ def verify_inventory(context, plan, cohort, routes):
                     "Unexpected computation or missing whole-input rejection")
         timing = fields(observation["callerTiming"], {"schemaVersion", "clock", "boundary", "durationMs"})
         require(timing["schemaVersion"] == "agat.decision.caller-timing.v1" and timing["clock"] == "monotonic"
-                and timing["boundary"] == "local_http_call" and number(timing["durationMs"], 0, 10001) >= (0 if lost else result["durationMs"]-.1)
+                and timing["boundary"] == "local_http_call" and number(timing["durationMs"], 0, 15000 if timing_out else 10001) >= (0 if lost else result["durationMs"]-.1)
                 and fingerprint(intent["returned"]) == fingerprint({"callerTiming": timing, "status": result["status"], "reason": result["reason"]}),
                 "Caller timing or durable return differs")
         statuses[result["status"]] += 1
         if lost: unavailable_timings.append(timing["durationMs"])
         else: physical[outcome(result)] += 1
         if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
-    return sealed({"schemaVersion": recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+    transport_evidence = timeout.verify_transport(context, plan["callerTimeout"], transport, cohort, routes) if timing_out else {}
+    return sealed({"schemaVersion": timeout.RESULT_SCHEMA if timing_out else recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
         "completedInstances": count, "boundCallerReturns": count, "computed": len(timings), "statuses": dict(statuses),
         **({"runtimeLoss": plan["runtimeLoss"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if loss else {}),
         **({"runtimeRecovery": plan["runtimeRecovery"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if recovering else {}),
-        "callerMsComputed": distribution(timings), "physicalScheduledOutcomes": dict(physical), "primaryFixtureCalls": count,
+        **({"callerTimeout": plan["callerTimeout"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings),
+            "physicalDeliveredOutcomes": dict(physical), "healthySuffixCases": count-plan["callerTimeout"]["targetIndex"]-1} if timing_out else {}),
+        "callerMsComputed": distribution(timings), "physicalScheduledOutcomes": dict(physical), **transport_evidence, "primaryFixtureCalls": count,
         "primaryRoutePreserved": True, "caseInputsUnchanged": True, "referenceLabels": 0, "classificationAccuracyMeasured": False,
         "primary": "fixture_chat_completions", "mode": "serial_closed_model_integration", "ownersAppointed": False,
         "sloAccepted": False, "representativeAgatTraffic": False, "routingEnabled": False, "qualification": "not_assessed"})

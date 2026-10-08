@@ -1,0 +1,75 @@
+# Prospective caller timeout through the public development workflow
+
+The v4 protocol exercises every frozen public development input through a
+published process, the actual coordinator and Python worker, and an owned MLX
+runtime. The primary chat-completions endpoint remains an explicit fixture.
+The diagnostic does not measure primary model quality, customer traffic,
+classification accuracy, calibration or an accepted SLO.
+
+The previous [crash/recovery experiment](./public-workflow-recovery-verification.md) removed
+an active handler. This experiment freezes a different boundary before scoring:
+an owned loopback proxy obtains a complete, valid upstream model result, then
+withholds all response headers and bytes for one eligible case until the worker's
+10,000 ms caller deadline closes the downstream connection. The upstream model
+has already finished; no claim of GPU interruption follows from this timeout.
+
+## Implementation and admission
+
+[The launcher](../../../../scripts/run-public-support-workflow.py) accepts
+`--withhold-response-at-index` exclusively with the older runtime-loss option.
+The selected zero-based case must have both a prefix and suffix and fit the
+frozen context profile. A new sealed launch plan v4 binds the fault, Git source
+closure, exact raw context/profile/manifest bytes and pinned runtime dependencies
+before model calls. Historical v1/v2/v3 records cannot acquire v4 fault semantics.
+
+[The finite proxy](../../../../scripts/lib/decision_public_workflow_timeout.py)
+uses distinct temporary literal `127.0.0.1` ports, rejects port 8766, forwards
+each original POST body once, checks profile and disconnect opt-in headers, and
+records raw request/response hashes. Health reads are separate from the POST
+inventory. Request/response bounds remain 128/64 KiB. Upstream calls have an
+8,000 ms bound; observing downstream EOF has a 15,000 ms diagnostic bound. The
+worker's decision timeout remains 10,000 ms. It is not extended by those bounds.
+
+The [driver](../../../../scripts/run-public-support-workflow.mts) runs one
+assignment per input and persists every observation. For the target it requires
+`unavailable/timeout`, no model result, the original primary output and branch,
+and an actual proxy drain receipt before creating the next instance. There is
+no retry, runtime restart, replacement input or truncation. Ineligible inputs
+remain in the scheduled inventory and must receive their whole-input rejection.
+
+The [common offline verifier](../../../../scripts/verify-public-support-workflow.py)
+accepts v4 raw-pinned evidence and reconstructs the complete cohort, proxy
+inventory, drain barrier and physical counter deltas against historical Git
+sources. Delivered results must equal their upstream bytes. The target's actual
+typed response contributes to physical completion accounting but never to
+computed caller returns. Unknown outcomes cannot be substituted for completed
+upstream results. Offline replay reports recorded cleanup separately from live
+process verification.
+
+## Verification before native scoring
+
+[Ten new tests](../../../../scripts/test/test_decision_public_workflow_timeout.py)
+passed, including an actual socket experiment with a real 10-second caller
+deadline and healthy subsequent calls, and a model-free synthetic fixture for
+offline Git replay. Corruptions include missing/repeated POSTs, modified raw
+bodies, a delivered target byte, early EOF, incorrect deadlines, missing intent,
+changed primary routing, a premature suffix, altered counters, drain barrier
+drift, contributor omission, protocol mixing and port 8766. These fixtures do
+not count as native model evidence. The initial log is preserved privately.
+
+Native measurements and full-suite results are recorded after execution. All
+human labels, named owners, applicable calibration/holdout and customer SLO gates
+remain open; routing is false and qualification remains `not_assessed`.
+
+## Sources checked 09.10.2026 MSK
+
+The [Python socket API](https://docs.python.org/3/library/socket.html#socket.socket.recv)
+defines an empty receive as a disconnected peer. The explicit worker contract
+never half-closes the request while awaiting a response, so EOF can identify this
+specific downstream closure; it does not independently establish a timeout
+reason. The durable worker return establishes that reason.
+
+[HTTP RFC 9110, section 9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2)
+describes constraints on retrying POST through a proxy. This controlled
+diagnostic schedules exactly one upstream request per actual assignment and
+verifies that fact against the raw proxy inventory and server counters.
