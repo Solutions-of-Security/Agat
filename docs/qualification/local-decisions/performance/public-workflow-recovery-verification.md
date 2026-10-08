@@ -45,7 +45,32 @@ inventory, private exclusive publication, raw pin до dispatch,
 неизвестные/смешанные версии, source/artifact drift и отказ до обработки
 при public/symlink output. Прежние v1/v2/v3 проверки сохраняются.
 
-Native offline replay и полная регрессия выполняются на committed
-исходниках; их результаты будут закреплены отдельно. Human labels,
-owners, customer SLO, calibration/holdout и actual boot/login не возникают
-из проверки свидетельств. Маршрутизация остаётся выключенной.
+## Replay сохранённых реальных свидетельств
+
+Из commit `6f189dd` общий CLI проверил v3 и совместимость v1/v2.
+Во всех трёх сохранены **49 instances / 49 bound caller returns**.
+V3: **45 computed / 1 unavailable / 3 whole context rejection**;
+два completed counter epochs **5 / 47**, вместе **52 handlers**:
+48 scheduled completed и четыре warmup. Один interrupted handler
+сохранил unknown terminal outcome. V1: 49 scheduled physical handlers,
+два warmup; v2: пять scheduled handlers и 44 actual TCP resets.
+
+Все содержательные поля совпали с прежними reports; добавлены только
+commit, 105 current verifier contributor SHA и версия Python.
+Measured source inventories **186 / 177 / 180** для v3/v1/v2 сохранены.
+Независимая standard-library сверка прошла **360 checks** и закрепила
+raw report SHA в [summary](./public-workflow-recovery-verification-summary.json).
+Новых model/network/live PID calls нет.
+
+Полная регрессия: **905 Python tests / 4 optional skips, 12 Node tests**,
+2567 локальных ссылок и каталог процессов — pass. Первый targeted run
+получил два sandbox socket denial в существующих socket tests; полный
+повтор с разрешёнными loopback/process проверками прошёл. Начальная
+вспомогательная audit-сверка ошибочно ожидала v2/v3 transport-поля в v1;
+исправлена по historical v1 schema без изменения evidence или verifier.
+Исходные отказавшие логи сохранены рядом с успешными.
+
+Human labels, owners, customer SLO, calibration/holdout и actual boot/login
+не возникают из проверки свидетельств. Маршрутизация остаётся выключенной.
+Следующий runtime gate — deadline активного shadow HTTP-вызова и
+восстановление полного процесса на закреплённом development inventory.
