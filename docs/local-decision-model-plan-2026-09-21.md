@@ -472,6 +472,17 @@ instances не доказывает crash-in-flight/recovery или customer SLO
 Следующий шаг — offline replay этого v2 evidence; human/owner/workflow,
 calibration/holdout и actual boot/login gates остаются открытыми.
 
+[Offline public workflow loss replay](./qualification/local-decisions/performance/public-workflow-loss-verification.md),
+08.10 MSK: reusable v2 CLI подтвердил полный denominator 49, five healthy
+physical scheduled handlers и 44 durable unavailable/TCP resets. 180
+measured / 99 verifier sources; v1 compatibility replay сохранил прежние
+49 scheduled / 51 с warmup и 177 sources. Native inference не повторялся;
+reported cleanup отделён от live proof. 871 Python / 12 Node docs checks.
+Следующий допустимый quality diagnostic — порядок вариантов на frozen
+public development inventory; labels/calibration/holdout не подменяются
+наблюдениями о стабильности. Owner/customer/SLO и actual boot/login gates
+остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
