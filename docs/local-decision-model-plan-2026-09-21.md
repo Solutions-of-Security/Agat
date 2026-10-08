@@ -423,6 +423,14 @@ synthetic envelope на full public inventory; более редкий arrival �
 отдельного prospective протокола. SLO не принят, human accuracy не измерена,
 routing false / not_assessed; реальные owners/workflow и boot/login открыты.
 
+[Prospective quarter-rate public inventory](./qualification/local-decisions/performance/public-support-quarter-rate.md):
+следующий отдельный v3 protocol задаёт 49 полных decision inputs при 0.25/s
+и 98 pinned primary arrivals при 0.5/s в общем 196-s window. Original context
+и исходный 0.5/s capacity result сохранены; schedule adjustment получает
+отдельный binding до запуска. Legacy bounds/defaults не расширены, slot
+сохраняется через 120-s boundary. Изменение rate — проверяемая гипотеза,
+не production capacity/SLO и не результат предметной qualification.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

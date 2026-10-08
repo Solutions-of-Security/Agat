@@ -44,12 +44,17 @@ def main(argv=None):
     parser.add_argument("--evidence-dir", type=Path, required=True)
     parser.add_argument("--primary-binaries", type=Path)
     parser.add_argument("--primary-models", type=Path)
+    parser.add_argument("--decision-rate", type=float, choices=(.25, .5), default=.5,
+                        help="Explicit prospective v3 quarter-rate probe requires the primary companion")
     args = parser.parse_args(argv)
-    companion_module = None; primary_plan = None
+    companion_module = None; primary_plan = None; extended = None
     try:
         runtime.require(bool(args.primary_binaries) == bool(args.primary_models), "Both primary paths are required")
+        runtime.require(args.decision_rate == .5 or bool(args.primary_binaries), "Quarter-rate requires the primary companion")
         if args.primary_binaries:
             from scripts.lib import decision_public_primary as companion_module
+        if args.decision_rate == .25:
+            from scripts.lib import decision_public_schedule as extended
         private = (ROOT/"docs/private").resolve()
         runtime.require(args.evidence_dir.resolve().is_relative_to(private) and args.evidence_dir.resolve() != private
                         and not args.evidence_dir.exists() and not args.evidence_dir.is_symlink(), "Use a new private evidence directory")
@@ -60,6 +65,7 @@ def main(argv=None):
         runtime.require(fingerprint(profile) == context["profileSha256"], "Serving profile differs from frozen context")
         paths = [*SOURCE_PATHS,*EXTRA_SOURCES,PROFILE_PATH,runtime.SHADOW_POLICY,runtime.SHADOW_REFERENCE]
         if companion_module: paths.extend(companion_module.SOURCE_PATHS)
+        if extended: paths.extend(extended.SOURCE_PATHS)
         commit,sources = launcher.frozen_sources(paths)
         if companion_module:
             primary_plan = companion_module.primary.prepare(ROOT,args.primary_binaries.resolve(),args.primary_models.resolve())
@@ -71,17 +77,20 @@ def main(argv=None):
         environment = parse_json(subprocess.check_output([str(args.runtime_python.absolute()),"-B","-c",code,*requirements],cwd=ROOT,timeout=15))
         runtime.require(environment==context["tokenizerEnvironment"], "Runtime dependencies differ from frozen tokenization")
         directory = private_directory(ROOT,args.evidence_dir)
-        plan = sealed({"schemaVersion":companion_module.SCHEMAS[0] if companion_module else PLAN_SCHEMA,
+        schemas = extended.SCHEMAS if extended else companion_module.SCHEMAS if companion_module else (PLAN_SCHEMA, RESULT_SCHEMA, None)
+        schedule = extended.lower_schedule(context["proposedDiagnosticSchedule"], len(context["inputs"])) if extended else context["proposedDiagnosticSchedule"]
+        plan = sealed({"schemaVersion":schemas[0],
             "createdAt":datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00","Z"),
             "sourceCommit":commit,"sourceFiles":sources,
             "contextProfileFileSha256":args.context_profile_file_sha256,"contextProfileSealSha256":context["sha256"],
             "profile":profile,"profileFileSha256":context["profileFileSha256"],"profileSha256":context["profileSha256"],
             "manifestFileSha256":context["manifestFileSha256"],"model":context["model"],"runtime":environment,
-            "inputs":context["inputs"],"schedule":context["proposedDiagnosticSchedule"],"warmupCount":2,
+            "inputs":context["inputs"],"schedule":schedule,"warmupCount":2,
             "scope":"whole_unlabelled_public_development_http_inventory","overLimitBehavior":"send_full_input_expect_context_too_long",
             "primaryCompanionStarted":bool(companion_module),"backgroundWorkloadControlled":False,"referenceLabels":0,
             "calibrationRequests":0,"holdoutRequests":0,"sloAccepted":False,"representativeAgatTraffic":False,
-            "routingEnabled":False,"qualification":"not_assessed",**({"primary":primary_plan,"condition":"primary_active"} if companion_module else {})})
+            "routingEnabled":False,"qualification":"not_assessed",**({"primary":primary_plan,"condition":"primary_active"} if companion_module else {}),
+            **({"scheduleAdjustment":extended.adjustment(context["proposedDiagnosticSchedule"],len(context["inputs"]))} if extended else {})})
         write_json_new(directory/"plan.json",plan)
     except Exception as error:
         print(f"Cannot prepare public HTTP load: {type(error).__name__}",file=sys.stderr); return 1
@@ -140,13 +149,15 @@ def main(argv=None):
                 origin = time.monotonic()
                 def record_primary(row):
                     primary_journal.write((json.dumps(row,ensure_ascii=False,allow_nan=False)+"\n").encode());primary_journal.flush()
-                primary_arrivals = companion_module.PrimaryInventory(primary_runtime.transport,origin,len(context["inputs"]),lambda:stopped[0],journal=record_primary)
+                primary_count = len(context["inputs"])*(2 if extended else 1)
+                primary_arrivals = companion_module.PrimaryInventory(primary_runtime.transport,origin,primary_count,lambda:stopped[0],journal=record_primary,extended=bool(extended))
                 primary_arrivals.start()
-                try:phase=run_inventory(client,context["inputs"],profile,cancelled=lambda:stopped[0],journal=record,origin=origin)
+                try:phase=run_inventory(client,context["inputs"],profile,cancelled=lambda:stopped[0],journal=record,origin=origin,
+                                        schedule=schedule if extended else None)
                 finally:primary_rows=primary_arrivals.finish()
-                phase.update(schemaVersion=companion_module.SCHEMAS[2],condition="primary_active",phaseOriginMonotonicMs=round(origin*1000,3),
+                phase.update(schemaVersion=schemas[2],condition="primary_active",phaseOriginMonotonicMs=round(origin*1000,3),
                              primaryRows=primary_rows,elapsedMs=round((time.monotonic()-origin)*1000,3))
-                companion_module.verify_phase(phase,len(context["inputs"]))
+                companion_module.verify_phase(phase,primary_count)
             else:phase=run_inventory(client,context["inputs"],profile,cancelled=lambda:stopped[0],journal=record)
             write_json_new(directory/"phase.json",sealed(phase));sample("after_inventory")
             runtime.require(launcher.frozen_sources(paths)==(commit,sources),"Load sources changed")
@@ -167,7 +178,7 @@ def main(argv=None):
         for sig,handler in previous.items():signal.signal(sig,handler)
     complete=phase is not None and failure is None and not stopped[0] and not errors and not remaining
     complete=complete and not any(row["status"]=="measurement_error" for row in phase["rows"])
-    result=sealed({"schemaVersion":companion_module.SCHEMAS[1] if companion_module else RESULT_SCHEMA,
+    result=sealed({"schemaVersion":schemas[1],
         "status":"observed" if complete else "failed","planSha256":plan["sha256"],
         "warmup":warmup,"phase":phase,"samples":samples,"failure":failure,"cancelled":stopped[0],"ownedPids":sorted(owned),
         "remainingOwnedPids":remaining,"cleanupErrors":errors,"runtimeExitCode":process.returncode if process else None,
