@@ -452,6 +452,15 @@ checks, fresh cleanup всех 30 owned PID, resident 4 processes/35 sources/cou
 отражена отдельно. Следующий этап — reusable offline receipt replay,
 без GPU/HTTP и без превращения lab workflow в назначенный customer pilot.
 
+[Offline public workflow receipt replay](./qualification/local-decisions/performance/public-workflow-verification.md),
+08.10 MSK: independent context/plan/result raw pins, historical source bytes,
+полные journals, caller ledger, warmups и counters проходят strict replay.
+Native CLI pass/exact: 49 instances / 49 returns / 46 computed / три context
+rejection, 177 measured и 97 verifier sources. Модель не перезапускалась;
+historical cleanup claim отделён от current live PID verification. Четыре
+новых / 10 targeted и 861 Python / 12 Node docs checks прошли. Human labels,
+appointed owners/customer workflow, SLO и actual boot/login остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

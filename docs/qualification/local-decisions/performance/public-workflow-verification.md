@@ -35,3 +35,21 @@ journal/ledger/physical/authority/source corruptions, mutation во время
 consumption и private exclusive output. Повторно запускать inference для
 проверки сохранённого [native workflow](./public-support-workflow.md) не
 требуется.
+
+## Native offline replay 08.10 MSK
+
+Из `8ea3a86` CLI вернул **pass / exact** для прежнего native workflow:
+**49 instances / 49 bound caller returns / 46 computed / 3 context rejection**.
+Все **177** measured source files и **97** verifier contributors закреплены;
+verifier — Python 3.14.3 / Darwin, native MLX runtime остаётся записанным
+Python 3.13.12 / arm64 с 34 package pins. Inference не повторялся.
+
+Raw counter parity: 49 scheduled handlers, два warmup отдельно, 51 total
+handlers; profile, assignment/intent/result и original inputs сохранены.
+`reportedCleanupComplete=true / liveCleanupVerified=false`: повторная
+source-bound проверка не заменяет fresh PID census прежнего native audit.
+[Allowlisted summary](./public-workflow-verification-summary.json) связывает
+independent raw pins и новый sealed report. Full docs: **861 Python / 4
+optional skips, 12 Node**, links/catalog pass; 10 joint targeted tests.
+Owners/human review/calibration/holdout и actual boot/login остаются
+открытыми; routing false / not_assessed, success не меняет customer SLO.
