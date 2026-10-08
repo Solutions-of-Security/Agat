@@ -47,7 +47,7 @@ calibration/holdout и полномочия маршрутизации этот 
 Полная регрессия: **160 worker tests / 3 optional skips**, **905 Python
 documentation tests / 4 optional skips**, **12 Node documentation tests**;
 workspace typecheck, 2572 локальные ссылки и каталог процессов — pass.
-Начальный red run восьми boundary-сценариев сохранён отдельно от green
+Начальный red run семи boundary tests сохранён отдельно от green
 и обычного watchdog-воспроизведения. Результаты закреплены в
 [summary](./response-boundaries-summary.json).
 
