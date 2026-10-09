@@ -111,7 +111,9 @@ SHA/CRC/every file SHA/size, три signatures и live cleanup.
 14 новых regressions и 77 related tests прошли: actual coordinator/worker
 two-slot fixture, injected early timer wake, same-lease peer continuation,
 source/raw rehash corruptions, неизвестный cleanup и startup failure receipt.
-TypeScript strict check прошёл. В model-free fixture native epochs и PIDs
+TypeScript strict check и 12 Node docs checks прошли. Полный локальный Python
+suite — 1016 tests PASS за 457.047 s, четыре optional skips. Skips
+не принимаются за выполненные native gates. В model-free fixture native epochs и PIDs
 явно synthetic; она не принимается за native measurement.
 
 Первый fixture запуск выявил CLI poll interval ниже допустимого минимума;

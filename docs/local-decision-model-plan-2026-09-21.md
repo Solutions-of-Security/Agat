@@ -763,7 +763,8 @@ unknown `return_missing`. Late target observation/complete/fail — 400;
 восемь starts / семь known physical terminals; interrupted target counter
 unknown. Caller 596.878 ms, cancel→EOF 568 ms, peer hold 6717 ms.
 Source 201 / context 40 files, три healthy baseline signatures совпали;
-14 новых / 77 related tests, strict TypeScript и offline replay прошли.
+14 новых / 77 related tests, strict TypeScript, offline replay и полный
+1016-test Python suite (четыре optional skips) прошли.
 Independent stdlib audit — 680 checks / 27176 JSON keys; все 10 recorded
 temporary PIDs отсутствуют, resident unchanged. Это focused fixture-primary
 gate; предыдущий real-primary inventory сохраняется отдельно. Следующий
