@@ -4,7 +4,10 @@
 настоящего нового OS event и сохранённого baseline. Collector подготавливает
 постоянный snapshot вне временного checkout, регистрируется отдельным user
 LaunchAgent и при каждом login один раз проверяет boot и GUI session.
-**Фактический boot/login wired resident 0.12.3 остаётся открытым.**
+На 07.10.2026 фактический boot/login wired resident 0.12.3 ещё не наблюдался.
+**09.10.2026 [actual boot/login подтверждён](./resident-actual-boot-login.md)**
+после автоматического collector run; original receipts и независимая
+read-only перепроверка закреплены отдельно.
 Routing выключен, qualification — `not_assessed`.
 
 ## Постоянный snapshot
@@ -166,5 +169,5 @@ Docker opt-in skips, 12 Node checks, process catalog и локальные сс�
 финальные checks и оба measured Git sources сохранены в private ZIP.
 CRC и SHA/size каждого file, а также копия в исходном workspace проверены.
 
-**Реальный boot/login gate остаётся открытым.** Установка, successful exit
+**На 07.10.2026 реальный boot/login gate оставался открытым.** Установка, successful exit
 collector и fixture clock adjustment сами не доказывают новый OS event.
