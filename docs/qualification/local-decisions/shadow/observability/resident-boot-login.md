@@ -4,7 +4,9 @@
 работает в текущем GUI domain. Новая [CLI](../../../../../scripts/check-decision-resident-session.py)
 сохраняет исходный baseline и проверяет фактическую смену boot/login.
 Готовность после bootstrap или reinstall остаётся отдельным наблюдением.
-Фактический reboot/login этого release пока не выполнен.
+На 07.10.2026 фактический reboot/login этого release ещё не наблюдался.
+**09.10.2026 [actual boot/login подтверждён](./resident-actual-boot-login.md)**
+автоматическим observer и отдельной read-only перепроверкой прежнего baseline.
 
 ## Что фиксируется
 
