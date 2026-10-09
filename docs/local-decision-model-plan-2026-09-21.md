@@ -608,6 +608,34 @@ CRC/SHA/size в двух копиях и сохранён в исходном wo
 Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
 routing false / not_assessed.
 
+[Full workflow coordinator cancellation](./qualification/local-decisions/performance/public-workflow-cancellation.md),
+09.10 MSK: prospective v5 сохранил весь development inventory 49 cases / 44
+groups и реальные original POST bytes. На index 3 proxy удержал completed
+MLX response без headers; authenticated coordinator cancel дал 204, renewal
+404, поздние observation/complete/fail — 400. После начала cancel actual EOF
+наблюдался через 458.000 ms; upstream 566.381 ms / local caller 1179.725 ms.
+Completed instances и durable returns — 48, cancelled instance с unknown
+return — один; 45 computed (31 ok / 14 abstain), три whole context rejection.
+Physical 49 (31 ok / 15 abstain / 3 context rejected) и две отдельные warmups
+дают 51 handler / один epoch; retry/restart нет. Все 45 suffix cases завершены
+на том же worker. Late primary output не объявлен completed branch.
+Common offline replay и 2907 independent checks сверили 188 measured
+contributors, все 49 native signatures с frozen healthy control, 201 actual
+lease HTTP records, timing/counters и отсутствие 33 recorded temporary PID.
+Resident четыре PID / 35 sources unchanged. Дополнительная red mutation
+выявила foreign lease renewal в replay; final verifier закрыл cohort fence
+и подтвердил unchanged native v5 и prior v4 без новых model calls.
+13 новых / 38 focused / full 930 Python / 12 Node checks и typecheck прошли;
+четыре optional docs skips сохранены. Private ZIP с raw evidence и source
+snapshots проверен по CRC/SHA/size в двух копиях и сохранён в исходном
+workspace `/docs/private`. Измерение доказывает отмену после готового native
+ответа. Следующий runtime gate — доставка cancellation во время actual
+active native HTTP handler с доказанным upstream disconnect, состоянием
+isolated backend и healthy suffix;
+GPU interruption нельзя выводить из v5 результата.
+Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
