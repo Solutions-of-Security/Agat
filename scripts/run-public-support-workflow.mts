@@ -27,6 +27,8 @@ const loss = input.runtimeLoss;
 const recovery = input.runtimeRecovery;
 const timeout = input.callerTimeout;
 const cancellation = input.coordinatorCancellation;
+const activeCancellation = input.schemaVersion === "agat.decision.public-workflow-launch-plan.v6";
+if (!activeCancellation) assert.equal(input.coordinatorTrigger, undefined);
 assert.ok([loss, recovery, timeout, cancellation].filter(Boolean).length <= 1);
 if (loss) {
   assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v2");
@@ -44,6 +46,19 @@ if (loss) {
   assert.equal(recovery.endpoint, "same_loopback_port_same_frozen_profile"); assert.equal(recovery.retryCount, 0);
   assert.equal(recovery.warmupPerRuntime, 2); assert.equal(recovery.armDeadlineMs, 30000); assert.equal(recovery.recoveryDeadlineMs, 90000);
   assert.equal(recovery.workflowDeadlineMs, 240000);
+} else if (activeCancellation) {
+  assert.ok(cancellation && !loss && !recovery && !timeout);
+  assert.deepEqual(input.coordinatorTrigger, { kind: "authenticated_coordinator_run_cancel", cancelRequestDeadlineMs: 5000, cancelledDurableReturn: "unknown" });
+  assert.ok(Number.isInteger(cancellation.targetIndex) && cancellation.targetIndex > 0 && cancellation.targetIndex < input.context.inputs.length-1);
+  const target = input.context.inputs[cancellation.targetIndex];
+  assert.equal(target.contextEligible, true); assert.equal(cancellation.targetCaseId, target.id); assert.equal(cancellation.targetInputSha256, target.inputSha256);
+  assert.equal(cancellation.kind, "propagate_caller_eof_during_active_native_http_handler");
+  assert.equal(cancellation.boundary, "active_upstream_http_handler_before_response_bytes");
+  assert.equal(cancellation.trigger, "exactly_one_active_http_handler_with_no_response_bytes");
+  assert.equal(cancellation.restart, true); assert.equal(cancellation.retryCount, 0);
+  assert.equal(cancellation.warmupCount, 4); assert.equal(cancellation.warmupPerRuntime, 2);
+  assert.equal(cancellation.sampleToCancelMaxMs, 250); assert.equal(cancellation.cancelToEofDeadlineMs, 2500);
+  assert.equal(cancellation.retirementExitCode, 75); assert.equal(cancellation.retirementReason, "inference_cancelled");
 } else if (timeout || cancellation) {
   const spec = cancellation ?? timeout;
   assert.equal(input.schemaVersion, cancellation ? "agat.decision.public-workflow-launch-plan.v5" : "agat.decision.public-workflow-launch-plan.v4");
@@ -64,6 +79,8 @@ let runtimeLossApplied: any;
 let crashArmed: any; let crashApplied: any; let recoveryApplied: any;
 let callerTimeoutDrained: any;
 let coordinatorCancellationReady: any; let coordinatorCancellationApplied: any; let coordinatorCancellationDrained: any;
+let activeNativeArmed: any; let activeNativeRecovered: any;
+let coordinatorCancellationPrepared: any;
 const cancellationHttp: any[] = [];
 function publish(name: string, data: unknown) {
   const pending = name.replace(/\.json$/, ".pending.json"); save(pending, data);
@@ -134,7 +151,7 @@ try {
   const processId = String(store.createProcess({ name: "Whole public inventory integration; fixture primary", graph }).id);
   store.publishProcess(processId);
   const startAt = new Date(Date.now()+1000).toISOString();
-  const recipe = { schemaVersion: cancellation ? "agat.decision.public-workflow-plan.v5" : timeout ? "agat.decision.public-workflow-plan.v4" : recovery ? "agat.decision.public-workflow-plan.v3" : loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), ...(recovery ? { runtimeRecovery: recovery } : {}), ...(timeout ? { callerTimeout: timeout } : {}), ...(cancellation ? { coordinatorCancellation: cancellation } : {}), mode: "serial_closed_model_integration",
+  const recipe = { schemaVersion: activeCancellation ? "agat.decision.public-workflow-plan.v6" : cancellation ? "agat.decision.public-workflow-plan.v5" : timeout ? "agat.decision.public-workflow-plan.v4" : recovery ? "agat.decision.public-workflow-plan.v3" : loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), ...(recovery ? { runtimeRecovery: recovery } : {}), ...(timeout ? { callerTimeout: timeout } : {}), ...(cancellation ? { coordinatorCancellation: cancellation } : {}), ...(activeCancellation ? { coordinatorTrigger: input.coordinatorTrigger } : {}), mode: "serial_closed_model_integration",
     primary: "fixture_chat_completions", processId, processVersion: 1, projectId: "default", startAt,
     scopeEndRule: "after_full_input_inventory_and_worker_drain", config: input.config, profileSha256: health.profileSha256,
     inputs: input.context.inputs.map((row: any) => ({ caseId: row.id, inputSha256: row.inputSha256 })),
@@ -159,6 +176,14 @@ try {
   }
   for (const [index, item] of input.context.inputs.entries()) {
     assert.equal(worker.exitCode, null, "Owned worker exited early"); assert.equal(worker.signalCode, null);
+    if (activeCancellation && index === cancellation.targetIndex) {
+      publish("active-native-arm-request.json", { schemaVersion: "agat.decision.public-workflow-active-native-arm-request.v1", targetIndex: index,
+        afterCaseId: routes.at(-1).caseId, afterRunId: routes.at(-1).runId, createdAt: new Date().toISOString() });
+      activeNativeArmed = await waitReceipt("active-native-armed.json", 30000);
+      assert.equal(activeNativeArmed.schemaVersion, "agat.decision.public-workflow-active-native-armed.v1");
+      assert.equal(activeNativeArmed.targetIndex, index); assert.equal(activeNativeArmed.requestFileSha256, digest("active-native-arm-request.json"));
+      assert.ok(Number.isInteger(activeNativeArmed.runtimePid) && activeNativeArmed.runtimePid > 0);
+    }
     if (loss && index === loss.beforeIndex) {
       const request = { schemaVersion: "agat.decision.public-workflow-loss-request.v1", beforeIndex: index,
         afterCaseId: routes.at(-1).caseId, afterRunId: routes.at(-1).runId, createdAt: new Date().toISOString() };
@@ -197,24 +222,54 @@ try {
     const runId = String(instance.runId); const deadline = Math.min(Date.now()+20000, globalDeadline);
     const cancelTarget = cancellation && index === cancellation.targetIndex;
     if (cancelTarget) {
+      let before: any; let unauthorized: Response;
+      async function prepareCancellation() {
+        const until = Math.min(Date.now()+5000, globalDeadline);
+        let beforeRaw: string;
+        while (true) {
+          const response = await fetch(coordinatorUrl+`/api/v1/runs/${runId}/trace`, {
+            headers: { "x-agat-admin-token": adminToken }, signal: AbortSignal.timeout(5000), redirect: "error" });
+          assert.equal(response.status, 200); beforeRaw = await response.text(); assert.ok(Buffer.byteLength(beforeRaw) <= 16*1024*1024);
+          before = JSON.parse(beforeRaw); assert.equal(before.decisionObservations.length, 0);
+          if (activeCancellation) assert.ok(["queued", "running"].includes(before.run.status));
+          else assert.equal(before.run.status, "running");
+          if (!activeCancellation || before.run.status === "running" && before.decisionCallerAccounting.stages.length === 1
+              && before.decisionCallerAccounting.stages[0].assignments.length === 1
+              && before.decisionCallerAccounting.stages[0].assignments[0].intent === true) break;
+          assert.ok(Date.now()<until, "Actual target intent was not prepared");
+          assert.equal(worker!.exitCode, null); assert.equal(worker!.signalCode, null);
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        fs.writeFileSync(path.join(directory, "coordinator-cancellation-before.http.json"), beforeRaw, { flag: "wx", mode: 0o600 });
+        unauthorized = await fetch(coordinatorUrl+`/api/v1/runs/${runId}/cancel`, { method: "POST", signal: AbortSignal.timeout(5000), redirect: "error" });
+        assert.equal(unauthorized.status, 401);
+        if (activeCancellation) await unauthorized.text();
+      }
+      if (activeCancellation) {
+        await prepareCancellation();
+        coordinatorCancellationPrepared = { schemaVersion: "agat.decision.public-workflow-active-cancellation-prepared.v1", targetIndex: index,
+          caseId: item.id, runId, stageId: before.decisionCallerAccounting.stages[0].stageId, inputSha256: item.inputSha256,
+          profileSha256: health.profileSha256, beforeTraceFileSha256: digest("coordinator-cancellation-before.http.json"),
+          unauthenticatedStatus: unauthorized!.status, preparedAt: new Date().toISOString() };
+        publish("coordinator-cancellation-prepared.json", coordinatorCancellationPrepared);
+      }
       coordinatorCancellationReady = await waitReceipt("coordinator-cancellation-ready.json", cancellation.disconnectDeadlineMs);
       const ready = coordinatorCancellationReady;
-      assert.equal(ready.schemaVersion, "agat.decision.public-workflow-cancellation-ready.v1");
+      assert.equal(ready.schemaVersion, activeCancellation ? "agat.decision.public-workflow-active-cancellation-ready.v1" : "agat.decision.public-workflow-cancellation-ready.v1");
       assert.equal(ready.targetIndex, index); assert.equal(ready.caseId, item.id); assert.equal(ready.inputSha256, item.inputSha256);
-      assert.equal(ready.profileSha256, health.profileSha256); assert.equal(ready.upstreamCompletedNormally, true); assert.equal(ready.responseBytesWritten, 0);
-      const beforeResponse = await fetch(coordinatorUrl+`/api/v1/runs/${runId}/trace`, {
-        headers: { "x-agat-admin-token": adminToken }, signal: AbortSignal.timeout(5000), redirect: "error" });
-      assert.equal(beforeResponse.status, 200); const beforeRaw = await beforeResponse.text(); assert.ok(Buffer.byteLength(beforeRaw) <= 16*1024*1024);
-      const before = JSON.parse(beforeRaw); assert.equal(before.run.status, "running"); assert.equal(before.decisionObservations.length, 0);
+      assert.equal(ready.profileSha256, health.profileSha256);
+      if (activeCancellation) {
+        assert.equal(ready.upstreamResponseBytesObserved, 0); assert.equal(ready.downstreamResponseBytesWritten, 0);
+        assert.equal(Object.hasOwn(ready, "responseBodySha256"), false);
+      } else { assert.equal(ready.upstreamCompletedNormally, true); assert.equal(ready.responseBytesWritten, 0); }
+      if (!activeCancellation) await prepareCancellation();
       assert.equal(before.decisionCallerAccounting.stages[0].stageId, ready.stageId);
       assert.equal(before.decisionCallerAccounting.stages[0].assignments[0].intent, true);
-      fs.writeFileSync(path.join(directory, "coordinator-cancellation-before.http.json"), beforeRaw, { flag: "wx", mode: 0o600 });
       const requestPath = `/api/v1/runs/${runId}/cancel`;
-      const unauthorized = await fetch(coordinatorUrl+requestPath, { method: "POST", signal: AbortSignal.timeout(5000), redirect: "error" });
-      assert.equal(unauthorized.status, 401);
+      assert.equal(store.getRun(runId)!.status, "running");
       const requestStartedAt = new Date().toISOString(); const started = performance.now();
       const cancelResponse = await fetch(coordinatorUrl+requestPath, { method: "POST", headers: { "x-agat-admin-token": adminToken },
-        signal: AbortSignal.timeout(cancellation.cancelRequestDeadlineMs), redirect: "error" });
+        signal: AbortSignal.timeout(activeCancellation ? input.coordinatorTrigger.cancelRequestDeadlineMs : cancellation.cancelRequestDeadlineMs), redirect: "error" });
       const responseBody = await cancelResponse.text();
       const cancelRequestElapsedMs = Math.round((performance.now()-started)*1000)/1000;
       const responseCompletedAt = new Date().toISOString();
@@ -223,7 +278,7 @@ try {
         caseId: item.id, runId, instanceId: String(instance.id), stageId: ready.stageId, inputSha256: item.inputSha256, profileSha256: health.profileSha256,
         readyFileSha256: digest("coordinator-cancellation-ready.json"), beforeTraceFileSha256: digest("coordinator-cancellation-before.http.json"),
         requestMethod: "POST", requestPath, requestBody: "", requestBodySha256: createHash("sha256").update("").digest("hex"),
-        unauthenticatedStatus: unauthorized.status, httpStatus: cancelResponse.status, responseBody,
+        unauthenticatedStatus: unauthorized!.status, httpStatus: cancelResponse.status, responseBody,
         responseBodySha256: createHash("sha256").update(responseBody).digest("hex"), requestStartedAt, responseCompletedAt,
         cancelRequestElapsedMs };
       publish("coordinator-cancellation-applied.json", coordinatorCancellationApplied);
@@ -245,10 +300,17 @@ try {
     fs.appendFileSync(path.join(directory, "workflow-routes.jsonl"), JSON.stringify(route)+"\n", { mode: 0o600 });
     if (cancelTarget) {
       coordinatorCancellationDrained = await waitReceipt("coordinator-cancellation-drained.json", cancellation.disconnectDeadlineMs);
-      assert.equal(coordinatorCancellationDrained.schemaVersion, "agat.decision.public-workflow-cancellation-drained.v1");
+      assert.equal(coordinatorCancellationDrained.schemaVersion, activeCancellation ? "agat.decision.public-workflow-active-cancellation-drained.v1" : "agat.decision.public-workflow-cancellation-drained.v1");
       assert.equal(coordinatorCancellationDrained.targetIndex, index); assert.equal(coordinatorCancellationDrained.caseId, item.id);
       assert.equal(coordinatorCancellationDrained.stageId, route.stageId); assert.equal(coordinatorCancellationDrained.inputSha256, item.inputSha256);
       assert.equal(coordinatorCancellationDrained.profileSha256, health.profileSha256);
+      if (activeCancellation) {
+        activeNativeRecovered = await waitReceipt("native-recovered.json", cancellation.recoveryDeadlineMs);
+        assert.equal(activeNativeRecovered.schemaVersion, "agat.decision.public-workflow-active-cancellation-recovered.v1");
+        assert.equal(activeNativeRecovered.targetIndex, index); assert.equal(activeNativeRecovered.profileSha256, health.profileSha256);
+        assert.equal(activeNativeRecovered.warmupCount, 2); assert.equal(activeNativeRecovered.warmupFileSha256, digest("recovery-warmup.json"));
+        assert.ok(Number.isInteger(activeNativeRecovered.runtimePid) && activeNativeRecovered.runtimePid > 0 && activeNativeRecovered.runtimePid !== activeNativeArmed.runtimePid);
+      }
     }
     if (timeout && index === timeout.targetIndex) {
       assert.equal(observations[0].observation.status, "unavailable"); assert.equal(observations[0].observation.reason, "timeout");
@@ -295,6 +357,7 @@ try {
     ...(recovery ? { runtimeRecovery: { armed: crashArmed, crashed: crashApplied, recovered: recoveryApplied } } : {}),
     ...(timeout ? { callerTimeoutDrained } : {}),
     ...(cancellation ? { coordinatorCancellationReady, coordinatorCancellationApplied, coordinatorCancellationDrained } : {}),
+    ...(activeCancellation ? { activeNativeArmed, activeNativeRecovered, coordinatorCancellationPrepared } : {}),
     unauthenticatedStatus: 401, authenticatedStatus: response.status, ownersAppointed: false, routingEnabled: false, qualification: "not_assessed" });
   console.log(JSON.stringify({ status: "observed", inputs: routes.length, primaryFixtureCalls: primaryCalls }));
 } finally {

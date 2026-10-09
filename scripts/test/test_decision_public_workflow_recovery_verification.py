@@ -23,7 +23,8 @@ class RecoveryVerificationTest(unittest.TestCase):
                  "scripts/test/test_decision_public_workflow_loss_verification.py",
                  "scripts/test/test_decision_public_workflow_recovery_verification.py",
                  "scripts/test/test_decision_public_workflow_timeout.py",
-                 "scripts/test/test_decision_public_workflow_cancellation.py"]
+                 "scripts/test/test_decision_public_workflow_cancellation.py",
+                 "scripts/test/test_decision_public_workflow_active_integration.py"]
         for name in paths:
             target = cls.root/name
             target.parent.mkdir(parents=True, exist_ok=True)

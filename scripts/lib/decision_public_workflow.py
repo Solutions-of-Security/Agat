@@ -41,7 +41,12 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
     loss = plan["schemaVersion"] == LOSS_PLAN_SCHEMA
     recovering = plan["schemaVersion"] == recovery.PLAN_SCHEMA
     timing_out = plan["schemaVersion"] == timeout.PLAN_SCHEMA
-    cancelling = plan["schemaVersion"] == cancellation.PLAN_SCHEMA
+    active_cancelling = plan["schemaVersion"] == "agat.decision.public-workflow-plan.v6"
+    cancelling = active_cancelling or plan["schemaVersion"] == cancellation.PLAN_SCHEMA
+    if active_cancelling:
+        from scripts.lib import decision_public_workflow_active_integration as active_integration
+        from scripts.lib.decision_public_workflow_active_cancellation import active_spec
+        require(fingerprint(plan.get("coordinatorTrigger")) == fingerprint(active_integration.TRIGGER), "Active caller trigger differs")
     if loss:
         require(fingerprint(plan.get("runtimeLoss")) == fingerprint(loss_spec(context, plan["runtimeLoss"]["beforeIndex"])), "Runtime loss was not prospectively specified")
     else:
@@ -57,11 +62,11 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
     else:
         require("callerTimeout" not in plan and (transport is None or cancelling), "Historical protocols cannot admit a caller timeout")
     if cancelling:
-        require(fingerprint(plan.get("coordinatorCancellation")) == fingerprint(cancellation.cancellation_spec(context, plan["coordinatorCancellation"]["targetIndex"]))
+        require(fingerprint(plan.get("coordinatorCancellation")) == fingerprint((active_spec if active_cancelling else cancellation.cancellation_spec)(context, plan["coordinatorCancellation"]["targetIndex"]))
                 and cancellation_receipts is not None and transport is not None, "Coordinator cancellation was not prospectively specified")
     else:
         require("coordinatorCancellation" not in plan and cancellation_receipts is None, "Historical protocols cannot admit coordinator cancellation")
-    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA, timeout.PLAN_SCHEMA, cancellation.PLAN_SCHEMA} and plan["mode"] == "serial_closed_model_integration"
+    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA, timeout.PLAN_SCHEMA, cancellation.PLAN_SCHEMA, "agat.decision.public-workflow-plan.v6"} and plan["mode"] == "serial_closed_model_integration"
             and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
             and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
             and type(plan["processVersion"]) is int and plan["processVersion"] == 1
@@ -159,8 +164,8 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
         else: physical[outcome(result)] += 1
         if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
     transport_evidence = timeout.verify_transport(context, plan["callerTimeout"], transport, cohort, routes) if timing_out else {}
-    if cancelling: transport_evidence = cancellation.verify_transport(context, plan["coordinatorCancellation"], transport, cohort, routes, cancellation_receipts)
-    return sealed({"schemaVersion": cancellation.RESULT_SCHEMA if cancelling else timeout.RESULT_SCHEMA if timing_out else recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+    if cancelling: transport_evidence = (active_integration if active_cancelling else cancellation).verify_transport(context, plan["coordinatorCancellation"], transport, cohort, routes, cancellation_receipts)
+    return sealed({"schemaVersion": "agat.decision.public-workflow-result.v6" if active_cancelling else cancellation.RESULT_SCHEMA if cancelling else timeout.RESULT_SCHEMA if timing_out else recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
         "completedInstances": count-int(cancelling), "boundCallerReturns": count-int(cancelling), "computed": len(timings), "statuses": dict(statuses),
         **({"runtimeLoss": plan["runtimeLoss"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if loss else {}),
         **({"runtimeRecovery": plan["runtimeRecovery"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if recovering else {}),
