@@ -579,7 +579,9 @@ Common raw-pinned offline replay и 1460 independent checks подтвердил
 186 contributors, exact numeric controls всех 49 результатов, counters и
 отсутствие 33 temporary PID; resident четыре PID / 35 sources unchanged.
 12 новых / 18 focused / full 917 Python / 12 Node checks, typecheck,
-links/catalog прошли. Два preparation failure и red regressions сохранены
+links/catalog прошли. ZIP 89 entries / шесть source snapshots проверен по
+CRC/SHA/size в двух копиях и сохранён в исходном workspace `/docs/private`.
+Два preparation failure и red regressions сохранены
 отдельно: исправлены default option flags и JSON integer/float comparison,
 без переименования failed evidence в pass. Следующий gate — actual
 coordinator cancellation active shadow lease и durable caller accounting.

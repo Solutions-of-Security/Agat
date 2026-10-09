@@ -127,6 +127,14 @@ links and the process catalog. Earlier failed admission/number-comparison runs,
 red regressions and the initial missing-contributor fixture failure are retained
 separately; none was relabelled as a successful native run.
 
+[The archive receipt](./public-workflow-timeout-archive-summary.json) records
+89 entries / 3,949,998 bytes, including six source snapshots, all three native
+attempts, the healthy control evidence, raw context and independent audits.
+Both private ZIP copies passed CRC and complete member byte/hash/size checks.
+The second copy is retained in the original workspace under
+`docs/private/2026-10-09/public-workflow-timeout-verified.zip`; temporary
+credential contents are excluded.
+
 The next engineering gate is an actual coordinator cancellation during an
 active shadow lease, including durable assignment/caller accounting and a
 healthy subsequent process. Human labels, named owners, applicable
