@@ -687,6 +687,25 @@ deadline до native response с owned recovery и полным suffix. Primary 
 owners/customer/SLO/human calibration/holdout открыты, routing false /
 not_assessed; GPU kernel preemption не заявляется.
 
+[Actual worker deadline во время native HTTP](./qualification/local-decisions/performance/public-workflow-active-deadline.md),
+09.10: свежий v7 прогон всех 49 original development cases / 44 groups закрепил
+250 мс для target index 25 в единственной published process version; остальные
+48 cases сохранили 10000 мс и полные исходные inputs. Actual worker вернул
+unavailable.timeout за 250.732 мс после fresh active native snapshot без response
+bytes; timeout/primary completion — 200, renewals — 204. Все 49 durable returns
+и primary routes завершены, unknown caller returns 0. Upstream EOF привёл к
+native exit 75 / child -15; три original native PIDs отсутствовали до replacement,
+same-port/profile recovery завершил два warmups за 7106 мс и 23 healthy suffix
+cases. Всего 53 POST starts / 52 known completions, retry 0; interrupted terminal
+counter unknown. 62 focused tests, TypeScript, raw-pinned offline replay и fresh
+v6 control replay прошли. Independent stdlib audit сверил 48 baseline signatures,
+195 measured sources, published graph/budgets, 49 lease assignments и отсутствие
+10 temporary PIDs. Resident package/config/profile, четыре protected PIDs и
+inference counters unchanged; ZIP/source snapshots сохранены под /docs/private.
+Следующий engineering gate — весь inventory с real primary и matched control.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel preemption не заявляется.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
