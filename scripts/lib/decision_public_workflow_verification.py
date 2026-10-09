@@ -27,6 +27,9 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
            "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
            "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}
     plan = parse_json(raw["plan"])
+    if plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v6":
+        from scripts.lib.decision_public_workflow_active_verification import verify as verify_active
+        return verify_active(root, directory, context_path, context_sha=context_sha, plan_sha=plan_sha, result_sha=result_sha)
     if plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v3":
         from scripts.lib.decision_public_workflow_recovery_verification import verify as verify_recovery
         return verify_recovery(root, directory, context_path, context_sha=context_sha, plan_sha=plan_sha, result_sha=result_sha)

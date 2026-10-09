@@ -668,6 +668,25 @@ boot/login уже закрыт; следующий runtime gate — actual coord
 recovery. Owner/customer/SLO, human calibration/holdout остаются открытыми,
 routing false / not_assessed; GPU kernel preemption не заявляется.
 
+[Actual coordinator cancellation во время native HTTP](./qualification/local-decisions/performance/public-workflow-active-cancellation.md),
+09.10: свежий source-bound v6 прогон всех 49 development cases / 44 groups
+с реальным coordinator/worker сохранил 48 delivered results и один cancelled
+assignment с durable `return_missing`; local unavailable.cancelled доказан
+отклонённым HTTP return. После actual pending intent/401 probe fresh active
+snapshot привёл к authenticated cancel 204, renewal 404 и upstream EOF за 595 мс.
+Late observation/complete/fail — 400. Native exit 75 / child -15, cleanup всех
+трёх original native PIDs, same-port/profile replacement и 23 healthy suffix
+cases подтверждены. Всего 53 POST starts / 52 known completions, четыре warmups,
+retry 0; interrupted terminal counter unknown. 54 focused tests, TypeScript,
+offline replay и independent stdlib audit прошли; 48 baseline signatures,
+193 measured source hashes, все 49 lease assignments и отсутствие 13 temporary
+PIDs перепроверены. Resident package/config/profile, четыре protected PIDs и
+inference counters unchanged. ZIP/source snapshots и original workspace copy
+сохранены под /docs/private. Следующий runtime gate — actual worker caller
+deadline до native response с owned recovery и полным suffix. Primary fixture,
+owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel preemption не заявляется.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

@@ -20,6 +20,7 @@ PATHS = ["decision_runtime", "scripts/lib", "scripts/verify-public-support-workf
     "scripts/test/test_decision_public_workflow_recovery_verification.py",
     "scripts/test/test_decision_public_workflow_timeout.py",
     "scripts/test/test_decision_public_workflow_cancellation.py",
+    "scripts/test/test_decision_public_workflow_active_integration.py",
     "scripts/run-temporal-real-rag.py", "scripts/profile-embedding-rag.py"]
 
 
