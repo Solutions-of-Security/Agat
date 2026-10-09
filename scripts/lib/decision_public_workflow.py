@@ -41,6 +41,12 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
     loss = plan["schemaVersion"] == LOSS_PLAN_SCHEMA
     recovering = plan["schemaVersion"] == recovery.PLAN_SCHEMA
     timing_out = plan["schemaVersion"] == timeout.PLAN_SCHEMA
+    active_deadline = plan["schemaVersion"] == "agat.decision.public-workflow-plan.v7"
+    if active_deadline:
+        from scripts.lib import decision_public_workflow_active_deadline as deadline
+        require(fingerprint(plan.get('callerDeadline')) == fingerprint(deadline.deadline_spec(context,
+            plan['callerDeadline']['targetIndex'],plan['callerDeadline']['callerTimeoutMs']))
+            and transport is not None and cancellation_receipts is not None,"Active caller deadline was not prospectively bound")
     active_cancelling = plan["schemaVersion"] == "agat.decision.public-workflow-plan.v6"
     cancelling = active_cancelling or plan["schemaVersion"] == cancellation.PLAN_SCHEMA
     if active_cancelling:
@@ -60,13 +66,14 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
         require(fingerprint(plan.get("callerTimeout")) == fingerprint(timeout.timeout_spec(context, plan["callerTimeout"]["targetIndex"])),
                 "Caller timeout was not prospectively specified")
     else:
-        require("callerTimeout" not in plan and (transport is None or cancelling), "Historical protocols cannot admit a caller timeout")
+        require("callerTimeout" not in plan and (transport is None or cancelling or active_deadline), "Historical protocols cannot admit a caller timeout")
     if cancelling:
         require(fingerprint(plan.get("coordinatorCancellation")) == fingerprint((active_spec if active_cancelling else cancellation.cancellation_spec)(context, plan["coordinatorCancellation"]["targetIndex"]))
                 and cancellation_receipts is not None and transport is not None, "Coordinator cancellation was not prospectively specified")
     else:
-        require("coordinatorCancellation" not in plan and cancellation_receipts is None, "Historical protocols cannot admit coordinator cancellation")
-    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA, timeout.PLAN_SCHEMA, cancellation.PLAN_SCHEMA, "agat.decision.public-workflow-plan.v6"} and plan["mode"] == "serial_closed_model_integration"
+        require("coordinatorCancellation" not in plan and (cancellation_receipts is None or active_deadline), "Historical protocols cannot admit coordinator cancellation")
+    require(active_deadline or 'callerDeadline' not in plan,"Historical protocols cannot admit active caller deadline")
+    require(plan["schemaVersion"] in {PLAN_SCHEMA, LOSS_PLAN_SCHEMA, recovery.PLAN_SCHEMA, timeout.PLAN_SCHEMA, cancellation.PLAN_SCHEMA, "agat.decision.public-workflow-plan.v6", "agat.decision.public-workflow-plan.v7"} and plan["mode"] == "serial_closed_model_integration"
             and plan["primary"] == "fixture_chat_completions" and plan["ownersAppointed"] is False
             and plan["routingEnabled"] is False and plan["qualification"] == "not_assessed"
             and type(plan["processVersion"]) is int and plan["processVersion"] == 1
@@ -98,6 +105,8 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
     require(set(instances) == set(traces) == {row["runId"] for row in routes}, "Cohort run identities differ")
     statuses = Counter(); physical = Counter(); timings = []; unavailable_timings = []; expected_profiles = context["profile"]
     for index, (case, route) in enumerate(zip(context["inputs"], routes)):
+        deadline_target = active_deadline and index == plan['callerDeadline']['targetIndex']
+        caller_budget = plan['callerDeadline']['callerTimeoutMs'] if deadline_target else 10000
         cancelled = cancelling and index == plan["coordinatorCancellation"]["targetIndex"]
         expected_state = "cancelled" if cancelled else "completed"
         fields(route, {"index", "caseId", "inputSha256", "instanceId", "runId", "stageId", "primaryCalls", "primaryBranch", "wrongBranch", "runStatus"})
@@ -117,7 +126,7 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
         stage, caller, history = (rows[0] for rows in inventories)
         require(stage["stageStatus"] == expected_state and stage["assigned"] is True and stage["observationRecorded"] is (not cancelled)
                 and stage["inputSha256"] == case["inputSha256"] and stage["profileSha256"] == context["profileSha256"]
-                and type(stage["callerTimeoutMs"]) is int and stage["callerTimeoutMs"] == 10000,
+                and type(stage["callerTimeoutMs"]) is int and stage["callerTimeoutMs"] == caller_budget,
                 "Input was transformed, profile changed or shadow not recorded")
         require(caller["coverage"] == history["coverage"] == "complete" and len(caller["assignments"]) == len(history["assignments"]) == 1,
                 "Incomplete or retried assignment ledger")
@@ -137,9 +146,10 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
         fields(exported, {"stageId", "profileSha256", "inputSha256", "callerTimeoutMs", "observation"})
         require(exported["stageId"] == route["stageId"] and exported["inputSha256"] == assigned["inputSha256"] == case["inputSha256"]
                 and exported["profileSha256"] == assigned["profileSha256"] == context["profileSha256"]
-                and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == 10000
+                and type(exported['callerTimeoutMs']) is type(assigned['callerTimeoutMs']) is int
+                and exported["callerTimeoutMs"] == assigned["callerTimeoutMs"] == caller_budget
                 and fingerprint(exported["observation"]) == fingerprint(assigned["observation"]), "Observation binding differs")
-        timed_out = timing_out and index == plan["callerTimeout"]["targetIndex"]
+        timed_out = deadline_target or timing_out and index == plan["callerTimeout"]["targetIndex"]
         lost = (loss and index >= plan["runtimeLoss"]["beforeIndex"]) or (recovering and index == plan["runtimeRecovery"]["targetIndex"]) or timed_out
         observation = fields(exported["observation"], {"mode", "fallback", "status", "reason", "callerTiming"} | (set() if lost else {"result"}))
         require(observation["mode"] == "shadow" and observation["fallback"] == "primary", "Shadow routing changed")
@@ -165,12 +175,17 @@ def verify_inventory(context, plan, cohort, routes, transport=None, cancellation
         if result["status"] in {"ok", "abstain"}: timings.append(timing["durationMs"])
     transport_evidence = timeout.verify_transport(context, plan["callerTimeout"], transport, cohort, routes) if timing_out else {}
     if cancelling: transport_evidence = (active_integration if active_cancelling else cancellation).verify_transport(context, plan["coordinatorCancellation"], transport, cohort, routes, cancellation_receipts)
-    return sealed({"schemaVersion": "agat.decision.public-workflow-result.v6" if active_cancelling else cancellation.RESULT_SCHEMA if cancelling else timeout.RESULT_SCHEMA if timing_out else recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
+    if active_deadline:
+        deadline.verify_graph(context,plan['callerDeadline'],plan,cancellation_receipts['graphRaw'])
+        transport_evidence=deadline.verify_transport(context,plan['callerDeadline'],transport,cohort,routes,cancellation_receipts)
+    return sealed({"schemaVersion": deadline.RESULT_SCHEMA if active_deadline else "agat.decision.public-workflow-result.v6" if active_cancelling else cancellation.RESULT_SCHEMA if cancelling else timeout.RESULT_SCHEMA if timing_out else recovery.RESULT_SCHEMA if recovering else LOSS_RESULT_SCHEMA if loss else RESULT_SCHEMA, "status": "integration_pass", "scheduled": count,
         "completedInstances": count-int(cancelling), "boundCallerReturns": count-int(cancelling), "computed": len(timings), "statuses": dict(statuses),
         **({"runtimeLoss": plan["runtimeLoss"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if loss else {}),
         **({"runtimeRecovery": plan["runtimeRecovery"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings)} if recovering else {}),
         **({"callerTimeout": plan["callerTimeout"], "unavailableReturns": len(unavailable_timings), "callerMsUnavailable": distribution(unavailable_timings),
             "physicalDeliveredOutcomes": dict(physical), "healthySuffixCases": count-plan["callerTimeout"]["targetIndex"]-1} if timing_out else {}),
+        **({'callerDeadline':plan['callerDeadline'],'unavailableReturns':len(unavailable_timings),'callerMsUnavailable':distribution(unavailable_timings),
+            'physicalDeliveredOutcomes':dict(physical),'healthySuffixCases':count-plan['callerDeadline']['targetIndex']-1} if active_deadline else {}),
         **({"coordinatorCancellation": plan["coordinatorCancellation"], "cancelledInstances": 1, "unknownCallerReturns": 1,
             "unavailableReturns": 0, "physicalDeliveredOutcomes": dict(physical),
             "healthySuffixCases": count-plan["coordinatorCancellation"]["targetIndex"]-1} if cancelling else {}),

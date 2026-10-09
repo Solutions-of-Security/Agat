@@ -157,9 +157,9 @@ def bounded_metrics(port):
 
 class ActiveCancellationProxy(DeadlineProxy):
     """Select both sockets; upstream readiness fails instead of hiding completed work."""
-    def __init__(self, upstream_port, context, spec):
+    def __init__(self, upstream_port, context, spec, *, spec_factory=active_spec):
         self.ready = None; self.warmup_outcomes = None; self.warmup_epoch = None
-        super().__init__(upstream_port, context, spec, spec_factory=active_spec)
+        super().__init__(upstream_port, context, spec, spec_factory=spec_factory)
 
     def _snapshot(self):
         # An observation GET does not enter the decision POST inventory.

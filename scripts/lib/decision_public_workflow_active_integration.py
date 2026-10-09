@@ -54,7 +54,7 @@ def validate_preparation(context,spec,prepared,before_raw):
 
 def publish_barrier(directory,name,value):
     """Publish completed bytes without exposing partial JSON or replacing an existing receipt."""
-    require(name in {'active-native-armed.json','coordinator-cancellation-ready.json','coordinator-cancellation-drained.json',
+    require(name in {'active-native-armed.json','active-native-ready.json','active-native-drained.json','coordinator-cancellation-ready.json','coordinator-cancellation-drained.json',
         'native-retired.json','native-recovered.json'},"Unknown active barrier filename")
     pending=directory/(name[:-5]+'.pending.json')
     write_json_new(pending,value)
@@ -103,9 +103,10 @@ def receipt_bundle(raw):
     return value
 
 
-def verify_transport(context,spec,transport,cohort,routes,bundle):
-    same(spec,active.active_spec(context,spec['targetIndex']),"Posthoc active boundary")
-    transport=verify_seal(transport,active.TRANSPORT_SCHEMA)
+def verify_transport(context,spec,transport,cohort,routes,bundle,*,spec_factory=active.active_spec,
+                     transport_schema=active.TRANSPORT_SCHEMA,boundary_check=None):
+    same(spec,spec_factory(context,spec['targetIndex']),"Posthoc active boundary")
+    transport=verify_seal(transport,transport_schema)
     fields(transport,{"schemaVersion","sha256","spec","proxyPort","upstreamPort","startedAt","closedAt","rows","acceptedPosts",
         "completedUpstreamPosts","interruptedActiveUpstreamPosts","errors","closed","activeHandlers"})
     same(transport['spec'],spec,"Active relay changed its bound specification")
@@ -146,7 +147,8 @@ def verify_transport(context,spec,transport,cohort,routes,bundle):
             and number(row['upstreamMs'],0,spec['upstreamTimeoutMs'])>=typed['durationMs']-.1
             and abs(stored['callerTiming']['durationMs']-row['elapsedMs'])<=250,"Healthy active-workflow timing incomplete")
         delivered[outcome(typed)]+=1
-    return {**verify_boundary(context,spec,transport,cohort,routes,bundle),'physicalScheduledOutcomes':dict(delivered),
+    boundary=verify_boundary if boundary_check is None else boundary_check
+    return {**boundary(context,spec,transport,cohort,routes,bundle),'physicalScheduledOutcomes':dict(delivered),
         'physicalScheduledPostStarts':count,'completedPhysicalScheduledPosts':count-1,'interruptedActiveUpstreamPosts':1,
         'targetTypedResult':None,'targetTerminalCounterUnknown':True,'runtimeRestarted':True}
 
