@@ -182,8 +182,12 @@ def verify_transport(context,spec,transport,cohort,routes,bundle):
         indices=list(range(ordinal*2,min(ordinal*2+2,count))); require(type(batch['index']) is int and batch['index']==ordinal
             and batch['inputIndices']==indices and batch['runIds']==[routes[i]['runId'] for i in indices],'Original pair reordered or repeated')
         started=timestamp(batch['startedAt'],'batch.startedAt'); completed=timestamp(batch['completedAt'],'batch.completedAt')
-        require(previous<=started<=completed and (completed-started).total_seconds()*1000<=20001
-            and abs(number(batch['elapsedMs'],0,20000)-(completed-started).total_seconds()*1000)<=2,'Pair crossed completion barrier/deadline'); previous=completed
+        wall_ms=(completed-started).total_seconds()*1000
+        require(previous<=started<=completed and wall_ms<=20001
+            and abs(number(batch['elapsedMs'],0,20000)-wall_ms)<=2,
+            f"Pair crossed completion barrier/deadline: index={ordinal}, previous={previous.isoformat()}, "
+            f"started={started.isoformat()}, completed={completed.isoformat()}, wallMs={wall_ms}, monotonicMs={batch['elapsedMs']}")
+        previous=completed
         creates=[timestamp(instances[routes[i]['runId']]['createdAt'],'instance.createdAt') for i in indices]
         require((max(creates)-min(creates)).total_seconds()*1000<=1000 and all(started<=v<=completed for v in creates),'Pair creation skew exceeded prospective bound')
         require(all(started<=timestamp(transport['rows'][i]['acceptedAt'],'acceptedAt')<=timestamp(transport['rows'][i]['finishedAt'],'finishedAt')<=completed for i in indices),'Pair moved beyond original workflow boundary')

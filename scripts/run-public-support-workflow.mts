@@ -227,7 +227,10 @@ try {
     "--model-discovery", "off", "--no-web", "--poll-interval", "0.2", "--concurrency", pairing ? "2" : "1", "--decision-url", url.origin],
     { cwd: process.cwd(), stdio: ["ignore", workerLog, workerLog], env: { ...environment, AGAT_ENROLLMENT_TOKEN: enrollmentToken,
       OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" } });
-  await new Promise(resolve => setTimeout(resolve, Math.max(0, Date.parse(startAt)-Date.now())));
+  // A timer wakeup alone does not establish the prospective census boundary.
+  while (Date.now() < Date.parse(startAt)) {
+    await new Promise(resolve => setTimeout(resolve, Math.max(1, Date.parse(startAt)-Date.now())));
+  }
   const globalDeadline = Date.now()+(recovery?.workflowDeadlineMs ?? 240000);
   async function waitReceipt(name: string, budget: number) {
     const deadline = Math.min(Date.now()+budget, globalDeadline);
