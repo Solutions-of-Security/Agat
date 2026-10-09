@@ -3,15 +3,17 @@ import copy
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
+import importlib.util
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from decision_runtime.artifacts import sealed
 from decision_runtime.contracts import Request
@@ -135,6 +137,15 @@ class MatchedWorkflowTest(unittest.TestCase):
         for mutate in (missing, altered):
             with self.assertRaises(ValueError): self.check(self.mutate_rows('coordinator-http.jsonl', mutate))
 
+    def test_rehashed_wrong_raw_return_and_intent_assignment_fail(self):
+        for suffix in ('/decision-shadow/intent', '/decision-shadow'):
+            def alter(rows):
+                row = next(r for r in rows if r['path'].endswith(suffix)); value = json.loads(row['requestBody'])
+                if suffix.endswith('/intent'): value['assignmentId'] = 'changed-assignment'
+                else: value['result']['reason'] = 'altered-reason'
+                row['requestBody'] = encoded(value).decode(); row['requestBodySha256'] = hashlib.sha256(row['requestBody'].encode()).hexdigest()
+            with self.subTest(path=suffix), self.assertRaises(ValueError): self.check(self.mutate_rows('coordinator-http.jsonl', alter))
+
     def test_unknown_or_revoked_durable_return_fails_after_trace_rehash(self):
         data = copy.deepcopy(self.artifacts); driver = copy.deepcopy(self.driver)
         route = next(r for r in driver['routes'] if r['condition'] == 'shadow'); trace = json.loads(data[route['traceFile']])
@@ -192,9 +203,11 @@ class ReplayVerificationTest(unittest.TestCase):
             sample = {'label': label, 'elapsedMs': elapsed, 'health': health, 'metricsRaw': metrics, 'ownedPids': [42], 'processRaw': 'synthetic PID fixture'}
             parsed, origin = counters(sample); sample.update(counters=parsed, serverStart=origin); samples.append(sample)
         cls.context = context; cls.plan = plan; cls.artifacts = {n: b for n, b in artifacts.items() if n in diagnostic.ARTIFACTS or n.startswith('trace-')}
+        owned_pids = [42, 43, *MatchedWorkflowTest.driver['ownedPids']]
+        cls.artifacts['owned-pids.jsonl'] = encoded({'recordedAt': created, 'ownedPids': owned_pids})
         cls.result = sealed({'schemaVersion': diagnostic.RESULT_SCHEMA, 'status': 'observed', 'planSha256': plan['sha256'],
             'evidence': diagnostic.verify_inventory(context, diagnostic.PROTOCOL, recipe, MatchedWorkflowTest.driver, cls.artifacts),
-            'warmup': warmup, 'samples': samples, 'failure': None, 'ownedPids': [42, 43, *MatchedWorkflowTest.driver['ownedPids']],
+            'warmup': warmup, 'samples': samples, 'failure': None, 'ownedPids': owned_pids,
             'remainingOwnedPids': [], 'cleanupErrors': [], 'runtimeExitCode': -15, 'primaryExitCode': -15, 'driverExitCode': 0,
             'artifactSha256': {n: hashlib.sha256(b).hexdigest() for n, b in cls.artifacts.items()}, 'elapsedMs': 10000, **authority})
         cls().replay()
@@ -241,6 +254,39 @@ class ReplayVerificationTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.replay(result=result)
         artifacts = copy.deepcopy(self.artifacts); artifacts['primary-http.jsonl'] += b'{}\n'
         with self.assertRaises(ValueError): self.replay(artifacts=artifacts)
+
+
+class LauncherFailureTest(unittest.TestCase):
+    def exercise(self, unknown_cleanup=False):
+        spec = importlib.util.spec_from_file_location('real_primary_cli_fixture', ROOT/'scripts/run-public-support-real-primary.py')
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        context, _, _, _ = fixture.fixture()
+        private = ROOT/'docs/private'; private.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=private, prefix='real-primary-launcher-failure-') as temporary:
+            root = Path(temporary); manifest = root/'manifest.json'; manifest.write_bytes(b'synthetic manifest; no model\n')
+            context['manifestFileSha256'] = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            context = sealed({k: v for k, v in context.items() if k != 'sha256'}); context_path = root/'context.json'; context_path.write_bytes(encoded(context))
+            directory = root/'run'; process = Mock(pid=888888888, returncode=1); process.poll.return_value = 1
+            def remaining(_owned, errors):
+                if unknown_cleanup: errors.append('inventory:SyntheticFailure'); return None
+                return []
+            with patch.object(cli, 'historical_context_sources'), patch.object(cli.launcher, 'frozen_sources', return_value=('0'*40, {})), \
+                patch.object(cli, 'verify_manifest', return_value=({}, None)), patch.object(cli, 'verify_profile'), \
+                patch.object(cli.subprocess, 'check_output', return_value=encoded(context['tokenizerEnvironment'])), \
+                patch.object(cli.diagnostic, 'prepare', return_value={'fixture': 'no model'}), patch.object(cli.subprocess, 'Popen', return_value=process) as child, \
+                patch.object(cli.runtime, 'stop_owned_process') as stop, patch.object(cli.runtime, 'remaining_owned_processes', side_effect=remaining), \
+                patch.object(cli.runtime, 'request') as network:
+                status = cli.main(['--context-profile', str(context_path), '--context-profile-file-sha256', hashlib.sha256(context_path.read_bytes()).hexdigest(),
+                    '--runtime-python', sys.executable, '--manifest', str(manifest), '--primary-binaries', str(root/'missing-binaries'),
+                    '--primary-models', str(root/'missing-models'), '--evidence-dir', str(directory)])
+                self.assertEqual(status, 1); child.assert_called_once(); network.assert_not_called(); stop.assert_called_once()
+            result = json.loads((directory/'result.json').read_text()); self.assertEqual(result['status'], 'measurement_error')
+            self.assertEqual(result['failure']['type'], 'ValueError'); self.assertEqual(result['ownedPids'], [888888888])
+            self.assertEqual(result['remainingOwnedPids'], None if unknown_cleanup else [])
+            self.assertIn('owned-pids.jsonl', result['artifactSha256']); self.assertIsNone(result['evidence'])
+
+    def test_startup_failure_still_writes_failure_receipt_and_owned_pid_ledger(self): self.exercise()
+    def test_unknown_cleanup_is_preserved_as_unknown_and_cannot_pass(self): self.exercise(unknown_cleanup=True)
 
 
 if __name__ == '__main__':

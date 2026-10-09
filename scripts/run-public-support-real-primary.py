@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import http.client
 import importlib.util
+import json
 import os
 from pathlib import Path
 import signal
@@ -65,6 +66,14 @@ def main(argv=None):
     stopped = [False]; previous = {sig: signal.signal(sig, lambda *_: stopped.__setitem__(0, True)) for sig in (signal.SIGINT, signal.SIGTERM)}
     process = None; driver = None; owned_primary = None; owned = set(); errors = []; samples = []; warmup = []; evidence = None; failure = None
     old_umask = os.umask(0o077); start = time.monotonic()
+    recorded_owned = []
+    def record_owned():
+        nonlocal recorded_owned
+        current = sorted(owned)
+        if current != recorded_owned:
+            with (directory/'owned-pids.jsonl').open('a') as stream:
+                stream.write(json.dumps({'recordedAt': diagnostic.now(), 'ownedPids': current})+'\n')
+            recorded_owned = current
     try:
         with runtime.open_private_log(directory/'runtime.log') as log, runtime.open_private_log(directory/'primary.log') as primary_log, runtime.open_private_log(directory/'driver.log') as driver_log:
             with socket.socket() as bound: bound.bind(('127.0.0.1', 0)); port = bound.getsockname()[1]
@@ -74,7 +83,7 @@ def main(argv=None):
                 '--inference-timeout-ms', '5000', '--exit-on-backend-unavailable', '--port', str(port)], cwd=ROOT,
                 env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1', 'HF_HUB_DISABLE_TELEMETRY': '1'},
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            owned.add(process.pid); deadline = time.monotonic()+60
+            owned.add(process.pid); record_owned(); deadline = time.monotonic()+60
             while True:
                 runtime.require(process.poll() is None and not stopped[0], 'Owned runtime exited or cancelled')
                 try: health = runtime.request(port, '/health'); break
@@ -101,14 +110,15 @@ def main(argv=None):
                 warmup.append({'iteration': iteration, 'caseId': case['id'], **row})
             sample('after_warmup'); runtime.require(sum(samples[1]['counters'].values()) == 2, 'Warmup denominator differs')
             owned_primary = diagnostic.OwnedPrimary(runtime, ROOT, args.primary_binaries.resolve(), args.primary_models.resolve(), primary_log, owned, lambda: stopped[0])
-            owned_primary.start(); write_json_new(directory/'primary-warmup.json', owned_primary.warmup); write_json_new(directory/'primary-before.json', owned_primary.sample())
+            owned_primary.start(); record_owned(); write_json_new(directory/'primary-warmup.json', owned_primary.warmup); write_json_new(directory/'primary-before.json', owned_primary.sample())
             environment = {k: v for k, v in os.environ.items() if not k.startswith(('AGAT_', 'OTEL_'))}
             driver = subprocess.Popen(['node', '--import', 'tsx', 'scripts/run-public-support-real-primary.mts', '--decision-url', f'http://127.0.0.1:{port}',
                 '--primary-url', f'http://127.0.0.1:{owned_primary.port}', '--evidence-dir', str(directory)], cwd=ROOT,
                 env={**environment, 'OTEL_SDK_DISABLED': 'true'}, stdout=driver_log, stderr=subprocess.STDOUT, start_new_session=True)
-            owned.add(driver.pid); deadline = time.monotonic()+3700
+            owned.add(driver.pid); record_owned(); deadline = time.monotonic()+3700
             while driver.poll() is None:
                 owned.update(runtime.shared.inventory(driver.pid)[0]); owned.update(runtime.shared.inventory(process.pid)[0]); owned.update(runtime.shared.inventory(owned_primary.process.pid)[0])
+                record_owned()
                 runtime.require(process.poll() is None and owned_primary.process.poll() is None and not stopped[0] and time.monotonic() < deadline,
                     'Owned workflow child exited, cancelled or exceeded deadline'); time.sleep(.5)
             runtime.require(driver.returncode == 0, 'Real-primary workflow driver failed')
@@ -129,7 +139,7 @@ def main(argv=None):
         except OSError: errors.append('credentialCleanup')
         if owned_primary is not None: owned_primary.close(errors)
         if process is not None: runtime.stop_owned_process(process, owned, errors)
-        remaining = sorted(pid for pid in owned if runtime.shared.alive(pid))
+        record_owned(); remaining = runtime.remaining_owned_processes(owned, errors)
         for sig, handler in previous.items(): signal.signal(sig, handler)
         os.umask(old_umask)
     artifact_sha = {p.name: sha256_file(p) for p in directory.iterdir() if p.is_file() and p.name not in ('plan.json', 'result.json')}

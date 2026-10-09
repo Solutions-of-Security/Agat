@@ -62,6 +62,11 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     count = len(context['inputs']); names = diagnostic.ARTIFACTS | {f'trace-{i:03d}-{c}.http.json' for i in range(count) for c in ('control', 'shadow')}
     fields(result['artifactSha256'], names)
     artifacts = {name: pinned_input(directory/name, result['artifactSha256'][name], 32*1024*1024) for name in names}
+    ledger = diagnostic.journal(artifacts['owned-pids.jsonl']); require(ledger and ledger[-1]['ownedPids'] == result['ownedPids'], 'Owned PID ledger omitted final inventory')
+    previous_pids = set()
+    for row in ledger:
+        require(previous_pids <= set(row['ownedPids']) <= set(result['ownedPids']), 'Owned PID ledger removed/rebound an owned process')
+        previous_pids = set(row['ownedPids'])
     recipe = parse_json(artifacts['workflow-plan.json']); driver = parse_json(artifacts['workflow-driver.json'])
     evidence = diagnostic.verify_inventory(context, plan['protocol'], recipe, driver, artifacts); same(result['evidence'], evidence, 'Embedded result differs from raw replay')
     require(set(driver['ownedPids']) <= set(result['ownedPids']) and len(set(driver['ownedPids'])) == 2, 'Driver/worker ownership omitted')
