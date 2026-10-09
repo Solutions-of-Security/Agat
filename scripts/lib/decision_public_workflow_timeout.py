@@ -44,8 +44,28 @@ def drain_receipt(row):
 
 def verify_transport(context, spec, transport, cohort, routes):
     """Bind raw proxy POSTs/results to every actual durable stage, including the loss."""
-    require(fingerprint(spec) == fingerprint(timeout_spec(context, spec["targetIndex"])), "Unsupported caller timeout")
-    verify_seal(transport, TRANSPORT_SCHEMA)
+    return _verify_transport(context, spec, transport, cohort, routes, spec_factory=timeout_spec,
+        transport_schema=TRANSPORT_SCHEMA, target_check=lambda row, _result: _verify_timeout_target(spec, row, cohort, routes))
+
+
+def _verify_timeout_target(spec, row, cohort, routes):
+    index = spec["targetIndex"]
+    trace = next(t for t in cohort["traces"] if t["run"]["id"] == routes[index]["runId"])
+    observation = trace["decisionObservations"][0]["observation"]
+    require(observation["status"] == "unavailable" and observation["reason"] == "timeout" and "result" not in observation,
+            "Undelivered response was accepted or not bound to the actual timeout")
+    caller_ms = number(observation["callerTiming"]["durationMs"], 9999, spec["disconnectDeadlineMs"])
+    require(9900 <= row["elapsedMs"] and abs(row["elapsedMs"]-caller_ms) <= 250 and row["upstreamMs"] < row["elapsedMs"],
+            "EOF does not follow the full caller deadline after upstream completion")
+    suffix = next(i for i in cohort["instances"] if i["runId"] == routes[index+1]["runId"])
+    require(timestamp(row["finishedAt"], "proxy.finishedAt") <= timestamp(suffix["createdAt"], "suffix.createdAt"),
+            "Suffix started before the timed-out proxy handler drained")
+
+
+def _verify_transport(context, spec, transport, cohort, routes, *, spec_factory, transport_schema, target_check):
+    """Shared raw input/result accounting; each protocol verifies its own fault."""
+    require(fingerprint(spec) == fingerprint(spec_factory(context, spec["targetIndex"])), "Unsupported prospective transport fault")
+    verify_seal(transport, transport_schema)
     fields(transport, {"schemaVersion", "sha256", "spec", "proxyPort", "upstreamPort", "startedAt", "closedAt", "rows",
                        "acceptedPosts", "completedUpstreamPosts", "withheldResponses", "errors", "closed", "activeHandlers"})
     require(fingerprint(transport["spec"]) == fingerprint(spec) and transport["closed"] is True
@@ -100,19 +120,14 @@ def verify_transport(context, spec, transport, cohort, routes):
         require(upstream_ms >= result["durationMs"]-.1
                 and abs((completed-accepted).total_seconds()*1000-upstream_ms) <= 10
                 and abs((finished-accepted).total_seconds()*1000-elapsed_ms) <= 10, "Upstream timing omits the model or differs from recorded boundaries")
-        observation = traces[route["runId"]]["decisionObservations"][0]["observation"]
         if index == spec["targetIndex"]:
             require(row["withheld"] is True and row["downstreamWriteCompleted"] is False and row["clientEofObserved"] is True
-                    and type(row["responseBytesWritten"]) is int and row["responseBytesWritten"] == 0
-                    and observation["status"] == "unavailable" and observation["reason"] == "timeout" and "result" not in observation,
-                    "Undelivered response was accepted or not bound to the actual timeout")
-            caller_ms = number(observation["callerTiming"]["durationMs"], 9999, spec["disconnectDeadlineMs"])
-            require(9900 <= elapsed_ms and abs(elapsed_ms-caller_ms) <= 250 and upstream_ms < elapsed_ms,
-                    "EOF does not follow the full caller deadline after upstream completion")
-            require(finished <= timestamp(instances[routes[index+1]["runId"]]["createdAt"], "suffix.createdAt"),
-                    "Suffix started before the timed-out proxy handler drained")
+                    and type(row["responseBytesWritten"]) is int and row["responseBytesWritten"] == 0,
+                    "Target response reached the caller or actual EOF is missing")
+            target_check(row, result)
             target = result
         else:
+            observation = traces[route["runId"]]["decisionObservations"][0]["observation"]
             require(row["withheld"] is False and row["downstreamWriteCompleted"] is True and row["clientEofObserved"] is False
                     and type(row["responseBytesWritten"]) is int and row["responseBytesWritten"] == len(response)
                     and same_json(result, observation["result"]), "Delivered response differs from durable result")
@@ -125,9 +140,9 @@ def verify_transport(context, spec, transport, cohort, routes):
 
 class DeadlineProxy:
     """One finite inventory on a literal loopback endpoint; no POST retry or model stub."""
-    def __init__(self, upstream_port, context, spec):
+    def __init__(self, upstream_port, context, spec, *, spec_factory=timeout_spec):
         require(type(upstream_port) is int and 1 <= upstream_port <= 65535 and upstream_port != 8766, "Use an owned temporary runtime")
-        require(fingerprint(spec) == fingerprint(timeout_spec(context, spec["targetIndex"])), "Invalid prospective timeout")
+        require(fingerprint(spec) == fingerprint(spec_factory(context, spec["targetIndex"])), "Invalid prospective transport fault")
         self.upstream_port = upstream_port; self.context = context; self.spec = spec
         self.rows = []; self.errors = []; self.accepted = 0; self.active = 0; self.closed = False
         self.lock = threading.Lock(); self.stopped = threading.Event(); self.started_at = self.now()
@@ -201,8 +216,14 @@ class DeadlineProxy:
         require(upstream_ms < self.spec["upstreamTimeoutMs"], "Upstream exceeded prospective timeout")
         result = parse_json(response); validate_result(result, request, self.context["profile"])
         withheld = index == self.spec["targetIndex"]; eof = False
+        row = {"index": index, "caseId": case["id"], "stageId": request.id, "inputSha256": request.input_sha256,
+            "requestBody": body.decode(), "requestBodySha256": hashlib.sha256(body).hexdigest(), "profileSha256": self.context["profileSha256"],
+            "cancelOnDisconnect": True, "acceptedAt": accepted_at, "upstreamCompletedAt": completed_at,
+            "upstreamMs": round(upstream_ms, 3), "upstreamStatus": status, "upstreamContentType": content_type,
+            "responseBody": response.decode(), "responseBodySha256": hashlib.sha256(response).hexdigest()}
         if withheld:
             require(status == 200 and result["status"] in {"ok", "abstain"}, "Target model did not complete normally")
+            self._target_completed(row)
             deadline = started+self.spec["disconnectDeadlineMs"]/1000
             while not self.stopped.is_set() and time.monotonic() < deadline:
                 handler.connection.settimeout(min(.1, max(.001, deadline-time.monotonic())))
@@ -213,14 +234,12 @@ class DeadlineProxy:
             require(eof, "Caller did not close the timed-out transport")
             handler.close_connection = True
         else: self.send(handler, status, content_type, response)
-        row = {"index": index, "caseId": case["id"], "stageId": request.id, "inputSha256": request.input_sha256,
-            "requestBody": body.decode(), "requestBodySha256": hashlib.sha256(body).hexdigest(), "profileSha256": self.context["profileSha256"],
-            "cancelOnDisconnect": True, "acceptedAt": accepted_at, "upstreamCompletedAt": completed_at, "finishedAt": self.now(),
-            "upstreamMs": round(upstream_ms, 3), "elapsedMs": round((time.monotonic()-started)*1000, 3),
-            "upstreamStatus": status, "upstreamContentType": content_type, "responseBody": response.decode(),
-            "responseBodySha256": hashlib.sha256(response).hexdigest(), "withheld": withheld,
-            "downstreamWriteCompleted": not withheld, "responseBytesWritten": 0 if withheld else len(response), "clientEofObserved": eof}
+        row.update(finishedAt=self.now(), elapsedMs=round((time.monotonic()-started)*1000, 3), withheld=withheld,
+            downstreamWriteCompleted=not withheld, responseBytesWritten=0 if withheld else len(response), clientEofObserved=eof)
         with self.lock: self.rows.append(row)
+
+    def _target_completed(self, row):
+        """Protocol hook after a validated upstream result, before any headers."""
 
     def close(self):
         self.stopped.set(); self.server.shutdown(); self.server.server_close(); self.thread.join(2)

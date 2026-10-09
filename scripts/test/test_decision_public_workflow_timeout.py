@@ -153,6 +153,7 @@ class TimeoutOfflineTest(unittest.TestCase):
     def setUpClass(cls):
         offline.WorkflowVerificationTest.setUpClass.__func__(cls)
         for name in ("scripts/lib/decision_public_workflow_timeout.py", "scripts/test/test_decision_public_workflow_timeout.py",
+                     "scripts/lib/decision_public_workflow_cancellation.py",
                      "scripts/lib/decision_public_workflow.py", "scripts/lib/decision_public_workflow_verification.py",
                      "scripts/run-public-support-workflow.py", "scripts/run-public-support-workflow.mts"):
             path=cls.root/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes((ROOT/name).read_bytes())
