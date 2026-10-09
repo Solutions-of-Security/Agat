@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
-from embedding_http import HttpResponseError, request_knowledge_response, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
+from embedding_http import HttpResponseError, request_coordinator_response, request_knowledge_response, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
 from embedding_transport import validate_idle_timeout as validate_embedding_idle_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
@@ -50,6 +50,11 @@ from web_tools import (
 VERSION = "1.7.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
 DECISION_CALLER_ACCOUNTING = "agat.decision.caller-accounting.v1"
+# Observe lease revocation while a short shadow HTTP call is blocked. Primary
+# execution keeps its ordinary 45s renewal interval.
+SHADOW_LEASE_RENEWAL_INTERVAL = 0.5
+SHADOW_LEASE_RENEWAL_TIMEOUT = 1.0
+MAX_LEASE_RENEWAL_RESPONSE_BYTES = 4096
 # Covers the supported 32 x 4096 finite-float batch with JSON overhead.
 MAX_EMBEDDING_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_EMBEDDING_ERROR_BYTES = 4096
@@ -407,8 +412,36 @@ class CoordinatorClient:
     def lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/lease", {"workerVersion": VERSION})
 
-    def renew(self, lease_id: str, *, timeout: float = 30) -> None:
-        self.request("POST", f"/api/v1/leases/{lease_id}/renew", {}, timeout=timeout)
+    def renew(self, lease_id: str, *, timeout: float = 30,
+              cancelled: threading.Event | None = None) -> None:
+        if cancelled is None:
+            self.request("POST", f"/api/v1/leases/{lease_id}/renew", {}, timeout=timeout)
+            return
+        if not self.node_token:
+            raise ApiError(401, "Worker is not registered")
+        headers = {"Accept": "application/json", "Content-Type": "application/json",
+                   "User-Agent": f"agat-worker/{VERSION}", "Authorization": f"Bearer {self.node_token}"}
+        self.telemetry.inject(headers)
+        try:
+            # The disposable transport bounds DNS, headers and error-body reads,
+            # and is reaped when this shadow watcher stops. Socket timeout alone
+            # would leave a thread alive under a trickling coordinator response.
+            request_coordinator_response(
+                f"{self.base_url}/api/v1/leases/{lease_id}/renew", {}, headers,
+                timeout=timeout, cancelled=cancelled,
+                max_response_bytes=MAX_LEASE_RENEWAL_RESPONSE_BYTES,
+                max_error_bytes=MAX_LEASE_RENEWAL_RESPONSE_BYTES,
+            )
+        except HttpResponseError as error:
+            try:
+                parsed = json.loads(error.detail)
+                message = parsed.get("error", error.detail) if isinstance(parsed, dict) else error.detail
+            except json.JSONDecodeError:
+                message = error.detail or str(error)
+            raise ApiError(error.status, str(message)) from error
+        except RuntimeError as error:
+            if not cancelled.is_set():
+                raise ApiError(0, str(error)) from error
 
     def knowledge_lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/knowledge/lease", {})
@@ -2580,15 +2613,40 @@ def heartbeat_loop(
 
 
 def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Event,
-                  cancelled: threading.Event | None = None) -> None:
-    while not stop.wait(45):
+                  cancelled: threading.Event | None = None, *, interval: float = 45,
+                  timeout: float | None = None) -> None:
+    while not stop.wait(interval):
         try:
-            client.renew(lease_id)
+            if timeout is None:
+                client.renew(lease_id)
+            else:
+                client.renew(lease_id, timeout=timeout, cancelled=stop)
         except ApiError as error:
             print(f"Lease renewal failed for {lease_id}: {error}", file=sys.stderr, flush=True)
             if error.status in (401, 403, 404, 409) and cancelled is not None:
-                cancelled.set()
+                if not stop.is_set():
+                    cancelled.set()
                 return
+
+
+def _decide_with_lease_renewal(
+    client: CoordinatorClient, decision_client: LocalDecisionClient, lease_id: str,
+    shadow: dict[str, Any], cancelled: threading.Event,
+) -> dict[str, Any]:
+    if cancelled.is_set():
+        return decision_client.decide(shadow, cancelled)
+    stop = threading.Event()
+    watcher = threading.Thread(
+        target=lease_renewer, args=(client, lease_id, stop, cancelled),
+        kwargs={"interval": SHADOW_LEASE_RENEWAL_INTERVAL, "timeout": SHADOW_LEASE_RENEWAL_TIMEOUT},
+        name="agat-shadow-lease", daemon=True,
+    )
+    watcher.start()
+    try:
+        return decision_client.decide(shadow, cancelled)
+    finally:
+        stop.set()
+        watcher.join(timeout=SHADOW_LEASE_RENEWAL_TIMEOUT + 0.25)
 
 
 def knowledge_lease_renewer(
@@ -2924,7 +2982,9 @@ def _execute_lease_body(
                     client.renew(lease_id, timeout=5)
                     may_invoke = (shadow.get("callerAccountingVersion") != DECISION_CALLER_ACCOUNTING
                                   or client.begin_decision_shadow(lease_id, shadow.get("assignmentId")))
-                    observation = model_client.decision_client.decide(shadow, cancelled) if may_invoke else None
+                    observation = _decide_with_lease_renewal(
+                        client, model_client.decision_client, lease_id, shadow, cancelled,
+                    ) if may_invoke else None
                 if observation is not None:
                     client.record_decision_shadow(lease_id, observation)
             except Exception:
