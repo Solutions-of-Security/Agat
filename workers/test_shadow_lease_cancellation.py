@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 import agat_worker
 from agat_worker import ApiError, CoordinatorClient, LocalModelClient, execute_lease, lease_renewer
 from local_decisions import CALLER_TIMING_VERSION, LocalDecisionClient
+from test_embedding_transport import observed_processes
 
 
 def lease():
@@ -69,6 +70,114 @@ def held_decision_endpoint():
 
 
 class ShadowLeaseCancellationTest(unittest.TestCase):
+    def test_bounded_renewal_preserves_worker_authentication_and_authoritative_http_status(self):
+        status, captured = [204], []
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_POST(self):
+                captured.append((self.path, self.headers.get("Authorization"),
+                                 self.rfile.read(int(self.headers["content-length"]))))
+                body = b'{"error":"fixture lease rejection"}' if status[0] != 204 else b""
+                self.send_response(status[0])
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = CoordinatorClient(f"http://127.0.0.1:{server.server_port}", node_token="fixture-token")
+            with observed_processes() as helpers:
+                for code in (204, 401, 403, 404, 409, 429, 503):
+                    with self.subTest(code=code):
+                        status[0] = code
+                        if code == 204:
+                            self.assertIsNone(client.renew("owned", timeout=1, cancelled=threading.Event()))
+                        else:
+                            with self.assertRaises(ApiError) as raised:
+                                client.renew("owned", timeout=1, cancelled=threading.Event())
+                            self.assertEqual(raised.exception.status, code)
+                            self.assertEqual(str(raised.exception), "fixture lease rejection")
+                self.assertEqual(len(helpers), 7)
+                for helper in helpers:
+                    self.assertIsNotNone(helper.poll())
+                    self.assertNotIn("fixture-token", " ".join(helper.args))
+            self.assertEqual(captured, [("/api/v1/leases/owned/renew", "Bearer fixture-token", b"{}")]*7)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
+    def test_bounded_renewal_deadline_does_not_depend_on_header_progress(self):
+        release = threading.Event()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers["content-length"]))
+                try:
+                    self.connection.sendall(b"HTTP/1.1 204 No Content\r\n")
+                    while not release.wait(0.02): self.connection.sendall(b"x")
+                except OSError:
+                    pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = CoordinatorClient(f"http://127.0.0.1:{server.server_port}", node_token="fixture-token")
+            cancelled = threading.Event()
+            with observed_processes() as helpers:
+                started = time.monotonic()
+                with self.assertRaises(ApiError) as raised:
+                    client.renew("owned", timeout=0.2, cancelled=cancelled)
+                self.assertEqual(raised.exception.status, 0)
+                self.assertFalse(cancelled.is_set())
+                self.assertLess(time.monotonic() - started, 0.8)
+                self.assertEqual(len(helpers), 1)
+                self.assertIsNotNone(helpers[0].poll())
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
+    def test_completed_shadow_reaps_watcher_even_when_renewal_headers_keep_trickling(self):
+        entered, release = threading.Event(), threading.Event()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers["content-length"]))
+                self.connection.sendall(b"HTTP/1.1 204 No Content\r\n")
+                entered.set()
+                try:
+                    while not release.wait(0.05): self.connection.sendall(b"x")
+                    self.connection.sendall(b": 1\r\nContent-Length: 0\r\n\r\n")
+                except OSError:
+                    pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        serving = threading.Thread(target=server.serve_forever, daemon=True)
+        serving.start()
+        try:
+            client = CoordinatorClient(f"http://127.0.0.1:{server.server_port}")
+            client.node_token = "fixture-token"
+            decision = Mock(spec=LocalDecisionClient)
+            def complete_after_renewal_started(*_args):
+                self.assertTrue(entered.wait(2))
+                return {"result": {"fixture": True}}
+            decision.decide.side_effect = complete_after_renewal_started
+            with observed_processes() as helpers, redirect_stderr(io.StringIO()):
+                result = agat_worker._decide_with_lease_renewal(client, decision, "owned", {}, threading.Event())
+                self.assertEqual(result, {"result": {"fixture": True}})
+                self.assertFalse(any(t.name == "agat-shadow-lease" for t in threading.enumerate()))
+                self.assertEqual(len(helpers), 1)
+                self.assertIsNotNone(helpers[0].poll())
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            serving.join(2)
+            for thread in threading.enumerate():
+                if thread.name == "agat-shadow-lease": thread.join(2)
+
     def test_revoked_lease_closes_real_transport_and_same_executor_accepts_next_lease(self):
         with held_decision_endpoint() as (url, entered, eof, calls), \
                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()), \
@@ -133,7 +242,7 @@ class ShadowLeaseCancellationTest(unittest.TestCase):
                 cancelled = threading.Event()
                 lease_renewer(client, "owned", stop, cancelled, interval=0.5, timeout=1)
                 self.assertEqual(cancelled.is_set(), status in (401, 403, 404, 409))
-                client.renew.assert_called_once_with("owned", timeout=1)
+                client.renew.assert_called_once_with("owned", timeout=1, cancelled=stop)
 
     def test_ordinary_primary_renewal_retains_its_existing_interval_and_timeout(self):
         client = Mock(spec=CoordinatorClient)

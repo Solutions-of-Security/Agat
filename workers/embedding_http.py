@@ -83,6 +83,14 @@ def request_knowledge_response(url: str, payload: dict, headers: dict[str, str],
                              endpoint_name="Knowledge")
 
 
+def request_coordinator_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
+                                cancelled: threading.Event | None, max_response_bytes: int,
+                                max_error_bytes: int) -> bytes:
+    return _request_response(url, payload, headers, timeout=timeout, cancelled=cancelled,
+                             max_response_bytes=max_response_bytes, max_error_bytes=max_error_bytes,
+                             endpoint_name="Coordinator")
+
+
 def _request_response(url: str, payload: dict, headers: dict[str, str], *, timeout: float,
                       cancelled: threading.Event | None, max_response_bytes: int,
                       max_error_bytes: int, endpoint_name: str) -> bytes:
@@ -164,7 +172,7 @@ def main() -> None:
         # the HTTP status without parsing a human-readable error message. Knowledge
         # requests also retain the bounded JSON error body for the coordinator API.
         output = (b"H" + json.dumps({"status": error.status, "detail": error.detail}).encode("utf-8")
-                  if request.get("endpointName") in {"Model", "Knowledge"}
+                  if request.get("endpointName") in {"Model", "Knowledge", "Coordinator"}
                   else b"E" + str(error)[:1200].encode("utf-8", errors="replace"))
     except Exception as error:
         output = b"E" + str(error)[:1200].encode("utf-8", errors="replace")
