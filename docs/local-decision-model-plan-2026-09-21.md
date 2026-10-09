@@ -566,6 +566,28 @@ prospective timeout полного public workflow с physical/caller accounting
 и здоровым suffix. Human/owner/SLO и calibration/holdout остаются открытыми;
 routing false / not_assessed.
 
+[Full workflow caller timeout](./qualification/local-decisions/performance/public-workflow-timeout.md),
+09.10 MSK: новый prospective v4 протокол удержал фактический upstream ответ
+на input index 3 до caller deadline. Все 49 instances/returns сохранили
+primary branch: 45 computed (31 ok / 14 abstain), один unavailable timeout
+и три whole context rejection. Physical scheduled 49 (31 ok / 15 abstain /
+3 context rejected), включая отдельно доказанный undelivered abstain; две
+warmup дают 51 completed handlers в одном epoch, без restart/retry.
+Target upstream 583.704 ms / EOF 10000.983 ms / caller 10001.556 ms;
+малый scheduling/cleanup overrun не скрыт. Healthy suffix — 45 cases.
+Common raw-pinned offline replay и 1460 independent checks подтвердили
+186 contributors, exact numeric controls всех 49 результатов, counters и
+отсутствие 33 temporary PID; resident четыре PID / 35 sources unchanged.
+12 новых / 18 focused / full 917 Python / 12 Node checks, typecheck,
+links/catalog прошли. ZIP 89 entries / шесть source snapshots проверен по
+CRC/SHA/size в двух копиях и сохранён в исходном workspace `/docs/private`.
+Два preparation failure и red regressions сохранены
+отдельно: исправлены default option flags и JSON integer/float comparison,
+без переименования failed evidence в pass. Следующий gate — actual
+coordinator cancellation active shadow lease и durable caller accounting.
+Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

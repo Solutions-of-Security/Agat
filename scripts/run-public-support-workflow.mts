@@ -25,7 +25,8 @@ const health = await healthResponse.json() as any;
 assert.equal(health.profileSha256, input.context.profileSha256);
 const loss = input.runtimeLoss;
 const recovery = input.runtimeRecovery;
-assert.ok(!(loss && recovery));
+const timeout = input.callerTimeout;
+assert.ok([loss, recovery, timeout].filter(Boolean).length <= 1);
 if (loss) {
   assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v2");
   assert.ok(Number.isInteger(loss.beforeIndex) && loss.beforeIndex > 0 && loss.beforeIndex < input.context.inputs.length);
@@ -42,9 +43,19 @@ if (loss) {
   assert.equal(recovery.endpoint, "same_loopback_port_same_frozen_profile"); assert.equal(recovery.retryCount, 0);
   assert.equal(recovery.warmupPerRuntime, 2); assert.equal(recovery.armDeadlineMs, 30000); assert.equal(recovery.recoveryDeadlineMs, 90000);
   assert.equal(recovery.workflowDeadlineMs, 240000);
+} else if (timeout) {
+  assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v4");
+  assert.ok(Number.isInteger(timeout.targetIndex) && timeout.targetIndex > 0 && timeout.targetIndex < input.context.inputs.length-1);
+  const target = input.context.inputs[timeout.targetIndex];
+  assert.equal(target.contextEligible, true); assert.equal(timeout.targetCaseId, target.id); assert.equal(timeout.targetInputSha256, target.inputSha256);
+  assert.equal(timeout.kind, "withhold_owned_proxy_response"); assert.equal(timeout.boundary, "after_upstream_completion_before_response_headers");
+  assert.equal(timeout.endpoint, "temporary_loopback_proxy_to_owned_runtime"); assert.equal(timeout.callerTimeoutMs, 10000);
+  assert.equal(timeout.upstreamTimeoutMs, 8000); assert.equal(timeout.disconnectDeadlineMs, 15000);
+  assert.equal(timeout.retryCount, 0); assert.equal(timeout.restart, false); assert.equal(timeout.warmupCount, 2);
 } else assert.equal(input.schemaVersion, "agat.decision.public-workflow-launch-plan.v1");
 let runtimeLossApplied: any;
 let crashArmed: any; let crashApplied: any; let recoveryApplied: any;
+let callerTimeoutDrained: any;
 function publish(name: string, data: unknown) {
   const pending = name.replace(/\.json$/, ".pending.json"); save(pending, data);
   try { fs.linkSync(path.join(directory, pending), path.join(directory, name)); }
@@ -103,7 +114,7 @@ try {
   const processId = String(store.createProcess({ name: "Whole public inventory integration; fixture primary", graph }).id);
   store.publishProcess(processId);
   const startAt = new Date(Date.now()+1000).toISOString();
-  const recipe = { schemaVersion: recovery ? "agat.decision.public-workflow-plan.v3" : loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), ...(recovery ? { runtimeRecovery: recovery } : {}), mode: "serial_closed_model_integration",
+  const recipe = { schemaVersion: timeout ? "agat.decision.public-workflow-plan.v4" : recovery ? "agat.decision.public-workflow-plan.v3" : loss ? "agat.decision.public-workflow-plan.v2" : "agat.decision.public-workflow-plan.v1", ...(loss ? { runtimeLoss: loss } : {}), ...(recovery ? { runtimeRecovery: recovery } : {}), ...(timeout ? { callerTimeout: timeout } : {}), mode: "serial_closed_model_integration",
     primary: "fixture_chat_completions", processId, processVersion: 1, projectId: "default", startAt,
     scopeEndRule: "after_full_input_inventory_and_worker_drain", config: input.config, profileSha256: health.profileSha256,
     inputs: input.context.inputs.map((row: any) => ({ caseId: row.id, inputSha256: row.inputSha256 })),
@@ -178,6 +189,15 @@ try {
       wrongBranch: stages.some(s => s.processNodeId === "wrong"), runStatus: run.status };
     routes.push(route);
     fs.appendFileSync(path.join(directory, "workflow-routes.jsonl"), JSON.stringify(route)+"\n", { mode: 0o600 });
+    if (timeout && index === timeout.targetIndex) {
+      assert.equal(observations[0].observation.status, "unavailable"); assert.equal(observations[0].observation.reason, "timeout");
+      assert.equal(Object.hasOwn(observations[0].observation, "result"), false);
+      callerTimeoutDrained = await waitReceipt("caller-timeout-drained.json", timeout.disconnectDeadlineMs);
+      assert.equal(callerTimeoutDrained.schemaVersion, "agat.decision.public-workflow-deadline-drained.v1");
+      assert.equal(callerTimeoutDrained.targetIndex, index); assert.equal(callerTimeoutDrained.caseId, item.id);
+      assert.equal(callerTimeoutDrained.stageId, route.stageId); assert.equal(callerTimeoutDrained.inputSha256, item.inputSha256);
+      assert.equal(callerTimeoutDrained.profileSha256, health.profileSha256);
+    }
     if (recovery && index === recovery.targetIndex) {
       assert.equal(observations[0].observation.status, "unavailable"); assert.equal(observations[0].observation.reason, "unreachable");
       assert.equal(Object.hasOwn(observations[0].observation, "result"), false);
@@ -211,6 +231,7 @@ try {
   save("workflow-driver.json", { status: "observed", primary: "fixture_chat_completions", primaryCalls, routes, nodeVersion: process.version,
     ...(loss ? { runtimeLossApplied } : {}), ownedPids: [process.pid, worker.pid], workerExitCode: worker.exitCode, actualWindow: { startAt, endAt },
     ...(recovery ? { runtimeRecovery: { armed: crashArmed, crashed: crashApplied, recovered: recoveryApplied } } : {}),
+    ...(timeout ? { callerTimeoutDrained } : {}),
     unauthenticatedStatus: 401, authenticatedStatus: response.status, ownersAppointed: false, routingEnabled: false, qualification: "not_assessed" });
   console.log(JSON.stringify({ status: "observed", inputs: routes.length, primaryFixtureCalls: primaryCalls }));
 } finally {

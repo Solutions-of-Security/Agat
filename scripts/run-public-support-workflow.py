@@ -28,6 +28,7 @@ from scripts.lib.decision_public_load_verification import counters
 from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
 from scripts.lib.decision_public_workflow import PROFILE_PATH, SOURCE_PATHS, shared_config, verify_inventory
 from scripts.lib.decision_public_workflow_loss import loss_spec, validate_request, verify_boundary, APPLIED_SCHEMA, stop_and_reserve, publish_applied
+from scripts.lib.decision_public_workflow_timeout import timeout_spec, DeadlineProxy
 from workers.local_decisions import LocalDecisionClient
 
 SPEC = importlib.util.spec_from_file_location("public_workflow_sources", ROOT/"scripts/run-decision-arrival-rate.py")
@@ -40,7 +41,9 @@ def main(argv=None):
     for name in ("context-profile", "runtime-python", "manifest", "evidence-dir"):
         parser.add_argument("--"+name, type=Path, required=True)
     parser.add_argument("--context-profile-file-sha256", required=True)
-    parser.add_argument("--stop-runtime-before-index", type=int, default=None, help="Prospectively stop only this launcher-owned runtime before this zero-based case")
+    fault = parser.add_mutually_exclusive_group()
+    fault.add_argument("--stop-runtime-before-index", type=int, default=None, help="Prospectively stop only this launcher-owned runtime before this zero-based case")
+    fault.add_argument("--withhold-response-at-index", type=int, default=None, help="Hold an actual completed model response until the worker caller times out")
     args = parser.parse_args(argv)
     try:
         private = (ROOT/"docs/private").resolve()
@@ -49,7 +52,8 @@ def main(argv=None):
         raw = pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024)
         context = validate_context(parse_json(raw)); historical_context_sources(ROOT, context); config = shared_config(context)
         loss = loss_spec(context, args.stop_runtime_before_index) if args.stop_runtime_before_index is not None else None
-        source_paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else [])
+        timeout = timeout_spec(context, args.withhold_response_at_index) if args.withhold_response_at_index is not None else None
+        source_paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else []) + (["scripts/test/test_decision_public_workflow_timeout.py"] if timeout else [])
         commit, sources = launcher.frozen_sources(source_paths)
         profile_raw = pinned_input(ROOT/PROFILE_PATH, context["profileFileSha256"], 1024*1024)
         profile = parse_json(profile_raw); manifest, _ = verify_manifest(args.manifest.resolve()); verify_profile(profile, manifest)
@@ -59,7 +63,7 @@ def main(argv=None):
         environment = parse_json(subprocess.check_output([str(args.runtime_python.absolute()), "-B", "-c", code, *requirements], cwd=ROOT, timeout=15))
         runtime.require(environment == context["tokenizerEnvironment"], "Frozen runtime dependencies differ")
         directory = private_directory(ROOT, args.evidence_dir)
-        plan = sealed({"schemaVersion": "agat.decision.public-workflow-launch-plan.v2" if loss else "agat.decision.public-workflow-launch-plan.v1", **({"runtimeLoss": loss} if loss else {}), "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        plan = sealed({"schemaVersion": "agat.decision.public-workflow-launch-plan.v4" if timeout else "agat.decision.public-workflow-launch-plan.v2" if loss else "agat.decision.public-workflow-launch-plan.v1", **({"runtimeLoss": loss} if loss else {}), **({"callerTimeout": timeout} if timeout else {}), "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "sourceCommit": commit, "sourceFiles": sources, "contextProfileFileSha256": args.context_profile_file_sha256,
             "context": context, "config": config, "runtime": environment, "manifestFileSha256": context["manifestFileSha256"],
             "mode": "serial_closed_model_integration", "primary": "fixture_chat_completions", "warmupCount": 2,
@@ -71,10 +75,13 @@ def main(argv=None):
     stopped = [False]; previous = {sig: signal.signal(sig, lambda *_: stopped.__setitem__(0, True)) for sig in (signal.SIGINT, signal.SIGTERM)}
     process = None; driver = None; owned = set(); errors = []; samples = []; warmup = []; evidence = None; failure = None
     loss_applied = None; reservation = None; reservation_closed = False
+    proxy = None; transport = None
+    timeout_drained = None
     old_umask = os.umask(0o077); start = time.monotonic()
     try:
         with runtime.open_private_log(directory/"runtime.log") as log, runtime.open_private_log(directory/"driver.log") as driver_log:
             with socket.socket() as bound: bound.bind(("127.0.0.1", 0)); port = bound.getsockname()[1]
+            runtime.require(port != 8766, "Experimental port collides with resident")
             process = subprocess.Popen([str(args.runtime_python.absolute()), "-B", "-m", "decision_runtime", "serve",
                 "--manifest", str(args.manifest.resolve()), "--policy", str(ROOT/runtime.SHADOW_POLICY), "--max-tokens", "2048",
                 "--cache-limit-mib", "128", "--wired-limit-mib", "4096", "--inference-timeout-ms", "5000",
@@ -112,13 +119,19 @@ def main(argv=None):
                 warmup.append({"iteration": iteration, "caseId": case["id"], **row})
             sample("after_warmup")
             runtime.require(sum(samples[1]["counters"].values()) == 2, "Warmup physical calls differ")
+            if timeout: proxy = DeadlineProxy(port, context, timeout)
             env = {key: value for key, value in os.environ.items() if not key.startswith(("AGAT_", "OTEL_"))}
             driver = subprocess.Popen(["node", "--import", "tsx", "scripts/run-public-support-workflow.mts", "--decision-url",
-                f"http://127.0.0.1:{port}", "--evidence-dir", str(directory)], cwd=ROOT, env={**env, "OTEL_SDK_DISABLED": "true"},
+                f"http://127.0.0.1:{proxy.port if proxy else port}", "--evidence-dir", str(directory)], cwd=ROOT, env={**env, "OTEL_SDK_DISABLED": "true"},
                 stdout=driver_log, stderr=subprocess.STDOUT, start_new_session=True)
             owned.add(driver.pid); deadline = time.monotonic()+270
             while driver.poll() is None:
                 owned.update(runtime.shared.inventory(driver.pid)[0])
+                runtime.require(proxy is None or not proxy.errors, "Deadline proxy failed")
+                if proxy and timeout_drained is None:
+                    timeout_drained = proxy.target_receipt()
+                    if timeout_drained is not None:
+                        write_json_new(directory/"caller-timeout-drained.json", timeout_drained)
                 runtime.require((process.poll() is None or loss_applied is not None) and not stopped[0] and time.monotonic()<deadline, "Workflow child exited, cancelled or exceeded deadline")
                 if loss and loss_applied is None and (directory/"runtime-loss-request.json").exists():
                     request_raw = (directory/"runtime-loss-request.json").read_bytes()
@@ -142,7 +155,12 @@ def main(argv=None):
             observed = parse_json((directory/"workflow-driver.json").read_bytes())
             owned.update(observed["ownedPids"])
             runtime.require((recipe.get("runtimeLoss") is None and loss is None) or fingerprint(recipe.get("runtimeLoss")) == fingerprint(loss), "Recipe changed the prospective loss")
-            evidence = verify_inventory(context, recipe, cohort, observed["routes"])
+            runtime.require((recipe.get("callerTimeout") is None and timeout is None) or fingerprint(recipe.get("callerTimeout")) == fingerprint(timeout), "Recipe changed the prospective timeout")
+            if proxy:
+                proxy.close(); transport = proxy.receipt(); write_json_new(directory/"caller-timeout-transport.json", transport)
+                runtime.require(timeout_drained is not None and fingerprint(observed.get("callerTimeoutDrained")) == fingerprint(timeout_drained),
+                                "Driver did not acknowledge the actual proxy drain")
+            evidence = verify_inventory(context, recipe, cohort, observed["routes"], transport)
             runtime.require(observed["status"] == "observed" and observed["primaryCalls"] == len(context["inputs"])
                             and observed["workerExitCode"] == 0 and observed["unauthenticatedStatus"] == 401, "Driver audit failed")
             if loss:
@@ -169,18 +187,28 @@ def main(argv=None):
         failure = {"type": type(error).__name__, "reason": str(error)[:200]}
     finally:
         if driver is not None: runtime.stop_owned_process(driver, owned, errors)
+        # A terminated Node driver cannot run its JavaScript finally block.
+        # This directory and its enrollment credential belong to this launch.
+        try: (directory/"worker-credentials.json").unlink(missing_ok=True)
+        except OSError as error: errors.append("workerCredentialStop:"+type(error).__name__)
         if process is not None and process.poll() is None: runtime.stop_owned_process(process, owned, errors)
         if reservation is not None and not reservation_closed:
             try: reservation.close()
             except Exception as error: errors.append("transportGuardStop:"+type(error).__name__)
+        if proxy is not None and not proxy.closed:
+            try:
+                proxy.close(); transport = proxy.receipt(); write_json_new(directory/"caller-timeout-transport.json", transport)
+            except Exception as error: errors.append("deadlineProxyStop:"+type(error).__name__)
         remaining = runtime.remaining_owned_processes(owned, errors)
         for sig, handler in previous.items(): signal.signal(sig, handler)
         os.umask(old_umask)
     complete = evidence is not None and failure is None and not errors and not remaining and not stopped[0]
     artifacts = ("workflow-plan.json", "workflow-driver.json", "workflow-routes.jsonl", "cohort.http.json", "worker.log", "runtime.log", "driver.log")
     if loss: artifacts += ("runtime-loss-request.json", "runtime-loss-applied.json", "runtime-loss-transport.json")
-    result = sealed({"schemaVersion": "agat.decision.public-workflow-launch-result.v2" if loss else "agat.decision.public-workflow-launch-result.v1",
+    if timeout: artifacts += ("caller-timeout-transport.json", "caller-timeout-drained.json")
+    result = sealed({"schemaVersion": "agat.decision.public-workflow-launch-result.v4" if timeout else "agat.decision.public-workflow-launch-result.v2" if loss else "agat.decision.public-workflow-launch-result.v1",
         **({"runtimeLoss": {"spec": loss, "applied": loss_applied}} if loss else {}), "status": "observed" if complete else "failed",
+        **({"callerTimeout": timeout} if timeout else {}),
         "planSha256": plan["sha256"], "evidence": evidence, "warmup": warmup, "samples": samples, "failure": failure,
         "ownedPids": sorted(owned), "remainingOwnedPids": remaining, "cleanupErrors": errors,
         "runtimeExitCode": process.returncode if process else None, "driverExitCode": driver.returncode if driver else None,
