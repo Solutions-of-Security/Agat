@@ -22,6 +22,7 @@ jobs:
         with:
           # Evidence replay checks source SHA against the original measurement commits.
           fetch-depth: 0
+      - uses: ./.github/actions/docker-cache
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -90,6 +91,7 @@ jobs:
         suite: [ha-postgres, state-migration, artifact-store, region-loss-dr, temporal-rag, temporal-postgres-rag]
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/docker-cache
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -101,6 +103,13 @@ jobs:
           python-version: "3.13"
       - name: Run against disposable integration services
         run: npm run fleet:test-${{ matrix.suite }}
+      - name: Docker registry diagnostics after integration failure
+        if: ${{ failure() }}
+        run: |
+          curl --silent --show-error --head --max-time 15 \
+            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+            https://mirror.gcr.io/v2/library/postgres/manifests/17.6-alpine
+          sudo journalctl --no-pager -u docker.service -n 60
 
   required:
     if: ${{ always() }}
