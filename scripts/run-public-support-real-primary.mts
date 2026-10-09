@@ -143,7 +143,11 @@ try {
   worker=spawn("python3",["workers/agat_worker.py","--coordinator",coordinatorUrl,"--credentials",credentialPath,"--name","public-real-primary-diagnostic",
     "--models",plan.primary.model,"--model-url",primaryAdapterUrl+"/v1","--model-discovery","off","--no-web","--poll-interval","0.2","--concurrency","1","--decision-url",decisionAdapterUrl],
     {cwd:process.cwd(),stdio:["ignore",log,log],env:{...environment,AGAT_ENROLLMENT_TOKEN:enrollmentToken,OTEL_SDK_DISABLED:"true",NO_PROXY:"127.0.0.1,localhost"}});
-  await new Promise(resolve=>setTimeout(resolve,Math.max(0,Date.parse(startAt)-Date.now())));const globalDeadline=performance.now()+spec.workflowDeadlineMs;
+  // Timer wakeups do not establish the planned census boundary themselves.
+  while(Date.now()<Date.parse(startAt)) {
+    await new Promise(resolve=>setTimeout(resolve,Math.max(1,Date.parse(startAt)-Date.now())));
+  }
+  const globalDeadline=performance.now()+spec.workflowDeadlineMs;
   for(const [index,item] of plan.context.inputs.entries())for(const condition of (index%2===0?["control","shadow"]:["shadow","control"])){assert.ok(!failure);
     const startedAt=new Date().toISOString(),started=performance.now();assert.equal(item.request.state,item.request.state.trim());
     const instance=store.startProcess(processes[condition].processId,{input:item.request.state,version:processes[condition].version})!;const runId=String(instance.runId);current={index,condition,runId};

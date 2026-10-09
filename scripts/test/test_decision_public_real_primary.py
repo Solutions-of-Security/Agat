@@ -1,5 +1,6 @@
 """Actual coordinator/worker matched fixtures and corruption checks; no model calls."""
 import copy
+import base64
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -74,11 +75,23 @@ class MatchedWorkflowTest(unittest.TestCase):
                     'context': context, 'config': diagnostic.shared_config(context), 'primary': {'model': 'qwen3:8b', 'generation': diagnostic.GENERATION},
                     'protocol': diagnostic.PROTOCOL}
                 (directory/'plan.json').write_bytes(encoded(plan))
-                result = subprocess.run(['node', '--import', 'tsx', 'scripts/run-public-support-real-primary.mts',
+                # Force the initial scheduling timer to wake early; scoring must
+                # still wait for the prospective wall-clock census boundary.
+                early_timer = '''const timer = globalThis.setTimeout; let fired = false;
+globalThis.setTimeout = (callback, delay, ...args) => {
+  if (!fired && delay > 500 && delay <= 1000) {
+    fired = true; console.log("fixture: early start timer");
+    return timer(callback, 0, ...args);
+  }
+  return timer(callback, delay, ...args);
+};'''
+                timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
+                result = subprocess.run(['node', '--import', 'tsx', '--import', timer_import, 'scripts/run-public-support-real-primary.mts',
                     '--decision-url', f'http://127.0.0.1:{servers[0].server_port}', '--primary-url', f'http://127.0.0.1:{servers[1].server_port}',
                     '--evidence-dir', str(directory)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
                 if result.returncode != 0:
                     raise AssertionError(result.stdout.decode()[-5000:]+'\n'+(directory/'worker.log').read_text()[-3000:])
+                assert b'fixture: early start timer' in result.stdout
                 assert not (directory/'worker-credentials.json').exists()
                 cls.artifacts = {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
                 cls.recipe = json.loads(cls.artifacts['workflow-plan.json']); cls.driver = json.loads(cls.artifacts['workflow-driver.json'])
@@ -103,6 +116,11 @@ class MatchedWorkflowTest(unittest.TestCase):
         self.assertEqual(len(self.primary_calls), 12); self.assertEqual(len(self.native_calls), 6)
         self.assertEqual([r.input_sha256 for r in self.native_calls], [c['inputSha256'] for c in self.context['inputs']])
         self.assertFalse(evidence['classificationAccuracyMeasured']); self.assertFalse(evidence['sloAccepted'])
+
+    def test_early_timer_wake_does_not_start_workflow_before_census(self):
+        first = self.driver['routes'][0]
+        self.assertGreaterEqual(datetime.fromisoformat(first['startedAt']), datetime.fromisoformat(self.recipe['startAt']))
+        self.assertEqual(self.check()['actualWorkflows'], 12)
 
     def test_missing_primary_response_and_repeated_call_fail(self):
         for mutate in (lambda r: r.pop(), lambda r: r.append(copy.deepcopy(r[0]))):
