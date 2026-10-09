@@ -46,10 +46,12 @@ class NativeHttpFixture:
                 response = json.loads(rows[index]["responseBody"]); response.update(id=request["id"],durationMs=0.0)
                 raw = json.dumps(response).encode()
                 with owner.lock: owner.finished["ok" if context["inputs"][index]["contextEligible"] else "context_rejected"] += 1
+                # Signal request arrival before writing: the relay deliberately
+                # closes an early-response socket, so flush can raise instead.
+                if index == 2: owner.target_started.set()
                 self.send_response(200 if context["inputs"][index]["contextEligible"] else 422)
                 self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(raw)))
                 self.end_headers(); self.wfile.write(raw); self.wfile.flush()
-                if index == 2: owner.target_started.set()
         self.server = ThreadingHTTPServer(("127.0.0.1",0),Handler)
         self.thread = threading.Thread(target=self.server.serve_forever,kwargs={"poll_interval":.01}); self.thread.start()
     def close(self):
