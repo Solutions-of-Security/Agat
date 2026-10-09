@@ -22,6 +22,7 @@ jobs:
         with:
           # Evidence replay checks source SHA against the original measurement commits.
           fetch-depth: 0
+      - uses: ./.github/actions/docker-cache
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -90,6 +91,7 @@ jobs:
         suite: [ha-postgres, state-migration, artifact-store, region-loss-dr, temporal-rag, temporal-postgres-rag]
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/docker-cache
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc

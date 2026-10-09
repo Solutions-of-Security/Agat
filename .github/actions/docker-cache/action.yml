@@ -1,0 +1,37 @@
+name: Public Docker Hub cache
+description: Configure Google's public cache on a disposable GitHub-hosted Linux runner.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        test "${GITHUB_ACTIONS:-}" = true
+        test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+        test "${RUNNER_OS:-}" = Linux
+        agat_docker_original="$(mktemp "${RUNNER_TEMP}/agat-docker-original.XXXXXX")"
+        agat_docker_cached="$(mktemp "${RUNNER_TEMP}/agat-docker-cached.XXXXXX")"
+        trap 'rm -f "$agat_docker_original" "$agat_docker_cached"' EXIT
+        if sudo test -f /etc/docker/daemon.json; then
+          sudo cat /etc/docker/daemon.json > "$agat_docker_original"
+        else
+          printf '%s\n' '{}' > "$agat_docker_original"
+        fi
+        python3 - "$agat_docker_original" "$agat_docker_cached" <<'PY'
+        import json, sys
+        from pathlib import Path
+        config = json.loads(Path(sys.argv[1]).read_text())
+        if not isinstance(config, dict):
+            raise ValueError("Docker daemon configuration must be an object")
+        mirrors = config.get("registry-mirrors", [])
+        if not isinstance(mirrors, list) or any(not isinstance(value, str) for value in mirrors):
+            raise ValueError("Docker registry mirrors must be strings")
+        cache = "https://mirror.gcr.io"
+        config["registry-mirrors"] = [cache, *(value for value in mirrors if value.rstrip("/") != cache)]
+        Path(sys.argv[2]).write_text(json.dumps(config, indent=2) + "\n")
+        PY
+        sudo dockerd --validate --config-file "$agat_docker_cached"
+        sudo install -m 0644 "$agat_docker_cached" /etc/docker/daemon.json
+        sudo systemctl restart docker
+        docker info --format '{{json .RegistryConfig.Mirrors}}' |
+          python3 -c 'import json,sys; assert any(value.rstrip("/") == "https://mirror.gcr.io" for value in json.load(sys.stdin))'
