@@ -601,7 +601,9 @@ durable caller return отменённого assignment остаётся null / 
 без выдуманного cancelled observation. Девять новых, 169 worker / 917 Python
 / 12 Node docs tests прошли; 3/4 optional skips сохранены. Independent audit
 781 checks подтвердил три Git states, шесть absent PID и resident четыре PID
-/ 35 sources unchanged. Следующий runtime gate — полный inventory 49 cases
+/ 35 sources unchanged. ZIP 66 entries / пять source snapshots проверен по
+CRC/SHA/size в двух копиях и сохранён в исходном workspace `/docs/private`.
+Следующий runtime gate — полный inventory 49 cases
 с actual coordinator cancellation, owned native runtime и offline replay.
 Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
 routing false / not_assessed.

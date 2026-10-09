@@ -82,8 +82,11 @@ renewal helpers с их parent binding не найдены. Короткожив
 registration, профиль, зависимости и ready monitoring без новых inference.
 
 [Summary](./lease-cancellation-summary.json) связывает private raw evidence.
+[Archive summary](./lease-cancellation-archive-summary.json) закрепляет ZIP SHA,
+66 entries и пять source snapshots; CRC/SHA/size проверены в обеих копиях.
 Полные private traces, scripts, test logs и source archives сохраняются в
-проверенном ZIP; публичный документ не публикует credentials или source text.
+проверенном ZIP и скопированы в исходный workspace `/docs/private`;
+публичный документ не публикует credentials или source text.
 
 Следующий runtime gate — полный development inventory 49 cases через actual
 coordinator cancellation и owned native runtime с независимым offline replay.
