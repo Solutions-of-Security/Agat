@@ -76,9 +76,62 @@ now reuses the existing strict JSON-number comparison from the caller SLI tools;
 booleans remain distinct from numbers and values cannot change. That failed run
 also remains separate. A new committed-source run supplies successful evidence.
 
-Native measurements and full-suite results are recorded after execution. All
-human labels, named owners, applicable calibration/holdout and customer SLO gates
-remain open; routing is false and qualification remains `not_assessed`.
+## Native result and independent replay
+
+[The public allowlisted summary](./public-workflow-timeout-summary.json) binds
+raw plan/result/context pins, 186 measured contributors and the source commit
+`295809d57f30010ae5f7b3f8dba39e82bbe067aa`. The experiment ran only the original
+development split with the unchanged runtime 0.12.3, model/tokenizer/policy pins,
+2,048-token limit, 4,096 MiB wired limit, 128 MiB cache and isolated 5,000 ms
+inference deadline. All 34 dependencies matched the frozen arm64/Python 3.13.12
+environment. No model download or protected resident change was required.
+
+| Inventory | Observed |
+|---|---:|
+| Original inputs / completed instances / bound caller returns | 49 / 49 / 49 |
+| Delivered computed returns | 45: 31 ok / 14 abstain |
+| Durable unavailable timeout / whole context rejection | 1 / 3 |
+| Scheduled completed upstream handlers | 49: 31 ok / 15 abstain / 3 context rejected |
+| Completed but undelivered upstream response | 1 abstain |
+| Warmup / total physical HTTP handlers | 2 / 51 |
+| Runtime epochs / POST retries / healthy suffix cases | 1 / 0 / 45 |
+| Fixture primary calls preserving the original branch | 49 |
+
+Target index 3 had 1,337 frozen input tokens. Its upstream result completed in
+583.704 ms; downstream EOF was observed at 10,000.983 ms and the worker recorded
+10,001.556 ms for the local call, including cleanup. No response header or byte
+was sent to this worker. This small observed scheduling/cleanup overrun is
+retained, not rounded into an exact 10-second execution claim. Computed-return
+caller p50/p95/max were 206.611 / 612.823 / 755.416 ms; the separate timeout is
+outside that 45-return distribution. These are descriptive lab measurements.
+
+Common offline replay passed with exact counters and 107 current verifier
+contributors. A separate standard-library audit performed 1,460 checks: every
+raw body and artifact pin, historical Git sources, all 49 model results against
+the healthy baseline, original input order, one assignment/intent/return per
+stage, primary routing, actual EOF/drain boundary, three raw counter snapshots,
+and live process cleanup. Baseline comparison preserves exact JSON numeric
+values and booleans while excluding stage ID and measured duration. Context
+rejections do not expose token/generation metadata; none was invented.
+
+All 33 owned temporary PID were absent. The four protected resident PID,
+profile, registration, dependencies and 35 resident/session source files stayed
+unchanged; monitoring remained ready. The launcher also removes its temporary
+enrollment credential if the Node driver is terminated before its own cleanup.
+The first attempt's credential was removed after a separate ownership/liveness
+check; its secret is excluded from retained archives.
+
+Twelve new regressions and all 18 focused tests passed. Full checks passed with
+917 Python tests, four declared optional skips, 12 Node tests, typecheck, local
+links and the process catalog. Earlier failed admission/number-comparison runs,
+red regressions and the initial missing-contributor fixture failure are retained
+separately; none was relabelled as a successful native run.
+
+The next engineering gate is an actual coordinator cancellation during an
+active shadow lease, including durable assignment/caller accounting and a
+healthy subsequent process. Human labels, named owners, applicable
+calibration/holdout and customer SLO gates remain open; routing is false and
+qualification remains `not_assessed`.
 
 ## Sources checked 09.10.2026 MSK
 
