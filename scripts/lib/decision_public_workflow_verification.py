@@ -1,6 +1,7 @@
 """Source-bound workflow receipt replay; a passed receipt does not appoint owners."""
 from collections import Counter
 import hashlib
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from scripts.lib.decision_shadow_pilot import require, timestamp
 from scripts.lib.decision_public_workflow_loss import loss_spec, verify_boundary
 from scripts.lib import decision_public_workflow_timeout as timeout
 from scripts.lib import decision_public_workflow_cancellation as cancellation
+from scripts.lib import decision_public_workflow_paired as paired
 
 SCHEMA = "agat.decision.public-workflow-verification.v1"
 PLAN_SCHEMA = "agat.decision.public-workflow-launch-plan.v1"
@@ -40,20 +42,21 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     loss = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v2"
     timing_out = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v4"
     cancelling = plan.get("schemaVersion") == "agat.decision.public-workflow-launch-plan.v5"
-    extra = {"coordinatorCancellation"} if cancelling else {"callerTimeout"} if timing_out else {"runtimeLoss"} if loss else set()
-    plan = verify_seal(plan, "agat.decision.public-workflow-launch-plan.v5" if cancelling else "agat.decision.public-workflow-launch-plan.v4" if timing_out else "agat.decision.public-workflow-launch-plan.v2" if loss else PLAN_SCHEMA)
-    result = verify_seal(parse_json(raw["result"]), "agat.decision.public-workflow-launch-result.v5" if cancelling else "agat.decision.public-workflow-launch-result.v4" if timing_out else "agat.decision.public-workflow-launch-result.v2" if loss else RESULT_SCHEMA)
+    pairing = plan.get('schemaVersion') == paired.LAUNCH_PLAN
+    extra = {'pairedConcurrency'} if pairing else {"coordinatorCancellation"} if cancelling else {"callerTimeout"} if timing_out else {"runtimeLoss"} if loss else set()
+    plan = verify_seal(plan, paired.LAUNCH_PLAN if pairing else "agat.decision.public-workflow-launch-plan.v5" if cancelling else "agat.decision.public-workflow-launch-plan.v4" if timing_out else "agat.decision.public-workflow-launch-plan.v2" if loss else PLAN_SCHEMA)
+    result = verify_seal(parse_json(raw["result"]), paired.LAUNCH_RESULT if pairing else "agat.decision.public-workflow-launch-result.v5" if cancelling else "agat.decision.public-workflow-launch-result.v4" if timing_out else "agat.decision.public-workflow-launch-result.v2" if loss else RESULT_SCHEMA)
     fields(plan, {"schemaVersion", "sha256", "createdAt", "sourceCommit", "sourceFiles", "contextProfileFileSha256", "context", "config", "runtime",
                   "manifestFileSha256", "mode", "primary", "warmupCount", "ownersAppointed", "referenceLabels", "sloAccepted", "routingEnabled", "qualification"} | extra)
     fields(result, {"schemaVersion", "sha256", "status", "planSha256", "evidence", "warmup", "samples", "failure", "ownedPids", "remainingOwnedPids",
                     "cleanupErrors", "runtimeExitCode", "driverExitCode", "artifactSha256", "elapsedMs", "referenceLabels", "classificationAccuracyMeasured",
-                    "ownersAppointed", "sloAccepted", "routingEnabled", "qualification"} | extra)
+                    "ownersAppointed", "sloAccepted", "routingEnabled", "qualification"} | extra | ({'activeBusySample'} if pairing else set()))
     for value in (plan, result):
         require(type(value["referenceLabels"]) is int and value["referenceLabels"] == 0 and value["ownersAppointed"] is False
                 and value["sloAccepted"] is False and value["routingEnabled"] is False and value["qualification"] == "not_assessed",
                 "Workflow receipt grants labels, authority or customer qualification")
     require(plan["contextProfileFileSha256"] == context_sha and plan["manifestFileSha256"] == context["manifestFileSha256"]
-            and plan["mode"] == "serial_closed_model_integration" and plan["primary"] == "fixture_chat_completions"
+            and plan["mode"] == ('paired_closed_model_integration' if pairing else "serial_closed_model_integration") and plan["primary"] == "fixture_chat_completions"
             and type(plan["warmupCount"]) is int and plan["warmupCount"] == 2, "Wrong context, scope or warmup binding")
     same(plan["context"], context, "Embedded context differs from independently pinned original")
     same(plan["config"], shared_config(context), "Published workflow configuration differs")
@@ -73,7 +76,8 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
         same(plan["callerTimeout"], timeout.timeout_spec(context, plan["callerTimeout"]["targetIndex"]), "Unsupported prospective caller timeout")
     if cancelling:
         same(plan["coordinatorCancellation"], cancellation.cancellation_spec(context, plan["coordinatorCancellation"]["targetIndex"]), "Unsupported prospective coordinator cancellation")
-    paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else []) + (["scripts/test/test_decision_public_workflow_timeout.py"] if timing_out else []) + (["scripts/test/test_decision_public_workflow_cancellation.py"] if cancelling else [])
+    if pairing: same(plan['pairedConcurrency'],paired.paired_spec(context),'Unsupported prospective paired schedule')
+    paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else []) + (["scripts/test/test_decision_public_workflow_timeout.py"] if timing_out else []) + (["scripts/test/test_decision_public_workflow_cancellation.py"] if cancelling else []) + (paired.SOURCE_PATHS if pairing else [])
     sources = sources_at(root, plan["sourceCommit"], plan["sourceFiles"], paths)
     if loss:
         require({"scripts/lib/decision_public_workflow_loss.py", "scripts/test/test_decision_public_workflow_loss.py"} <= set(sources), "Runtime-loss contributors omitted")
@@ -92,13 +96,14 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     artifact_names = ARTIFACTS | ({"runtime-loss-request.json", "runtime-loss-applied.json", "runtime-loss-transport.json"} if loss else set())
     if timing_out: artifact_names |= {"caller-timeout-transport.json", "caller-timeout-drained.json"}
     if cancelling: artifact_names |= cancellation.ARTIFACTS
+    if pairing: artifact_names |= paired.ARTIFACTS
     fields(result["artifactSha256"], artifact_names)
     artifacts = {name: pinned_input(directory/name, result["artifactSha256"][name], 16*1024*1024) for name in artifact_names}
     recipe = parse_json(artifacts["workflow-plan.json"]); driver = parse_json(artifacts["workflow-driver.json"]); cohort = parse_json(artifacts["cohort.http.json"])
     fields(recipe, {"schemaVersion", "mode", "primary", "processId", "processVersion", "projectId", "startAt", "scopeEndRule", "config",
                     "profileSha256", "inputs", "ownersAppointed", "routingEnabled", "qualification", "graphSha256"} | extra)
     fields(driver, {"status", "primary", "primaryCalls", "routes", "nodeVersion", "ownedPids", "workerExitCode", "actualWindow",
-                    "unauthenticatedStatus", "authenticatedStatus", "ownersAppointed", "routingEnabled", "qualification"} | ({"coordinatorCancellationReady", "coordinatorCancellationApplied", "coordinatorCancellationDrained"} if cancelling else {"callerTimeoutDrained"} if timing_out else {"runtimeLossApplied"} if loss else set()))
+                    "unauthenticatedStatus", "authenticatedStatus", "ownersAppointed", "routingEnabled", "qualification"} | ({'pairedExecution'} if pairing else {"coordinatorCancellationReady", "coordinatorCancellationApplied", "coordinatorCancellationDrained"} if cancelling else {"callerTimeoutDrained"} if timing_out else {"runtimeLossApplied"} if loss else set()))
     fields(cohort, {"schemaVersion", "snapshotId", "observedAt", "scope", "snapshot", "limits", "counts", "runIdsSha256", "instances", "traces", "dataPolicy",
                     "populationCoverageVerified", "eligibleWorkloadVerified", "httpAttemptInventoryVerified", "sloAccepted", "routingEnabled", "qualification"})
     require(all(cohort[key] is False for key in ("populationCoverageVerified", "eligibleWorkloadVerified", "httpAttemptInventoryVerified")),
@@ -126,10 +131,22 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     same(driver["actualWindow"], {key: cohort["scope"][key] for key in ("startAt", "endAt")}, "Driver/census windows differ")
     require(isinstance(driver["ownedPids"], list) and len(driver["ownedPids"]) == len(set(driver["ownedPids"])) == 2
             and all(type(pid) is int and pid in result["ownedPids"] for pid in driver["ownedPids"]), "Missing driver/worker ownership record")
-    transport = parse_json(artifacts["caller-cancellation-transport.json"]) if cancelling else parse_json(artifacts["caller-timeout-transport.json"]) if timing_out else None
-    bundle = cancellation.receipt_bundle(artifacts) if cancelling else None
+    transport = parse_json(artifacts['paired-transport.json']) if pairing else parse_json(artifacts["caller-cancellation-transport.json"]) if cancelling else parse_json(artifacts["caller-timeout-transport.json"]) if timing_out else None
+    bundle = paired.receipt_bundle(artifacts) if pairing else cancellation.receipt_bundle(artifacts) if cancelling else None
     evidence = verify_inventory(context, recipe, cohort, records, transport, bundle)
     same(result["evidence"], evidence, "Embedded inventory result differs from independently replayed cohort")
+    overlap = {}
+    if pairing:
+        native_origin = datetime.fromtimestamp(number(result['samples'][0]['serverStart'], 0, 2**53), timezone.utc)
+        require(timestamp(plan['createdAt'], 'plan.createdAt') < native_origin
+            <= timestamp(transport['startedAt'], 'relay.startedAt') <= timestamp(recipe['startAt'], 'recipe.startAt'),
+            'Paired plan was not fixed before the native origin and scoring')
+        same(driver['pairedExecution'],{k:plan['pairedConcurrency'][k] for k in ('workerConcurrency','schedulerMode','globalMaxConcurrency')},'Actual scheduler/worker concurrency differs')
+        same(recipe['pairedConcurrency'],plan['pairedConcurrency'],'Recipe changed prospective paired schedule')
+        same(result['pairedConcurrency'],plan['pairedConcurrency'],'Result changed prospective paired schedule')
+        require(result['activeBusySample']['runtimePid'] not in driver['ownedPids']
+            and result['activeBusySample']['runtimePid'] in result['samples'][0]['ownedPids'],'Busy sample attributed to driver/worker instead of native runtime')
+        overlap=paired.verify_overlap(context,result,transport)
     if timing_out:
         same(recipe["callerTimeout"], plan["callerTimeout"], "Recipe changed prospective timeout")
         same(result["callerTimeout"], plan["callerTimeout"], "Result changed prospective timeout")
@@ -184,12 +201,15 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     same(values[1], {key: warm_outcomes.get(key, 0) for key in values[1]}, "Physical warmup handlers differ")
     same({key: values[2][key]-values[1][key] for key in values[2]},
          {key: evidence["physicalScheduledOutcomes"].get(key, 0) for key in values[2]}, "Physical handlers disagree with durable returns")
+    if pairing:
+        active_counts,_=paired.recovery.http_metrics(result['activeBusySample']['metricsRaw'],in_progress=1)
+        require(all(values[1][k]<=active_counts[k]<=values[2][k] for k in values[2]),'Active busy snapshot lies outside closed physical inventory')
     require(raw == {"context": pinned_input(context_path, context_sha, 32*1024*1024),
                     "plan": pinned_input(directory/"plan.json", plan_sha, 32*1024*1024),
                     "result": pinned_input(directory/"result.json", result_sha, 64*1024*1024)}, "Artifact changed during replay")
     for name, expected in artifacts.items():
         require(pinned_input(directory/name, result["artifactSha256"][name], 16*1024*1024) == expected, "Consumed artifact changed")
-    return sealed({"schemaVersion": "agat.decision.public-workflow-verification.v5" if cancelling else "agat.decision.public-workflow-verification.v4" if timing_out else "agat.decision.public-workflow-verification.v2" if loss else SCHEMA, "status": "pass", "contextProfileFileSha256": context_sha,
+    return sealed({"schemaVersion": 'agat.decision.public-workflow-verification.v8' if pairing else "agat.decision.public-workflow-verification.v5" if cancelling else "agat.decision.public-workflow-verification.v4" if timing_out else "agat.decision.public-workflow-verification.v2" if loss else SCHEMA, "status": "pass", "contextProfileFileSha256": context_sha,
         "planFileSha256": plan_sha, "resultFileSha256": result_sha, "sourceCommit": plan["sourceCommit"], "sourceFilesCount": len(sources),
         "inventory": evidence, "warmupCalls": 2, "physicalScheduledHttpHandlers": sum(evidence["physicalScheduledOutcomes"].values()),
         **({"transportUnavailableReturns": evidence["unavailableReturns"], "transportResetConnections": transport["resetConnections"]} if loss else {}), "physicalHttpCounters": values[2],
@@ -199,4 +219,6 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
             "cancelRequestToEofMs": evidence["cancelRequestToEofMs"], "completedUndeliveredResponses": 1, "proxyPosts": evidence["proxyPosts"],
             "clientEofObserved": True, "runtimeRestarted": False, "lateObservationHttpStatus": 400} if cancelling else {}),
         "physicalHttpAccounting": "exact", "reportedCleanupComplete": True, "liveCleanupVerified": False, "ownersAppointed": False,
+        **({'verificationModelCalls':0,'nativeBusyRefusals':evidence['nativeBusyRefusals'],'durableBusyReturns':evidence['durableBusyReturns'],
+            'runtimeRestarted':False,'workerConcurrency':2,**overlap} if pairing else {}),
         "classificationAccuracyMeasured": False, "referenceLabels": 0, "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed"})

@@ -25,7 +25,8 @@ class RecoveryVerificationTest(unittest.TestCase):
                  "scripts/test/test_decision_public_workflow_timeout.py",
                  "scripts/test/test_decision_public_workflow_cancellation.py",
                  "scripts/test/test_decision_public_workflow_active_integration.py",
-                 "scripts/test/test_decision_public_workflow_active_deadline.py"]
+                 "scripts/test/test_decision_public_workflow_active_deadline.py",
+                 "scripts/test/test_decision_public_workflow_paired.py"]
         for name in paths:
             target = cls.root/name
             target.parent.mkdir(parents=True, exist_ok=True)
