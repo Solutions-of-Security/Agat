@@ -78,7 +78,7 @@ def _verify_http(bundle, cohort, routes, spec):
     for intent in intents:
         body = fields(parse_json(intent["requestBody"]), {"schemaVersion", "assignmentId"})
         require(body["schemaVersion"] == "agat.decision.caller-accounting.v1" and isinstance(body["assignmentId"], str), "Unknown caller intent contract")
-    leases = set(); target_return = None; target_lease = None
+    leases = set(); target_return = None; target_lease = None; target_primary = None
     for index, route in enumerate(routes):
         trace = traces[route["runId"]]
         assigned = _single_assignment(trace, route["stageId"])
@@ -93,13 +93,22 @@ def _verify_http(bundle, cohort, routes, spec):
                 "Primary output changed or actual HTTP return missing")
         if index == spec["targetIndex"]:
             require(submitted[0]["httpStatus"] == primary[0]["httpStatus"] == 400, "Revoked lease accepted a late write")
-            target_return = submitted[0]; target_lease = lease_path
+            target_return = submitted[0]; target_lease = lease_path; target_primary = primary[0]
         else:
             posted = fields(parse_json(submitted[0]["requestBody"]), {"result", "callerTiming"})
             stored = trace["decisionObservations"][0]["observation"]
             require(submitted[0]["httpStatus"] == primary[0]["httpStatus"] == 200
                     and same_json(posted, {key: stored[key] for key in ("result", "callerTiming")}),
                     "Healthy HTTP return differs from durable observation")
+    require(all(r["path"].rsplit("/", 1)[0] in leases for r in records if r["path"].endswith(("/renew", "/fail"))),
+            "Actual HTTP journal contains a lease outside the original cohort")
+    failures = [r for r in records if r["path"].endswith("/fail")]
+    require(len(failures) == 1 and failures[0]["path"] == target_lease+"/fail" and failures[0]["httpStatus"] == 400,
+            "Unexpected failure request, missing cleanup attempt or revived cancelled lease")
+    failed = fields(parse_json(failures[0]["requestBody"]), {"error"})
+    require(isinstance(failed["error"], str) and 0 < len(failed["error"]) <= 4096
+            and timestamp(target_primary["finishedAt"], "completion.finishedAt") <= timestamp(failures[0]["startedAt"], "failure.startedAt"),
+            "Cancelled worker failure handling did not follow rejected primary completion")
     renewals = [r for r in records if r["path"].endswith("/renew") and r["httpStatus"] != 204]
     require(len(renewals) == 1 and renewals[0]["path"] == target_lease+"/renew" and renewals[0]["httpStatus"] == 404,
             "Actual ownership revocation was not observed or another lease failed")

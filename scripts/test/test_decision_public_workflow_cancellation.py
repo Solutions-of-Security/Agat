@@ -83,6 +83,8 @@ def prepared_fixture():
         finish = datetime.fromisoformat(physical["finishedAt"].replace("Z", "+00:00"))
         record(lease_path+"/decision-shadow", 400 if index == 2 else 200, posted, finish+timedelta(milliseconds=1))
         record(lease_path+"/complete", 400 if index == 2 else 200, {"output": "PRIMARY_OUTPUT"}, finish+timedelta(milliseconds=3))
+        if index == 2:
+            record(lease_path+"/fail", 400, {"error": "ApiError: revoked lease"}, finish+timedelta(milliseconds=5))
     raw = {"caller-cancellation-transport.json": encoded(transport), "coordinator-cancellation-ready.json": encoded(ready),
         "coordinator-cancellation-drained.json": encoded(drained), "coordinator-cancellation-applied.json": encoded(applied),
         "coordinator-cancellation-http.json": encoded(http), "coordinator-cancellation-before.http.json": encoded(before)}
@@ -126,6 +128,22 @@ class CancellationInventoryTest(unittest.TestCase):
         self.assertEqual(result["localCancelledCallerMs"], 500.5); self.assertEqual(result["cancelRequestToEofMs"], 484)
         self.assertTrue(result["completedPrimaryRoutesPreserved"]); self.assertTrue(result["operatorCancellationPreserved"])
         self.assertNotIn("primaryRoutePreserved", result); self.assertFalse(result["routingEnabled"])
+
+        for suffix, status, foreign in (("renew", 204, True), ("fail", 400, True), ("fail", 200, False), ("fail", 400, False)):
+            args = fixture()
+            row = copy.deepcopy(next(r for r in args[-1]["http"] if r["path"].endswith("/"+suffix)))
+            row["httpStatus"] = status
+            if foreign: row["path"] = "/api/v1/leases/unrelated-lease/"+suffix
+            args[-1]["http"].append(row)
+            with self.assertRaises(ValueError): workflow.verify_inventory(*args)
+        for mutation in ("omit", "status", "body", "order"):
+            args = fixture(); failure = next(r for r in args[-1]["http"] if r["path"].endswith("/fail"))
+            if mutation == "omit": args[-1]["http"].remove(failure)
+            elif mutation == "status": failure["httpStatus"] = 200
+            elif mutation == "body":
+                failure["requestBody"] = '{"error":true}'; failure["requestBodySha256"] = sha(failure["requestBody"].encode())
+            else: failure.update(startedAt=args[-1]["http"][0]["startedAt"], finishedAt=args[-1]["http"][0]["finishedAt"])
+            with self.assertRaises(ValueError): workflow.verify_inventory(*args)
 
     def test_false_durable_cancellation_return_late_observation_and_primary_revival_fail(self):
         mutations = (
