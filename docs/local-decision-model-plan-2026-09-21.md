@@ -652,6 +652,22 @@ upstream disconnect, isolated backend state и healthy suffix. Human owners,
 permitted real workflows, independent labels/calibration/holdout остаются
 открытыми; routing false / qualification not_assessed.
 
+[Active native peer cancellation и recovery](./qualification/local-decisions/performance/public-peer-active-cancellation.md),
+09.10: свежий native прогон сохранил все 49 development cases / 44 groups;
+48 delivered results (31 ok / 14 abstain / 3 whole-context rejections), один
+local unavailable.cancelled. Target index 25 отменён после fresh active HTTP
+snapshot без response bytes; штатный retirement `inference_cancelled`, exit 75
+и child exit -15 подтверждены. Replacement на том же порту/профиле завершил
+два новых warmups и все 23 suffix cases; всего 53 physical POST starts / 52 known
+completions, interrupted terminal counter unknown, retry 0. Offline replay и
+independent stdlib audit сверили 193 contributors, 48 baseline signatures,
+physical epochs и отсутствие всех шести temporary PIDs. 23 focused tests passed;
+resident package/config/profile и четыре protected PIDs unchanged. Actual
+boot/login уже закрыт; следующий runtime gate — actual coordinator cancellation
+во время active native HTTP, durable unknown return/late-write rejection и owned
+recovery. Owner/customer/SLO, human calibration/holdout остаются открытыми,
+routing false / not_assessed; GPU kernel preemption не заявляется.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
