@@ -64,6 +64,11 @@ def inventory(context, plan, result, artifacts):
             and transport["interruptedActiveUpstreamPosts"] == 1 and len(transport["rows"]) == count,"Relay inventory did not close exactly")
     ports = [transport[key] for key in ("proxyPort","upstreamPort")]
     require(all(type(port) is int and 1 <= port <= 65535 and port != 8766 for port in ports) and ports[0] != ports[1],"Peer port targets the protected resident")
+    require(isinstance(result["samples"],list) and len(result["samples"]) == 6,"Missing native origins for the prospective plan")
+    require(timestamp(context["createdAt"],"context.createdAt") <= timestamp(plan["createdAt"],"plan.createdAt")
+            < timestamp(result["samples"][0]["capturedAt"],"firstOrigin.capturedAt")
+            <= timestamp(transport["startedAt"],"relay.startedAt"),
+            "Peer plan was not fixed before the first native origin and scoring")
     delivered = Counter(); statuses = Counter(); caller = []; last = timestamp(transport["startedAt"],"relay.startedAt")
     for index,(case,row,wire) in enumerate(zip(context["inputs"],rows,transport["rows"])):
         fields(row,{"index","caseId","inputSha256","status","reason","observation","callerMs","wallMs"})

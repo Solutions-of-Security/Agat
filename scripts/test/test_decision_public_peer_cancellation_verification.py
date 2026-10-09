@@ -90,6 +90,13 @@ def fixture():
 class PeerInventoryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls): cls.original=fixture()
+    def test_posthoc_plan_time_is_rejected_even_with_recomputed_seals(self):
+        for created in ("2026-10-08T00:00:00.000Z", "2026-10-09T03:00:01.000Z"):
+            context,plan,result,artifacts=copy.deepcopy(self.original)
+            plan["createdAt"]=created; plan=reseal(plan)
+            result["planSha256"]=plan["sha256"]
+            with self.subTest(created=created),self.assertRaises(ValueError):
+                verifier.inventory(context,plan,reseal(result),artifacts)
     def test_complete_fixture_separates_completed_and_interrupted_without_workflow_claims(self):
         context,plan,result,artifacts=copy.deepcopy(self.original)
         with patch("http.client.HTTPConnection") as network:
