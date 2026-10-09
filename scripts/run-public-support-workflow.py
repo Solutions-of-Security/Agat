@@ -30,6 +30,9 @@ from scripts.lib.decision_public_workflow import PROFILE_PATH, SOURCE_PATHS, sha
 from scripts.lib.decision_public_workflow_loss import loss_spec, validate_request, verify_boundary, APPLIED_SCHEMA, stop_and_reserve, publish_applied
 from scripts.lib.decision_public_workflow_timeout import timeout_spec, DeadlineProxy
 from scripts.lib import decision_public_workflow_cancellation as cancellation
+from scripts.lib import decision_public_workflow_paired as paired
+from scripts.lib.decision_public_workflow_active_cancellation import bounded_metrics
+from scripts.lib.decision_public_workflow_recovery import http_metrics
 from workers.local_decisions import LocalDecisionClient
 
 SPEC = importlib.util.spec_from_file_location("public_workflow_sources", ROOT/"scripts/run-decision-arrival-rate.py")
@@ -46,6 +49,7 @@ def main(argv=None):
     fault.add_argument("--stop-runtime-before-index", type=int, default=None, help="Prospectively stop only this launcher-owned runtime before this zero-based case")
     fault.add_argument("--withhold-response-at-index", type=int, default=None, help="Hold an actual completed model response until the worker caller times out")
     fault.add_argument("--cancel-run-at-index", type=int, default=None, help="Cancel the actual coordinator run while its completed native response is withheld")
+    fault.add_argument('--paired-concurrency', action='store_true', help='Execute original inputs in batches of two with one actual worker; require native busy admission')
     args = parser.parse_args(argv)
     try:
         private = (ROOT/"docs/private").resolve()
@@ -56,7 +60,8 @@ def main(argv=None):
         loss = loss_spec(context, args.stop_runtime_before_index) if args.stop_runtime_before_index is not None else None
         timeout = timeout_spec(context, args.withhold_response_at_index) if args.withhold_response_at_index is not None else None
         cancel = cancellation.cancellation_spec(context, args.cancel_run_at_index) if args.cancel_run_at_index is not None else None
-        source_paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else []) + (["scripts/test/test_decision_public_workflow_timeout.py"] if timeout else []) + (["scripts/test/test_decision_public_workflow_cancellation.py"] if cancel else [])
+        pairing = paired.paired_spec(context) if args.paired_concurrency else None
+        source_paths = SOURCE_PATHS + (["scripts/test/test_decision_public_workflow_loss.py"] if loss else []) + (["scripts/test/test_decision_public_workflow_timeout.py"] if timeout else []) + (["scripts/test/test_decision_public_workflow_cancellation.py"] if cancel else []) + (paired.SOURCE_PATHS if pairing else [])
         commit, sources = launcher.frozen_sources(source_paths)
         profile_raw = pinned_input(ROOT/PROFILE_PATH, context["profileFileSha256"], 1024*1024)
         profile = parse_json(profile_raw); manifest, _ = verify_manifest(args.manifest.resolve()); verify_profile(profile, manifest)
@@ -66,10 +71,10 @@ def main(argv=None):
         environment = parse_json(subprocess.check_output([str(args.runtime_python.absolute()), "-B", "-c", code, *requirements], cwd=ROOT, timeout=15))
         runtime.require(environment == context["tokenizerEnvironment"], "Frozen runtime dependencies differ")
         directory = private_directory(ROOT, args.evidence_dir)
-        plan = sealed({"schemaVersion": "agat.decision.public-workflow-launch-plan.v5" if cancel else "agat.decision.public-workflow-launch-plan.v4" if timeout else "agat.decision.public-workflow-launch-plan.v2" if loss else "agat.decision.public-workflow-launch-plan.v1", **({"runtimeLoss": loss} if loss else {}), **({"callerTimeout": timeout} if timeout else {}), **({"coordinatorCancellation": cancel} if cancel else {}), "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        plan = sealed({"schemaVersion": paired.LAUNCH_PLAN if pairing else "agat.decision.public-workflow-launch-plan.v5" if cancel else "agat.decision.public-workflow-launch-plan.v4" if timeout else "agat.decision.public-workflow-launch-plan.v2" if loss else "agat.decision.public-workflow-launch-plan.v1", **({"runtimeLoss": loss} if loss else {}), **({"callerTimeout": timeout} if timeout else {}), **({"coordinatorCancellation": cancel} if cancel else {}), **({'pairedConcurrency':pairing} if pairing else {}), "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "sourceCommit": commit, "sourceFiles": sources, "contextProfileFileSha256": args.context_profile_file_sha256,
             "context": context, "config": config, "runtime": environment, "manifestFileSha256": context["manifestFileSha256"],
-            "mode": "serial_closed_model_integration", "primary": "fixture_chat_completions", "warmupCount": 2,
+            "mode": "paired_closed_model_integration" if pairing else "serial_closed_model_integration", "primary": "fixture_chat_completions", "warmupCount": 2,
             "ownersAppointed": False, "referenceLabels": 0, "sloAccepted": False, "routingEnabled": False, "qualification": "not_assessed"})
         write_json_new(directory/"plan.json", plan)
         plan_file_sha = sha256_file(directory/"plan.json")
@@ -81,7 +86,8 @@ def main(argv=None):
     proxy = None; transport = None
     timeout_drained = None
     cancellation_ready = None; cancellation_drained = None
-    transport_name = "caller-cancellation-transport.json" if cancel else "caller-timeout-transport.json"
+    active_busy_sample = None
+    transport_name = 'paired-transport.json' if pairing else "caller-cancellation-transport.json" if cancel else "caller-timeout-transport.json"
     old_umask = os.umask(0o077); start = time.monotonic()
     try:
         with runtime.open_private_log(directory/"runtime.log") as log, runtime.open_private_log(directory/"driver.log") as driver_log:
@@ -126,6 +132,7 @@ def main(argv=None):
             runtime.require(sum(samples[1]["counters"].values()) == 2, "Warmup physical calls differ")
             if timeout: proxy = DeadlineProxy(port, context, timeout)
             if cancel: proxy = cancellation.CoordinatorCancellationProxy(port, context, cancel)
+            if pairing: proxy = paired.PairedProxy(port,context,pairing)
             env = {key: value for key, value in os.environ.items() if not key.startswith(("AGAT_", "OTEL_"))}
             driver = subprocess.Popen(["node", "--import", "tsx", "scripts/run-public-support-workflow.mts", "--decision-url",
                 f"http://127.0.0.1:{proxy.port if proxy else port}", "--evidence-dir", str(directory)], cwd=ROOT, env={**env, "OTEL_SDK_DISABLED": "true"},
@@ -134,6 +141,19 @@ def main(argv=None):
             while driver.poll() is None:
                 owned.update(runtime.shared.inventory(driver.pid)[0])
                 runtime.require(proxy is None or not proxy.errors, "Deadline proxy failed")
+                if pairing and active_busy_sample is None:
+                    metrics_raw=bounded_metrics(port)
+                    # Two HTTP handlers can briefly coexist during busy admission. Only
+                    # a stable one-active snapshot qualifies as the overlap witness.
+                    gauges=[line for line in metrics_raw.splitlines() if line.startswith('agat_decision_requests_in_progress ')]
+                    runtime.require(len(gauges)==1 and gauges[0].split(' ')[1] in ('0','1','2'),'Invalid paired HTTP handler gauge')
+                    in_progress=int(gauges[0].split(' ')[1])
+                    if in_progress<2:
+                        values,epoch=http_metrics(metrics_raw,in_progress=in_progress)
+                        if in_progress==1 and values['busy']>=1:
+                            runtime.require(epoch==samples[0]['serverStart'],'Active busy sample changed runtime epoch')
+                            active_busy_sample={'capturedAt':datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z'),
+                                'metricsRaw':metrics_raw,'metricsSha256':hashlib.sha256(metrics_raw.encode()).hexdigest(),'runtimePid':process.pid}
                 if cancel and cancellation_ready is None:
                     cancellation_ready = proxy.ready_receipt()
                     if cancellation_ready is not None:
@@ -162,7 +182,7 @@ def main(argv=None):
                         "appliedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
                     runtime.require(pinned_input(directory/"runtime-loss-request.json", request_sha, 65536) == request_raw, "Loss request changed")
                     publish_applied(directory, loss_applied)
-                time.sleep(.1)
+                time.sleep(pairing['metricsPollMs']/1000 if pairing and active_busy_sample is None else .1)
             runtime.require(driver.returncode == 0, "Workflow driver failed")
             recipe = parse_json((directory/"workflow-plan.json").read_bytes())
             cohort = parse_json((directory/"cohort.http.json").read_bytes())
@@ -171,6 +191,7 @@ def main(argv=None):
             runtime.require((recipe.get("runtimeLoss") is None and loss is None) or fingerprint(recipe.get("runtimeLoss")) == fingerprint(loss), "Recipe changed the prospective loss")
             runtime.require((recipe.get("callerTimeout") is None and timeout is None) or fingerprint(recipe.get("callerTimeout")) == fingerprint(timeout), "Recipe changed the prospective timeout")
             runtime.require((recipe.get("coordinatorCancellation") is None and cancel is None) or fingerprint(recipe.get("coordinatorCancellation")) == fingerprint(cancel), "Recipe changed the prospective coordinator cancellation")
+            runtime.require((recipe.get('pairedConcurrency') is None and pairing is None) or fingerprint(recipe.get('pairedConcurrency'))==fingerprint(pairing),'Recipe changed the prospective paired schedule')
             if proxy:
                 proxy.close(); transport = proxy.receipt(); write_json_new(directory/transport_name, transport)
             if timeout:
@@ -183,6 +204,8 @@ def main(argv=None):
                                 and fingerprint(observed.get("coordinatorCancellationDrained")) == fingerprint(cancellation_drained),
                                 "Driver did not acknowledge completed upstream response and cancelled drain")
                 cancellation_receipts = cancellation.receipt_bundle({name: (directory/name).read_bytes() for name in cancellation.ARTIFACTS})
+            if pairing:
+                cancellation_receipts=paired.receipt_bundle({name:(directory/name).read_bytes() for name in paired.ARTIFACTS})
             evidence = verify_inventory(context, recipe, cohort, observed["routes"], transport, cancellation_receipts)
             runtime.require(observed["status"] == "observed" and observed["primaryCalls"] == len(context["inputs"])
                             and observed["workerExitCode"] == 0 and observed["unauthenticatedStatus"] == 401, "Driver audit failed")
@@ -197,6 +220,9 @@ def main(argv=None):
                                 and fingerprint(parse_json((directory/"runtime-loss-applied.json").read_bytes())) == fingerprint(loss_applied), "Loss receipts changed")
                 write_json_new(directory/"runtime-loss-transport.json", transport)
             else: sample("after_inventory")
+            if pairing:
+                runtime.require(active_busy_sample is not None,'No active native busy overlap was observed')
+                paired.verify_overlap(context,{'activeBusySample':active_busy_sample,'samples':samples,'ownedPids':sorted(owned)},transport)
             runtime.require(len({entry["serverStart"] for entry in samples}) == 1, "Runtime counters restarted")
             delta = {key: samples[2]["counters"][key]-samples[1]["counters"][key] for key in OUTCOMES}
             runtime.require(all(delta[key] == evidence["physicalScheduledOutcomes"].get(key, 0) for key in OUTCOMES), "Physical handlers differ from durable cohort")
@@ -230,10 +256,12 @@ def main(argv=None):
     if loss: artifacts += ("runtime-loss-request.json", "runtime-loss-applied.json", "runtime-loss-transport.json")
     if timeout: artifacts += ("caller-timeout-transport.json", "caller-timeout-drained.json")
     if cancel: artifacts += tuple(sorted(cancellation.ARTIFACTS))
-    result = sealed({"schemaVersion": "agat.decision.public-workflow-launch-result.v5" if cancel else "agat.decision.public-workflow-launch-result.v4" if timeout else "agat.decision.public-workflow-launch-result.v2" if loss else "agat.decision.public-workflow-launch-result.v1",
+    if pairing: artifacts += tuple(sorted(paired.ARTIFACTS))
+    result = sealed({"schemaVersion": paired.LAUNCH_RESULT if pairing else "agat.decision.public-workflow-launch-result.v5" if cancel else "agat.decision.public-workflow-launch-result.v4" if timeout else "agat.decision.public-workflow-launch-result.v2" if loss else "agat.decision.public-workflow-launch-result.v1",
         **({"runtimeLoss": {"spec": loss, "applied": loss_applied}} if loss else {}), "status": "observed" if complete else "failed",
         **({"callerTimeout": timeout} if timeout else {}),
         **({"coordinatorCancellation": cancel} if cancel else {}),
+        **({'pairedConcurrency':pairing,'activeBusySample':active_busy_sample} if pairing else {}),
         "planSha256": plan["sha256"], "evidence": evidence, "warmup": warmup, "samples": samples, "failure": failure,
         "ownedPids": sorted(owned), "remainingOwnedPids": remaining, "cleanupErrors": errors,
         "runtimeExitCode": process.returncode if process else None, "driverExitCode": driver.returncode if driver else None,
