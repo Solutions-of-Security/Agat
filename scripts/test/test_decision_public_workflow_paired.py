@@ -1,5 +1,6 @@
 """Synthetic closed receipts and real model-free paired worker/coordinator execution."""
 import copy
+import base64
 from collections import Counter
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -221,11 +222,18 @@ class PairedDriverTest(unittest.TestCase):
                 directory=Path(temporary); (directory/'plan.json').write_bytes(encoded({'schemaVersion':paired.LAUNCH_PLAN,'context':context,
                     'config':workflow.shared_config(context),'pairedConcurrency':paired.paired_spec(context)}))
                 with (directory/'driver.log').open('wb') as log:
-                    child=subprocess.Popen(['node','--import','tsx','scripts/run-public-support-workflow.mts','--decision-url',f'http://127.0.0.1:{proxy.port}',
+                    early_timer='''const timer=globalThis.setTimeout;let fired=false;
+globalThis.setTimeout=(callback,delay,...args)=>{
+  if(!fired && delay>500 && delay<=1000){fired=true;console.log("fixture: early paired start timer");return timer(callback,0,...args);}
+  return timer(callback,delay,...args);
+};'''
+                    timer_import='data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
+                    child=subprocess.Popen(['node','--import','tsx','--import',timer_import,'scripts/run-public-support-workflow.mts','--decision-url',f'http://127.0.0.1:{proxy.port}',
                         '--evidence-dir',str(directory)],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
                     try: child.wait(timeout=40)
                     except subprocess.TimeoutExpired: os.killpg(child.pid,signal.SIGTERM); child.wait(timeout=8)
                 self.assertEqual(child.returncode,0,(directory/'driver.log').read_text()[-4000:]); proxy.close(); transport=proxy.receipt()
+                self.assertIn('fixture: early paired start timer',(directory/'driver.log').read_text())
                 self.assertEqual({k:transport[k] for k in ('acceptedPosts','completedUpstreamPosts','maximumActiveHandlers','errors')},
                     {'acceptedPosts':6,'completedUpstreamPosts':6,'maximumActiveHandlers':2,'errors':[]})
                 raw={name:(directory/name).read_bytes() for name in paired.ARTIFACTS if name!='paired-transport.json'}; raw['paired-transport.json']=encoded(transport)

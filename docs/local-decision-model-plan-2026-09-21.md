@@ -724,6 +724,33 @@ admitted партнёром в паре 0/1; 51 completed physical calls вкл�
 Owners/customer/SLO/human calibration/holdout открыты, routing false /
 not_assessed; GPU kernel concurrency и customer capacity не заявляются.
 
+[Полный inventory с real primary и matched control](./qualification/local-decisions/performance/public-workflow-real-primary.md),
+10.10: actual coordinator/worker завершили 98 workflow (49 control / 49 shadow)
+на всех original development cases / 44 groups. Pinned Ollama 0.35.1 / Qwen3:8b
+получил original input ровно один раз, context 32768 / decode 128; все 98 actual
+outputs сохранены, все 49 matched primary requests совпали. Native decider
+вернул 31 ok / 15 abstain / три whole-context rejections, все 49 negotiated
+caller returns известны; 49 signatures совпали с healthy control. Один epoch,
+два decision warmups / 51 physical calls, один primary warmup; retry/restart 0.
+Primary outputs совпали в 47/49 пар; 83 responses достигли decode limit.
+Whole-workflow p50 control/shadow — 4121.235/4465.132 ms, median matched delta
+722.171 ms; shared cache/prefill и один проход не устанавливают causal SLO.
+Первый failed native attempt сохранил 24 completed workflow, timeout и ошибку
+finalization без result receipt; v2 исправил полный input path, prospective
+budget и failure/PID journal, затем выполнил все 98 workflow заново. CI early
+timer wake воспроизведён до fix, census boundary guard исправлен. 18 tests,
+TypeScript и final offline replay прошли. Stdlib audit — 5254 checks /
+171430 JSON keys; все 111 owned PIDs absent, protected resident unchanged.
+Shared v8 driver получил тот же census guard после controlled early wake;
+49 related regressions, оба fresh offline replay и 1002 Python tests
+(четыре optional skips) прошли. Original native archive сохранён, CI follow-up
+записан отдельным supplement.
+Successful/failed raw evidence, source snapshots и original workspace copy
+сохранены под /docs/private. Следующий runtime gate — cancellation при actual
+worker concurrency 2 с unaffected соседним workflow и owned recovery.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; input truncation и customer capacity не заявляются.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
