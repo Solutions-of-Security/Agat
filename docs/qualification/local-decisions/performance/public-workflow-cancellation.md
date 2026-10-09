@@ -115,11 +115,19 @@ Foreign, extra, missing, reordered or successful failure reports are rejected.
 This stricter replay passed the unchanged native evidence and the earlier v4
 control without new model calls.
 
-Thirty-eight focused tests passed, including v1–v4 compatibility. The full
+Thirty-eight focused tests passed, including v1–v4 compatibility. The local macOS
 930 Python documentation tests passed with four existing optional skips, as
 did 12 Node documentation checks, workspace typechecks, the standalone strict
 TypeScript driver check, document links and process catalog. The previous
 169-worker suite already verifies the unchanged scoped lease watcher.
+The first CI test run on a clean Linux checkout exposed a fixture setup error:
+the ignored private parent directory did not yet exist. The fixture now creates
+that parent explicitly before allocating its temporary evidence directory.
+The original failure and clean-checkout reproduction are retained separately;
+all 13 cancellation tests were then rerun in a fresh checkout with no private
+directory or earlier measurement files. This test setup correction changes no
+native input, runtime or cancellation outcome. A supplemental archive binds the
+correction, clean-checkout results and unchanged native receipt replay.
 
 [The common offline verifier](../../../../scripts/verify-public-support-workflow.py)
 reconstructed v5 from independently pinned raw bytes without new model calls.

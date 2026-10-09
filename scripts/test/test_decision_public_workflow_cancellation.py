@@ -332,7 +332,9 @@ class CancellationDriverTest(unittest.TestCase):
         try:
             spec = cancellation.cancellation_spec(context, 2)
             proxy = cancellation.CoordinatorCancellationProxy(upstream.server_port, context, spec)
-            with tempfile.TemporaryDirectory(dir=ROOT/"docs/private", prefix="cancellation-fixture-") as temporary:
+            private = ROOT/"docs/private"
+            private.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=private, prefix="cancellation-fixture-") as temporary:
                 directory = Path(temporary)
                 (directory/"plan.json").write_bytes(encoded({"schemaVersion": "agat.decision.public-workflow-launch-plan.v5",
                     "context": context, "config": workflow.shared_config(context), "coordinatorCancellation": spec}))
