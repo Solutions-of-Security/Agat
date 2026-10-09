@@ -14,6 +14,12 @@ is validated by `dockerd --validate` before installation; after the disposable
 runner's daemon restarts, `docker info` must report the cache. Temporary config
 files are removed on exit.
 
+The runner uses a new private Docker client config with no credential helpers
+for these public pulls. The action pulls the job's first required image before
+installing dependencies, so successful configuration alone cannot hide an
+unusable registry path. A failed pull remains a failed job and prints the
+disposable daemon's recent registry diagnostics.
+
 Image names, version pins and the MinIO build's Golang digest remain unchanged.
 Read-only registry probes found BusyBox 1.36, PostgreSQL 17.6-alpine and Temporal
 1.8.1 in the cache. The cached manifest for Golang's pinned

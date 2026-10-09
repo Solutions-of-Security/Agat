@@ -1,14 +1,26 @@
 name: Public Docker Hub cache
 description: Configure Google's public cache on a disposable GitHub-hosted Linux runner.
+inputs:
+  image:
+    description: Public image pulled through the cache before the job starts.
+    required: true
 runs:
   using: composite
   steps:
     - shell: bash
+      env:
+        AGAT_CI_CACHE_IMAGE: ${{ inputs.image }}
       run: |
         set -euo pipefail
         test "${GITHUB_ACTIONS:-}" = true
         test "${RUNNER_ENVIRONMENT:-}" = github-hosted
         test "${RUNNER_OS:-}" = Linux
+        # Public CI pulls must not inherit unrelated runner credential helpers.
+        agat_docker_config="$(mktemp -d "${RUNNER_TEMP}/agat-docker-anonymous.XXXXXX")"
+        chmod 0700 "$agat_docker_config"
+        printf '%s\n' '{"auths":{}}' > "$agat_docker_config/config.json"
+        export DOCKER_CONFIG="$agat_docker_config"
+        printf 'DOCKER_CONFIG=%s\n' "$agat_docker_config" >> "$GITHUB_ENV"
         agat_docker_original="$(mktemp "${RUNNER_TEMP}/agat-docker-original.XXXXXX")"
         agat_docker_cached="$(mktemp "${RUNNER_TEMP}/agat-docker-cached.XXXXXX")"
         trap 'rm -f "$agat_docker_original" "$agat_docker_cached"' EXIT
@@ -35,3 +47,7 @@ runs:
         sudo systemctl restart docker
         docker info --format '{{json .RegistryConfig.Mirrors}}' |
           python3 -c 'import json,sys; assert any(value.rstrip("/") == "https://mirror.gcr.io" for value in json.load(sys.stdin))'
+        if ! docker pull "$AGAT_CI_CACHE_IMAGE"; then
+          sudo journalctl --no-pager -u docker.service -n 25
+          exit 1
+        fi

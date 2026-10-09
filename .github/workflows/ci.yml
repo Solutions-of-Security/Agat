@@ -23,6 +23,8 @@ jobs:
           # Evidence replay checks source SHA against the original measurement commits.
           fetch-depth: 0
       - uses: ./.github/actions/docker-cache
+        with:
+          image: busybox:1.36
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -92,6 +94,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/docker-cache
+        with:
+          image: ${{ matrix.suite == 'temporal-rag' && 'temporalio/temporal:1.8.1' || 'postgres:17.6-alpine' }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
