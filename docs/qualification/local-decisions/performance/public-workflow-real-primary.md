@@ -133,6 +133,18 @@ Native measurement остаётся связан с исходным B685 source
 fix не подменяет его. Финальные 18 tests, strict TypeScript и свежий offline
 replay после fix — PASS.
 
+Последующий CI выявил `Pair crossed completion barrier/deadline` в прежнем
+v8 fixture. Его общий driver тоже использовал один timer wake без проверки
+planned start. Controlled early wake детерминированно исключил run из census
+до fix; общий driver теперь применяет тот же wall-clock guard. Пределы
+хронологии, deadline и расхождения clocks сохранены; ошибка включает actual
+boundary timestamps и обе длительности. 49 related regressions, typecheck
+обоих drivers и fresh v8/real-primary offline replay прошли на source
+`02258b41f25e6e3870484b6d029c148ae33a1fb1`. Этот CI follow-up хранится отдельным supplementary archive;
+исходный immutable native archive сохранён. Полный локальный набор —
+1002 Python tests PASS, четыре optional skips; эти skips не принимаются за
+выполненные native gates.
+
 [Offline verifier](../../../../scripts/verify-public-support-real-primary.py)
 проверяет raw pins, source closure, exact artifact set, оба census и весь
 inventory без model/network calls. Независимый stdlib audit без application

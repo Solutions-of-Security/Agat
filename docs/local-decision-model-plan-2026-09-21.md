@@ -741,6 +741,10 @@ budget и failure/PID journal, затем выполнил все 98 workflow з
 timer wake воспроизведён до fix, census boundary guard исправлен. 18 tests,
 TypeScript и final offline replay прошли. Stdlib audit — 5254 checks /
 171430 JSON keys; все 111 owned PIDs absent, protected resident unchanged.
+Shared v8 driver получил тот же census guard после controlled early wake;
+49 related regressions, оба fresh offline replay и 1002 Python tests
+(четыре optional skips) прошли. Original native archive сохранён, CI follow-up
+записан отдельным supplement.
 Successful/failed raw evidence, source snapshots и original workspace copy
 сохранены под /docs/private. Следующий runtime gate — cancellation при actual
 worker concurrency 2 с unaffected соседним workflow и owned recovery.
