@@ -706,6 +706,24 @@ inference counters unchanged; ZIP/source snapshots сохранены под /do
 Owners/customer/SLO/human calibration/holdout открыты, routing false /
 not_assessed; GPU kernel preemption не заявляется.
 
+[Дополнительный paired native admission gate](./qualification/local-decisions/performance/public-workflow-paired-concurrency.md),
+10.10: исходные 49 development cases / 44 groups выполнены в 25 bounded pairs
+через actual coordinator и одного worker concurrency 2. Все 49 instances,
+durable returns и fixture primary routes завершены. Native: 24 computed
+(15 ok / 9 abstain), 24 busy, один whole-context rejection; ещё два длинных
+входа получили busy до token/context check. Original full inputs сохранены,
+retry/restart 0. Одно active metrics witness связало busy с ещё активным
+admitted партнёром в паре 0/1; 51 completed physical calls включают два warmups.
+63 focused tests, TypeScript, v8 offline replay и fresh v6/v7 control replay
+прошли. Independent stdlib audit: 3177 checks, 45347 JSON keys без дубликатов,
+25 совпавших typed baseline signatures, 199 actual lease records и все
+34 temporary PIDs absent. Resident package/profile/config, четыре PIDs,
+20 runtime files и counters unchanged. Private ZIP и source snapshots сохранены
+под /docs/private. Это fixture-primary admission evidence; следующий плановый
+шаг полного inventory с real primary и matched control сохраняется.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel concurrency и customer capacity не заявляются.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
