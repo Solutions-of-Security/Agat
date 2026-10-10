@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -34,25 +35,33 @@ def encoded(value):
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires installed Node diagnostic dependencies')
 class MatchedWorkflowTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls, suite=diagnostic):
         if hasattr(cls, 'artifacts'): return
+        diagnostic = suite; cls.suite = suite
         context, _, cohort, _ = fixture.fixture(); cls.context = context
         cls.primary_calls = []; cls.native_calls = []
         typed = {c['inputSha256']: t['decisionObservations'][0]['observation']['result'] for c, t in zip(context['inputs'], cohort['traces'])}
+        paired = suite.PROTOCOL['workerConcurrency'] == 2; native_gate = threading.Lock(); counts = Counter({outcome(typed[context['inputs'][0]['inputSha256']]): 2})
+        progress = [0]; metrics_origin = time.time()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_): pass
             def respond(self, status, value):
-                body = encoded(value); self.send_response(status); self.send_header('Content-Type', 'application/json')
+                body = value.encode() if isinstance(value, str) else encoded(value); self.send_response(status)
+                self.send_header('Content-Type', 'text/plain' if isinstance(value, str) else 'application/json')
                 self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
             def do_GET(self):
                 if self.path == '/health':
                     self.respond(200, {'status': 'ready', 'mode': 'shadow', 'profileSha256': context['profileSha256'],
                         'profileJson': json.dumps(context['profile'], ensure_ascii=False, sort_keys=True, separators=(',', ':'))})
+                elif paired and self.path == '/metrics':
+                    self.respond(200, '\n'.join(f'agat_decision_requests_total{{outcome="{k}"}} {counts[k]}' for k in OUTCOMES)
+                        +f'\nagat_decision_backend_ready 1\nagat_decision_requests_in_progress {progress[0]}\nagat_decision_server_start_time_seconds {metrics_origin}\n')
                 else: self.send_error(404)
             def do_POST(self):
                 value = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 if self.path == '/api/chat':
                     cls.primary_calls.append(value)
+                    if paired: time.sleep(.6)
                     indices = [i for i, c in enumerate(context['inputs']) if c['request']['state'] in value['messages'][1]['content']]
                     assert len(indices) == 1
                     self.respond(200, {'model': 'qwen3:8b', 'done': True, 'done_reason': 'stop',
@@ -61,8 +70,17 @@ class MatchedWorkflowTest(unittest.TestCase):
                         'prompt_eval_duration': 500000, 'eval_duration': 500000})
                 elif self.path == '/v1/decisions':
                     request = Request.from_dict(value); cls.native_calls.append(request)
-                    result = copy.deepcopy(typed[request.input_sha256]); result['id'] = request.id; result['durationMs'] = 0.0
-                    self.respond(200 if result['status'] in ('ok', 'abstain') else 422, result)
+                    if paired and not native_gate.acquire(blocking=False):
+                        counts['busy'] += 1
+                        self.respond(503, {**context['profile'], 'id': None, 'mode': 'shadow', 'inputSha256': None, 'status': 'error', 'reason': 'busy',
+                            'selectedOptionId': None, 'value': None, 'distribution': []}); return
+                    try:
+                        if paired: progress[0] = 1; time.sleep(.3)
+                        result = copy.deepcopy(typed[request.input_sha256]); result['id'] = request.id; result['durationMs'] = 0.0
+                        if paired: counts[outcome(result)] += 1; progress[0] = 0
+                        self.respond(200 if result['status'] in ('ok', 'abstain') else 422, result)
+                    finally:
+                        if paired: native_gate.release()
                 else: self.send_error(404)
         servers = [ThreadingHTTPServer(('127.0.0.1', 0), Handler) for _ in range(2)]
         threads = [threading.Thread(target=s.serve_forever, kwargs={'poll_interval': .01}) for s in servers]
@@ -86,7 +104,7 @@ globalThis.setTimeout = (callback, delay, ...args) => {
   return timer(callback, delay, ...args);
 };'''
                 timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
-                result = subprocess.run(['node', '--import', 'tsx', '--import', timer_import, 'scripts/run-public-support-real-primary.mts',
+                result = subprocess.run(['node', '--import', 'tsx', '--import', timer_import, diagnostic.DRIVER_PATH,
                     '--decision-url', f'http://127.0.0.1:{servers[0].server_port}', '--primary-url', f'http://127.0.0.1:{servers[1].server_port}',
                     '--evidence-dir', str(directory)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
                 if result.returncode != 0:
@@ -95,7 +113,7 @@ globalThis.setTimeout = (callback, delay, ...args) => {
                 assert not (directory/'worker-credentials.json').exists()
                 cls.artifacts = {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
                 cls.recipe = json.loads(cls.artifacts['workflow-plan.json']); cls.driver = json.loads(cls.artifacts['workflow-driver.json'])
-                cls.artifacts['primary.log'] = b'fixture: no native inference\n'
+                cls.artifacts['primary.log'] = b'fixture: no native inference\n' + (b'-np 2\nn_seq_max = 2\nn_ctx = 65536\nn_ctx_seq = 32768\n' if paired else b'')
                 diagnostic.verify_inventory(context, diagnostic.PROTOCOL, cls.recipe, cls.driver, cls.artifacts)
         finally:
             for server in servers: server.shutdown(); server.server_close()
@@ -181,10 +199,12 @@ globalThis.setTimeout = (callback, delay, ...args) => {
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires installed Node diagnostic dependencies')
 class ReplayVerificationTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
-        MatchedWorkflowTest.setUpClass(); cls.temporary = tempfile.TemporaryDirectory(); cls.root = Path(cls.temporary.name)/'sources'; cls.root.mkdir()
+    def setUpClass(cls, suite=diagnostic, actor=MatchedWorkflowTest):
+        diagnostic = suite; cls.suite = suite
+        actor.setUpClass(); cls.temporary = tempfile.TemporaryDirectory(); cls.root = Path(cls.temporary.name)/'sources'; cls.root.mkdir()
         paths = list(dict.fromkeys([*diagnostic.SOURCE_PATHS, *CONTEXT_PATHS]))
-        names = subprocess.check_output(['git', 'ls-files', '--', *paths], cwd=ROOT, text=True).splitlines()
+        names = set(subprocess.check_output(['git', 'ls-files', '--', *paths], cwd=ROOT, text=True).splitlines())
+        names.update(p for p in paths if (ROOT/p).is_file()); names.add(Path(suite.__file__).relative_to(ROOT).as_posix())
         for name in names:
             target = cls.root/name; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes((ROOT/name).read_bytes())
         for args in (['init', '--quiet'], ['add', '.'], ['-c', 'user.name=Synthetic fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Synthetic real-primary receipt sources']):
@@ -193,10 +213,13 @@ class ReplayVerificationTest(unittest.TestCase):
         def pins(paths):
             names = subprocess.check_output(['git', 'ls-files', '--', *paths], cwd=cls.root, text=True).splitlines()
             return {name: hashlib.sha256((cls.root/name).read_bytes()).hexdigest() for name in names}
-        context = copy.deepcopy(MatchedWorkflowTest.context); context.update(sourceCommit=commit, sourceFiles=pins(CONTEXT_PATHS))
-        context = sealed({k: v for k, v in context.items() if k != 'sha256'}); artifacts = copy.deepcopy(MatchedWorkflowTest.artifacts)
+        context = copy.deepcopy(actor.context); context.update(sourceCommit=commit, sourceFiles=pins(CONTEXT_PATHS))
+        context = sealed({k: v for k, v in context.items() if k != 'sha256'}); artifacts = copy.deepcopy(actor.artifacts)
         recipe = json.loads(artifacts['workflow-plan.json']); start = datetime.fromisoformat(recipe['startAt'].replace('Z', '+00:00'))
         native_origin = (start-timedelta(milliseconds=500)).timestamp(); created = (start-timedelta(seconds=1)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        if hasattr(suite, 'metrics'):
+            native_origin = suite.metrics(json.loads(artifacts['admission-metrics.jsonl'].splitlines()[0])['metricsRaw'])[0]
+            created = datetime.fromtimestamp(native_origin-.5, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         primary_pin = json.loads((ROOT/diagnostic.primary.PRIMARY_SOURCES[2]).read_text())
         profile = {'model': 'qwen3:8b', 'manifestSha256': diagnostic.primary.DIGEST, 'blobCount': 5, 'blobBytes': 5_225_000_000,
             'release': primary_pin, 'releaseFileSha256': hashlib.sha256((ROOT/diagnostic.primary.PRIMARY_SOURCES[2]).read_bytes()).hexdigest(),
@@ -207,11 +230,13 @@ class ReplayVerificationTest(unittest.TestCase):
             'runtime': context['tokenizerEnvironment'], 'manifestFileSha256': context['manifestFileSha256'], 'primary': profile, 'protocol': diagnostic.PROTOCOL, **authority})
         primary_response = json.loads(diagnostic.journal(artifacts['primary-http.jsonl'])[0]['nativeResponseBody'])
         artifacts['primary-warmup.json'] = encoded({'request': diagnostic.WARMUP_REQUEST, 'response': primary_response, 'wallMs': 1})
-        for name, when in (('primary-before.json', created), ('primary-after.json', MatchedWorkflowTest.driver['actualWindow']['endAt'])):
+        for name, when in (('primary-before.json', created), ('primary-after.json', actor.driver['actualWindow']['endAt'])):
             artifacts[name] = encoded({'capturedAt': when, 'version': {'version': '0.35.1'}, 'tags': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.primary.DIGEST}]},
                 'residence': {'models': [{'digest': diagnostic.primary.DIGEST, 'context_length': 32768}]}, 'ownedPids': [43]})
         artifacts['runtime.log'] = b'synthetic native snapshot fixture\n'; artifacts['driver.log'] = b'synthetic primary diagnostic fixture\n'
         first = context['inputs'][0]; raw = json.loads(diagnostic.journal(artifacts['decision-http.jsonl'])[0]['responseBody']); raw['id'] = first['id']
+        if suite.PROTOCOL['workerConcurrency'] == 2: raw = copy.deepcopy(fixture.fixture()[2]['traces'][0]['decisionObservations'][0]['observation']['result'])
+        raw['id'] = first['id']
         warmup = [{'iteration': i, 'caseId': first['id'], 'status': raw['status'], 'observation': {'result': raw}} for i in range(2)]
         counts = Counter(); samples = []; health = {'status': 'ready', 'mode': 'shadow', 'profileJson': json.dumps(context['profile'], sort_keys=True, separators=(',', ':')), 'profileSha256': context['profileSha256']}
         for label, elapsed, batch in (('ready_before_scoring', 1, []), ('after_warmup', 2, [raw, raw]),
@@ -221,10 +246,10 @@ class ReplayVerificationTest(unittest.TestCase):
             sample = {'label': label, 'elapsedMs': elapsed, 'health': health, 'metricsRaw': metrics, 'ownedPids': [42], 'processRaw': 'synthetic PID fixture'}
             parsed, origin = counters(sample); sample.update(counters=parsed, serverStart=origin); samples.append(sample)
         cls.context = context; cls.plan = plan; cls.artifacts = {n: b for n, b in artifacts.items() if n in diagnostic.ARTIFACTS or n.startswith('trace-')}
-        owned_pids = [42, 43, *MatchedWorkflowTest.driver['ownedPids']]
+        owned_pids = [42, 43, *actor.driver['ownedPids']]
         cls.artifacts['owned-pids.jsonl'] = encoded({'recordedAt': created, 'ownedPids': owned_pids})
         cls.result = sealed({'schemaVersion': diagnostic.RESULT_SCHEMA, 'status': 'observed', 'planSha256': plan['sha256'],
-            'evidence': diagnostic.verify_inventory(context, diagnostic.PROTOCOL, recipe, MatchedWorkflowTest.driver, cls.artifacts),
+            'evidence': diagnostic.verify_inventory(context, diagnostic.PROTOCOL, recipe, actor.driver, cls.artifacts),
             'warmup': warmup, 'samples': samples, 'failure': None, 'ownedPids': owned_pids,
             'remainingOwnedPids': [], 'cleanupErrors': [], 'runtimeExitCode': -15, 'primaryExitCode': -15, 'driverExitCode': 0,
             'artifactSha256': {n: hashlib.sha256(b).hexdigest() for n, b in cls.artifacts.items()}, 'elapsedMs': 10000, **authority})
@@ -240,7 +265,7 @@ class ReplayVerificationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             for name, body in {**artifacts, 'context.json': encoded(self.context), 'plan.json': encoded(plan), 'result.json': encoded(result)}.items(): (directory/name).write_bytes(body)
-            return verification.verify(self.root, directory, directory/'context.json', context_sha=hashlib.sha256(encoded(self.context)).hexdigest(),
+            return verification.verify(self.root, directory, directory/'context.json', suite=self.suite, context_sha=hashlib.sha256(encoded(self.context)).hexdigest(),
                 plan_sha=hashlib.sha256(encoded(plan)).hexdigest(), result_sha=hashlib.sha256(encoded(result)).hexdigest())
 
     def test_full_replay_uses_no_network_or_model(self):
