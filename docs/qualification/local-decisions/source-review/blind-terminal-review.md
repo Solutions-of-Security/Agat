@@ -156,3 +156,9 @@ model calls=0. Все шесть owned PID отсутствуют; protected res
 и восемь snapshot fields неизменны. Реальных human reviews и reference
 labels — 0; model/policy/profile/routing не изменены. Quality/owners/customer/
 SLO/independent holdout gates остаются открытыми.
+
+[Immutable v2 archive](./blind-terminal-corrections-archive-summary.json):
+55 files / 38172350 bytes / 3183 Git objects. CRC, every SHA/size и copy
+equality PASS; actual original-copy restored audit повторно проверил шесть
+исходных PTY sessions, model calls=0. ZIP и отдельный proof сохранены
+в исходном workspace docs/private.

@@ -1146,6 +1146,10 @@ model0. Все шесть owned PID отсутствуют, protected resident 2
 snapshot fields неизменны. Human/reference labels=0, routing=false /
 not_assessed; фактическая независимая предметная разметка остаётся открытой.
 
+Immutable ZIP: 55 files / 38172350 bytes / 3183 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored audit six original PTYs/model0
+PASS. ZIP и proof сохранены в исходном docs/private.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
