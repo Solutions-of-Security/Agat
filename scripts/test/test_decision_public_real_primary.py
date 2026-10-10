@@ -35,7 +35,7 @@ def encoded(value):
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires installed Node diagnostic dependencies')
 class MatchedWorkflowTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls, suite=diagnostic, *, primary_variation=False):
+    def setUpClass(cls, suite=diagnostic, *, primary_variation=False, initial_artifacts=None):
         if hasattr(cls, 'artifacts'): return
         diagnostic = suite; cls.suite = suite
         context, _, cohort, _ = fixture.fixture(); cls.context = context
@@ -95,6 +95,9 @@ class MatchedWorkflowTest(unittest.TestCase):
                 plan = {'schemaVersion': diagnostic.PLAN_SCHEMA, 'createdAt': (datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat(),
                     'context': context, 'config': diagnostic.shared_config(context), 'primary': {'model': 'qwen3:8b', 'generation': diagnostic.GENERATION},
                     'protocol': diagnostic.PROTOCOL}
+                if initial_artifacts is not None:
+                    initial = initial_artifacts(context, plan); plan.update(initial['plan'])
+                    for name, raw in initial['artifacts'].items(): (directory/name).write_bytes(raw)
                 (directory/'plan.json').write_bytes(encoded(plan))
                 # Force the initial scheduling timer to wake early; scoring must
                 # still wait for the prospective wall-clock census boundary.
