@@ -18,8 +18,9 @@ assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && ![
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
 const isRealDeadline=plan.schemaVersion==="agat.decision.two-slot-real-primary-deadline-plan.v1";
+const isParallelPrimary=plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v1";
 const isDeadline=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
-const isRealPrimary=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
+const isRealPrimary=isRealDeadline || isParallelPrimary || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
 assert.ok(isDeadline || isRealPrimary || plan.schemaVersion==="agat.decision.two-slot-cancellation-plan.v1");
 const primaryNativeUrl=isRealPrimary?new URL(values["primary-url"]!):undefined;
 if(primaryNativeUrl)assert.ok(primaryNativeUrl.protocol==="http:" && primaryNativeUrl.hostname==="127.0.0.1" && primaryNativeUrl.port
@@ -37,7 +38,7 @@ if(isRealPrimary){
   const target=spec.selectedOriginalIndices[1],peer=plan.context.inputs.reduce((best:number,c:any,i:number)=>c.inputTokens>plan.context.inputs[best].inputTokens?i:best,0);
   assert.deepEqual(spec.selectedOriginalIndices,[target-1,target,peer,target+2]);assert.equal(new Set(spec.selectedOriginalIndices).size,4);
   assert.ok(cases[0].contextEligible && cases[1].contextEligible && cases[3].contextEligible && !cases[2].contextEligible);
-  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,1);assert.equal(spec.primaryTimeoutMs,180000);
+  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,isParallelPrimary?2:1);assert.equal(spec.primaryTimeoutMs,180000);
   assert.equal(spec.peerStartBoundary,"target_actual_primary_request_pending_before_peer_workflow_creation");
   assert.equal(spec.primaryContextLength,32768);assert.equal(spec.primaryDecodeLimit,128);
 }else assert.deepEqual(spec.selectedOriginalIndices,[0,1,2,3].map(i=>spec.selectedOriginalIndices[0]+i));
