@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.lib.decision_review_session import verify_session
+from scripts.lib.decision_review_form import verify_any_session as verify_session
 from scripts.lib.decision_public_sources import private_directory, write_json_new
 
 

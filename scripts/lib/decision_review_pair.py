@@ -4,7 +4,8 @@ from __future__ import annotations
 from decision_runtime.artifacts import sealed
 from decision_runtime.contracts import parse_json
 from scripts.lib.decision_public_sources import pinned_input
-from scripts.lib.decision_review_session import MAX_REVIEW_BYTES, verify_session
+from scripts.lib.decision_review_session import MAX_REVIEW_BYTES
+from scripts.lib.decision_review_form import verify_any_session as verify_session
 from scripts.lib.decision_shadow_pilot import require
 
 
