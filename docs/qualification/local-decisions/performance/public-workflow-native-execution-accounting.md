@@ -4,6 +4,10 @@
 и independent stdlib audit PASS**. Этап уточняет denominator [native replication](./public-workflow-counterbalanced-real-primary.md)
 и исправляет предположение о cached native return в прежнем отчёте.
 
+Последующее [изолированное Python-наблюдение](./native-python-call-observations.md)
+добавляет original call journal на четырёх новых dev-попытках. Counts этого
+100-attempt ledger сохраняют source-inferred статус и не заменены новым sample.
+
 ## Source contract
 
 Поддерживается только pinned runtime 0.12.3, implementation SHA
