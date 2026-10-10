@@ -101,3 +101,7 @@ ZIP SHA `e353a323c954d2c438cb3071d302fe891998d66d16a45d27dfe797ba3b6fe7aa`. CRC,
 без повторения native calls. Все 20 installed source pins и три config pins
 связаны с original before capture. Отдельная proof-квитанция сохранена рядом;
 file SHA `daf7f2e9c521db4823c2b90427e0113be2f3da0bd44fb85e4ea6a3565a243ec2`.
+
+[Reusable verifier journal](./native-python-journal-verification.md) проверяет original records
+и отдельно показывает незавершённые spans и missing expected inputs без новых
+model calls. Byte/source metadata pins не аутентифицируют model execution.
