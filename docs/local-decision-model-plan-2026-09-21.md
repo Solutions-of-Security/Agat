@@ -1057,6 +1057,26 @@ Immutable ZIP: 279 files / 42613126 bytes / 3168 Git objects. CRC/every SHA/size
 copy equality и actual original-copy restored replay 196 workflows/model0 PASS;
 ZIP и proof сохранены в исходном docs/private.
 
+### Replication sensitivity across corpus units, 2026-10-10
+
+[Source-bound sensitivity analysis](./qualification/local-decisions/performance/public-workflow-replication-sensitivity.md)
+выполнен по всем исходным 196 workflows / 98 matched contrasts без model calls.
+49 inputs / 44 groups / 25 original pair blocks сохранены. Mean workflow contrast
+по inputs +412.922 ms, по groups +544.900, по blocks +414.191; все три веса явно
+описаны. Exhaustive leave-one-group-out range +343.288…+655.689 ms — corpus
+sensitivity, не confidence interval. Восемь period cells и четыре outcome cells
+сохраняют denominators; outcome means × count воспроизводят full contrast.
+ABBA/BAAB и admission strata не объявляются causal; inputs/groups/blocks
+не считаются независимыми, different outputs/context-too-long cases не исключены.
+
+228 analysis / 224 native / 40 context sources; 18 новых / 71 related /
+1190 Python tests (4 optional skips) PASS. Stdlib audit 20816 checks / 32193
+JSON keys PASS, model0. Rounding maximum исправлен только в отдельно pinned
+auditor revision; analysis/source/method/weights не менялись, reruns=0.
+Protected resident 27 checks и восемь snapshot fields неизменны.
+Human labels/owners/customer/SLO/holdout gates открыты; routing=false / not_assessed.
+
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
