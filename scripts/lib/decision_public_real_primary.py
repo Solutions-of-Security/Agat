@@ -42,6 +42,7 @@ ARTIFACTS = {'workflow-plan.json', 'workflow-driver.json', 'graph-control.json',
     'primary-http.jsonl', 'decision-http.jsonl', 'coordinator-http.jsonl', 'workflow-routes.jsonl',
     'cohort-control.http.json', 'cohort-shadow.http.json', 'primary-before.json', 'primary-after.json',
     'primary-warmup.json', 'primary.log', 'runtime.log', 'driver.log', 'worker.log', 'owned-pids.jsonl'}
+DRIVER_PATH = 'scripts/run-public-support-real-primary.mts'
 
 
 def now():
@@ -56,6 +57,7 @@ def prepare(root, binaries, models):
 
 class OwnedPrimary(primary.OwnedPrimary):
     """Explicit new context profile, without changing historical 8192 diagnostics."""
+    settings = SETTINGS
     def start(self):
         with socket.socket() as bound:
             bound.bind(('127.0.0.1', 0)); self.port = bound.getsockname()[1]
@@ -63,7 +65,7 @@ class OwnedPrimary(primary.OwnedPrimary):
         environment = {key: value for key, value in os.environ.items() if not key.startswith('OLLAMA_')}
         self.process = subprocess.Popen([str(self.binaries / 'ollama'), 'serve'], cwd=self.root,
             stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True,
-            env={**environment, **SETTINGS, 'OLLAMA_HOST': f'127.0.0.1:{self.port}', 'OLLAMA_MODELS': str(self.models)})
+            env={**environment, **self.settings, 'OLLAMA_HOST': f'127.0.0.1:{self.port}', 'OLLAMA_MODELS': str(self.models)})
         self.owned.add(self.process.pid); self.transport = LoopbackJson(f'http://127.0.0.1:{self.port}', 90)
         deadline = time.monotonic()+30
         while True:
@@ -100,16 +102,18 @@ def raw_body(row, key):
     return parse_json(row[key])
 
 
-def verify_inventory(context, protocol, recipe, driver, artifacts):
+def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None):
     """Recompute matched evidence from exact native and authenticated trace bytes."""
-    validate_context(context); same(protocol, PROTOCOL, 'Unsupported prospective primary protocol')
+    validate_context(context); same(protocol, PROTOCOL if suite is None else suite.PROTOCOL, 'Unsupported prospective primary protocol')
     count = len(context['inputs']); config = shared_config(context)
     same(recipe['protocol'], protocol, 'Driver changed prospective protocol')
     same(recipe['inputs'], [{'caseId': c['id'], 'inputSha256': c['inputSha256']} for c in context['inputs']], 'Original input inventory differs')
-    require(recipe['schemaVersion'] == 'agat.decision.public-real-primary-workflow.v2' and recipe['primaryModel'] == primary.MODEL, 'Unsupported workflow recipe')
+    require(recipe['schemaVersion'] == ('agat.decision.public-real-primary-workflow.v2' if suite is None else suite.WORKFLOW_SCHEMA)
+        and recipe['primaryModel'] == primary.MODEL, 'Unsupported workflow recipe')
     require(driver['status'] == 'observed' and driver['failure'] is None and driver['workerExitCode'] == 0
         and driver['primaryCalls'] == 2*count and driver['decisionCalls'] == count and driver['authenticatedStatus'] == 200
-        and driver['unauthenticatedStatus'] == 401 and driver['schedulerMode'] == 'sequential' and driver['globalMaxConcurrency'] == 1, 'Driver or whole denominator failed')
+        and driver['unauthenticatedStatus'] == 401 and driver['schedulerMode'] == 'sequential'
+        and driver['globalMaxConcurrency'] == protocol['globalMaxConcurrency'], 'Driver or whole denominator failed')
     routes = journal(artifacts['workflow-routes.jsonl']); same(driver['routes'], routes, 'Route journal differs')
     primary_rows = journal(artifacts['primary-http.jsonl']); decisions = journal(artifacts['decision-http.jsonl']); leases = journal(artifacts['coordinator-http.jsonl'])
     require(len(primary_rows) == len(routes) == 2*count and len(decisions) == count and driver['leaseCalls'] == len(leases), 'Extra/missing/retried actual HTTP call')
@@ -139,6 +143,11 @@ def verify_inventory(context, protocol, recipe, driver, artifacts):
     control_graph = parse_json(artifacts['graph-control.json']); shadow_graph = deepcopy(parse_json(artifacts['graph-shadow.json']))
     del shadow_graph['nodes'][1]['config']['decisionShadow']; same(shadow_graph, control_graph, 'Matched graphs differ beyond shadow config')
     expected_order = [(i, condition) for i in range(count) for condition in (('control', 'shadow') if i % 2 == 0 else ('shadow', 'control'))]
+    if suite is not None:
+        expected_order = suite.route_order(count)
+        primary_rows = suite.ordered_primary(primary_rows, expected_order)
+        require(len({d['index'] for d in decisions}) == count and {d['index'] for d in decisions} == set(range(count)), 'Repeated/missing paired native result')
+        decisions = sorted(decisions, key=lambda d: d['index'])
     require([(r['index'], r['condition']) for r in routes] == expected_order and [(r['index'], r['condition']) for r in primary_rows] == expected_order, 'Reordered counterbalanced inventory')
     seen_runs = set(); outcomes = Counter(); primary_latency = {'control': [], 'shadow': []}; workflow_latency = {'control': [], 'shadow': []}
     primary_outputs = {}; requests = {}; length_returns = Counter(); prompts = []; shadow_latency = []; last_end = timestamp(recipe['startAt'], 'startAt')
@@ -156,7 +165,8 @@ def verify_inventory(context, protocol, recipe, driver, artifacts):
         require(set(request) == {'model', 'messages', 'temperature', 'stream'} and request['model'] == primary.MODEL and request['temperature'] == .2 and request['stream'] is False, 'Worker primary settings differ')
         same(native_request, {'model': primary.MODEL, 'messages': request['messages'], 'stream': False, 'keep_alive': '5m', **GENERATION}, 'Native primary input/settings transformed')
         messages = request['messages']; require(len(messages) == 2 and messages[0] == {'role': 'system', 'content': protocol['systemPrompt']}
-            and messages[1]['role'] == 'user' and messages[1]['content'].count(case['request']['state']) == 1, 'Original whole input omitted or repeated in primary')
+            and messages[1] == {'role': 'user', 'content': f"Задача: {protocol['processName']}\n\nВходные данные:\n{case['request']['state']}"}
+            and messages[1]['content'].count(case['request']['state']) == 1, 'Original whole input or condition-blind worker prompt changed')
         require(hashlib.sha256(json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest() == row['messagesSha256'], 'Message pin differs')
         primary.validate_response(native); require(native['prompt_eval_count']+128 < 32768 and not native['message'].get('tool_calls'), 'Primary exceeded whole-input context/generation contract')
         same(translated, {'choices': [{'message': {'role': 'assistant', 'content': native['message']['content']}, 'finish_reason': native['done_reason']}],
@@ -166,7 +176,9 @@ def verify_inventory(context, protocol, recipe, driver, artifacts):
             and row['httpStatus'] == row['nativeHttpStatus'] == 200, 'Primary output was not preserved durably')
         began, returned = timestamp(route['startedAt'], 'route.startedAt'), timestamp(route['completedAt'], 'route.completedAt')
         pb, pe = timestamp(row['startedAt'], 'primary.startedAt'), timestamp(row['completedAt'], 'primary.completedAt')
-        require(last_end <= began <= pb <= pe <= returned, 'Actual workflows overlap or primary boundaries differ'); last_end = returned
+        require((last_end <= began if suite is None else timestamp(recipe['startAt'], 'startAt') <= began)
+            and began <= pb <= pe <= returned, 'Actual workflow or primary boundaries differ')
+        last_end = max(last_end, returned)
         require(abs((pe-pb).total_seconds()*1000-number(row['elapsedMs'], 0, protocol['primaryTimeoutMs'])) <= 10
             and abs((returned-began).total_seconds()*1000-number(route['elapsedMs'], 0, protocol['instanceDeadlineMs'])) <= 10, 'Monotonic/wall-clock boundaries differ')
         primary_latency[condition].append(row['elapsedMs']); workflow_latency[condition].append(route['elapsedMs']); prompts.append(native['prompt_eval_count'])
@@ -183,18 +195,22 @@ def verify_inventory(context, protocol, recipe, driver, artifacts):
             d = decisions[index]; require(d['index'] == index and d['runId'] == route['runId'] and d['stageId'] == stage['id'], 'Native shadow HTTP call rebound')
             native_shadow_request = Request.from_dict(raw_body(d, 'requestBody')); expected = Request.from_dict({**case['request'], 'id': stage['id']})
             require(native_shadow_request == expected, 'Shadow transformed original decision input')
-            result = raw_body(d, 'responseBody'); validate_result(result, expected, context['profile'])
-            if case['contextEligible']:
-                require(result['status'] in ('ok', 'abstain') and result['inputTokens'] == case['inputTokens'] and d['httpStatus'] == 200, 'Eligible input lost/rejected')
-            else: require(result['status'] == 'error' and result['reason'] == 'context_too_long' and d['httpStatus'] == 422, 'Overlong input silently excluded')
-            observation = trace['decisionObservations'][0]['observation']; require(same_json(observation['result'], result), 'Durable shadow differs from raw native response')
-            require(observation['status'] == result['status'] and timestamp(d['startedAt'], 'decision.startedAt') >= pe
+            result = raw_body(d, 'responseBody'); observation = trace['decisionObservations'][0]['observation']
+            if suite is None:
+                validate_result(result, expected, context['profile'])
+                if case['contextEligible']:
+                    require(result['status'] in ('ok', 'abstain') and result['inputTokens'] == case['inputTokens'] and d['httpStatus'] == 200, 'Eligible input lost/rejected')
+                else: require(result['status'] == 'error' and result['reason'] == 'context_too_long' and d['httpStatus'] == 422, 'Overlong input silently excluded')
+                require(same_json(observation['result'], result) and observation['status'] == result['status'], 'Durable shadow differs from raw native response')
+                native_outcome = result['status'] if result['status'] != 'error' else 'context_rejected'
+            else: native_outcome = suite.verify_decision(context, case, expected, d, result, observation)
+            require(timestamp(d['startedAt'], 'decision.startedAt') >= pe
                 and timestamp(d['completedAt'], 'decision.completedAt') <= returned, 'Shadow ran before primary or after completion')
             require(history['coverage'] == 'complete' and len(history['assignments']) == 1
                 and history['assignments'][0]['outcome'] == 'recorded' and history['assignments'][0]['stageAttempt'] == 1,
                 'Assignment history has unknown/revoked/retried shadow')
             same(history['assignments'][0]['observation'], observation, 'Assignment history differs from durable return')
-            outcomes[result['status'] if result['status'] != 'error' else 'context_rejected'] += 1
+            outcomes[native_outcome] += 1
             shadow_latency.append(number(observation['callerTiming']['durationMs'], 0, 10000))
     require(all(requests[i, 'control'] == requests[i, 'shadow'] for i in range(count)), 'Matched native primary requests differ')
     require(timestamp(driver['actualWindow']['endAt'], 'endAt') >= last_end, 'Census ended before final workflow')
@@ -220,8 +236,11 @@ def verify_inventory(context, protocol, recipe, driver, artifacts):
             else:
                 require(lease_bindings.get(lease_id) == row['runId'], 'Caller return lease differs from its accepted bound intent')
                 observation = trace['decisionObservations'][0]['observation']
-                require(set(value) == {'result', 'callerTiming'} and same_json(value['result'], observation['result'])
-                    and same_json(value['callerTiming'], observation['callerTiming']), 'Raw caller return differs from durable native result'); returned.append(row)
+                if suite is None:
+                    require(set(value) == {'result', 'callerTiming'} and same_json(value['result'], observation['result'])
+                        and same_json(value['callerTiming'], observation['callerTiming']), 'Raw caller return differs from durable native result')
+                else: suite.verify_posted_return(value, observation)
+                returned.append(row)
         else: require(path.endswith('/renew'), 'Unaccounted lease attempt')
     require(len(complete) == 2*count and len(intent) == len(returned) == count, 'Wrong durable complete/intent/return denominator')
     require(set(complete) == seen_runs and len(set(complete)) == len(complete), 'Repeated/missing durable completion')

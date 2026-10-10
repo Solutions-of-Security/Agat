@@ -17,7 +17,8 @@ from scripts.lib.decision_public_workflow import PROFILE_PATH, shared_config
 from scripts.lib.decision_shadow_pilot import require, timestamp
 
 
-def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
+def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, suite=diagnostic):
+    diagnostic = suite
     context = validate_context(parse_json(pinned_input(context_path, context_sha, 32*1024*1024)))
     plan = verify_seal(parse_json(pinned_input(directory/'plan.json', plan_sha, 64*1024*1024)), diagnostic.PLAN_SCHEMA)
     result = verify_seal(parse_json(pinned_input(directory/'result.json', result_sha, 64*1024*1024)), diagnostic.RESULT_SCHEMA)
@@ -102,6 +103,7 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha):
     for row in diagnostic.journal(artifacts['decision-http.jsonl']): expected_final[outcome(parse_json(row['responseBody']))] += 1
     same(values[2], {key: expected_final[key] for key in values[2]}, 'Hidden, lost or extra physical native call')
     require(sum(values[2].values()) == count+2, 'Wrong native terminal denominator')
+    if hasattr(diagnostic, 'verify_native_origin'): diagnostic.verify_native_origin(result, artifacts)
     primary_warmup = parse_json(artifacts['primary-warmup.json']); same(primary_warmup['request'], diagnostic.WARMUP_REQUEST, 'Raw primary warmup changed')
     primary.validate_response(primary_warmup['response']); number(primary_warmup['wallMs'], 0, 90000)
     for name in ('primary-before.json', 'primary-after.json'):
