@@ -60,7 +60,7 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     same(primary_profile['generation'], diagnostic.GENERATION, 'Primary generation settings differ')
     same(primary_profile['settings'], diagnostic.SETTINGS, 'Primary residency/concurrency settings differ')
     same(primary_profile['warmupRequest'], diagnostic.WARMUP_REQUEST, 'Primary warmup changed')
-    count = len(context['inputs']); names = diagnostic.ARTIFACTS | {f'trace-{i:03d}-{c}.http.json' for i in range(count) for c in ('control', 'shadow')}
+    count = len(context['inputs']); names = diagnostic.ARTIFACTS | {f'trace-{i:03d}-{c}.http.json' for i in range(count) for c in diagnostic.PROTOCOL['conditions']}
     fields(result['artifactSha256'], names)
     artifacts = {name: pinned_input(directory/name, result['artifactSha256'][name], 32*1024*1024) for name in names}
     ledger = diagnostic.journal(artifacts['owned-pids.jsonl']); require(ledger and ledger[-1]['ownedPids'] == result['ownedPids'], 'Owned PID ledger omitted final inventory')
@@ -102,7 +102,9 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     expected_final = expected_warm.copy()
     for row in diagnostic.journal(artifacts['decision-http.jsonl']): expected_final[outcome(parse_json(row['responseBody']))] += 1
     same(values[2], {key: expected_final[key] for key in values[2]}, 'Hidden, lost or extra physical native call')
-    require(sum(values[2].values()) == count+2, 'Wrong native terminal denominator')
+    native_case_calls = getattr(diagnostic, 'NATIVE_CASE_CALLS', count)
+    require(type(native_case_calls) is int and native_case_calls in (0, count), 'Unsupported native case denominator')
+    require(sum(values[2].values()) == native_case_calls+2, 'Wrong native terminal denominator')
     if hasattr(diagnostic, 'verify_native_origin'): diagnostic.verify_native_origin(result, artifacts)
     primary_warmup = parse_json(artifacts['primary-warmup.json']); same(primary_warmup['request'], diagnostic.WARMUP_REQUEST, 'Raw primary warmup changed')
     primary.validate_response(primary_warmup['response']); number(primary_warmup['wallMs'], 0, 90000)
@@ -117,5 +119,5 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     return sealed({'schemaVersion': diagnostic.VERIFICATION_SCHEMA, 'status': 'pass', 'verifiedAt': diagnostic.now(),
         'rawFileSha256': {'context': context_sha, 'plan': plan_sha, 'result': result_sha}, 'sourceCommit': plan['sourceCommit'],
         'verifiedSourceFiles': len(sources), 'verifiedContextSourceFiles': len(context_sources), 'artifactCount': len(artifacts),
-        'evidence': evidence, 'nativeCalls': count+2, 'primaryScoringCalls': 2*count, 'primaryWarmupCalls': 1,
+        'evidence': evidence, 'nativeCalls': native_case_calls+2, 'primaryScoringCalls': 2*count, 'primaryWarmupCalls': 1,
         'modelCallsDuringVerification': 0, 'referenceLabels': 0, 'ownersAppointed': False, 'sloAccepted': False, 'routingEnabled': False, 'qualification': 'not_assessed'})

@@ -220,6 +220,9 @@ class ReplayVerificationTest(unittest.TestCase):
         if hasattr(suite, 'metrics'):
             native_origin = suite.metrics(json.loads(artifacts['admission-metrics.jsonl'].splitlines()[0])['metricsRaw'])[0]
             created = datetime.fromtimestamp(native_origin-.5, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        elif hasattr(suite, 'native_counters'):
+            native_origin = suite.native_counters(json.loads(artifacts['native-background-metrics.jsonl'].splitlines()[0])['metricsRaw'])[1]
+            created = datetime.fromtimestamp(native_origin-.5, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         primary_pin = json.loads((ROOT/diagnostic.primary.PRIMARY_SOURCES[2]).read_text())
         profile = {'model': 'qwen3:8b', 'manifestSha256': diagnostic.primary.DIGEST, 'blobCount': 5, 'blobBytes': 5_225_000_000,
             'release': primary_pin, 'releaseFileSha256': hashlib.sha256((ROOT/diagnostic.primary.PRIMARY_SOURCES[2]).read_bytes()).hexdigest(),
@@ -234,8 +237,9 @@ class ReplayVerificationTest(unittest.TestCase):
             artifacts[name] = encoded({'capturedAt': when, 'version': {'version': '0.35.1'}, 'tags': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.primary.DIGEST}]},
                 'residence': {'models': [{'digest': diagnostic.primary.DIGEST, 'context_length': 32768}]}, 'ownedPids': [43]})
         artifacts['runtime.log'] = b'synthetic native snapshot fixture\n'; artifacts['driver.log'] = b'synthetic primary diagnostic fixture\n'
-        first = context['inputs'][0]; raw = json.loads(diagnostic.journal(artifacts['decision-http.jsonl'])[0]['responseBody']); raw['id'] = first['id']
+        first = context['inputs'][0]
         if suite.PROTOCOL['workerConcurrency'] == 2: raw = copy.deepcopy(fixture.fixture()[2]['traces'][0]['decisionObservations'][0]['observation']['result'])
+        else: raw = json.loads(diagnostic.journal(artifacts['decision-http.jsonl'])[0]['responseBody'])
         raw['id'] = first['id']
         warmup = [{'iteration': i, 'caseId': first['id'], 'status': raw['status'], 'observation': {'result': raw}} for i in range(2)]
         counts = Counter(); samples = []; health = {'status': 'ready', 'mode': 'shadow', 'profileJson': json.dumps(context['profile'], sort_keys=True, separators=(',', ':')), 'profileSha256': context['profileSha256']}
