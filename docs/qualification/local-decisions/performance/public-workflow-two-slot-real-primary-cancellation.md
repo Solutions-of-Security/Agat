@@ -131,3 +131,15 @@ Ollama](https://docs.ollama.com/api/streaming). Requested parallel slots, оче
 Ollama](https://docs.ollama.com/faq#how-does-ollama-handle-concurrent-requests) и
 фактическому pinned runner log. Следующий профиль нельзя квалифицировать одним
 изменением env или искусственным удержанием готового ответа.
+
+## Immutable archive и actual original copy replay
+
+[Archive receipt](public-workflow-two-slot-real-primary-cancellation-archive-summary.json):
+149 files / 43362674 bytes, SHA
+`3bcd5731acbef01520623d539e86a6509ba4b79202f60a20c9ba31cc1b354969`. Every entry CRC/SHA/size verified. Selected pack содержит
+3115 Git objects; отдельные roles: context 40, failed measurement 1/2 по
+210, successful measurement/verifier по 210 и documentation 3 files.
+Именно exclusive ZIP в original workspace независимо восстановлен и прошёл
+source-bound replay: 210 measured sources / 40 context sources /
+37 successful raw artifacts, model calls 0. Proof SHA
+`239cdbb9e5a446dc50dbf5610caab4e7f0d566389d900789b798a6b36e8b2eb0`. Неуспешные attempts остаются внутри immutable ZIP.

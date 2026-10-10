@@ -849,8 +849,9 @@ attempts не превращены в PASS. Cancellation при двух primary
 не квалифицирована. 12 новых / 69 related tests, 1053 Python tests (4 optional
 skips), strict TypeScript / 12 Node docs tests прошли; prior actual cancellation,
 deadline и paired inventory offline replay PASS, model calls=0. Stdlib audit:
-743 checks / 28892 JSON keys. Source 210 / context 40 files. Private immutable
-archive сохраняет все attempts и restored replay без models; public payloads
+743 checks / 28892 JSON keys. Source 210 / context 40 files. Immutable ZIP —
+149 files / 43362674 bytes; every entry CRC/SHA/size и actual original
+copy restored replay PASS, model calls 0. Все attempts сохранены; public payloads
 содержат только metadata. Следующий runtime gate — worker deadline с этими
 двумя worker slots и queued actual primary peer; затем отдельный prospective
 fault protocol NUM_PARALLEL=2. Owners/customer/SLO/human labels/holdout открыты,
