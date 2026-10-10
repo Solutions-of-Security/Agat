@@ -792,6 +792,32 @@ raw/restorable archive остаётся приватным.
 matched control при worker concurrency 2. Owners/customer/SLO/human
 calibration/holdout открыты, routing false / not_assessed.
 
+[Полный paired inventory с real primary и matched control](./qualification/local-decisions/performance/public-workflow-paired-real-primary.md),
+10.10: все 49 original development cases / 44 groups прошли 98 actual workflow
+(49 control / 49 shadow), worker 2 / sequential global 2. Pinned Ollama
+0.35.1 / Qwen3:8b использует два actual runner slots, context 32768 на запрос /
+65536 total, decode 128. Все 98 primary outputs и 49 known caller returns
+сохранены; 49 matched primary requests совпали, original input подан один раз.
+50 bounded batches / 48 actual two-slot pending-primary witnesses;
+native primary HTTP overlap min 2407 ms. Native returns — 16 ok / 7 abstain /
+два whole-context rejections / 24 busy; каждый busy подтверждён pending peer
+той же original пары и active-native gauge 1. Один overlong input получил
+busy до context check; все cases включены в census. Все 25 typed signatures
+совпали с healthy serial baseline. Exact primary outputs совпали в 45/49 пар,
+четыре различия сохранены; 83/98 responses достигли decode limit.
+Whole-workflow p50 control/shadow — 6069.950/7619.282 ms, median matched delta
+1151.024 ms. Shared cache/prefill и один проход не устанавливают causal SLO
+или customer capacity. Native epoch один, два decision warmups / 51 known
+physical terminals, один primary warmup отдельно; retry/restart 0.
+Source 209 / context 40 files; offline replay, 11 новых / 68 related tests,
+strict TypeScript, serial native compatibility и 1041 Python tests (четыре
+optional skips) / 12 Node docs tests прошли. Independent stdlib audit —
+7066 checks / 203542 JSON keys; все 117 recorded temporary PIDs absent,
+resident unchanged. Raw/restorable archive сохраняется под /docs/private.
+Следующий runtime gate — cancellation во время active native caller при двух
+worker slots с actual real-primary peer и owned recovery. Owners/customer/SLO/
+human calibration/holdout открыты, routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
