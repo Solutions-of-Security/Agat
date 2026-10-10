@@ -98,7 +98,7 @@ Read-only resident сохранил 20 installed source hashes, profile/seals/co
 четыре protected PIDs и exact health/metrics/monitor responses. Отдельный live
 ps check подтвердил отсутствие 15 owned PIDs; offline replay этого не устанавливает.
 
-Private immutable ZIP сохраняет full original context, raw receipts, frozen
+Private immutable ZIP (**104 files / 41510156 bytes**, SHA `4cdda9c7befcca372b6d6cfc720b881a6b594a2d1aaa799d3a1d2a2878e3ba31`) сохраняет full original context, raw receipts, frozen
 baseline, source snapshots, selected Git objects, independent audit, тесты и
 restored offline replay. CRC/SHA/size каждого entry, exclusive original-workspace
 copy и replay из actual original copy зафиксированы в archive receipt.

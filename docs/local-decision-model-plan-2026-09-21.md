@@ -935,13 +935,13 @@ context rejection, все 3 typed signatures совпали с frozen baseline.
 Native EOF→retirement=1345.000 ms, recovery=7904.000 ms;
 actual peer response после new epoch/two warmups, assignment/stage/worker сохранены.
 8 physical starts / 7 known terminals / 2 epochs / 4 warmups; target native
-typed terminal неизвестен. 15 owned PIDs absent, protected resident unchanged.
+typed terminal неизвестен; child exit=-9 через предусмотренный bounded SIGKILL. 15 owned PIDs absent, protected resident unchanged.
 
 1 native attempt / 1 successful; 221 measurement / 40 context source
 files. Stdlib audit 4946 checks / 90821 JSON keys;
 offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
 18 новых / 117 related tests, 1101 Python tests (4 optional skips),
-strict шесть TypeScript drivers / 12 Node docs tests прошли. Private immutable archive сохраняет
+strict шесть TypeScript drivers / 12 Node docs tests прошли. Immutable ZIP 104 files / 41510156 bytes сохраняет
 raw/source/test/replay evidence; actual original-copy restored replay model0 PASS.
 Public payloads только metadata. Focused NUM_PARALLEL2 cancellation/deadline
 пройдены с явно закреплённым admission protocol; customer capacity/causal overhead,
