@@ -174,3 +174,9 @@ equality PASS; actual original-copy restored audit повторно провер
 [Verifier v2](./review-session-verification.md) сверяет три pinned файла,
 net counts и отдельный submit. Проверенный failed checkpoint сохраняет
 completeReviewArtifact=false; проверка файлов не подтверждает human review.
+
+## Сверка двух отправленных review
+
+[Сверка пары](./review-pair-comparison.md) требует двух complete v2 artifacts
+одного pool и seed, показывает групповые counts и разногласия. Предметную
+приёмку и фактическую независимость участников проверяют отдельно.
