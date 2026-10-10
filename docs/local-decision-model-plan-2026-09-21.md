@@ -1031,6 +1031,28 @@ restored replay model0 PASS. ZIP и proof сохранены в исходном
 Actual overlap/completion/native outcomes ещё не измерены. Owners/customer/SLO/human labels/holdout открыты,
 routing=false / not_assessed.
 
+### Native counterbalanced real-primary replication, 2026-10-10
+
+[Первое выполнение ABBA/BAAB](./qualification/local-decisions/performance/public-workflow-counterbalanced-real-primary.md)
+завершено: один native attempt, 196 completed workflows / primary calls,
+98 decision HTTP attempts, 100 batches / 96 actual two-slot HTTP witnesses.
+Все 49 whole inputs / 44 groups и четыре периода сохранены по предварительно
+sealed order, без выбора по outcome. ok=32 / abstain=18 / busy=46 /
+context_rejected=2; busy подтверждены active peer той же pair/period/replica.
+95/98 matched output pairs и 46/49 all-four outputs равны; различия
+[19, 36, 43] сохранены. Mean whole contrast +412.922 ms, pre +5.541,
+primary −376.989, post +784.378, clock −0.007 ms. Это descriptive accounting,
+не causal cost или customer capacity; cache/carryover/group dependence остаются.
+
+224 measurement / 219 design / 40 context sources; 18 новых / 100 related /
+1172 Python tests (4 optional skips), три TypeScript checks и три model-free
+legacy replay PASS. Stdlib audit 15763 checks / 427840 JSON keys PASS, model0.
+Две ошибки аудитора исправлены отдельными версиями с сохранением прежних logs;
+source, план и raw данные не менялись, native reruns=0. Все 231 owned PID
+отсутствуют; 27 protected resident checks и восемь snapshot полей неизменны.
+Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
+
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
