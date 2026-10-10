@@ -1081,6 +1081,26 @@ Immutable ZIP: 277 files / 43574956 bytes / 3186 Git objects; CRC/every SHA/size
 copy equality и actual original-copy restored replay 196 workflows/model0 PASS.
 ZIP и proof сохранены в исходном docs/private.
 
+### Native request-level execution accounting, 2026-10-10
+
+[Source-contract accounting](./qualification/local-decisions/performance/public-workflow-native-execution-accounting.md)
+выполнен по всем 100 original native HTTP attempts, new model calls=0.
+98 case attempts: 50 successful scores / 46 busy / 2 context rejections;
+два warmups — successful abstain. Source-inferred backend entries=54,
+request-level logical forward completions=52 (50 cases + 2 warmups).
+Generated decision tokens=0. Эти counts не являются GPU kernel trace или
+GPU-only duration. Cache limit 128 MiB относится к reusable buffers;
+необоснованное предположение о cached native reply исправлено в текущем report,
+прежние immutable archived snapshots и raw data сохранены.
+
+232 analysis / 224 native / 40 context sources; 16 новых / 70 related /
+1206 Python tests (4 optional skips) PASS. Independent stdlib audit первой
+версии: 12474 checks / 31185 JSON keys PASS; source contract проверен по четырём
+SHA и AST score path. Protected resident 27 checks и восемь snapshot полей
+неизменны. Runtime/policy/settings не менялись, model0 replay PASS.
+Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
+
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

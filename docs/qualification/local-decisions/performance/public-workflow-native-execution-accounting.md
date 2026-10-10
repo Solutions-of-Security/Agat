@@ -1,7 +1,7 @@
 # Native HTTP and logical forward accounting
 
-Статус: implementation и CPU tests; source-bound анализ исходных receipts ещё
-не выполнен. Этап уточняет denominator [native replication](./public-workflow-counterbalanced-real-primary.md)
+Статус: **все 100 original native attempts воспроизведены; source-bound replay
+и independent stdlib audit PASS**. Этап уточняет denominator [native replication](./public-workflow-counterbalanced-real-primary.md)
 и исправляет предположение о cached native return в прежнем отчёте.
 
 ## Source contract
@@ -52,6 +52,51 @@ archives и raw измерение сохраняются без изменен�
 измеренный environment содержит MLX 0.32.2 / MLX-LM 0.31.3. Конкретный count
 опирается на сохранённый runtime source и replies, а не на перенос benchmark
 чисел между версиями библиотек.
+
+## Наблюдение 2026-10-10
+
+Один analysis execution без новых model calls. Исходный dataset — 49 whole inputs,
+98 decision case HTTP attempts и два warmups. Все attempts сохранены:
+
+| Scope | HTTP observed | Scores observed | Busy | Context refusal | Backend entries inferred | Logical forward completions inferred |
+|---|---:|---:|---:|---:|---:|---:|
+| 49 cases × 2 replicas | 98 | 50 | 46 | 2 | 52 | 50 |
+| Warmups | 2 | 2 | 0 | 0 | 2 | 2 |
+| All recorded HTTP attempts | 100 | 52 | 46 | 2 | 54 | 52 |
+
+Case outcomes: ok=32, abstain=18, busy=46, context_rejected=2; оба warmups
+имеют abstain. 50 case scores и два warmups подтверждены replies. Их 52
+request-level logical forward completions — вывод из source contract, включая
+abstention. 54 inferred backend entries включают два context rejections,
+которые заканчиваются до model call. Busy не входит в backend entries.
+
+Эти request-level counts не учитывают отдельную initialization/library работу
+и не являются hardware trace. Число GPU kernels, GPU-only duration и hardware
+concurrency не измерены. Успешные scores имеют generatedTokens=0; отсутствие
+генерации текста не означает отсутствие model forward computation.
+
+## Проверки и сохранность
+
+Source `91e893fb2500feaaccf4e08dba973541529e095f`: 232 files, original
+native source — 224, context — 40. Analysis file SHA
+`86235f1ee0171075332d3a281e28e233b9c25bbedc8e36e2716f90603dc6b964`.
+Source-bound replay заново проверил всю original inventory и native epoch
+denominator. Independent stdlib audit воспроизвёл каждый из 100 request rows,
+проверил четыре registered source files и AST score path с одним model call
+и одним `mx.eval` до успешного возврата.
+
+16 новых / 70 related / 1206 Python tests PASS, 4 optional skips.
+Independent audit: 12474 checks / 31185 JSON keys, первая версия PASS;
+audit seal `30791fc31c69f4da11f6e58965edbb348bac04b1301649bea4a1e8eac1e62ca8`.
+Protected resident: 27 checks и восемь snapshot полей неизменны.
+Runtime implementation, policy, raw native measurement и primary settings
+не менялись. Cache wording исправлен в текущем native report и его summary;
+прежние immutable snapshots сохранены. Forward count остаётся source-inferred.
+
+[Aggregate summary](./public-workflow-native-execution-summary.json) содержит
+counts и source contract. Полный 100-row ledger, body hashes и все raw native
+receipts сохранены privately. Human labels/owners/customer/SLO/holdout gates
+открыты; routing=false / not_assessed.
 
 ## Инструменты
 
