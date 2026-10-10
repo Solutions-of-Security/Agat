@@ -1125,6 +1125,10 @@ Protected resident 27 checks / восемь snapshot fields неизменны.
 finalize. Следующий предметный gate — фактическая независимая разметка;
 owners/customer/SLO/quality/holdout открыты, routing=false / not_assessed.
 
+Immutable ZIP: 47 files / 40022257 bytes / 3175 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 49 tasks/model0 PASS.
+ZIP и proof сохранены в исходном docs/private.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

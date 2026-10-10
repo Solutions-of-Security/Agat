@@ -113,3 +113,9 @@ tests, links и catalog PASS. Builder с незакоммиченными source
 Результат — подготовленные задания. Реальных человеческих review и gold
 labels — 0. Существующий finalize-review отвергает оба пустых пакета.
 Предметное качество и qualification остаются not_assessed.
+
+[Immutable archive](./development-review-archive-summary.json): 47 files /
+40022257 bytes / 3175 Git objects. CRC, every file SHA/size, copy equality
+и actual original-copy restored replay PASS, model calls=0. ZIP и отдельный
+proof сохранены в исходном workspace docs/private. Архив содержит context,
+оба blank review и frozen source snapshots, не новые ответы модели.
