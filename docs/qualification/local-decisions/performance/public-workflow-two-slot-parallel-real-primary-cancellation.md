@@ -76,7 +76,7 @@ Verifier, audit и restored replay model calls=0. 18 новых / 99 related tes
 12 Node documentation tests PASS. Legacy raw cancellation/deadline replay PASS для
 прежних fixture и actual queued-primary протоколов.
 
-[Archive receipt](public-workflow-two-slot-parallel-real-primary-cancellation-archive-summary.json) фиксирует private immutable ZIP,
+[Archive receipt](public-workflow-two-slot-parallel-real-primary-cancellation-archive-summary.json) фиксирует private immutable ZIP (**144 files / 42510161 bytes**, SHA `c24f12d710d44071953ca899185c685fc962041251e201c30b128e4a1de7d3ea`),
 source roles, CRC/every-entry SHA/size verification, сохранённую original-workspace
 copy и restored offline replay. Raw state, primary outputs и credentials в public
 payloads отсутствуют. Original-copy proof хранится рядом с ZIP отдельным sidecar,
