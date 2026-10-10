@@ -32,11 +32,13 @@ def utc_time(value):
     return result
 
 
-def verify_values(session, initial, saved, *, input_sha, output_sha):
-    fields(session, SESSION_FIELDS)
-    require(session["schemaVersion"] == SESSION_SCHEMA
+def verify_values(session, initial, saved, *, input_sha, output_sha,
+                  progress_validator=validate_progress, session_schema=SESSION_SCHEMA,
+                  source_entrypoint="scripts/review-decision-pool.py", extra_fields=()):
+    fields(session, SESSION_FIELDS | set(extra_fields))
+    require(session["schemaVersion"] == session_schema
             and session["sha256"] == fingerprint({key: value for key, value in session.items() if key != "sha256"}),
-            "Use a sealed v2 session receipt")
+            "Use a sealed session receipt of the expected schema")
     require(session["inputReviewFileSha256"] == input_sha and session["outputReviewFileSha256"] == output_sha,
             "Session input or output binding differs")
     for flag in AUTHORITY_FLAGS:
@@ -49,7 +51,7 @@ def verify_values(session, initial, saved, *, input_sha, output_sha):
             "Invalid declared source commit")
     sources = session["sourceFiles"]
     require(isinstance(sources, dict) and 1 <= len(sources) <= 100
-            and "scripts/review-decision-pool.py" in sources, "Invalid declared source inventory")
+            and source_entrypoint in sources, "Invalid declared source inventory")
     for name, digest in sources.items():
         require(isinstance(name, str) and len(name) <= 300 and "\\" not in name
                 and not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
@@ -57,10 +59,10 @@ def verify_values(session, initial, saved, *, input_sha, output_sha):
                 and name.endswith(".py") and isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest),
                 "Invalid declared source path or SHA")
     reviewer = session["reviewerId"]
-    initial = validate_progress(initial, reviewer)
+    initial = progress_validator(initial, reviewer)
     require(isinstance(saved, dict) and "reviewedAt" in saved, "Saved review is missing its submission stamp")
     stamp = saved["reviewedAt"]
-    saved = validate_progress({**saved, "reviewedAt": None}, reviewer)
+    saved = progress_validator({**saved, "reviewedAt": None}, reviewer)
     require(saved["reviewerId"] == reviewer, "Saved review ownership differs")
     for key in ("schemaVersion", "pool", "poolSha256", "splitSeed"):
         require(initial[key] == saved[key], "Review task pool or split binding changed")
