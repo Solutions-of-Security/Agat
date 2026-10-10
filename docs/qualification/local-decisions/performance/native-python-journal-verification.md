@@ -98,3 +98,10 @@ python3 scripts/verify-native-python-journal.py \
 Повторяйте input flag для каждого expected score в полном порядке, включая
 повторные входы. Для чтения незавершённого journal добавьте `--allow-incomplete`;
 сохранённый receipt явно покажет missing spans и ещё не начатые expected inputs.
+
+Архив: 118 files / 38018023 bytes / 3179 selected Git objects;
+ZIP SHA `1b1809a5a7f1a97e7c6b4bcd83de5cc4d9c1137fdd80322e93b85359c7c856d0`. CRC, every file SHA и размеры проверены.
+Фактическая копия в исходном workspace восстановила все original CLI controls
+и семь verification receipts через stdlib audit без CLI/model rerun.
+Proof file SHA `28ebf591598a78fea4da3320251e5095294617e6885256eca212805dce5ee788`; exact replay helper
+встроен в отдельную квитанцию рядом с ZIP.
