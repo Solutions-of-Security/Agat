@@ -1257,6 +1257,30 @@ Resident 27 checks / 8 неизменных полей, 8 owned PID отсутс
 Новые labels/model calls=0; реальные reviewers и adjudicator не назначены,
 qualification=not_assessed, routing=false. Обе неудачные версии auditor сохранены.
 
+## Интерактивная adjudication session — выполнено
+
+[Dedicated session](./qualification/local-decisions/source-review/adjudication-session.md)
+редактирует disputed subset, показывает два исходных мнения и сохраняет whole
+pool/seed. Correction, clear, resume и explicit submit используют общую механику
+review. Полный draft после quit остаётся partial; receipt связывает все четыре
+input SHA, output, disputed IDs и 17 committed sources. Declared third ID не
+подтверждает identity, human execution, expertise или независимость.
+
+18 original CLI calls: 6 synthetic sessions (5 partial / 1 submitted),
+12 отказов без output directory; standalone draft byte-identical.
+16 новых / 62 targeted / 1314 full Python tests PASS, 4 optional skips.
+Probe 334 checks; stdlib audit 2438 checks / 2120 keys; resident 27 checks /
+8 неизменных полей и 19 owned PID отсутствуют. Первый preflight failure сохранён;
+original protocol выполнен один раз. Следующий этап — reusable CLI verifier
+adjudication receipt. Реальные reviewers/adjudicator и quality gates открыты;
+новые reference labels/model calls=0, qualification=not_assessed, routing=false.
+
+Пользователь подтвердил planned reviewers: он сам и второй независимый эксперт.
+[Инструкция](./qualification/local-decisions/source-review/public-support/confirmed-review-participants.md)
+закрепляет исходные blank SHA и separate sessions. Выполнение review пока не
+подтверждено. Первый full suite run с setUpClass error сохранён; повторный полный
+набор прошёл после diagnostic class PASS без изменения кода или ослабления guards.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

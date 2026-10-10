@@ -59,3 +59,7 @@ Source commit и все 17 source SHA, original plan/result pins и audit seal
 проверку каждого файла и независимое восстановление фактической копии
 из исходного workspace. Private тексты, rationale и identities в публичный
 отчёт не перенесены. Replay не запускает CLI или модели.
+
+[Dedicated adjudication session](./adjudication-session.md) реализует следующий
+инженерный шаг: disputed subset, correction/resume и separate explicit submit.
+Реальные участники и предметное качество этим этапом не подтверждены.
