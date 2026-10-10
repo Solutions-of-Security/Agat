@@ -98,6 +98,20 @@ counts и source contract. Полный 100-row ledger, body hashes и все ra
 receipts сохранены privately. Human labels/owners/customer/SLO/holdout gates
 открыты; routing=false / not_assessed.
 
+## Восстановимый archive
+
+[Archive summary](./public-workflow-native-execution-archive-summary.json):
+276 files / 43558437 bytes / 3193 selected Git objects. ZIP SHA
+`93cf27a5b7f03760b4aeadad502e12a6f7baec1deedd0e683605276b5aed4848`.
+CRC, every SHA и размеры проверены. Verifier восстановлен из committed source
+pack; дополнительный replay прочитал фактическую ZIP-копию в исходном workspace
+и воспроизвёл весь 100-row execution ledger без model calls. ZIP и отдельная
+proof-квитанция сохранены в исходном `docs/private`; proof file SHA
+`551bb7bb1fac400fecdef7d203badd8140af856a930ed9d9ed1bb4a3de4d65db`. Archive включает пять documentation source files с cache correction.
+Первый archive helper остановился на неполном filename документа до создания ZIP;
+его исходник и failure log сохранены вместе с исправленной версией. Analysis,
+source contract и raw evidence не повторялись и не менялись.
+
 ## Инструменты
 
 [Analyzer](../../../../scripts/analyze-public-support-native-execution.py),

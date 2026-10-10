@@ -1101,6 +1101,11 @@ SHA и AST score path. Protected resident 27 checks и восемь snapshot п�
 Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
 
 
+Immutable ZIP: 276 files / 43558437 bytes / 3193 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 100 native attempts/model0
+PASS. ZIP и proof сохранены в исходном docs/private; исправленные native report
+и summary входят в documentary source snapshots.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
