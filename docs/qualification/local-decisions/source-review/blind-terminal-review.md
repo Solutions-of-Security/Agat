@@ -11,10 +11,21 @@ Family/group IDs, seed, splits, чужие метки и модельные пр
 
 Выбор вводится номером варианта; обоснование обязательно, подтверждение —
 отдельным `y`. Пустой ввод не выбирает ответ. `n` возвращает к выбору,
-`:skip` на шаге выбора оставляет метку пустой, `:quit` завершает сессию.
+`:skip` на шаге выбора сохраняет текущее состояние метки, `:quit` завершает сессию.
+Пустая метка после skip остаётся пустой; skip при редактировании сохраняет
+прежний подтверждённый ответ. `:edit N` открывает задание N, включая ранее
+подтверждённое. Интерфейс показывает только ваше собственное решение и
+обоснование; новый вариант и rationale заменяют их после отдельного `y`.
+`:clear N` предлагает явно подтвердить очистку обеих частей ответа.
+Команды edit/clear/submit вводятся на шаге выбора или в конце прохода.
 Пропуск отличается от разрешённого abstain-варианта: abstain — явно выбранная
 метка с обоснованием. Boolean и Score показывают закреплённое значение каждого
 варианта. Порядок, текст, варианты и семантические fingerprints не меняются.
+
+После прохода отображаются номера пустых заданий. `:submit` доступен только
+при заполнении всех меток и требует отдельного `y`. Заполненный черновик
+можно редактировать или завершить через quit/EOF без отправки, затем
+продолжить в новом каталоге. Submitted review остаётся закрытым для edits.
 
 ## Основание решения
 
@@ -51,11 +62,16 @@ atomic replace и directory fsync. Замена ограничена checkpoint 
 crash последний целый checkpoint можно продолжить в новом каталоге; это
 включает последний ответ, сохранённый до прерывания submission stamp.
 
-`reviewedAt` устанавливается по фактическим UTC-часам только при заполнении
-всех заданий. Partial review сохраняет `reviewedAt = null` и exit 2; completed
+`reviewedAt` устанавливается по фактическим UTC-часам после заполнения
+всех заданий и подтверждения `:submit`. Partial review сохраняет
+`reviewedAt = null` и exit 2, в том числе при remainingAnswers=0; completed
 даёт exit 0, failure — 1. Sealed `session.json` закрепляет source commit/file
 SHA, входной и выходной file SHA, число прежних/новых/оставшихся ответов и
-причину завершения. Failed receipt сохраняется при ошибке после создания
+причину завершения. Session schema v2 добавляет submissionConfirmed,
+revisedAnswers и clearedAnswers. Counts описывают разницу между исходным
+и итоговым черновиком; несколько изменений одного ответа не считаются
+несколькими независимыми review. New/revised/cleared counts не бывают
+отрицательными. Failed receipt сохраняется при ошибке после создания
 сессии. Checkpoint без успешного receipt нельзя считать завершённой проверкой.
 
 ```bash
@@ -84,6 +100,9 @@ Model calls — 0, routing false, qualification not_assessed.
 
 ## Проверка реализации
 
+Следующие результаты относятся к первоначальному интерфейсу v1; immutable
+raw evidence этой версии сохраняется. Результаты v2 приведены ниже.
+
 13 новых проверок покрывают повреждённый pool/input binding, чужую/незавершённую
 разметку, скрытые splits, реальные terminal-control символы, обязательное
 подтверждение, skip/EOF/interrupt, длинный paste, частичное продолжение,
@@ -107,3 +126,39 @@ harness читает output до выхода child. Этот отказ не д
 Финальный full docs check после persistence regressions: 806 Python tests,
 4 expected optional skips, 12 Node tests, links и process catalog — pass.
 Public human/reference labels — 0; модель и resident не вызывались.
+
+## Исправления и отдельная отправка, v2 — 10.10.2026
+
+Возможность изменения ответа и работы вне порядка соответствует
+[рекомендациям Google PAIR](https://pair.withgoogle.com/chapter/data-collection/)
+для annotation tooling. Отдельный submit даёт рецензенту возможность
+перепроверить полный черновик до reviewedAt. Это поведение интерфейса;
+фактическую независимость и предметную квалификацию людей проверяют отдельно.
+
+[Сводка v2](./blind-terminal-corrections-summary.json): committed source
+`1625e4dee94033841517fcf2ca334da56c9eda13`, семь runtime source files.
+10 новых / 40 targeted / 1233 Python tests с четырьмя optional skips,
+12 Node tests, links/catalog PASS. Проверены отмена edits, неподтверждённая
+очистка, неверные номера, незаполненный submit, полностью заполненный draft
+на EOF, возобновление с исправлением и atomic checkpoint failure.
+
+Один native probe с шестью actual PTY sessions завершён: публичные 49 cases
+просмотрены только командами навигации/clear blank/refused submit/quit,
+новых меток — ноль; longest whole state 18824 chars отрисован без clipping.
+Три synthetic choice fixtures прошли изменение и очистку ответа, refill,
+явный submit, SIGKILL после сохранённого исправления и resume нового process.
+Только synthetic session была отправлена. Complete draft после kill не
+получает reviewedAt автоматически. Source/input fingerprints сохранены.
+
+Native probe: 216 checks. Post-probe stdlib auditor без application imports
+независимо восстановил переходы и net counts: 384 checks / 7623 JSON keys,
+model calls=0. Все шесть owned PID отсутствуют; protected resident 27 checks
+и восемь snapshot fields неизменны. Реальных human reviews и reference
+labels — 0; model/policy/profile/routing не изменены. Quality/owners/customer/
+SLO/independent holdout gates остаются открытыми.
+
+[Immutable v2 archive](./blind-terminal-corrections-archive-summary.json):
+55 files / 38172350 bytes / 3183 Git objects. CRC, every SHA/size и copy
+equality PASS; actual original-copy restored audit повторно проверил шесть
+исходных PTY sessions, model calls=0. ZIP и отдельный proof сохранены
+в исходном workspace docs/private.

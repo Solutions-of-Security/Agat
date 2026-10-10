@@ -99,47 +99,97 @@ def ask(stream, output, prompt):
 
 
 def interact(review, stream, output, save):
-    """Only save an option plus rationale after explicit confirmation; skips remain null."""
+    """Keep confirmed drafts editable until a separate explicit submission."""
     output.write("Blind review. Source controls are displayed as literal escapes.\n"
-                 "Choose an option number; :skip leaves the task blank; :quit saves and exits.\n"
-                 "An answer needs a rationale and explicit y confirmation. No default label.\n")
+                 "Choose an option number; :skip keeps the current answer; :quit saves and exits.\n"
+                 "Use :edit N or :clear N for task N, and :submit to submit all answers.\n"
+                 "Answers, clearing and submission require explicit y confirmation. No default label.\n")
+    total = len(review["labels"])
+
+    def next_blank(start):
+        return next((index for index in range(start, total)
+                     if review["labels"][index]["expectedOptionId"] is None), None)
+
+    def confirm(prompt):
+        while True:
+            answer = ask(stream, output, prompt).strip().lower()
+            if answer in ("y", "n"):
+                return answer == "y"
+            output.write("Enter y to confirm or n to keep the current draft.\n")
+
+    position = next_blank(0)
     try:
-        for index, (case, label) in enumerate(zip(review["pool"]["cases"], review["labels"]), 1):
-            if label["expectedOptionId"] is not None:
+        while True:
+            if position is None:
+                pending = [str(index + 1) for index, label in enumerate(review["labels"])
+                           if label["expectedOptionId"] is None]
+                output.write("\nEnd of pass. Blank tasks: " + (", ".join(pending) or "none") + ".\n")
+                output.write("Use :edit N, :clear N, :submit or :quit.\n")
+            else:
+                case = review["pool"]["cases"][position]; label = review["labels"][position]
+                output.write(task_text(case, position + 1, total))
+                if label["expectedOptionId"] is not None:
+                    output.write("Your confirmed answer: " + terminal_text(label["expectedOptionId"]) +
+                                 "\nYour rationale: " + terminal_text(label["rationale"]) + "\n")
+            output.flush()
+            selected = ask(stream, output, "Option number or review command: ").strip()
+            parts = selected.split()
+            if parts and parts[0] in (":edit", ":clear"):
+                if (len(parts) != 2 or not parts[1].isascii() or not parts[1].isdigit()
+                        or len(parts[1]) > 4 or not 1 <= int(parts[1]) <= total):
+                    output.write(f"Enter {parts[0]} followed by a task number from 1 to {total}.\n")
+                    continue
+                target = int(parts[1]) - 1
+                if parts[0] == ":edit":
+                    position = target
+                    continue
+                label = review["labels"][target]
+                if label["expectedOptionId"] is None:
+                    output.write("That task is already blank.\n")
+                    continue
+                output.write(f"Task {target + 1}: " + terminal_text(label["id"]) +
+                             "; your answer: " + terminal_text(label["expectedOptionId"]) + "\n")
+                if confirm("Clear this answer [y/n] or :quit: "):
+                    candidate = copy.deepcopy(review)
+                    candidate["labels"][target].update(expectedOptionId=None, rationale=None)
+                    review = candidate; save(candidate); position = target
+                    output.write("Cleared and saved.\n")
                 continue
-            output.write(task_text(case, index, len(review["labels"]))); output.flush()
-            request = Request.from_dict(case["request"])
+            if selected == ":submit":
+                remaining = sum(label["expectedOptionId"] is None for label in review["labels"])
+                if remaining:
+                    output.write(f"Cannot submit: {remaining} tasks remain blank.\n")
+                    continue
+                if confirm("Submit all confirmed answers [y/n] or :quit: "):
+                    return review, "submitted"
+                continue
+            if selected == ":skip" and position is not None:
+                position = next_blank(position + 1)
+                continue
+            if position is None:
+                output.write("Use a review command to edit, clear, submit or quit.\n")
+                continue
+            request = Request.from_dict(review["pool"]["cases"][position]["request"])
+            if (not selected.isascii() or not selected.isdigit() or len(selected) > 2
+                    or not 1 <= int(selected) <= len(request.options)):
+                output.write("Enter one of the displayed option numbers or a review command.\n")
+                continue
+            option = request.options[int(selected) - 1]
             while True:
-                selected = ask(stream, output, "Option number or :skip/:quit: ").strip()
-                if selected == ":skip":
+                rationale = ask(stream, output, "Rationale (required; :quit exits): ")
+                try:
+                    string(rationale, 4000)
                     break
-                if (not selected.isascii() or not selected.isdigit() or len(selected) > 2
-                        or not 1 <= int(selected) <= len(request.options)):
-                    output.write("Enter one of the displayed option numbers.\n")
-                    continue
-                option = request.options[int(selected) - 1]
-                while True:
-                    rationale = ask(stream, output, "Rationale (required; :quit exits): ")
-                    try:
-                        string(rationale, 4000)
-                        break
-                    except ValueError:
-                        output.write("Enter a nonempty valid rationale up to 4000 characters.\n")
-                output.write(f"Selected: {option.id}\nRationale: {terminal_text(rationale)}\n")
-                while True:
-                    confirmation = ask(stream, output, "Confirm [y/n] or :quit: ").strip().lower()
-                    if confirmation in ("y", "n"):
-                        break
-                    output.write("Enter y to save or n to choose again.\n")
-                if confirmation == "n":
-                    continue
-                candidate = copy.deepcopy(review)
-                candidate["labels"][index - 1].update(expectedOptionId=option.id, rationale=rationale)
-                review = candidate
-                save(candidate)
-                output.write("Saved.\n"); output.flush()
-                break
-        return review, "exhausted"
+                except ValueError:
+                    output.write("Enter a nonempty valid rationale up to 4000 characters.\n")
+            output.write(f"Selected: {option.id}\nRationale: {terminal_text(rationale)}\n")
+            if not confirm("Confirm [y/n] or :quit: "):
+                continue
+            candidate = copy.deepcopy(review)
+            candidate["labels"][position].update(expectedOptionId=option.id, rationale=rationale)
+            review = candidate; save(candidate)
+            output.write("Saved.\n"); output.flush()
+            position = next_blank(position + 1)
     except EndSession as ended:
         return review, str(ended)
     except KeyboardInterrupt:
