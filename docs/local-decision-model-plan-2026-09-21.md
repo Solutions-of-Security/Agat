@@ -1053,6 +1053,10 @@ source, план и raw данные не менялись, native reruns=0. В�
 Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
 
 
+Immutable ZIP: 279 files / 42613126 bytes / 3168 Git objects. CRC/every SHA/size,
+copy equality и actual original-copy restored replay 196 workflows/model0 PASS;
+ZIP и proof сохранены в исходном docs/private.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

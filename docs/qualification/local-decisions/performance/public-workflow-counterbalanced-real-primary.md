@@ -108,6 +108,18 @@ Native source, план, порядок, raw результат и accounting д
 и 49 case ledgers сохраняются в private evidence. Human labels=0,
 owners/customer/SLO/holdout gates открыты; routing=false / not_assessed.
 
+## Восстановимый archive
+
+[Archive summary](./public-workflow-counterbalanced-real-primary-archive-summary.json):
+279 files / 42613126 bytes / 3168 selected Git objects, ZIP SHA
+`fb58b3ad06a8a44e1a1f229152cfd8a83d8ca999cd0aa96ecf6ca734d302f790`.
+CRC, every SHA и размеры проверены; verifier восстановлен из committed source
+pack. Дополнительный replay прочитал фактическую ZIP-копию в исходном workspace
+и воспроизвёл все 196 workflows без model calls. ZIP и отдельная proof-квитанция
+сохранены в исходном `docs/private`; proof file SHA
+`e0316ca8537bf9fbadc7d40c3a53a6d9bea69585e6b35bed66318894cc6bdbc8`. Архив содержит исходный auditor, обе
+исправленные версии и failure logs; raw experiment сохраняется целиком.
+
 ## Инструменты
 
 [Native CLI](../../../../scripts/run-public-support-counterbalanced-real-primary.py),
