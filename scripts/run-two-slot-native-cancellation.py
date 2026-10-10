@@ -53,6 +53,9 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
     parser = argparse.ArgumentParser(description=suite.__doc__)
     for name in ('context-profile', 'runtime-python', 'manifest', 'evidence-dir'):
         parser.add_argument('--'+name, type=Path, required=True)
+    real_primary = getattr(suite, 'REAL_PRIMARY', False)
+    if real_primary:
+        for name in ('primary-binaries', 'primary-models'): parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--context-profile-file-sha256', required=True)
     parser.add_argument('--'+target_flag, dest='target_original_index', type=int, required=True)
     args = parser.parse_args(argv)
@@ -72,16 +75,19 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
         code = 'import importlib.metadata,json,platform,sys;print(json.dumps({"python":platform.python_version(),"machine":platform.machine(),"packages":{k:importlib.metadata.version(k) for k in sys.argv[1:]}}))'
         environment = parse_json(subprocess.check_output([str(args.runtime_python.absolute()), '-B', '-c', code, *requirements], cwd=ROOT, timeout=15))
         runtime.require(environment == context['tokenizerEnvironment'], 'Frozen native dependencies differ')
+        primary_profile = diagnostic.prepare_primary(ROOT, args.primary_binaries.resolve(), args.primary_models.resolve()) if real_primary else None
         directory = private_directory(ROOT, args.evidence_dir)
         plan = sealed({'schemaVersion': diagnostic.PLAN_SCHEMA, 'createdAt': now(), 'sourceCommit': commit, 'sourceFiles': sources,
             'contextProfileFileSha256': args.context_profile_file_sha256, 'context': context, 'config': shared_config(context), 'runtime': environment,
-            'profileFileSha256': context['profileFileSha256'], 'manifestFileSha256': context['manifestFileSha256'], 'protocol': protocol, **diagnostic.AUTHORITY})
+            'profileFileSha256': context['profileFileSha256'], 'manifestFileSha256': context['manifestFileSha256'], 'protocol': protocol,
+            **({'primary': primary_profile} if real_primary else {}), **diagnostic.AUTHORITY})
         write_json_new(directory/'plan.json', plan); plan_file_sha = sha256_file(directory/'plan.json')
     except Exception as error:
         print('Cannot prepare two-slot native gate: '+type(error).__name__+': '+str(error)[:200], file=sys.stderr); return 1
     stopped = threading.Event(); previous = {sig: signal.signal(sig, lambda *_: stopped.set()) for sig in (signal.SIGINT, signal.SIGTERM)}
     processes = []; owned = set(); errors = []; samples = []; warmup = []; proxy = driver = evidence = physical = failure = None
     ready = drained = retired = recovered = prefix = prepared = None; native_pids = []; child = None
+    owned_primary = None; primary_log = None
     recorded_owned = []; started = time.monotonic(); old_umask = os.umask(0o077)
 
     def record_owned():
@@ -130,18 +136,26 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
             return sample(process, epoch, 'after_warmup')
 
         child = launch(0); initial = warm(child, 0)
+        primary_args = []
+        if real_primary:
+            primary_log = runtime.open_private_log(directory/'primary.log')
+            owned_primary = diagnostic.OwnedPrimary(runtime, ROOT, args.primary_binaries.resolve(), args.primary_models.resolve(), primary_log, owned, stopped.is_set)
+            owned_primary.start(); record_owned(); write_json_new(directory/'primary-warmup.json', owned_primary.warmup)
+            write_json_new(directory/'primary-before.json', owned_primary.sample()); primary_args = ['--primary-url', f'http://127.0.0.1:{owned_primary.port}']
         proxy = diagnostic.make_proxy(port, projected, fault)
         proxy.bind_warmups(dict(Counter(row['status'] for row in warmup)), initial['serverStart'])
         env = {key: value for key, value in os.environ.items() if not key.startswith(('AGAT_', 'OTEL_'))}
         with runtime.open_private_log(directory/'driver.log') as log:
             driver = subprocess.Popen(['node', '--import', 'tsx', diagnostic.DRIVER_PATH, '--decision-url',
-                f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory)], cwd=ROOT, env={**env, 'OTEL_SDK_DISABLED': 'true'},
+                f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory), *primary_args], cwd=ROOT, env={**env, 'OTEL_SDK_DISABLED': 'true'},
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         owned.add(driver.pid); record_owned(); next_inventory = 0
         while driver.poll() is None:
             runtime.require(not stopped.is_set() and time.monotonic()-started < 260 and not proxy.errors, 'Workflow cancelled, exceeded budget or relay failed')
+            if owned_primary is not None: runtime.require(owned_primary.process.poll() is None, 'Owned real primary exited during native cancellation/recovery')
             if time.monotonic() >= next_inventory:
                 owned.update(runtime.shared.inventory(driver.pid)[0]); record_owned(); next_inventory = time.monotonic()+.5
+                if owned_primary is not None: owned.update(runtime.shared.inventory(owned_primary.process.pid)[0]); record_owned()
             if prefix is None and (directory/'native-prefix-ready.json').exists():
                 prefix = parse_json(pinned_input(directory/'native-prefix-ready.json', sha256_file(directory/'native-prefix-ready.json'), 65536))
                 trace_raw = pinned_input(directory/'trace-prefix.http.json', prefix['traceFileSha256'], 16*1024*1024); trace = parse_json(trace_raw)
@@ -177,6 +191,9 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
         runtime.require(driver.returncode == 0 and recovered is not None, 'Actual two-slot driver failed or omitted recovery')
         observed = parse_json((directory/'workflow-driver.json').read_bytes()); owned.update(observed['ownedPids']); record_owned()
         proxy.close(); write_json_new(directory/'active-transport.json', proxy.receipt()); sample(child, 1, 'after_inventory')
+        if owned_primary is not None:
+            write_json_new(directory/'primary-after.json', owned_primary.sample())
+            runtime.require(diagnostic.prepare_primary(ROOT, args.primary_binaries.resolve(), args.primary_models.resolve()) == primary_profile, 'Primary file/settings drift')
         runtime.require(launcher.frozen_sources(diagnostic.SOURCE_PATHS) == (commit, sources) and sha256_file(directory/'plan.json') == plan_file_sha
             and pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024) == context_raw
             and pinned_input(ROOT/PROFILE_PATH, context['profileFileSha256'], 1024*1024) == profile_raw
@@ -184,6 +201,8 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
     except Exception as error: failure = {'type': type(error).__name__, 'reason': str(error)[:200]}
     finally:
         if driver is not None: runtime.stop_owned_process(driver, owned, errors)
+        if owned_primary is not None: owned_primary.close(errors)
+        if primary_log is not None: primary_log.close()
         try: (directory/'worker-credentials.json').unlink(missing_ok=True)
         except OSError as error: errors.append('workerCredentialCleanup:'+type(error).__name__)
         for process in processes:
@@ -202,6 +221,7 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
         'runtimeExitCodes': [p.returncode for p in processes], 'driverExitCode': driver.returncode if driver else None,
         'artifactSha256': {p.name: sha256_file(p) for p in directory.iterdir() if p.is_file() and p.name not in ('plan.json', 'result.json')},
         'elapsedMs': round((time.monotonic()-started)*1000, 3), **diagnostic.AUTHORITY}
+    if real_primary: result['primaryExitCode'] = owned_primary.process.returncode if owned_primary and owned_primary.process else None
     if complete:
         try:
             artifacts = {name: (directory/name).read_bytes() for name in diagnostic.ARTIFACTS}

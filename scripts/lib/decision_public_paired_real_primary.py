@@ -182,7 +182,11 @@ def verify_pairs(context, recipe, driver, artifacts):
 def verify_native_origin(result, artifacts):
     expected = result['samples'][0]['serverStart']
     require(all(metrics(s['metricsRaw'])[0] == expected for s in journal(artifacts['admission-metrics.jsonl'])), 'Admission metrics crossed native epoch')
-    log = artifacts['primary.log'].decode(errors='strict')
+    verify_primary_runner(artifacts['primary.log'])
+
+
+def verify_primary_runner(raw):
+    log = raw.decode(errors='strict')
     require(re.search(r'n_seq_max\s*=\s*2\b', log) and re.search(r'n_ctx_seq\s*=\s*32768\b', log)
         and re.search(r'n_ctx\s*=\s*65536\b', log) and '-np 2' in log, 'Requested primary parallelism differs from actual runner slots/context')
 

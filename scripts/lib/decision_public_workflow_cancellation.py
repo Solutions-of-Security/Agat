@@ -55,7 +55,7 @@ def _single_assignment(trace, stage_id):
     return rows[0]["assignments"][0]
 
 
-def _verify_http(bundle, cohort, routes, spec):
+def _verify_http(bundle, cohort, routes, spec, *, primary_outputs=None):
     records = bundle["http"]
     require(isinstance(records, list) and len(routes)*3 <= len(records) <= 2000, "Incomplete or excessive actual HTTP journal")
     for record in records:
@@ -89,7 +89,8 @@ def _verify_http(bundle, cohort, routes, spec):
         leases.add(lease_path)
         submitted = [r for r in returns if r["path"] == lease_path+"/decision-shadow"]
         primary = [r for r in completions if r["path"] == lease_path+"/complete"]
-        require(len(submitted) == len(primary) == 1 and parse_json(primary[0]["requestBody"])["output"] == "PRIMARY_OUTPUT",
+        expected_output = "PRIMARY_OUTPUT" if primary_outputs is None else primary_outputs[route["runId"]]
+        require(len(submitted) == len(primary) == 1 and parse_json(primary[0]["requestBody"])["output"] == expected_output,
                 "Primary output changed or actual HTTP return missing")
         if index == spec["targetIndex"]:
             require(submitted[0]["httpStatus"] == primary[0]["httpStatus"] == 400, "Revoked lease accepted a late write")

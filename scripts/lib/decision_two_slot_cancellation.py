@@ -97,7 +97,7 @@ def make_proxy(port, projected, fault):
     return PreparedActiveCancellationProxy(port, projected, fault)
 
 
-def validate_preparation(projected, prepared, artifacts):
+def validate_preparation(projected, prepared, artifacts, *, process_name='Two worker slots native cancellation isolation'):
     """Reject a snapshot lacking two simultaneously assigned original stages."""
     fields(prepared, {'targetIndex', 'caseId', 'stageId', 'runId', 'inputSha256', 'profileSha256', 'peerRunId',
         'peerStageId', 'workerNodeId', 'beforeTraceFileSha256', 'peerTraceFileSha256', 'peerHeldFileSha256', 'preparedAt', 'unauthenticatedStatus'})
@@ -108,7 +108,7 @@ def validate_preparation(projected, prepared, artifacts):
         ('peer-primary-held.json', 'peerHeldFileSha256')):
         require(0 < len(artifacts[name]) <= 16*1024*1024 and hashlib.sha256(artifacts[name]).hexdigest() == prepared[key], 'Prepared raw snapshot changed')
     target = parse_json(artifacts['trace-target-before.http.json']); peer = parse_json(artifacts['trace-peer-before.http.json'])
-    target_stage = agent_stage(target, projected['inputs'][1]); peer_stage = agent_stage(peer, projected['inputs'][2])
+    target_stage = agent_stage(target, projected['inputs'][1], process_name); peer_stage = agent_stage(peer, projected['inputs'][2], process_name)
     require(target['run']['id'] == prepared['runId'] and peer['run']['id'] == prepared['peerRunId']
         and target['run']['status'] == peer['run']['status'] == 'running' and target_stage['id'] == prepared['stageId']
         and peer_stage['id'] == prepared['peerStageId'] and target_stage['nodeId'] == peer_stage['nodeId'] == prepared['workerNodeId']
@@ -125,11 +125,12 @@ def validate_preparation(projected, prepared, artifacts):
     return prepared
 
 
-def verify_actor(context, spec, recipe, driver, artifacts):
+def verify_actor(context, spec, recipe, driver, artifacts, *, suite=None):
     """Independently bind both running leases and primary sockets to actual traces."""
-    expected = protocol(context, spec['selectedOriginalIndices'][1])
+    expected = (protocol if suite is None else suite.protocol)(context, spec['selectedOriginalIndices'][1])
     require(same_json(spec, expected) and same_json(recipe['protocol'], spec), 'Posthoc two-slot protocol')
-    projected = projection(context, spec['selectedOriginalIndices'][1]); cases = projected['inputs']
+    projected = (projection if suite is None else suite.projection)(context, spec['selectedOriginalIndices'][1]); cases = projected['inputs']
+    stage_for = lambda trace, case: agent_stage(trace, case, spec['processName'])
     require(driver['status'] == 'observed' and driver['failure'] is None and driver['workerExitCode'] == 0
         and driver['workerConcurrency'] == driver['globalMaxConcurrency'] == 2
         and driver['schedulerMode'] == 'sequential', 'Actual two-slot worker did not drain')
@@ -173,10 +174,11 @@ def verify_actor(context, spec, recipe, driver, artifacts):
         index = trace_indices[row['file']]
         require(row['index'] == index and row['path'] == '/api/v1/runs/'+routes[index]['runId']+'/trace'
             and row['httpStatus'] == 200 and row['bodySha256'] == hashlib.sha256(artifacts[row['file']]).hexdigest(), 'Raw authenticated trace rebound')
+    primary_outputs = {}
     for index, (case, route) in enumerate(zip(cases, routes)):
         require(route['caseId'] == case['id'] and route['inputSha256'] == case['inputSha256']
             and route['originalIndex'] == spec['selectedOriginalIndices'][index], 'Focused original case rebound')
-        trace = traces[route['runId']]; stage = agent_stage(trace, case)
+        trace = traces[route['runId']]; stage = stage_for(trace, case)
         require(stage['id'] == route['stageId'] and trace['run']['status'] == ('cancelled' if index == 1 else 'completed'), 'Wrong terminal run/stage')
         instance = next(i for i in cohort['instances'] if i['runId'] == route['runId'])
         require(instance['instanceId'] == route['instanceId'] and instance['processVersion'] == 1
@@ -191,34 +193,38 @@ def verify_actor(context, spec, recipe, driver, artifacts):
             require(same_json(value, metadata[route['runId']][key]), 'Full trace and frozen metadata census differ')
         row = next(p for p in primary if p['index'] == index)
         require(sum(p['index'] == index for p in primary) == 1 and row['runId'] == route['runId'], 'Primary call repeated or rebound')
-        request = raw_body(row, 'requestBody'); response = raw_body(row, 'responseBody')
-        require(request['model'] == 'fixture-primary' and request['stream'] is False and request['temperature'] == .2
-            and request['messages'][0] == {'role': 'system', 'content': SYSTEM_PROMPT}
-            and len(request['messages']) == 2 and request['messages'][1] == {'role': 'user',
-                'content': 'Задача: '+spec['processName']+'\n\nВходные данные:\n'+case['request']['state']},
-            'Primary lost or duplicated original input')
-        require(row['httpStatus'] == 200 and response['choices'][0]['message']['content'] == 'PRIMARY_OUTPUT', 'Fixture output changed')
+        if suite is None:
+            request = raw_body(row, 'requestBody'); response = raw_body(row, 'responseBody')
+            require(request['model'] == 'fixture-primary' and request['stream'] is False and request['temperature'] == .2
+                and request['messages'][0] == {'role': 'system', 'content': SYSTEM_PROMPT}
+                and len(request['messages']) == 2 and request['messages'][1] == {'role': 'user',
+                    'content': 'Задача: '+spec['processName']+'\n\nВходные данные:\n'+case['request']['state']},
+                'Primary lost or duplicated original input')
+            require(row['httpStatus'] == 200 and response['choices'][0]['message']['content'] == 'PRIMARY_OUTPUT', 'Fixture output changed')
+            output = 'PRIMARY_OUTPUT'
+        else: output = suite.verify_primary_response(row, case, spec)
+        primary_outputs[route['runId']] = output
         if index == 1:
             require(trace['decisionObservations'] == [] and stage['output'] is None, 'Cancelled target committed primary or shadow')
             assignment = cancellation._single_assignment(trace, stage['id'])
             require(assignment['intent'] is True and assignment['negotiated'] is True and assignment['returned'] is None
                 and assignment['outcome'] == 'return_missing', 'Interrupted caller outcome became known')
         else:
-            require(stage['status'] == 'completed' and stage['output'] == 'PRIMARY_OUTPUT'
+            require(stage['status'] == 'completed' and stage['output'] == output
                 and len(trace['decisionObservations']) == 1, 'Unaffected output or shadow return missing')
             assignment = cancellation._single_assignment(trace, stage['id'])
             require(assignment['intent'] is True and assignment['negotiated'] is True and assignment['outcome'] == 'returned', 'Healthy caller unknown or retried')
     target_before = parse_json(artifacts['trace-target-before.http.json'])
     peer_names = ('trace-peer-before.http.json', 'trace-peer-after-cancel.http.json', 'trace-peer-before-release.http.json')
     peer_before = parse_json(artifacts[peer_names[0]])
-    target_stage = agent_stage(target_before, cases[1]); peer_stage = agent_stage(peer_before, cases[2])
+    target_stage = stage_for(target_before, cases[1]); peer_stage = stage_for(peer_before, cases[2])
     require(target_before['run']['id'] == routes[1]['runId'] and peer_before['run']['id'] == routes[2]['runId']
         and target_before['run']['status'] == peer_before['run']['status'] == 'running'
         and target_stage['nodeId'] == peer_stage['nodeId'] and target_stage['nodeId']
         and target_stage['worker']['nodeId'] == peer_stage['worker']['nodeId'] == target_stage['nodeId'],
         'Both in-flight stages were not assigned to the same actual worker')
     for name in peer_names:
-        trace = parse_json(artifacts[name]); stage = agent_stage(trace, cases[2])
+        trace = parse_json(artifacts[name]); stage = stage_for(trace, cases[2])
         require(trace['run']['id'] == routes[2]['runId'] and trace['run']['status'] == 'running'
             and stage['id'] == peer_stage['id'] and stage['nodeId'] == peer_stage['nodeId']
             and stage['worker'] == peer_stage['worker'] and stage['status'] in ('assigned', 'running') and stage['output'] is None
@@ -232,7 +238,7 @@ def verify_actor(context, spec, recipe, driver, artifacts):
         'Peer primary connection was closed or answered before recovery')
     require(held['requestBodySha256'] == next(p for p in primary if p['index'] == 2)['requestBodySha256'], 'Held peer request rebound')
     prepared = parse_json(artifacts['coordinator-cancellation-prepared.json'])
-    validate_preparation(projected, prepared, artifacts)
+    validate_preparation(projected, prepared, artifacts, process_name=spec['processName'])
     applied = parse_json(artifacts['coordinator-cancellation-applied.json'])
     ready = parse_json(artifacts['coordinator-cancellation-ready.json']); verify_seal(ready, active.READY_SCHEMA)
     for value in (prepared, applied, ready):
@@ -257,7 +263,7 @@ def verify_actor(context, spec, recipe, driver, artifacts):
         <= timestamp(released['releasedAt'], 'releasedAt'), 'Peer hold, active cancel and recovery barriers reordered')
     require((timestamp(applied['requestStartedAt'], 'cancelAt')-timestamp(ready['activeObservedAt'], 'activeAt')).total_seconds()*1000 <= 250,
         'Active native snapshot was stale at cancellation')
-    require((timestamp(released['releasedAt'], 'releasedAt')-timestamp(held['heldAt'], 'heldAt')).total_seconds()*1000 <= 30000,
+    require((timestamp(released['releasedAt'], 'releasedAt')-timestamp(held['heldAt'], 'heldAt')).total_seconds()*1000 <= spec['peerHoldDeadlineMs'],
         'Held primary exceeded prospective budget')
     primary_peer = next(p for p in primary if p['index'] == 2)
     require(timestamp(primary_peer['startedAt'], 'primaryStartedAt') <= timestamp(held['heldAt'], 'heldAt')
@@ -283,21 +289,25 @@ def verify_actor(context, spec, recipe, driver, artifacts):
                 and row['upstreamCompletedNormally'] is False, 'Target completed natively or lacked actual EOF')
         else:
             response = raw_body(row, 'responseBody'); validate_result(response, request, context['profile'])
-            require(row['upstreamStatus'] == 200 and response['inputTokens'] == cases[index]['inputTokens']
-                and response['generatedTokens'] == 0 and same_json(response, traces[routes[index]['runId']]['decisionObservations'][0]['observation']['result']),
+            token_result = (response.get('inputTokens') == cases[index]['inputTokens'] and response.get('generatedTokens') == 0) if cases[index]['contextEligible'] else (
+                response['status'] == 'error' and response['reason'] == 'context_too_long')
+            require(row['upstreamStatus'] == (200 if cases[index]['contextEligible'] else 422) and token_result
+                and same_json(response, traces[routes[index]['runId']]['decisionObservations'][0]['observation']['result']),
                 'Healthy raw native result was not preserved')
             native_outcomes[outcome(response)] += 1
             if index >= 2:
                 require(timestamp(released['releasedAt'], 'releasedAt') <= timestamp(row['acceptedAt'], 'nativeAt'), 'Peer entered native runtime before release')
-    boundaries = verify_boundaries(projected, spec['nativeFault'], routes, traces, cohort, transport, artifacts)
+    boundaries = verify_boundaries(projected, spec['nativeFault'], routes, traces, cohort, transport, artifacts,
+        process_name=spec['processName'], primary_outputs=None if suite is None else primary_outputs)
     return {'selectedOriginalIndices': spec['selectedOriginalIndices'], 'actualWorkflows': 4, 'completedWorkflows': 3,
-        'cancelledWorkflows': 1, 'primaryFixtureCalls': 4, 'durablePrimaryOutputs': 3, 'knownCallerReturns': 3,
+        'cancelledWorkflows': 1, ('primaryFixtureCalls' if suite is None else 'primaryRealCalls'): 4, 'durablePrimaryOutputs': 3, 'knownCallerReturns': 3,
         'unknownCallerReturns': 1, 'healthyNativeOutcomes': dict(native_outcomes), 'sameWorkerTwoAssignedStages': True,
         'peerPrimaryConnectionPreserved': True, 'peerLeasePreserved': True, 'workerConcurrency': 2,
         'retryCount': 0, **boundaries, **AUTHORITY}
 
 
-def verify_boundaries(context, fault, routes, traces, cohort, transport, artifacts):
+def verify_boundaries(context, fault, routes, traces, cohort, transport, artifacts, *,
+        process_name='Two worker slots native cancellation isolation', primary_outputs=None):
     """Keep the established EOF, revoked-write and native retirement checks strict."""
     ready = verify_seal(parse_json(artifacts['coordinator-cancellation-ready.json']), active.READY_SCHEMA)
     drained = verify_seal(parse_json(artifacts['coordinator-cancellation-drained.json']), active.DRAIN_SCHEMA)
@@ -311,11 +321,11 @@ def verify_boundaries(context, fault, routes, traces, cohort, transport, artifac
     peer_original = cancellation._single_assignment(parse_json(artifacts['trace-peer-before.http.json']), routes[2]['stageId'])
     peer_ended = cancellation._single_assignment(traces[routes[2]['runId']], routes[2]['stageId'])
     require(peer_original['assignmentId'] == peer_ended['assignmentId'], 'Unaffected peer assignment was replaced')
-    peer_stage = agent_stage(traces[routes[2]['runId']], context['inputs'][2])
-    before_stage = agent_stage(parse_json(artifacts['trace-peer-before.http.json']), context['inputs'][2])
+    peer_stage = agent_stage(traces[routes[2]['runId']], context['inputs'][2], process_name)
+    before_stage = agent_stage(parse_json(artifacts['trace-peer-before.http.json']), context['inputs'][2], process_name)
     require(peer_stage['nodeId'] == before_stage['nodeId'] and peer_stage['worker'] == before_stage['worker'], 'Unaffected peer finished on another worker')
     http = journal(artifacts['coordinator-http.jsonl'])
-    caller_ms, late = cancellation._verify_http({'http': http, 'applied': applied}, cohort, routes, fault)
+    caller_ms, late = cancellation._verify_http({'http': http, 'applied': applied}, cohort, routes, fault, primary_outputs=primary_outputs)
     cancelled_at = timestamp(applied['requestStartedAt'], 'cancelAt'); eof_at = timestamp(row['clientEofObservedAt'], 'eofAt')
     revoked = next(r for r in http if r['path'].endswith('/renew') and r['httpStatus'] == 404)
     require(timestamp(row['upstreamRequestSentAt'], 'sentAt') <= timestamp(ready['activeObservedAt'], 'activeAt') <= cancelled_at
@@ -340,13 +350,13 @@ def verify_boundaries(context, fault, routes, traces, cohort, transport, artifac
         'incompleteRenewalRequestBodies': sum(r['requestBodyComplete'] is False for r in http)}
 
 
-def inventory(context, plan, result, artifacts):
+def inventory(context, plan, result, artifacts, *, suite=None):
     """Raw replay; recorded cleanup is checked without making live process claims."""
-    context = validate_context(context); verify_seal(plan, PLAN_SCHEMA); verify_seal(result, RESULT_SCHEMA)
+    context = validate_context(context); verify_seal(plan, PLAN_SCHEMA if suite is None else suite.PLAN_SCHEMA); verify_seal(result, RESULT_SCHEMA if suite is None else suite.RESULT_SCHEMA)
     fields(plan, {'schemaVersion', 'sha256', 'createdAt', 'sourceCommit', 'sourceFiles', 'contextProfileFileSha256', 'context',
-        'config', 'runtime', 'profileFileSha256', 'manifestFileSha256', 'protocol', *AUTHORITY})
+        'config', 'runtime', 'profileFileSha256', 'manifestFileSha256', 'protocol', *AUTHORITY} | (set() if suite is None else {'primary'}))
     fields(result, {'schemaVersion', 'sha256', 'status', 'planSha256', 'evidence', 'physical', 'warmup', 'samples', 'failure',
-        'ownedPids', 'remainingOwnedPids', 'cleanupErrors', 'runtimeExitCodes', 'driverExitCode', 'artifactSha256', 'elapsedMs', *AUTHORITY})
+        'ownedPids', 'remainingOwnedPids', 'cleanupErrors', 'runtimeExitCodes', 'driverExitCode', 'artifactSha256', 'elapsedMs', *AUTHORITY} | (set() if suite is None else {'primaryExitCode'}))
     for value in (plan, result):
         require(all(type(value[k]) is type(v) and value[k] == v for k, v in AUTHORITY.items()), 'Diagnostic invented qualification/labels/authority')
     require(same_json(plan['context'], context) and same_json(plan['config'], shared_config(context))
@@ -358,7 +368,8 @@ def inventory(context, plan, result, artifacts):
     number(result['elapsedMs'], 0, 260000)
     owned = result['ownedPids']; require(isinstance(owned, list) and owned and owned == sorted(set(owned))
         and all(type(p) is int and 0 < p < 2**31 for p in owned), 'Invalid owned process inventory')
-    fields(result['artifactSha256'], ARTIFACTS); require(set(artifacts) == ARTIFACTS, 'Missing or unexpected raw receipt')
+    names = ARTIFACTS if suite is None else suite.ARTIFACTS
+    fields(result['artifactSha256'], names); require(set(artifacts) == names, 'Missing or unexpected raw receipt')
     for name, raw in artifacts.items():
         require(isinstance(raw, bytes) and (len(raw) > 0 or name.endswith('.log')) and len(raw) <= 32*1024*1024
             and hashlib.sha256(raw).hexdigest() == result['artifactSha256'][name], 'Raw receipt SHA changed')
@@ -373,16 +384,16 @@ def inventory(context, plan, result, artifacts):
     transport = parse_json(artifacts['active-transport.json']); ports = [transport['proxyPort'], transport['upstreamPort']]
     for label, value in recipe['endpoints'].items():
         parsed = urlparse(value)
-        require(label in ('primaryUrl', 'coordinatorUrl', 'decisionUrl') and parsed.scheme == 'http' and parsed.hostname == '127.0.0.1'
+        require(label in (('primaryUrl', 'coordinatorUrl', 'decisionUrl') if suite is None else ('primaryUrl', 'primaryNativeUrl', 'coordinatorUrl', 'decisionUrl')) and parsed.scheme == 'http' and parsed.hostname == '127.0.0.1'
             and not parsed.username and not parsed.password and parsed.path in ('', '/') and not parsed.query and not parsed.fragment
             and type(parsed.port) is int, 'Non-owned workflow endpoint')
         if label == 'decisionUrl': require(parsed.port == transport['proxyPort'], 'Decision relay rebound')
         else: ports.append(parsed.port)
-    require(len(ports) == len(set(ports)) == 4 and all(type(p) is int and 0 < p < 65536 and p not in (8766, 9095, 11434) for p in ports), 'Protected/shared port in focused gate')
-    evidence = verify_actor(context, plan['protocol'], recipe, driver, artifacts)
+    require(len(ports) == len(set(ports)) == (4 if suite is None else 5) and all(type(p) is int and 0 < p < 65536 and p not in (8766, 9095, 11434) for p in ports), 'Protected/shared port in focused gate')
+    evidence = verify_actor(context, plan['protocol'], recipe, driver, artifacts) if suite is None else suite.verify_actor(context, plan['protocol'], recipe, driver, artifacts)
     require(same_json(evidence, result['evidence']), 'Reported two-slot evidence differs from raw replay')
     ready = parse_json(artifacts['coordinator-cancellation-ready.json']); retired = parse_json(artifacts['native-retired.json'])
-    recovered = parse_json(artifacts['native-recovered.json']); projected = projection(context, plan['protocol']['selectedOriginalIndices'][1])
+    recovered = parse_json(artifacts['native-recovered.json']); projected = (projection if suite is None else suite.projection)(context, plan['protocol']['selectedOriginalIndices'][1])
     require(set(retired['nativePids']) <= set(owned) and not set(retired['nativePids']) & set(driver['ownedPids'])
         and recovered['runtimePid'] in owned and recovered['runtimePid'] not in driver['ownedPids'], 'Native ownership mixes actual worker processes')
     physical = verify_physical(projected, result, transport, ready, retired, recovered, artifacts)
@@ -398,6 +409,7 @@ def inventory(context, plan, result, artifacts):
         and armed['serverStartText'] == retired['retiredServerStartText'] and timestamp(prefix['requestedAt'], 'prefixAt')
         <= timestamp(result['samples'][2]['capturedAt'], 'sampleAt') <= timestamp(armed['armedAt'], 'armedAt')
         <= timestamp(transport['rows'][1]['acceptedAt'], 'targetAt'), 'Native prefix accounting crossed active target boundary')
+    if suite is not None: suite.verify_primary_inventory(plan, result, recipe, artifacts)
     return {'evidence': evidence, 'physical': physical, 'reportedCleanupComplete': True, 'liveCleanupVerified': False,
         'gpuKernelPreemptionEstablished': False, 'modelCallsDuringVerification': 0, **AUTHORITY}
 
