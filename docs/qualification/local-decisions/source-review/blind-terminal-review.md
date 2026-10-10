@@ -162,3 +162,9 @@ SLO/independent holdout gates остаются открытыми.
 equality PASS; actual original-copy restored audit повторно проверил шесть
 исходных PTY sessions, model calls=0. ZIP и отдельный proof сохранены
 в исходном workspace docs/private.
+
+## Полная локальная source-карта
+
+[Проверка 14 зависимостей](./blind-terminal-source-integrity.md) допускает
+коммит документации при неизменном коде и отклоняет изменение транзитивной
+зависимости до checkpoint. Квитанция сохраняет начальный source commit.

@@ -1,4 +1,5 @@
 import copy
+import ast
 import hashlib
 import importlib.util
 import io
@@ -220,11 +221,45 @@ class ReviewCliTest(unittest.TestCase):
         self.assertEqual((directory / "review.json").read_bytes(), original)
 
     def test_source_drift_keeps_failed_receipt_and_unmodified_blank_checkpoint(self):
-        changed = ("c" * 40, self.identity[1])
+        changed = ("c" * 40, {**self.identity[1], "scripts/lib/decision_blind_review.py": "c" * 64})
         code, _d, report, review, _t = self.invoke("1\nfixture\ny\n", identity=[self.identity, changed])
         self.assertEqual(code, 1); self.assertEqual(report["status"], "failed")
         self.assertEqual(report["failureType"], "ValueError")
         self.assertTrue(all(x["expectedOptionId"] is None for x in review["labels"]))
+
+    def test_document_only_head_advance_does_not_abort_the_same_frozen_code(self):
+        advanced = ("c" * 40, self.identity[1])
+        code, _d, report, review, _t = self.invoke("1\nfixture\ny\n:quit\n", identity=[self.identity, advanced, advanced])
+        self.assertEqual(code, 2); self.assertEqual(report["status"], "partial")
+        self.assertEqual(report["sourceCommit"], self.identity[0]); self.assertEqual(report["sourceFiles"], self.identity[1])
+        self.assertEqual(review["labels"][0]["expectedOptionId"], "yes")
+
+    def test_transitive_dependency_change_aborts_before_saving_a_label(self):
+        changed = ("c" * 40, {**self.identity[1], "scripts/lib/decision_shadow_sli.py": "c" * 64})
+        code, _d, report, review, _t = self.invoke("1\nfixture\ny\n", identity=[self.identity, changed])
+        self.assertEqual(code, 1); self.assertEqual(report["status"], "failed")
+        self.assertTrue(all(label["expectedOptionId"] is None for label in review["labels"]))
+
+    def test_recorded_sources_cover_every_static_local_import_and_package_initializer(self):
+        pending = ["scripts/review-decision-pool.py"]; seen = set()
+        while pending:
+            name = pending.pop()
+            if name in seen: continue
+            seen.add(name); parts = list(Path(name).with_suffix("").parts)
+            for index in range(1, len(parts)):
+                initializer = Path(*parts[:index]) / "__init__.py"
+                if (ROOT / initializer).is_file(): pending.append(initializer.as_posix())
+            for node in ast.walk(ast.parse((ROOT / name).read_text())):
+                modules = []
+                if isinstance(node, ast.Import): modules = [alias.name.split(".") for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    prefix = parts[:-node.level] if node.level else []
+                    module = prefix + (node.module.split(".") if node.module else [])
+                    modules = [module, *[module + alias.name.split(".") for alias in node.names]]
+                for module in modules:
+                    path = Path(*module).with_suffix(".py") if module else None
+                    if path and (ROOT / path).is_file(): pending.append(path.as_posix())
+        self.assertEqual(set(cli.SOURCES), seen)
 
     def test_startup_checkpoint_failure_has_failed_receipt_without_usable_review(self):
         with patch.object(cli, "checkpoint", side_effect=OSError("fixture startup failure")):

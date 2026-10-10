@@ -21,7 +21,10 @@ from scripts.lib.decision_shadow_pilot import require, utc_now
 
 SOURCES = ("scripts/review-decision-pool.py", "scripts/lib/decision_blind_review.py",
            "scripts/lib/decision_public_sources.py", "scripts/lib/decision_shadow_pilot.py",
-           "decision_runtime/annotations.py", "decision_runtime/artifacts.py", "decision_runtime/contracts.py")
+           "scripts/lib/decision_shadow_sli.py", "scripts/lib/decision_stage_inventory.py",
+           "scripts/lib/decision_caller_inventory.py", "decision_runtime/__init__.py",
+           "decision_runtime/annotations.py", "decision_runtime/artifacts.py", "decision_runtime/contracts.py",
+           "decision_runtime/evaluation.py", "decision_runtime/engine.py", "decision_runtime/calibration.py")
 MAX_REVIEW_BYTES = 32 * 1024 * 1024
 SESSION_SCHEMA = "agat.decision.blind-review-session.v2"
 
@@ -87,11 +90,11 @@ def main(argv=None, *, input_stream=None, output_stream=None):
         checkpoint(directory, review)
 
         def save(candidate):
-            require(source_identity(ROOT) == identity, "Review sources changed during the session")
+            require(source_identity(ROOT)[1] == identity[1], "Review sources changed during the session")
             checkpoint(directory, candidate)
 
         review, reason = interact(review, stream, output, save)
-        require(source_identity(ROOT) == identity, "Review sources changed during the session")
+        require(source_identity(ROOT)[1] == identity[1], "Review sources changed during the session")
         require(pinned_input(args.review, args.review_file_sha256, MAX_REVIEW_BYTES) == raw,
                 "Review input changed during the session")
         remaining = sum(x["expectedOptionId"] is None for x in review["labels"])
