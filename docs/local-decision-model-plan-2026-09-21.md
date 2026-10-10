@@ -972,8 +972,9 @@ Protected resident 27 checks неизменен, 105 owned PIDs отсутств
 stdlib 5644 checks / 152601 JSON keys,
 model-free offline и legacy serial/paired replay PASS. 18 новых / 47 related /
 1119 Python tests (4 optional skips), strict TypeScript и Node docs
-пройдены. ZIP с raw/source/verification evidence и actual original-copy replay
-сохраняется в исходном workspace docs/private. Owners/customer/SLO/human
+пройдены. Immutable ZIP: 166 files / 42154725 bytes / 3131 selected Git objects;
+CRC/SHA/size и actual original-copy restored replay model0 PASS. ZIP и proof
+сохранены в исходном workspace docs/private. Owners/customer/SLO/human
 labels, holdout и customer capacity открыты; routing=false / not_assessed.
 
 ## Вывод: что именно можно воспроизвести

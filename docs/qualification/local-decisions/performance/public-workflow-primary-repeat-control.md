@@ -118,3 +118,8 @@ harness и 12 Node docs tests прошли.
 Raw inputs/outputs не публикуются. Immutable evidence ZIP, source snapshots,
 CRC/SHA проверки и actual original-copy restored replay описаны в
 [archive receipt](./public-workflow-primary-repeat-control-archive-summary.json).
+
+Archive: 166 files / 42154725 bytes, SHA256
+`cfa1d275ae88e5389237654e6cecc84a8d62a29ae64d284c808f1252b1c9f739`. Проверены CRC, SHA и размер каждого файла;
+actual original-copy restored replay PASS, model calls=0. Отдельный proof
+сохранён рядом с ZIP в исходном workspace docs/private.
