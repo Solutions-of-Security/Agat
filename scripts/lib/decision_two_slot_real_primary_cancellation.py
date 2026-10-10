@@ -92,6 +92,10 @@ def verify_primary_response(row, case, spec):
 
 def verify_actor(context, spec, recipe, driver, artifacts):
     evidence = common.verify_actor(context, spec, recipe, driver, artifacts, suite=sys.modules[__name__])
+    return {**evidence, **verify_primary_peer(context, spec, recipe, artifacts)}
+
+
+def verify_primary_peer(context, spec, recipe, artifacts, *, ready_file='coordinator-cancellation-ready.json'):
     rows = journal(artifacts['primary-http.jsonl']); by_index = {r['index']: r for r in rows}
     require(len(by_index) == 4, 'Real primary request repeated')
     held = parse_json(artifacts['peer-primary-held.json']); released = parse_json(artifacts['peer-primary-released.json'])
@@ -101,16 +105,17 @@ def verify_actor(context, spec, recipe, driver, artifacts):
         and held['nativeStartedAt'] == peer['nativeStartedAt'] and released['nativeResponseReceivedAt'] == peer['nativeResponseReceivedAt']
         and released['nativeResponseBodySha256'] == peer['nativeResponseBodySha256']
         and all(row['nativeUrl'] == recipe['endpoints']['primaryNativeUrl'] for row in rows), 'Peer was a held fixture or native request/response was rebound')
-    recovered = parse_json(artifacts['native-recovered.json']); ready = parse_json(artifacts['coordinator-cancellation-ready.json'])
+    recovered = parse_json(artifacts['native-recovered.json']); ready = parse_json(artifacts[ready_file])
     require(timestamp(peer['nativeStartedAt'], 'peer.nativeStart') <= timestamp(ready['activeObservedAt'], 'native.activeAt')
-        < timestamp(recovered['appliedAt'], 'native.recoveredAt') <= timestamp(peer['nativeResponseReceivedAt'], 'peer.responseAt'), 'Actual primary peer responded before cancellation/recovery')
+        < timestamp(recovered['appliedAt'], 'native.recoveredAt') <= timestamp(peer['nativeResponseReceivedAt'], 'peer.responseAt'), 'Actual primary peer responded before native interruption/recovery')
     overlap = (min(timestamp(r['nativeResponseReceivedAt'], 'primary.responseAt') for r in (peer, target))
         -max(timestamp(r['nativeStartedAt'], 'primary.nativeStart') for r in (peer, target))).total_seconds()*1000
     require(overlap > 0 and timestamp(target['completedAt'], 'target.primaryDone') <= timestamp(ready['activeObservedAt'], 'native.activeAt'), 'Actual two-slot primary overlap or completed target primary missing')
-    cohort = parse_json(artifacts['cohort.http.json']); instance = next(i for i in cohort['instances'] if i['runId'] == peer['runId'])
+    instance = next(i for name in ('cohort.http.json', 'cohort-target.http.json') if name in artifacts
+        for i in parse_json(artifacts[name])['instances'] if i['runId'] == peer['runId'])
     require(timestamp(target['nativeStartedAt'], 'target.primaryStart') <= timestamp(instance['createdAt'], 'peer.createdAt')
         <= timestamp(peer['nativeStartedAt'], 'peer.primaryStart') < timestamp(target['nativeResponseReceivedAt'], 'target.responseAt'), 'Actual pending target primary was not admitted before peer creation')
-    return {**evidence, 'actualPrimaryHttpOverlapMs': round(overlap, 3), 'primaryModel': real.primary.MODEL,
+    return {'actualPrimaryHttpOverlapMs': round(overlap, 3), 'primaryModel': real.primary.MODEL,
         'primaryNumParallel': 1, 'peerResponseObservedWithoutArtificialHold': True, 'primaryConcurrencyCapacityQualified': False}
 
 

@@ -857,6 +857,38 @@ copy restored replay PASS, model calls 0. Все attempts сохранены; pu
 fault protocol NUM_PARALLEL=2. Owners/customer/SLO/human labels/holdout открыты,
 routing false / not_assessed.
 
+### 10.10.2026 — worker deadline с queued actual primary
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline-archive-summary.json)
+фиксируют actual gate: worker/global=2, actual primary NUM_PARALLEL=1 / queue=1,
+request context=32768, прежняя Qwen3:8b generation. Whole 49 inputs / 44 groups
+сохранены в sealed plan; focused original indices=[24,25,12,27], whole longest
+peer=9253 decision / 9013 primary tokens. Target primary
+pending до peer creation; actual HTTP overlap=5666.000 ms,
+response не удержан. Published process v1 healthy10000 / v2 target250 различается
+только timeout. 4 completed workflow / 4 primary outputs / 4 known callers;
+one unavailable/timeout=254.246 ms записан в original
+target lease, cancellation/revocation/retry=0. Healthy native 2 abstain / 1
+context rejection, все 3 typed signatures совпали с frozen baseline.
+Native EOF→retirement=338.000 ms, recovery=7172.000 ms;
+actual peer response после new epoch/two warmups, assignment/stage/worker сохранены.
+8 physical starts / 7 known terminals / 2 epochs / 4 warmups; target native
+typed terminal неизвестен. 14 owned PIDs absent, protected resident unchanged.
+
+1 native attempt / 1 successful; 215 measurement / 40 context source
+files. Stdlib audit 772 checks / 29394 JSON keys;
+offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
+12 новых / 81 related tests, 1065 Python tests (4 optional skips),
+strict TypeScript / 12 Node docs tests прошли. Immutable ZIP 91 files / 41402360 bytes сохраняет
+raw/source/test/replay evidence; every-entry CRC/SHA/size и actual original-copy
+restored replay PASS, model calls=0; public payloads только metadata. Следующий
+runtime gate — отдельный prospective fault protocol NUM_PARALLEL=2 с actual
+target-first admission и naturally pending peer; two-primary-slot deadline
+ещё не квалифицирован. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
