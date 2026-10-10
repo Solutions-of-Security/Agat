@@ -916,6 +916,38 @@ artifacts; CRC/every-entry SHA/size и actual original-copy replay PASS.
 Следующий gate — NUM_PARALLEL2 worker deadline; customer/SLO/human labels/holdout
 и owners открыты, routing=false / not_assessed.
 
+### 10.10.2026 — worker deadline с двумя actual primary slots
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline-archive-summary.json)
+фиксируют actual gate: worker/global=2, actual primary NUM_PARALLEL=2 / queue=1,
+request context=32768, прежняя Qwen3:8b generation. Whole 49 inputs / 44 groups
+сохранены в sealed plan; focused original indices=[24,25,12,27], whole longest
+peer=9253 decision / 9013 primary tokens. Target primary
+late decode admission=116; два processing slots
+подтверждены до target response; actual HTTP overlap=5629.000 ms,
+response не удержан. Published process v1 healthy10000 / v2 target250 различается
+только timeout. 4 completed workflow / 4 primary outputs / 4 known callers;
+one unavailable/timeout=252.662 ms записан в original
+target lease, cancellation/revocation/retry=0. Healthy native 2 abstain / 1
+context rejection, все 3 typed signatures совпали с frozen baseline.
+Native EOF→retirement=1345.000 ms, recovery=7904.000 ms;
+actual peer response после new epoch/two warmups, assignment/stage/worker сохранены.
+8 physical starts / 7 known terminals / 2 epochs / 4 warmups; target native
+typed terminal неизвестен. 15 owned PIDs absent, protected resident unchanged.
+
+1 native attempt / 1 successful; 221 measurement / 40 context source
+files. Stdlib audit 4946 checks / 90821 JSON keys;
+offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
+18 новых / 117 related tests, 1101 Python tests (4 optional skips),
+strict шесть TypeScript drivers / 12 Node docs tests прошли. Private immutable archive сохраняет
+raw/source/test/replay evidence; actual original-copy restored replay model0 PASS.
+Public payloads только metadata. Focused NUM_PARALLEL2 cancellation/deadline
+пройдены с явно закреплённым admission protocol; customer capacity/causal overhead,
+Owners/customer/SLO/human labels/holdout остаются открытыми,
+routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
