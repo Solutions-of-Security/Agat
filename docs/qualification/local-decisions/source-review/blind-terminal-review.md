@@ -168,3 +168,9 @@ equality PASS; actual original-copy restored audit повторно провер
 [Проверка 14 зависимостей](./blind-terminal-source-integrity.md) допускает
 коммит документации при неизменном коде и отклоняет изменение транзитивной
 зависимости до checkpoint. Квитанция сохраняет начальный source commit.
+
+## Проверка сохранённой квитанции
+
+[Verifier v2](./review-session-verification.md) сверяет три pinned файла,
+net counts и отдельный submit. Проверенный failed checkpoint сохраняет
+completeReviewArtifact=false; проверка файлов не подтверждает human review.
