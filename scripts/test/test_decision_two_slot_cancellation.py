@@ -99,7 +99,7 @@ class TwoSlotActorTest(unittest.TestCase):
                     index = next(i for i, case in enumerate(projected['inputs']) if request['messages'][1]['content'].endswith(case['request']['state']))
                     assert request == {'model': 'qwen3:8b', 'messages': request['messages'], 'stream': False, 'keep_alive': '5m', **diagnostic.GENERATION}
                     # Synthetic HTTP latency; no real model/capacity claim in these regressions.
-                    time.sleep(1.7 if index == 2 else .03); self.respond(200, primary_response(index))
+                    time.sleep(1.7 if index == 2 else .5 if index == 1 else .03); self.respond(200, primary_response(index))
             primary_server = ThreadingHTTPServer(('127.0.0.1', 0), PrimaryHandler)
             primary_thread = threading.Thread(target=primary_server.serve_forever, kwargs={'poll_interval': .01}); primary_thread.start()
         private = ROOT/'docs/private'; private.mkdir(parents=True, exist_ok=True)
@@ -129,7 +129,8 @@ class TwoSlotActorTest(unittest.TestCase):
                         return {'capturedAt': now(), 'version': {'version': '0.35.1'}, 'tags': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST}]},
                             'residence': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST, 'context_length': 32768}]}, 'ownedPids': [48, 49]}
                     save('primary-before.json', primary_snapshot())
-                    (directory/'primary.log').write_bytes(b'Synthetic runner shape only: -np 2\nn_seq_max = 2\nn_ctx = 65536\nn_ctx_seq = 32768\n')
+                    parallel = int(diagnostic.SETTINGS['OLLAMA_NUM_PARALLEL'])
+                    (directory/'primary.log').write_bytes(f'Synthetic runner shape only: -np {parallel}\nn_seq_max = {parallel}\nn_ctx = {parallel*32768}\nn_ctx_seq = 32768\n'.encode())
                 save('plan.json', cls.plan)
                 early_timer = 'const timer=globalThis.setTimeout;let fired=false;globalThis.setTimeout=(callback,delay,...args)=>{if(!fired&&delay>500&&delay<=1000){fired=true;console.log("fixture: early start timer");return timer(callback,0,...args);}return timer(callback,delay,...args);};'
                 timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()

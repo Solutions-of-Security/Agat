@@ -11,9 +11,9 @@ from scripts.lib.decision_public_load import validate_context
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from scripts.lib.decision_shadow_sli import same_json
 
-PLAN_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-plan.v1'
-RESULT_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-result.v1'
-VERIFICATION_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-verification.v1'
+PLAN_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-plan.v2'
+RESULT_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-result.v2'
+VERIFICATION_SCHEMA = 'agat.decision.two-slot-real-primary-cancellation-verification.v2'
 REAL_PRIMARY = True
 DRIVER_PATH = 'scripts/run-two-slot-real-primary-cancellation.mts'
 SOURCE_PATHS = [*common.SOURCE_PATHS, *real.primary.PRIMARY_SOURCES,
@@ -22,9 +22,13 @@ SOURCE_PATHS = [*common.SOURCE_PATHS, *real.primary.PRIMARY_SOURCES,
 ARTIFACTS = common.ARTIFACTS | {'primary.log', 'primary-before.json', 'primary-after.json', 'primary-warmup.json'}
 AUTHORITY = common.AUTHORITY
 PREPARED_FILE, READY_FILE, DRAINED_FILE = common.PREPARED_FILE, common.READY_FILE, common.DRAINED_FILE
-GENERATION, SETTINGS, WARMUP_REQUEST = real.GENERATION, real.SETTINGS, real.WARMUP_REQUEST
-OwnedPrimary = real.OwnedPrimary
-prepare_primary = real.prepare
+GENERATION, WARMUP_REQUEST = real.GENERATION, real.WARMUP_REQUEST
+SETTINGS = {**real.SETTINGS, 'OLLAMA_NUM_PARALLEL': '1'}
+class OwnedPrimary(real.OwnedPrimary):
+    settings = SETTINGS
+
+def prepare_primary(root, binaries, models):
+    value = real.prepare(root, binaries, models); value['settings'] = dict(SETTINGS); return value
 journal, raw_body, shared_config = common.journal, common.raw_body, common.shared_config
 make_proxy, recovery, verify_physical = common.make_proxy, common.recovery, common.verify_physical
 
@@ -49,7 +53,8 @@ def protocol(context, target):
         'localTargetIndex': 1, 'localPeerIndex': 2, 'workerConcurrency': 2, 'schedulerMode': 'sequential', 'globalMaxConcurrency': 2,
         'retryCount': 0, 'primary': 'pinned_qwen3_8b_actual_chat', 'peerSelection': 'largest_original_decision_token_count',
         'peerHoldDeadlineMs': 180000, 'primaryTimeoutMs': 180000, 'driverDeadlineMs': 180000,
-        'primaryNumParallel': 2, 'primaryContextLength': 32768, 'primaryDecodeLimit': 128,
+        'primaryNumParallel': 1, 'primaryContextLength': 32768, 'primaryDecodeLimit': 128,
+        'peerStartBoundary': 'target_actual_primary_request_pending_before_peer_workflow_creation',
         'inputSource': real.PROTOCOL['inputSource'], 'processName': real.PROTOCOL['processName'], 'systemPrompt': real.PROTOCOL['systemPrompt'],
         'peerReleaseBoundary': 'actual_native_primary_response_after_old_native_pids_absent_and_new_epoch_two_warmups',
         'nativeFault': active.active_spec(view, 1)}
@@ -102,8 +107,11 @@ def verify_actor(context, spec, recipe, driver, artifacts):
     overlap = (min(timestamp(r['nativeResponseReceivedAt'], 'primary.responseAt') for r in (peer, target))
         -max(timestamp(r['nativeStartedAt'], 'primary.nativeStart') for r in (peer, target))).total_seconds()*1000
     require(overlap > 0 and timestamp(target['completedAt'], 'target.primaryDone') <= timestamp(ready['activeObservedAt'], 'native.activeAt'), 'Actual two-slot primary overlap or completed target primary missing')
+    cohort = parse_json(artifacts['cohort.http.json']); instance = next(i for i in cohort['instances'] if i['runId'] == peer['runId'])
+    require(timestamp(target['nativeStartedAt'], 'target.primaryStart') <= timestamp(instance['createdAt'], 'peer.createdAt')
+        <= timestamp(peer['nativeStartedAt'], 'peer.primaryStart') < timestamp(target['nativeResponseReceivedAt'], 'target.responseAt'), 'Actual pending target primary was not admitted before peer creation')
     return {**evidence, 'actualPrimaryHttpOverlapMs': round(overlap, 3), 'primaryModel': real.primary.MODEL,
-        'primaryNumParallel': 2, 'peerResponseObservedWithoutArtificialHold': True, 'primaryConcurrencyCapacityQualified': False}
+        'primaryNumParallel': 1, 'peerResponseObservedWithoutArtificialHold': True, 'primaryConcurrencyCapacityQualified': False}
 
 
 def verify_primary_inventory(plan, result, recipe, artifacts):
@@ -126,7 +134,7 @@ def verify_primary_inventory(plan, result, recipe, artifacts):
     before = parse_json(artifacts['primary-before.json']); after = parse_json(artifacts['primary-after.json']); driver = parse_json(artifacts['workflow-driver.json'])
     require(timestamp(before['capturedAt'], 'primary.before') < timestamp(recipe['startAt'], 'workflow.startAt')
         and timestamp(after['capturedAt'], 'primary.after') >= timestamp(driver['endAt'], 'workflow.endAt'), 'Actual primary snapshots do not enclose scoring/recovery')
-    real.verify_primary_runner(artifacts['primary.log'])
+    real.verify_primary_runner(artifacts['primary.log'], parallel=1)
     require('truncating input prompt' not in artifacts['primary.log'].decode().lower(), 'Ollama truncated a whole original input')
 
 

@@ -110,7 +110,7 @@ class RealPrimaryCancellationActorTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.check(self.alter_journal('coordinator-http.jsonl', lambda rows: next(r for r in rows if r['path'].endswith('/complete') and r['httpStatus'] == 400).update(httpStatus=200)))
 
     def test_peer_selection_and_two_slots_cannot_be_changed_posthoc(self):
-        for key, value in (('selectedOriginalIndices', [0, 1, 2, 3]), ('workerConcurrency', 1), ('primaryNumParallel', 1), ('primaryDecodeLimit', 256)):
+        for key, value in (('selectedOriginalIndices', [0, 1, 2, 3]), ('workerConcurrency', 1), ('primaryNumParallel', 2), ('primaryDecodeLimit', 256)):
             protocol = copy.deepcopy(self.protocol); protocol[key] = value
             with self.assertRaises(ValueError): self.check(protocol=protocol)
 
@@ -136,11 +136,11 @@ class RealPrimaryCancellationReplayTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.replay(result=result)
 
     def test_primary_settings_cleanup_or_actual_runner_shape_cannot_be_faked(self):
-        plan = copy.deepcopy(self.plan); plan['primary']['settings']['OLLAMA_NUM_PARALLEL'] = '1'
+        plan = copy.deepcopy(self.plan); plan['primary']['settings']['OLLAMA_NUM_PARALLEL'] = '2'
         with self.assertRaises(ValueError): self.replay(plan=plan)
         result = copy.deepcopy(self.result); result['primaryExitCode'] = None
         with self.assertRaises(ValueError): self.replay(result=result)
-        artifacts = copy.deepcopy(self.artifacts); artifacts['primary.log'] = b'-np 1\nn_seq_max = 1\nn_ctx = 32768\nn_ctx_seq = 32768\n'
+        artifacts = copy.deepcopy(self.artifacts); artifacts['primary.log'] = b'-np 2\nn_seq_max = 2\nn_ctx = 65536\nn_ctx_seq = 32768\n'
         with self.assertRaises(ValueError): self.replay(artifacts=artifacts)
 
     def test_unknown_cleanup_missing_source_and_shortened_context_fail(self):

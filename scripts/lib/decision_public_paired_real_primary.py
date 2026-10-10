@@ -185,10 +185,11 @@ def verify_native_origin(result, artifacts):
     verify_primary_runner(artifacts['primary.log'])
 
 
-def verify_primary_runner(raw):
+def verify_primary_runner(raw, *, parallel=2):
     log = raw.decode(errors='strict')
-    require(re.search(r'n_seq_max\s*=\s*2\b', log) and re.search(r'n_ctx_seq\s*=\s*32768\b', log)
-        and re.search(r'n_ctx\s*=\s*65536\b', log) and '-np 2' in log, 'Requested primary parallelism differs from actual runner slots/context')
+    require(type(parallel) is int and parallel in (1, 2), 'Unsupported diagnostic primary slots')
+    require(re.search(r'n_seq_max\s*=\s*'+str(parallel)+r'\b', log) and re.search(r'n_ctx_seq\s*=\s*32768\b', log)
+        and re.search(r'n_ctx\s*=\s*'+str(32768*parallel)+r'\b', log) and '-np '+str(parallel) in log, 'Requested primary parallelism differs from actual runner slots/context')
 
 
 def verify_inventory(context, protocol, recipe, driver, artifacts):

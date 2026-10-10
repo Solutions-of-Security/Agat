@@ -18,7 +18,7 @@ assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && ![
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
 const isDeadline=plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
-const isRealPrimary=plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v1";
+const isRealPrimary=plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
 assert.ok(isDeadline || isRealPrimary || plan.schemaVersion==="agat.decision.two-slot-cancellation-plan.v1");
 const primaryNativeUrl=isRealPrimary?new URL(values["primary-url"]!):undefined;
 if(primaryNativeUrl)assert.ok(primaryNativeUrl.protocol==="http:" && primaryNativeUrl.hostname==="127.0.0.1" && primaryNativeUrl.port
@@ -36,7 +36,8 @@ if(isRealPrimary){
   const target=spec.selectedOriginalIndices[1],peer=plan.context.inputs.reduce((best:number,c:any,i:number)=>c.inputTokens>plan.context.inputs[best].inputTokens?i:best,0);
   assert.deepEqual(spec.selectedOriginalIndices,[target-1,target,peer,target+2]);assert.equal(new Set(spec.selectedOriginalIndices).size,4);
   assert.ok(cases[0].contextEligible && cases[1].contextEligible && cases[3].contextEligible && !cases[2].contextEligible);
-  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,2);assert.equal(spec.primaryTimeoutMs,180000);
+  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,1);assert.equal(spec.primaryTimeoutMs,180000);
+  assert.equal(spec.peerStartBoundary,"target_actual_primary_request_pending_before_peer_workflow_creation");
   assert.equal(spec.primaryContextLength,32768);assert.equal(spec.primaryDecodeLimit,128);
 }else assert.deepEqual(spec.selectedOriginalIndices,[0,1,2,3].map(i=>spec.selectedOriginalIndices[0]+i));
 const digest=(raw:string|Buffer)=>createHash("sha256").update(raw).digest("hex");
@@ -64,6 +65,7 @@ let failure:string|undefined,worker:ReturnType<typeof spawn>|undefined,peerHeld:
 let resolvePeer:(()=>void)|undefined,peerReleased=false,peerClosed=false;
 const primaryAbort=new AbortController();
 const primaryRows:any[]=[],coordinatorRows:any[]=[],routes:any[]=[],runs:any[]=[],primaryStarted=new Set<number>();
+const primaryNativeStarted=new Set<number>();
 const httpOrigin=performance.now();
 const primary=http.createServer(async(req,res)=>{
   if(req.method!=="POST" || req.url!=="/v1/chat/completions"){req.resume();res.writeHead(404).end();return;}
@@ -81,6 +83,7 @@ const primary=http.createServer(async(req,res)=>{
       assert.deepEqual(request,{model:primaryModel,messages:[{role:"system",content:spec.systemPrompt},{role:"user",content:"Задача: "+spec.processName+"\n\nВходные данные:\n"+cases[index].request.state}],stream:false,temperature:.2});
       const nativeRequestBody=JSON.stringify({model:primaryModel,messages:request.messages,stream:false,keep_alive:"5m",...plan.primary.generation});
       const nativeStartedAt=now();
+      primaryNativeStarted.add(index);
       Object.assign(diagnosticRow,{nativeStartedAt,nativeUrl:primaryNativeUrl!.origin,nativeRequestBody,nativeRequestBodySha256:digest(nativeRequestBody)});
       if(index===2){
         assert.ok(!peerHeld);peerResponse=res;
@@ -173,7 +176,8 @@ try{
   publish("native-prefix-ready.json",{runId:runs[0].runId,stageId:routes[0].stageId,traceFileSha256:pin("trace-prefix.http.json"),requestedAt:now()});
   await receipt("native-prefix-armed.json",10000);
   if(isDeadline){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
-  else{start(1);start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
+  else{start(1);if(isRealPrimary)await until(()=>primaryNativeStarted.has(1) && !primaryRows.some(r=>r.index===1),"Target primary must be pending before peer creation");
+    start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
   await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending",isRealPrimary?spec.primaryTimeoutMs:30000);
   const before=await trace(1,"trace-target-before.http.json"),peerBefore=await trace(2,"trace-peer-before.http.json");
   const targetStage=before.run.stages.find((s:any)=>s.processNodeId==="agent"),peerStage=peerBefore.run.stages.find((s:any)=>s.processNodeId==="agent");
