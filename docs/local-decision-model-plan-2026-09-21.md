@@ -1006,6 +1006,31 @@ CRC/every SHA/size и actual original-copy restored replay model0 PASS; ZIP и p
 воспроизводимый ledger. Owners/customer/SLO/human labels/holdout открыты,
 routing=false / not_assessed.
 
+
+### Prospective counterbalanced replication design, 2026-10-10
+
+[ABBA/BAAB design](./qualification/local-decisions/performance/public-workflow-counterbalanced-design.md)
+зафиксирован до нового измерения. Все 49 whole inputs / 44 groups, включая
+три context-too-long cases; 24 complete original pair blocks balanced 12/12,
+последний singleton имеет отдельный seeded bit. 100 batches / 196 unique routes:
+по два control и shadow наблюдения каждого input. 196 primary / 98 decision
+scores являются planned counts; actual model calls и measured workflows=0.
+
+Source-bound plan/replay закрепляет context file SHA, domain-separated seed,
+полный порядок, distinct replicas и неизменные primary settings. Contrast
+mean-two-shadow minus mean-two-control алгебраически балансирует linear drift
+по ordinal period; elapsed-wall-time drift, nonlinear effects, cache carryover
+и group dependence не считаются устранёнными. Different outputs и failed
+attempts сохраняются; posthoc выбор порядка запрещён.
+
+219 design / 40 context sources; stdlib audit 6110 checks / 5700 JSON keys PASS.
+17 новых / 1154 Python tests (4 optional skips) прошли, protected resident
+27 checks и 8 snapshot fields неизменны. Immutable prospective ZIP: 36 files /
+39783532 bytes / 3145 Git objects; CRC/every SHA/size и actual original-copy
+restored replay model0 PASS. ZIP и proof сохранены в исходном docs/private.
+Actual overlap/completion/native outcomes ещё не измерены. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
