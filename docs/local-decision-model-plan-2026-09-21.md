@@ -1077,6 +1077,10 @@ Protected resident 27 checks и восемь snapshot fields неизменны.
 Human labels/owners/customer/SLO/holdout gates открыты; routing=false / not_assessed.
 
 
+Immutable ZIP: 277 files / 43574956 bytes / 3186 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 196 workflows/model0 PASS.
+ZIP и proof сохранены в исходном docs/private.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

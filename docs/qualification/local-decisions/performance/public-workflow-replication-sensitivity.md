@@ -131,6 +131,18 @@ formatting differences и failure log сохранены. Analysis/source/method
 содержит все cell denominators и статистики. Group members, original blocks,
 все 44 leave-one-group-out rows и raw native evidence сохраняются privately.
 
+## Восстановимый archive
+
+[Archive summary](./public-workflow-replication-sensitivity-archive-summary.json):
+277 files / 43574956 bytes / 3186 selected Git objects. ZIP SHA
+`4295bcb22a11a2e855cf7d08fc0e48e72d0cbff63f232318bb05b43e4b2ea458`.
+CRC, every SHA и размеры проверены. Verifier восстановлен из committed source
+pack; дополнительный replay прочитал фактическую ZIP-копию в исходном workspace,
+воспроизвёл все статистики и 196 historical workflows без model calls.
+ZIP и отдельная proof-квитанция сохранены в исходном `docs/private`; proof file SHA
+`94af1262ebf53398da99394e7fdc7effe4af0d438f0d7fec10ac8ea52c7f3687`. Original auditor, revised auditor, диагностические различия,
+failure logs и все raw native inputs входят в archive.
+
 ## Инструменты и границы
 
 [Analyzer](../../../../scripts/analyze-public-support-replication-sensitivity.py),
