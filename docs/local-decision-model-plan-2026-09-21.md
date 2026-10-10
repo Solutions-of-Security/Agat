@@ -751,6 +751,27 @@ worker concurrency 2 с unaffected соседним workflow и owned recovery.
 Owners/customer/SLO/human calibration/holdout открыты, routing false /
 not_assessed; input truncation и customer capacity не заявляются.
 
+[Actual native cancellation при двух занятых слотах worker](./qualification/local-decisions/performance/public-workflow-two-slot-cancellation.md),
+10.10: четыре полных original inputs (indices 24–27), actual coordinator и
+Python worker concurrency 2 / sequential global 2. Target отменён во время
+активного native HTTP без response bytes; соседний primary TCP-запрос остался
+открытым, assignment/worker/attempt 1 сохранились через retirement/recovery.
+Peer и suffix завершились без retry: три durable primary outputs, один
+cancelled workflow, три known caller returns (один ok / два abstain) и один
+unknown `return_missing`. Late target observation/complete/fail — 400;
+только target renewal — 404. Native exits 75/130, два epochs / четыре warmups,
+восемь starts / семь known physical terminals; interrupted target counter
+unknown. Caller 596.878 ms, cancel→EOF 568 ms, peer hold 6717 ms.
+Source 201 / context 40 files, три healthy baseline signatures совпали;
+14 новых / 77 related tests, strict TypeScript, offline replay и полный
+1016-test Python suite (четыре optional skips) прошли.
+Independent stdlib audit — 680 checks / 27176 JSON keys; все 10 recorded
+temporary PIDs отсутствуют, resident unchanged. Это focused fixture-primary
+gate; предыдущий real-primary inventory сохраняется отдельно. Следующий
+runtime gate — active worker caller deadline при concurrency 2 с unaffected
+in-flight primary peer и owned recovery. Owners/customer/SLO/human
+calibration/holdout открыты, routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

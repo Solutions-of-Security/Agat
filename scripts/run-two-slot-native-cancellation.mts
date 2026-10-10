@@ -1,0 +1,149 @@
+import assert from "node:assert/strict";
+import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { AgatStore } from "../apps/coordinator/src/database.ts";
+import { loadConfig } from "../apps/coordinator/src/config.ts";
+import { createCoordinatorServer } from "../apps/coordinator/src/server.ts";
+import type { ProcessGraph } from "../apps/coordinator/src/types.ts";
+
+const { values }=parseArgs({options:{"decision-url":{type:"string"},"evidence-dir":{type:"string"}}});
+assert.ok(values["decision-url"] && values["evidence-dir"]);
+const directory=path.resolve(values["evidence-dir"]),url=new URL(values["decision-url"]);
+assert.ok(directory.startsWith(path.resolve("docs/private")+path.sep));
+assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && !["8766","9095","11434"].includes(url.port)
+  && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
+const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
+assert.equal(plan.schemaVersion,"agat.decision.two-slot-cancellation-plan.v1");
+assert.equal(spec.kind,"cancel_active_native_task_while_peer_primary_in_flight");
+assert.equal(spec.workerConcurrency,2);assert.equal(spec.globalMaxConcurrency,2);assert.equal(spec.localTargetIndex,1);assert.equal(spec.localPeerIndex,2);
+assert.equal(spec.schedulerMode,"sequential");assert.equal(spec.peerHoldDeadlineMs,30000);assert.equal(spec.driverDeadlineMs,180000);
+assert.equal(spec.retryCount,0);assert.equal(spec.nativeFault.targetIndex,1);
+const cases=spec.selectedOriginalIndices.map((i:number)=>plan.context.inputs[i]);assert.equal(cases.length,4);
+assert.deepEqual(spec.selectedOriginalIndices,[0,1,2,3].map(i=>spec.selectedOriginalIndices[0]+i));
+const digest=(raw:string|Buffer)=>createHash("sha256").update(raw).digest("hex");
+const now=()=>new Date().toISOString();
+const save=(name:string,value:unknown)=>fs.writeFileSync(path.join(directory,name),JSON.stringify(value,null,2)+"\n",{flag:"wx",mode:0o600});
+const journal=(name:string,value:unknown)=>fs.appendFileSync(path.join(directory,name),JSON.stringify(value)+"\n",{mode:0o600});
+const pin=(name:string)=>digest(fs.readFileSync(path.join(directory,name)));
+const publish=(name:string,value:unknown)=>{const pending=path.join(directory,name+".pending");fs.writeFileSync(pending,JSON.stringify(value)+"\n",{flag:"wx",mode:0o600});
+  try{fs.linkSync(pending,path.join(directory,name));}finally{fs.unlinkSync(pending);}};
+const healthResponse=await fetch(url.origin+"/health",{signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(healthResponse.status,200);
+const health=await healthResponse.json() as any;assert.equal(health.profileSha256,plan.context.profileSha256);
+const config={mode:"shadow",profileJson:health.profileJson,timeoutMs:10000,...plan.config};
+const store=new AgatStore(":memory:",{seedDemo:false,decisionShadowEnabled:true});store.updateModelRouterPolicy({enabled:false});store.updateScheduler("sequential",2);
+const agent=store.createAgent({name:"Two-slot fixture primary",role:"Diagnostic only",model:"fixture-primary",systemPrompt:spec.systemPrompt});
+const graph:ProcessGraph={nodes:[
+  {id:"start",name:"Start",type:"start",position:{x:0,y:0},config:{}},
+  {id:"agent",name:"Scoped primary and shadow",type:"agent",position:{x:200,y:0},config:{agentId:String(agent.id),decisionShadow:config}},
+  {id:"end",name:"End",type:"end",position:{x:400,y:0},config:{}}],
+  edges:[{id:"a",source:"start",target:"agent",branch:"default"},{id:"b",source:"agent",target:"end",branch:"default"}]};
+const adminToken=randomUUID(),enrollmentToken=randomUUID();
+const coordinator=createCoordinatorServer({...loadConfig(),host:"127.0.0.1",port:0,serveWeb:false,adminToken,enrollmentToken,
+  oidcEnabled:false,mcpEnabled:false,sandboxEnabled:false,a2aEnabled:false,localWorkerLauncherEnabled:false},store);
+let failure:string|undefined,worker:ReturnType<typeof spawn>|undefined,peerHeld:any,peerResponse:http.ServerResponse|undefined;
+let resolvePeer:(()=>void)|undefined,peerReleased=false,peerClosed=false;
+const primaryRows:any[]=[],coordinatorRows:any[]=[],routes:any[]=[],runs:any[]=[],primaryStarted=new Set<number>();
+const httpOrigin=performance.now();
+const primary=http.createServer(async(req,res)=>{
+  if(req.method!=="POST" || req.url!=="/v1/chat/completions"){req.resume();res.writeHead(404).end();return;}
+  try{
+    const startedAt=now();const chunks:Buffer[]=[];let size=0;
+    for await(const chunk of req){size+=chunk.length;assert.ok(size<=128*1024);chunks.push(chunk);}
+    const requestBody=Buffer.concat(chunks).toString("utf8"),request=JSON.parse(requestBody);
+    const indices=cases.map((c:any,i:number)=>request.messages.some((m:any)=>m.role==="user" && typeof m.content==="string" && m.content.includes(c.request.state))?i:-1).filter((i:number)=>i>=0);
+    assert.equal(indices.length,1);const index=indices[0];assert.ok(runs[index] && !primaryStarted.has(index));primaryStarted.add(index);
+    assert.equal(request.messages[1].content.split(cases[index].request.state).length,2);
+    if(index===2){
+      assert.ok(!peerHeld);peerResponse=res;
+      req.socket.once("close",()=>{if(!peerReleased){peerClosed=true;failure??="Peer primary socket closed before recovery release";}});
+      peerHeld={index,originalIndex:spec.selectedOriginalIndices[index],runId:runs[index].runId,heldAt:now(),requestBodySha256:digest(requestBody),responseBytesWritten:0};save("peer-primary-held.json",peerHeld);
+      await new Promise<void>((resolve,reject)=>{resolvePeer=resolve;const timer=setTimeout(()=>reject(new Error("Held peer primary deadline exceeded")),spec.peerHoldDeadlineMs);
+        const complete=resolvePeer;resolvePeer=()=>{clearTimeout(timer);complete();};});
+      assert.ok(peerReleased && !peerClosed && !res.destroyed,"Peer primary was not preserved through release");
+    }
+    const responseBody=JSON.stringify({choices:[{message:{role:"assistant",content:"PRIMARY_OUTPUT"},finish_reason:"stop"}],usage:{prompt_tokens:1,completion_tokens:1}});
+    const row={index,originalIndex:spec.selectedOriginalIndices[index],runId:runs[index].runId,startedAt,completedAt:now(),httpStatus:200,
+      requestBody,requestBodySha256:digest(requestBody),responseBody,responseBodySha256:digest(responseBody)};
+    primaryRows.push(row);journal("primary-http.jsonl",row);res.writeHead(200,{"content-type":"application/json"}).end(responseBody);
+  }catch(error){failure??=String(error);journal("primary-errors.jsonl",{error:String(error),at:now()});if(!res.destroyed)res.writeHead(502).end();}
+});
+coordinator.prependListener("request",(req:http.IncomingMessage,res:http.ServerResponse)=>{
+  if(req.method!=="POST" || !/^\/api\/v1\/leases\/[^/]+\/(renew|decision-shadow(?:\/intent)?|complete|fail)$/.test(req.url??""))return;
+  const row:any={method:"POST",path:req.url,startedAt:now(),startedMs:performance.now()-httpOrigin,requestBody:"",requestBodyComplete:false};let size=0;const chunks:Buffer[]=[];
+  req.on("data",(chunk:Buffer)=>{size+=chunk.length;assert.ok(size<=128*1024);chunks.push(chunk);row.requestBody=Buffer.concat(chunks).toString("utf8");});
+  req.on("end",()=>{row.requestBodyComplete=true;});res.once("finish",()=>{const complete={...row,httpStatus:res.statusCode,finishedAt:now(),finishedMs:performance.now()-httpOrigin,requestBodySha256:digest(row.requestBody)};coordinatorRows.push(complete);journal("coordinator-http.jsonl",complete);});
+});
+async function listen(server:http.Server){await new Promise<void>((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
+  const a=server.address();assert.ok(a && typeof a==="object" && ![8766,9095,11434].includes(a.port));return `http://127.0.0.1:${a.port}`;}
+async function close(server:http.Server){if(server.listening){server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}}
+const credential=path.join(directory,"worker-credentials.json"),log=fs.openSync(path.join(directory,"worker.log"),"wx",0o600);
+async function stopWorker(){if(worker && worker.exitCode===null && worker.signalCode===null){const exited=new Promise<void>(resolve=>worker!.once("exit",()=>resolve()));worker.kill("SIGTERM");
+  const timer=setTimeout(()=>{if(worker?.exitCode===null && worker.signalCode===null)worker.kill("SIGKILL");},5000);try{await exited;}finally{clearTimeout(timer);}}}
+try{
+  const primaryUrl=await listen(primary),coordinatorUrl=await listen(coordinator);
+  const processId=String(store.createProcess({name:spec.processName,graph}).id);store.publishProcess(processId);save("workflow-graph.json",store.getProcessVersion(processId,1)!.graph);
+  const startAt=new Date(Date.now()+1000).toISOString();save("workflow-plan.json",{schemaVersion:plan.schemaVersion,protocol:spec,processId,processVersion:1,startAt,
+    graphFileSha256:pin("workflow-graph.json"),endpoints:{primaryUrl,coordinatorUrl,decisionUrl:url.origin}});
+  const environment=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith("AGAT_") && !k.startsWith("OTEL_")));
+  worker=spawn("python3",["workers/agat_worker.py","--coordinator",coordinatorUrl,"--credentials",credential,"--name","two-slot-cancellation-diagnostic",
+    "--models","fixture-primary","--model-url",primaryUrl+"/v1","--model-discovery","off","--no-web","--poll-interval","0.2","--concurrency","2","--decision-url",url.origin],
+    {cwd:process.cwd(),stdio:["ignore",log,log],env:{...environment,AGAT_ENROLLMENT_TOKEN:enrollmentToken,OTEL_SDK_DISABLED:"true",NO_PROXY:"127.0.0.1,localhost"}});
+  while(Date.now()<Date.parse(startAt))await new Promise(resolve=>setTimeout(resolve,Math.max(1,Date.parse(startAt)-Date.now())));
+  const deadline=performance.now()+spec.driverDeadlineMs;
+  async function until(predicate:()=>boolean,label:string,budget=30000){const limit=Math.min(deadline,performance.now()+budget);
+    while(!predicate()){assert.ok(!failure,failure??"Owned fixture failed");assert.equal(worker!.exitCode,null);assert.equal(worker!.signalCode,null);
+      assert.ok(performance.now()<limit,label);await new Promise(resolve=>setTimeout(resolve,10));}}
+  async function receipt(name:string,budget=30000){await until(()=>fs.existsSync(path.join(directory,name)),"Receipt deadline "+name,budget);
+    return JSON.parse(fs.readFileSync(path.join(directory,name),"utf8"));}
+  async function trace(index:number,name:string){const endpoint=`/api/v1/runs/${runs[index].runId}/trace`;
+    const response=await fetch(coordinatorUrl+endpoint,{headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(response.status,200);
+    const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,name),raw,{flag:"wx",mode:0o600});
+    journal("trace-http.jsonl",{index,path:endpoint,httpStatus:response.status,file:name,bodySha256:digest(raw),capturedAt:now()});return JSON.parse(raw);}
+  function start(index:number){const instance=store.startProcess(processId,{input:cases[index].request.state,version:1})!;runs[index]={instanceId:String(instance.id),runId:String(instance.runId)};}
+  function route(index:number,t:any){const s=t.run.stages.find((s:any)=>s.processNodeId==="agent");assert.ok(s && s.attempt===1 && s.input===null);
+    const row={index,originalIndex:spec.selectedOriginalIndices[index],caseId:cases[index].id,inputSha256:cases[index].inputSha256,...runs[index],stageId:s.id,runStatus:t.run.status};
+    routes.push(row);journal("workflow-routes.jsonl",row);}
+  start(0);await until(()=>store.getRun(runs[0].runId)!.status==="completed","Prefix did not complete");route(0,await trace(0,"trace-prefix.http.json"));
+  publish("native-prefix-ready.json",{runId:runs[0].runId,stageId:routes[0].stageId,traceFileSha256:pin("trace-prefix.http.json"),requestedAt:now()});
+  await receipt("native-prefix-armed.json",10000);
+  start(1);start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");
+  await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending");
+  const before=await trace(1,"trace-target-before.http.json"),peerBefore=await trace(2,"trace-peer-before.http.json");
+  const targetStage=before.run.stages.find((s:any)=>s.processNodeId==="agent"),peerStage=peerBefore.run.stages.find((s:any)=>s.processNodeId==="agent");
+  assert.equal(before.run.status,"running");assert.equal(peerBefore.run.status,"running");assert.equal(targetStage.nodeId,peerStage.nodeId);assert.ok(targetStage.nodeId);
+  const unauthorized=await fetch(coordinatorUrl+`/api/v1/runs/${runs[1].runId}/cancel`,{method:"POST",signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(unauthorized.status,401);await unauthorized.text();
+  publish("coordinator-cancellation-prepared.json",{targetIndex:1,caseId:cases[1].id,stageId:targetStage.id,runId:runs[1].runId,inputSha256:cases[1].inputSha256,profileSha256:plan.context.profileSha256,
+    peerRunId:runs[2].runId,peerStageId:peerStage.id,workerNodeId:targetStage.nodeId,
+    beforeTraceFileSha256:pin("trace-target-before.http.json"),peerTraceFileSha256:pin("trace-peer-before.http.json"),peerHeldFileSha256:pin("peer-primary-held.json"),preparedAt:now(),unauthenticatedStatus:401});
+  const ready=await receipt("coordinator-cancellation-ready.json",15000);assert.equal(ready.stageId,targetStage.id);assert.equal(ready.upstreamResponseBytesObserved,0);
+  assert.ok(Date.now()-Date.parse(ready.activeObservedAt)<=250);assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+  const requestStartedAt=now(),cancelStarted=performance.now(),requestPath=`/api/v1/runs/${runs[1].runId}/cancel`,cancelResponse=await fetch(coordinatorUrl+requestPath,{method:"POST",headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(5000),redirect:"error"});
+  const responseBody=await cancelResponse.text();assert.equal(cancelResponse.status,204);assert.equal(responseBody,"");
+  publish("coordinator-cancellation-applied.json",{targetIndex:1,caseId:cases[1].id,instanceId:runs[1].instanceId,stageId:targetStage.id,runId:runs[1].runId,inputSha256:cases[1].inputSha256,profileSha256:plan.context.profileSha256,
+    requestStartedAt,responseCompletedAt:now(),cancelRequestElapsedMs:performance.now()-cancelStarted,requestMethod:"POST",requestPath,requestBody:"",requestBodySha256:digest(""),
+    httpStatus:cancelResponse.status,responseBody,responseBodySha256:digest(responseBody),unauthenticatedStatus:401,readyFileSha256:pin("coordinator-cancellation-ready.json"),beforeTraceFileSha256:pin("trace-target-before.http.json")});
+  await trace(2,"trace-peer-after-cancel.http.json");assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+  await receipt("coordinator-cancellation-drained.json",15000);await receipt("native-recovered.json",90000);
+  await trace(2,"trace-peer-before-release.http.json");assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+  peerReleased=true;save("peer-primary-released.json",{index:2,runId:runs[2].runId,releasedAt:now(),socketClosedBeforeRelease:peerClosed,socketOpenAtRelease:!peerResponse.destroyed,responseBytesWrittenBeforeRelease:0,
+    recoveredFileSha256:pin("native-recovered.json"),heldFileSha256:pin("peer-primary-held.json")});resolvePeer!();
+  const targetAssignment=before.decisionCallerAccounting.stages.find((s:any)=>s.stageId===targetStage.id).assignments[0];
+  const targetIntent=coordinatorRows.find(r=>r.path.endsWith("/decision-shadow/intent") && JSON.parse(r.requestBody).assignmentId===targetAssignment.assignmentId);assert.ok(targetIntent);
+  const targetLeasePath=targetIntent.path.slice(0,-"/decision-shadow/intent".length);
+  await until(()=>coordinatorRows.some(r=>r.path===targetLeasePath+"/decision-shadow" && r.httpStatus===400) && coordinatorRows.some(r=>r.path===targetLeasePath+"/complete" && r.httpStatus===400),"Target late writes were not fenced",10000);
+  route(1,await trace(1,"trace-target.http.json"));
+  await until(()=>store.getRun(runs[2].runId)!.status==="completed","Unaffected peer failed");route(2,await trace(2,"trace-peer.http.json"));
+  start(3);await until(()=>store.getRun(runs[3].runId)!.status==="completed","Recovery suffix failed");route(3,await trace(3,"trace-suffix.http.json"));
+  await stopWorker();assert.equal(worker.exitCode,0);assert.ok(!failure);const endAt=now();
+  const endpoint=coordinatorUrl+`/api/v1/processes/${processId}/decision-shadow-cohort?`+new URLSearchParams({processVersion:"1",startAt,endAt});
+  assert.equal((await fetch(endpoint,{signal:AbortSignal.timeout(5000)})).status,401);
+  const response=await fetch(endpoint,{headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(10000),redirect:"error"});assert.equal(response.status,200);
+  const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,"cohort.http.json"),raw,{flag:"wx",mode:0o600});
+  save("workflow-driver.json",{status:"observed",failure:null,routes,primaryCalls:primaryRows.length,workerExitCode:worker.exitCode,ownedPids:[process.pid,worker.pid],
+    nodeVersion:process.version,workerConcurrency:2,schedulerMode:store.getSetting("scheduler_mode"),globalMaxConcurrency:Number(store.getSetting("global_max_concurrency")),endAt,authenticatedStatus:200,unauthenticatedStatus:401});
+}finally{if(!peerReleased){peerResponse?.destroy();resolvePeer?.();}await stopWorker();fs.closeSync(log);if(fs.existsSync(credential))fs.unlinkSync(credential);
+  await close(coordinator);await close(primary);store.close();}
