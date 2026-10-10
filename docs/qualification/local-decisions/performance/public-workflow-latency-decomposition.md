@@ -1,6 +1,6 @@
 # Source-bound latency accounting: paired workflow и A/A control
 
-Статус: accounting harness подготовлен; sealed analysis ещё не выполнен.
+Статус: **sealed accounting + replay + independent audit PASS**.
 Новых model calls нет. Анализ использует raw receipts двух завершённых native
 экспериментов: [paired real-primary](./public-workflow-paired-real-primary.md)
 и [primary-only A/A](./public-workflow-primary-repeat-control.md).
@@ -58,3 +58,48 @@ development cases не являются случайной выборкой cust
 [accounting and negative tests](../../../../scripts/test/test_decision_public_latency_decomposition.py).
 Raw inputs и response text остаются в private evidence. Public report
 содержит только derived timings, hashes, source/protocol receipts.
+
+## Измеренный ledger
+
+| Mean second − first, ms | Paired shadow − control | A/A repeatB − repeatA |
+|---|---:|---:|
+| Whole workflow | 42.224 | -900.174 |
+| До primary | -14.388 | 15.878 |
+| Primary proxy | -938.854 | -919.227 |
+| После primary | 995.469 | 3.367 |
+| Clock residual | -0.004 | -0.192 |
+
+Whole paired mean delta 42.224 ms
+содержит post-primary delta 995.469 ms
+и primary proxy delta -938.854 ms.
+Поэтому небольшая разность whole mean не равна отсутствию затрат после primary.
+В A/A primary proxy mean delta -919.227 ms
+наблюдается при нулевых case shadow calls.
+
+Для 49 known shadow callers actual caller timing: mean 990.437 ms,
+median 141.389 ms, p95 2222.527 ms;
+adapter relay mean 988.308 ms. Outcomes:
+`{'abstain': 7, 'busy': 24, 'context_rejected': 2, 'ok': 16}`. Busy/context rejection/typed return сохранены;
+это смесь исходов, не single-inference latency и не customer SLO.
+
+Different primary output pairs сохранены целиком: paired original indices
+`[4, 12, 36, 43]`, A/A indices `[12, 36, 43]`.
+Ни одна из 49 пар не отфильтрована. Все individual phase intervals,
+reported model timings, output hashes и matched delta closures находятся
+в private ledger; [public summary](./public-workflow-latency-decomposition-summary.json)
+содержит aggregate metadata.
+
+Analysis source `3ab22f90b898f6dac59c39cf7f2addb8b58911ff`: 222 files; native
+sources 209/218,
+context 40 files. 238 raw native artifacts / 196 completed workflow проверены
+по source/plan/result/file SHA. Offline replay PASS, новых model calls=0;
+stdlib audit 5136 checks / 258476 JSON keys
+пересчитал каждый component и aggregate независимо от приложения.
+18 новых / 65 related / 1137 Python tests (4 optional skips),
+12 Node docs tests прошли. Protected resident 27 checks после CPU tests и
+analysis неизменен. Analysis не выполняет live teardown или inference.
+
+[Immutable archive и actual original-copy replay receipt](./public-workflow-latency-decomposition-archive-summary.json)
+сохраняют обе native inventories, context, analysis/verifier source snapshots,
+все raw hashes и model-free reproduction. Causal overhead, owners/customer/SLO,
+human labels/holdout остаются открытыми; routing=false / not_assessed.

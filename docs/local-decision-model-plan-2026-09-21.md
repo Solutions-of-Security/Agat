@@ -977,6 +977,33 @@ CRC/SHA/size и actual original-copy restored replay model0 PASS. ZIP и proof
 сохранены в исходном workspace docs/private. Owners/customer/SLO/human
 labels, holdout и customer capacity открыты; routing=false / not_assessed.
 
+### Source-bound workflow latency accounting, 2026-10-10
+
+[Latency decomposition](./qualification/local-decisions/performance/public-workflow-latency-decomposition.md)
+выполнен без новых model calls по paired real-primary и A/A raw receipts.
+196 completed workflow, все 49 whole cases / 44 groups в каждом dataset,
+включая 4 paired и 3 A/A different-output pairs, сохранены без отбора.
+Для каждой пары отдельно учтены pre-primary, primary proxy, post-primary
+и явный wall/monotonic clock residual; все matched delta суммы сходятся.
+
+Paired mean whole delta 42.224 ms =
+pre-primary -14.388 +
+primary -938.854 +
+post-primary 995.469 + clock residual.
+A/A primary mean delta -919.227 ms
+при case scores=0 подтверждает необходимость отдельного учёта primary variation.
+Caller mean 990.437 ms / relay mean 988.308 ms
+включают busy/context-rejection/typed outcomes; whole delta не является
+готовой оценкой causal shadow cost или production SLO.
+
+222 analysis / 209 paired / 218 A/A / 40 context sources;
+238 raw artifacts; stdlib 5136 checks / 258476 JSON keys,
+source-bound model-free replay PASS. 18 новых / 65 related / 1137 Python tests
+(4 optional skips), Node docs checks прошли. Protected resident 27 checks
+неизменен. Immutable ZIP и original-copy replay сохраняют оба inventories и
+воспроизводимый ledger. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
