@@ -1129,6 +1129,23 @@ Immutable ZIP: 47 files / 40022257 bytes / 3175 Git objects; CRC/every SHA/size,
 copy equality и actual original-copy restored replay 49 tasks/model0 PASS.
 ZIP и proof сохранены в исходном docs/private.
 
+### Editable blind review drafts and explicit submission, 2026-10-10
+
+[Terminal review v2](./qualification/local-decisions/source-review/blind-terminal-review.md)
+поддерживает :edit N / подтверждённый :clear N и отдельный :submit + y.
+Полностью заполненный draft на EOF/quit остаётся partial с reviewedAt=null;
+его можно продолжить и исправить. Pool, question/options/input SHA и ownership
+сохраняются. Session v2 явно различает new/revised/cleared net counts и
+submissionConfirmed, старые v1 artifacts не перезаписываются.
+
+10 новых / 40 targeted / 1233 Python tests (4 optional skips), 12 Node tests,
+links/catalog PASS. Первый native probe: шесть PTYs / 216 checks; публичные
+49 cases оставлены без меток, synthetic-only edits/clear/submit/SIGKILL/resume
+прошли. Independent post-probe stdlib audit 384 checks / 7623 JSON keys PASS,
+model0. Все шесть owned PID отсутствуют, protected resident 27 checks и восемь
+snapshot fields неизменны. Human/reference labels=0, routing=false /
+not_assessed; фактическая независимая предметная разметка остаётся открытой.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

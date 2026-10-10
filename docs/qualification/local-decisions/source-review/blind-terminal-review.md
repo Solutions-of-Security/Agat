@@ -101,8 +101,7 @@ Model calls — 0, routing false, qualification not_assessed.
 ## Проверка реализации
 
 Следующие результаты относятся к первоначальному интерфейсу v1; immutable
-raw evidence этой версии сохраняется. Проверка edits и отдельной отправки
-v2 документируется отдельно после завершения regression/native проверок.
+raw evidence этой версии сохраняется. Результаты v2 приведены ниже.
 
 13 новых проверок покрывают повреждённый pool/input binding, чужую/незавершённую
 разметку, скрытые splits, реальные terminal-control символы, обязательное
@@ -127,3 +126,33 @@ harness читает output до выхода child. Этот отказ не д
 Финальный full docs check после persistence regressions: 806 Python tests,
 4 expected optional skips, 12 Node tests, links и process catalog — pass.
 Public human/reference labels — 0; модель и resident не вызывались.
+
+## Исправления и отдельная отправка, v2 — 10.10.2026
+
+Возможность изменения ответа и работы вне порядка соответствует
+[рекомендациям Google PAIR](https://pair.withgoogle.com/chapter/data-collection/)
+для annotation tooling. Отдельный submit даёт рецензенту возможность
+перепроверить полный черновик до reviewedAt. Это поведение интерфейса;
+фактическую независимость и предметную квалификацию людей проверяют отдельно.
+
+[Сводка v2](./blind-terminal-corrections-summary.json): committed source
+`1625e4dee94033841517fcf2ca334da56c9eda13`, семь runtime source files.
+10 новых / 40 targeted / 1233 Python tests с четырьмя optional skips,
+12 Node tests, links/catalog PASS. Проверены отмена edits, неподтверждённая
+очистка, неверные номера, незаполненный submit, полностью заполненный draft
+на EOF, возобновление с исправлением и atomic checkpoint failure.
+
+Один native probe с шестью actual PTY sessions завершён: публичные 49 cases
+просмотрены только командами навигации/clear blank/refused submit/quit,
+новых меток — ноль; longest whole state 18824 chars отрисован без clipping.
+Три synthetic choice fixtures прошли изменение и очистку ответа, refill,
+явный submit, SIGKILL после сохранённого исправления и resume нового process.
+Только synthetic session была отправлена. Complete draft после kill не
+получает reviewedAt автоматически. Source/input fingerprints сохранены.
+
+Native probe: 216 checks. Post-probe stdlib auditor без application imports
+независимо восстановил переходы и net counts: 384 checks / 7623 JSON keys,
+model calls=0. Все шесть owned PID отсутствуют; protected resident 27 checks
+и восемь snapshot fields неизменны. Реальных human reviews и reference
+labels — 0; model/policy/profile/routing не изменены. Quality/owners/customer/
+SLO/independent holdout gates остаются открытыми.
