@@ -133,3 +133,8 @@ qualification — `not_assessed`. Старые pools/reviews v1/v2/v3 не из�
 tests с четырьмя optional skips, 12 Node checks, 2463 локальные ссылки и каталог
 из семи категорий / 13 шаблонов. Model calls — ноль. Эти проверки подтверждают
 подготовку и целостность корпуса, не качество локальных решений.
+
+10.10 подготовлен [отдельный development review](./development-review.md):
+все 49 исходных вопросов / 44 группы и три over-limit случая в двух пустых
+пакетах для существующей terminal session. Задания calibration/holdout
+в этот scope не входят; исходные packets полного pool сохранены.

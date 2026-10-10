@@ -1106,6 +1106,29 @@ copy equality и actual original-copy restored replay 100 native attempts/model0
 PASS. ZIP и proof сохранены в исходном docs/private; исправленные native report
 и summary входят в documentary source snapshots.
 
+### Development-only independent review handoff, 2026-10-10
+
+[Source-bound development review](./qualification/local-decisions/source-review/public-support/development-review.md)
+подготовлен из того же frozen context profile: все 49 inputs / 44 groups,
+включая три over-limit, в исходном порядке, без clipping/translation.
+Два blank review по 49 заданий совместимы с существующей terminal session;
+атрибуция, question, options и full state сохранены. Предсказания и native
+outcomes не потребляются, calibration/holdout cases в заданиях — 0.
+File/source pins и ordered case/input/group bindings проверяются model0.
+
+236 preparation / 40 context sources; 17 новых / 46 related / 1223 Python
+tests (4 optional skips), 12 Node tests, links/catalog PASS. Independent
+stdlib audit 765 checks / 6852 JSON keys PASS; pinned before packet,
+preparation reruns=0. Uncommitted-source refusal до output подтверждён.
+Protected resident 27 checks / восемь snapshot fields неизменны.
+Реальных человеческих review и gold labels — 0, пустые пакеты не проходят
+finalize. Следующий предметный gate — фактическая независимая разметка;
+owners/customer/SLO/quality/holdout открыты, routing=false / not_assessed.
+
+Immutable ZIP: 47 files / 40022257 bytes / 3175 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 49 tasks/model0 PASS.
+ZIP и proof сохранены в исходном docs/private.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
