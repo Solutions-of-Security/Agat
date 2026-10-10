@@ -142,6 +142,9 @@ def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index')
             owned_primary = diagnostic.OwnedPrimary(runtime, ROOT, args.primary_binaries.resolve(), args.primary_models.resolve(), primary_log, owned, stopped.is_set)
             owned_primary.start(); record_owned(); write_json_new(directory/'primary-warmup.json', owned_primary.warmup)
             write_json_new(directory/'primary-before.json', owned_primary.sample()); primary_args = ['--primary-url', f'http://127.0.0.1:{owned_primary.port}']
+            if getattr(diagnostic, 'PRIMARY_RUNNER_PROGRESS', False):
+                write_json_new(directory/'primary-runner.json', owned_primary.runner)
+                primary_args += ['--primary-runner-url', owned_primary.runner['url']]
         proxy = diagnostic.make_proxy(port, projected, fault)
         proxy.bind_warmups(dict(Counter(row['status'] for row in warmup)), initial['serverStart'])
         env = {key: value for key, value in os.environ.items() if not key.startswith(('AGAT_', 'OTEL_'))}

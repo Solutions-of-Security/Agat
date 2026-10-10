@@ -87,10 +87,12 @@ class TwoSlotActorTest(unittest.TestCase):
         proxy = diagnostic.make_proxy(server.server_port, projected, cls.protocol['nativeFault'])
         proxy.bind_warmups({outcome(warm_result): 2}, origins[0]); samples = []; warmup = []
         native = [[42, 43, 44], [45, 46, 47]]; start = time.monotonic()
-        primary_server = primary_thread = None
+        primary_server = primary_thread = runner_server = runner_thread = None
+        primary_progress = getattr(suite, 'PRIMARY_RUNNER_PROGRESS', False)
+        target_primary_started, peer_primary_started = [None], [None]
         def primary_response(index=0):
-            return {'model': 'qwen3:8b', 'done': True, 'done_reason': 'stop', 'message': {'role': 'assistant', 'content': f'  Synthetic actual-HTTP primary response {index}.  '},
-                'prompt_eval_count': 100+index, 'eval_count': 8, 'total_duration': 1000000, 'load_duration': 0, 'prompt_eval_duration': 500000, 'eval_duration': 500000}
+            return {'model': 'qwen3:8b', 'done': True, 'done_reason': 'length' if primary_progress and index==1 else 'stop', 'message': {'role': 'assistant', 'content': f'  Synthetic actual-HTTP primary response {index}.  '},
+                'prompt_eval_count': 100+index, 'eval_count': 128 if primary_progress and index==1 else 8, 'total_duration': 1000000, 'load_duration': 0, 'prompt_eval_duration': 500000, 'eval_duration': 500000}
         if real_primary:
             class PrimaryHandler(Handler):
                 def do_POST(self):
@@ -99,9 +101,26 @@ class TwoSlotActorTest(unittest.TestCase):
                     index = next(i for i, case in enumerate(projected['inputs']) if request['messages'][1]['content'].endswith(case['request']['state']))
                     assert request == {'model': 'qwen3:8b', 'messages': request['messages'], 'stream': False, 'keep_alive': '5m', **diagnostic.GENERATION}
                     # Synthetic HTTP latency; no real model/capacity claim in these regressions.
-                    time.sleep(1.7 if index == 2 else .5 if index == 1 else .03); self.respond(200, primary_response(index))
+                    if index == 1: target_primary_started[0] = time.monotonic()
+                    if index == 2: peer_primary_started[0] = time.monotonic()
+                    time.sleep(1.7 if index == 2 else (4 if primary_progress else .5) if index == 1 else .03)
+                    self.respond(200, primary_response(index))
+                    if index == 1: target_primary_started[0] = None
+                    if index == 2: peer_primary_started[0] = None
             primary_server = ThreadingHTTPServer(('127.0.0.1', 0), PrimaryHandler)
             primary_thread = threading.Thread(target=primary_server.serve_forever, kwargs={'poll_interval': .01}); primary_thread.start()
+            if primary_progress:
+                class RunnerHandler(Handler):
+                    def do_GET(self):
+                        assert self.path == '/slots'
+                        started = target_primary_started[0]
+                        decoded = min(127, int(max(0,time.monotonic()-started)/4*128)) if started is not None else 0
+                        self.respond(200,[{'id': i, 'id_task': i+1, 'n_ctx': 32768,
+                            'is_processing': (started if i==0 else peer_primary_started[0]) is not None, 'params': {'n_predict': 128, 'seed': 0, 'temperature': 0},
+                            'n_prompt_tokens': 101+i+(decoded if i==0 else 0), 'n_prompt_tokens_processed': 101+i, 'n_prompt_tokens_cache': 0,
+                            'next_token': [{'has_next_token': True, 'n_decoded': decoded if i==0 else 0}]} for i in range(2)])
+                runner_server = ThreadingHTTPServer(('127.0.0.1', 0), RunnerHandler)
+                runner_thread = threading.Thread(target=runner_server.serve_forever,kwargs={'poll_interval': .01});runner_thread.start()
         private = ROOT/'docs/private'; private.mkdir(parents=True, exist_ok=True)
         try:
             with tempfile.TemporaryDirectory(dir=private, prefix='two-slot-fixture-') as temporary:
@@ -129,14 +148,20 @@ class TwoSlotActorTest(unittest.TestCase):
                         return {'capturedAt': now(), 'version': {'version': '0.35.1'}, 'tags': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST}]},
                             'residence': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST, 'context_length': 32768}]}, 'ownedPids': [48, 49]}
                     save('primary-before.json', primary_snapshot())
+                    if primary_progress:
+                        save('primary-runner.json',{'url': f'http://127.0.0.1:{runner_server.server_port}', 'runnerPid': 49, 'parentPid': 48,
+                            'command': f'llama-server --host 127.0.0.1 --port {runner_server.server_port} -np 2 -c 65536', 'capturedAt': now()})
                     parallel = int(diagnostic.SETTINGS['OLLAMA_NUM_PARALLEL'])
                     (directory/'primary.log').write_bytes(f'Synthetic runner shape only: -np {parallel}\nn_seq_max = {parallel}\nn_ctx = {parallel*32768}\nn_ctx_seq = 32768\n'.encode())
+                    if primary_progress:
+                        with (directory/'primary.log').open('ab') as stream:stream.write(b'slot launch_slot_: id 0 | task 1 | processing task, is_child = 0\nslot launch_slot_: id 1 | task 2 | processing task, is_child = 0\n')
                 save('plan.json', cls.plan)
                 early_timer = 'const timer=globalThis.setTimeout;let fired=false;globalThis.setTimeout=(callback,delay,...args)=>{if(!fired&&delay>500&&delay<=1000){fired=true;console.log("fixture: early start timer");return timer(callback,0,...args);}return timer(callback,delay,...args);};'
                 timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
                 process = subprocess.Popen(['node', '--import', 'tsx', '--import', timer_import, diagnostic.DRIVER_PATH,
                     '--decision-url', f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory),
-                    *(['--primary-url', f'http://127.0.0.1:{primary_server.server_port}'] if real_primary else [])], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    *(['--primary-url', f'http://127.0.0.1:{primary_server.server_port}'] if real_primary else []),
+                    *(['--primary-runner-url', f'http://127.0.0.1:{runner_server.server_port}'] if primary_progress else [])], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 armed = prepared = ready = drained = recovered = None; deadline = time.monotonic()+45
                 try:
                     while process.poll() is None:
@@ -187,6 +212,8 @@ class TwoSlotActorTest(unittest.TestCase):
             stop.set(); proxy.close(); server.shutdown(); server.server_close(); thread.join(2)
             if primary_server is not None:
                 primary_server.shutdown(); primary_server.server_close(); primary_thread.join(2)
+            if runner_server is not None:
+                runner_server.shutdown();runner_server.server_close();runner_thread.join(2)
 
     def check(self, artifacts=None, protocol=None):
         return diagnostic.verify_actor(self.context, protocol or self.protocol, self.recipe, self.driver, artifacts or self.artifacts)

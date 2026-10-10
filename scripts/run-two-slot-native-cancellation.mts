@@ -10,7 +10,7 @@ import { loadConfig } from "../apps/coordinator/src/config.ts";
 import { createCoordinatorServer } from "../apps/coordinator/src/server.ts";
 import type { ProcessGraph } from "../apps/coordinator/src/types.ts";
 
-const { values }=parseArgs({options:{"decision-url":{type:"string"},"evidence-dir":{type:"string"},"primary-url":{type:"string"}}});
+const { values }=parseArgs({options:{"decision-url":{type:"string"},"evidence-dir":{type:"string"},"primary-url":{type:"string"},"primary-runner-url":{type:"string"}}});
 assert.ok(values["decision-url"] && values["evidence-dir"]);
 const directory=path.resolve(values["evidence-dir"]),url=new URL(values["decision-url"]);
 assert.ok(directory.startsWith(path.resolve("docs/private")+path.sep));
@@ -18,13 +18,20 @@ assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && ![
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
 const isRealDeadline=plan.schemaVersion==="agat.decision.two-slot-real-primary-deadline-plan.v1";
+const isProgressPrimary=plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v2";
+const isParallelPrimary=isProgressPrimary || plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v1";
 const isDeadline=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
-const isRealPrimary=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
+const isRealPrimary=isRealDeadline || isParallelPrimary || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
 assert.ok(isDeadline || isRealPrimary || plan.schemaVersion==="agat.decision.two-slot-cancellation-plan.v1");
 const primaryNativeUrl=isRealPrimary?new URL(values["primary-url"]!):undefined;
 if(primaryNativeUrl)assert.ok(primaryNativeUrl.protocol==="http:" && primaryNativeUrl.hostname==="127.0.0.1" && primaryNativeUrl.port
   && !["8766","9095","11434",url.port].includes(primaryNativeUrl.port) && primaryNativeUrl.pathname==="/" && !primaryNativeUrl.username && !primaryNativeUrl.password && !primaryNativeUrl.search && !primaryNativeUrl.hash);
 else assert.equal(values["primary-url"],undefined);
+const primaryRunnerUrl=isProgressPrimary?new URL(values["primary-runner-url"]!):undefined;
+if(primaryRunnerUrl)assert.ok(primaryRunnerUrl.protocol==="http:" && primaryRunnerUrl.hostname==="127.0.0.1" && primaryRunnerUrl.port
+  && !["8766","9095","11434",url.port,primaryNativeUrl!.port].includes(primaryRunnerUrl.port) && primaryRunnerUrl.pathname==="/"
+  && !primaryRunnerUrl.username && !primaryRunnerUrl.password && !primaryRunnerUrl.search && !primaryRunnerUrl.hash);
+else assert.equal(values["primary-runner-url"],undefined);
 assert.equal(spec.kind,isDeadline?"worker_deadline_while_peer_primary_in_flight":"cancel_active_native_task_while_peer_primary_in_flight");
 if(isDeadline){assert.equal(spec.targetCallerTimeoutMs,250);assert.equal(spec.healthyCallerTimeoutMs,10000);assert.deepEqual(spec.startOrder,isRealDeadline?[0,1,2,3]:[0,2,1,3]);}
 const preparedFile=isDeadline?"native-target-prepared.json":"coordinator-cancellation-prepared.json";
@@ -37,8 +44,9 @@ if(isRealPrimary){
   const target=spec.selectedOriginalIndices[1],peer=plan.context.inputs.reduce((best:number,c:any,i:number)=>c.inputTokens>plan.context.inputs[best].inputTokens?i:best,0);
   assert.deepEqual(spec.selectedOriginalIndices,[target-1,target,peer,target+2]);assert.equal(new Set(spec.selectedOriginalIndices).size,4);
   assert.ok(cases[0].contextEligible && cases[1].contextEligible && cases[3].contextEligible && !cases[2].contextEligible);
-  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,1);assert.equal(spec.primaryTimeoutMs,180000);
-  assert.equal(spec.peerStartBoundary,"target_actual_primary_request_pending_before_peer_workflow_creation");
+  assert.equal(spec.primary,"pinned_qwen3_8b_actual_chat");assert.equal(spec.primaryNumParallel,isParallelPrimary?2:1);assert.equal(spec.primaryTimeoutMs,180000);
+  assert.equal(spec.peerStartBoundary,isProgressPrimary?"target_actual_primary_decode_progress_before_peer_workflow_creation":"target_actual_primary_request_pending_before_peer_workflow_creation");
+  if(isProgressPrimary)assert.deepEqual(spec.primaryProgress,{path:"/slots",minDecoded:116,maxDecoded:127,pollMs:10,httpTimeoutMs:5000,sampleToPeerCreationMaxMs:250,requireTwoProcessingSlots:true});
   assert.equal(spec.primaryContextLength,32768);assert.equal(spec.primaryDecodeLimit,128);
 }else assert.deepEqual(spec.selectedOriginalIndices,[0,1,2,3].map(i=>spec.selectedOriginalIndices[0]+i));
 const digest=(raw:string|Buffer)=>createHash("sha256").update(raw).digest("hex");
@@ -67,6 +75,7 @@ let resolvePeer:(()=>void)|undefined,peerReleased=false,peerClosed=false;
 const primaryAbort=new AbortController();
 const primaryRows:any[]=[],coordinatorRows:any[]=[],routes:any[]=[],runs:any[]=[],primaryStarted=new Set<number>();
 const primaryNativeStarted=new Set<number>();
+const primaryNativeRequests=new Map<number,{nativeStartedAt:string;nativeRequestBodySha256:string}>();
 const httpOrigin=performance.now();
 const primary=http.createServer(async(req,res)=>{
   if(req.method!=="POST" || req.url!=="/v1/chat/completions"){req.resume();res.writeHead(404).end();return;}
@@ -85,6 +94,7 @@ const primary=http.createServer(async(req,res)=>{
       const nativeRequestBody=JSON.stringify({model:primaryModel,messages:request.messages,stream:false,keep_alive:"5m",...plan.primary.generation});
       const nativeStartedAt=now();
       primaryNativeStarted.add(index);
+      primaryNativeRequests.set(index,{nativeStartedAt,nativeRequestBodySha256:digest(nativeRequestBody)});
       Object.assign(diagnosticRow,{nativeStartedAt,nativeUrl:primaryNativeUrl!.origin,nativeRequestBody,nativeRequestBodySha256:digest(nativeRequestBody)});
       if(index===2){
         assert.ok(!peerHeld);peerResponse=res;
@@ -165,6 +175,42 @@ try{
       assert.ok(performance.now()<limit,label);await new Promise(resolve=>setTimeout(resolve,10));}}
   async function receipt(name:string,budget=30000){await until(()=>fs.existsSync(path.join(directory,name)),"Receipt deadline "+name,budget);
     return JSON.parse(fs.readFileSync(path.join(directory,name),"utf8"));}
+  async function observeTargetProgress(){
+    const end=Math.min(deadline,performance.now()+spec.primaryTimeoutMs);
+    while(true){
+      assert.ok(!failure,failure??"Primary failed before decode boundary");assert.ok(!primaryRows.some(row=>row.index===1),"Target primary ended before peer admission");
+      assert.ok(performance.now()<end,"Native primary progress boundary timed out");
+      const startedAt=now(),response=await fetch(primaryRunnerUrl!.origin+"/slots",{signal:AbortSignal.timeout(spec.primaryProgress.httpTimeoutMs),redirect:"error"});
+      const body=await response.text(),receivedAt=now();assert.equal(response.status,200);assert.ok(Buffer.byteLength(body)<=128*1024);
+      journal("primary-progress.jsonl",{method:"GET",url:primaryRunnerUrl!.origin+"/slots",startedAt,receivedAt,httpStatus:response.status,
+        runId:runs[1].runId,inputSha256:cases[1].inputSha256,nativeRequestBodySha256:primaryNativeRequests.get(1)!.nativeRequestBodySha256,body,bodySha256:digest(body)});
+      const slots=JSON.parse(body);assert.ok(Array.isArray(slots) && slots.length===2 && slots.every(s=>s.n_ctx===32768 && typeof s.is_processing==="boolean"));
+      assert.deepEqual(slots.map(s=>s.id).sort(),[0,1]);const active=slots.filter(s=>s.is_processing);assert.ok(active.length<=1,"Undeclared model request before peer creation");
+      if(active.length){const slot=active[0];assert.ok(Array.isArray(slot.next_token) && slot.next_token.length===1);
+        const token=slot.next_token[0];assert.ok(Number.isInteger(token.n_decoded) && token.n_decoded>=0 && token.n_decoded<128);
+        assert.equal(slot.params.n_predict,128);assert.equal(slot.params.seed,0);assert.equal(slot.params.temperature,0);
+        if(token.n_decoded>=spec.primaryProgress.minDecoded){assert.ok(token.has_next_token && !primaryRows.some(row=>row.index===1));return;}}
+      await new Promise(resolve=>setTimeout(resolve,spec.primaryProgress.pollMs));
+    }
+  }
+  async function observeParallelProgress(){
+    const end=Math.min(deadline,performance.now()+spec.primaryTimeoutMs);
+    while(true){
+      assert.ok(!failure,failure??"Primary failed before parallel slot witness");
+      assert.ok(!primaryRows.some(row=>row.index===1),"Target primary ended before two processing slots were observed");
+      assert.ok(performance.now()<end,"Two processing slots witness timed out");
+      const startedAt=now(),response=await fetch(primaryRunnerUrl!.origin+"/slots",{signal:AbortSignal.timeout(spec.primaryProgress.httpTimeoutMs),redirect:"error"});
+      const body=await response.text(),receivedAt=now();assert.equal(response.status,200);assert.ok(Buffer.byteLength(body)<=128*1024);
+      journal("primary-parallel-progress.jsonl",{method:"GET",url:primaryRunnerUrl!.origin+"/slots",startedAt,receivedAt,httpStatus:response.status,
+        targetRunId:runs[1].runId,peerRunId:runs[2].runId,targetInputSha256:cases[1].inputSha256,peerInputSha256:cases[2].inputSha256,
+        targetNativeRequestBodySha256:primaryNativeRequests.get(1)!.nativeRequestBodySha256,
+        peerNativeRequestBodySha256:primaryNativeRequests.get(2)!.nativeRequestBodySha256,body,bodySha256:digest(body)});
+      const slots=JSON.parse(body);assert.ok(Array.isArray(slots) && slots.length===2);
+      assert.deepEqual(slots.map(s=>s.id).sort(),[0,1]);assert.ok(slots.every(s=>s.n_ctx===32768 && typeof s.is_processing==="boolean"));
+      if(slots.every(s=>s.is_processing)){assert.ok(!primaryRows.some(row=>row.index===1));return;}
+      await new Promise(resolve=>setTimeout(resolve,spec.primaryProgress.pollMs));
+    }
+  }
   async function trace(index:number,name:string){const endpoint=`/api/v1/runs/${runs[index].runId}/trace`;
     const response=await fetch(coordinatorUrl+endpoint,{headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(response.status,200);
     const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,name),raw,{flag:"wx",mode:0o600});
@@ -178,7 +224,9 @@ try{
   await receipt("native-prefix-armed.json",10000);
   if(isDeadline && !isRealPrimary){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
   else{start(1);if(isRealPrimary)await until(()=>primaryNativeStarted.has(1) && !primaryRows.some(r=>r.index===1),"Target primary must be pending before peer creation");
-    start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
+    if(isProgressPrimary)await observeTargetProgress();
+    start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");
+    if(isProgressPrimary)await observeParallelProgress();}
   await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending",isRealPrimary?spec.primaryTimeoutMs:30000);
   const before=await trace(1,"trace-target-before.http.json"),peerBefore=await trace(2,"trace-peer-before.http.json");
   const targetStage=before.run.stages.find((s:any)=>s.processNodeId==="agent"),peerStage=peerBefore.run.stages.find((s:any)=>s.processNodeId==="agent");

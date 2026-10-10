@@ -95,7 +95,8 @@ def verify_actor(context, spec, recipe, driver, artifacts):
     return {**evidence, **verify_primary_peer(context, spec, recipe, artifacts)}
 
 
-def verify_primary_peer(context, spec, recipe, artifacts, *, ready_file='coordinator-cancellation-ready.json'):
+def verify_primary_peer(context, spec, recipe, artifacts, *, ready_file='coordinator-cancellation-ready.json', parallel=1):
+    require(type(parallel) is int and parallel in (1, 2) and spec['primaryNumParallel'] == parallel, 'Prospective primary slots changed')
     rows = journal(artifacts['primary-http.jsonl']); by_index = {r['index']: r for r in rows}
     require(len(by_index) == 4, 'Real primary request repeated')
     held = parse_json(artifacts['peer-primary-held.json']); released = parse_json(artifacts['peer-primary-released.json'])
@@ -116,15 +117,17 @@ def verify_primary_peer(context, spec, recipe, artifacts, *, ready_file='coordin
     require(timestamp(target['nativeStartedAt'], 'target.primaryStart') <= timestamp(instance['createdAt'], 'peer.createdAt')
         <= timestamp(peer['nativeStartedAt'], 'peer.primaryStart') < timestamp(target['nativeResponseReceivedAt'], 'target.responseAt'), 'Actual pending target primary was not admitted before peer creation')
     return {'actualPrimaryHttpOverlapMs': round(overlap, 3), 'primaryModel': real.primary.MODEL,
-        'primaryNumParallel': 1, 'peerResponseObservedWithoutArtificialHold': True, 'primaryConcurrencyCapacityQualified': False}
+        'primaryNumParallel': parallel, 'peerResponseObservedWithoutArtificialHold': True, 'primaryConcurrencyCapacityQualified': False}
 
 
-def verify_primary_inventory(plan, result, recipe, artifacts):
+def verify_primary_inventory(plan, result, recipe, artifacts, *, settings=None, parallel=1):
+    expected_settings = SETTINGS if settings is None else settings
+    require(type(parallel) is int and parallel in (1, 2) and expected_settings['OLLAMA_NUM_PARALLEL'] == str(parallel), 'Unsupported prospective primary slots/settings')
     value = fields(plan['primary'], {'model', 'manifestSha256', 'blobCount', 'blobBytes', 'release', 'releaseFileSha256', 'generation', 'settings', 'warmupRequest'})
     pin = (Path(__file__).resolve().parents[2]/real.primary.PRIMARY_SOURCES[2]).read_bytes()
     require(value['model'] == real.primary.MODEL and value['manifestSha256'] == real.primary.DIGEST and value['blobCount'] == 5
         and value['blobBytes'] == 5225388164 and value['release'] == parse_json(pin) and value['releaseFileSha256'] == hashlib.sha256(pin).hexdigest()
-        and same_json(value['generation'], GENERATION) and same_json(value['settings'], SETTINGS) and same_json(value['warmupRequest'], WARMUP_REQUEST), 'Pinned primary model/release/residency profile changed')
+        and same_json(value['generation'], GENERATION) and same_json(value['settings'], expected_settings) and same_json(value['warmupRequest'], WARMUP_REQUEST), 'Pinned primary model/release/residency profile changed')
     require(type(result['primaryExitCode']) is int and result['primaryExitCode'] == 0, 'Primary exit or cleanup unknown/failed')
     warmup = parse_json(artifacts['primary-warmup.json']); require(same_json(warmup['request'], WARMUP_REQUEST), 'Raw primary warmup changed')
     real.primary.validate_response(warmup['response']); number(warmup['wallMs'], 0, 90000)
@@ -139,7 +142,7 @@ def verify_primary_inventory(plan, result, recipe, artifacts):
     before = parse_json(artifacts['primary-before.json']); after = parse_json(artifacts['primary-after.json']); driver = parse_json(artifacts['workflow-driver.json'])
     require(timestamp(before['capturedAt'], 'primary.before') < timestamp(recipe['startAt'], 'workflow.startAt')
         and timestamp(after['capturedAt'], 'primary.after') >= timestamp(driver['endAt'], 'workflow.endAt'), 'Actual primary snapshots do not enclose scoring/recovery')
-    real.verify_primary_runner(artifacts['primary.log'], parallel=1)
+    real.verify_primary_runner(artifacts['primary.log'], parallel=parallel)
     require('truncating input prompt' not in artifacts['primary.log'].decode().lower(), 'Ollama truncated a whole original input')
 
 
