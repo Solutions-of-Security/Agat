@@ -103,3 +103,8 @@ analysis неизменен. Analysis не выполняет live teardown ил
 сохраняют обе native inventories, context, analysis/verifier source snapshots,
 все raw hashes и model-free reproduction. Causal overhead, owners/customer/SLO,
 human labels/holdout остаются открытыми; routing=false / not_assessed.
+
+ZIP: 282 files / 43337520 bytes / 3170 selected Git objects.
+Archive SHA-256 `dbee945fe19853b614240d600c0e7f4117a5e89938ded4a08a94de619fcdb93b`. CRC/every SHA/size и
+actual original-copy restored replay PASS, model calls=0. ZIP и отдельный proof
+сохранены в исходном workspace `/docs/private` без изменения исходного checkout.

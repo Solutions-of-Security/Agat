@@ -1000,7 +1000,9 @@ Caller mean 990.437 ms / relay mean 988.308 ms
 238 raw artifacts; stdlib 5136 checks / 258476 JSON keys,
 source-bound model-free replay PASS. 18 новых / 65 related / 1137 Python tests
 (4 optional skips), Node docs checks прошли. Protected resident 27 checks
-неизменен. Immutable ZIP и original-copy replay сохраняют оба inventories и
+неизменен. Immutable ZIP: 282 files / 43337520 bytes / 3170 selected Git objects.
+CRC/every SHA/size и actual original-copy restored replay model0 PASS; ZIP и proof
+сохранены в исходном workspace docs/private. Архив сохраняет оба inventories и
 воспроизводимый ledger. Owners/customer/SLO/human labels/holdout открыты,
 routing=false / not_assessed.
 
