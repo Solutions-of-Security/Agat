@@ -889,6 +889,33 @@ target-first admission и naturally pending peer; two-primary-slot deadline
 ещё не квалифицирован. Owners/customer/SLO/human labels/holdout открыты,
 routing=false / not_assessed.
 
+### 10.10.2026 — active cancellation с двумя actual primary slots
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation-summary.json) и
+[archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation-archive-summary.json)
+фиксируют отдельный prospective gate: worker/global=2, NUM_PARALLEL2 / queue1,
+actual np2 / context65536 / request32768, прежняя decode128 generation.
+Whole 49 inputs / 44 groups и projection[24,25,12,27] сохранены. После failed
+первого target-first attempt новый candidate создаёт peer при observed target
+decode116..127 и подтверждает два processing slots до target response.
+Фактически admission decoded=116; HTTP overlap=5618.000 ms.
+3 completed / 1 cancelled, 3 known / 1 unknown callers; retry0.
+3 healthy typed signatures совпали с baseline; cold recovery=7401.000 ms,
+peer response после recovery, original lease/assignment/worker и primary output сохранены.
+8 starts / 7 known terminals / 4 warmups / 2 epochs; target typed terminal неизвестен.
+14 owned PIDs absent, protected resident27 checks unchanged.
+
+2 native attempts / 1 successful; отдельный API diagnostic failed_parser /
+wire audit PASS сохранён с 1 scoring primary + 1 warmup, вне workflow denominator.
+Stdlib audit 4891 checks / 89948 JSON keys, source216 /
+context source40; offline/legacy/restored replay model0 PASS.
+18 новых / 99 related / 1083 Python tests (4 optional skips), strict TS /
+12 Node docs tests PASS. Immutable evidence включает failed/native/probe/source/test
+artifacts; CRC/every-entry SHA/size и actual original-copy replay PASS.
+Следующий gate — NUM_PARALLEL2 worker deadline; customer/SLO/human labels/holdout
+и owners открыты, routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
