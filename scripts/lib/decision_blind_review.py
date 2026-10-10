@@ -98,9 +98,10 @@ def ask(stream, output, prompt):
         return answer
 
 
-def interact(review, stream, output, save):
+def interact(review, stream, output, save, *, render_task=task_text, introduction=None):
     """Keep confirmed drafts editable until a separate explicit submission."""
-    output.write("Blind review. Source controls are displayed as literal escapes.\n"
+    output.write(introduction if introduction is not None else
+                 "Blind review. Source controls are displayed as literal escapes.\n"
                  "Choose an option number; :skip keeps the current answer; :quit saves and exits.\n"
                  "Use :edit N or :clear N for task N, and :submit to submit all answers.\n"
                  "Answers, clearing and submission require explicit y confirmation. No default label.\n")
@@ -127,7 +128,7 @@ def interact(review, stream, output, save):
                 output.write("Use :edit N, :clear N, :submit or :quit.\n")
             else:
                 case = review["pool"]["cases"][position]; label = review["labels"][position]
-                output.write(task_text(case, position + 1, total))
+                output.write(render_task(case, position + 1, total))
                 if label["expectedOptionId"] is not None:
                     output.write("Your confirmed answer: " + terminal_text(label["expectedOptionId"]) +
                                  "\nYour rationale: " + terminal_text(label["rationale"]) + "\n")

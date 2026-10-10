@@ -5,21 +5,19 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
-import os
 from pathlib import Path
-import subprocess
 import sys
-import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from decision_runtime.artifacts import sealed
-from decision_runtime.contracts import canonical_json, parse_json
+from decision_runtime.contracts import parse_json
 from scripts.lib.decision_blind_review import interact, terminal_text, validate_progress
 from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
+from scripts.lib.decision_review_io import checkpoint, source_identity as committed_source_identity
 from scripts.lib.decision_shadow_pilot import require, utc_now
 
-SOURCES = ("scripts/review-decision-pool.py", "scripts/lib/decision_blind_review.py",
+SOURCES = ("scripts/review-decision-pool.py", "scripts/lib/decision_blind_review.py", "scripts/lib/decision_review_io.py",
            "scripts/lib/decision_public_sources.py", "scripts/lib/decision_shadow_pilot.py",
            "scripts/lib/decision_shadow_sli.py", "scripts/lib/decision_stage_inventory.py",
            "scripts/lib/decision_caller_inventory.py", "decision_runtime/__init__.py",
@@ -30,32 +28,7 @@ SESSION_SCHEMA = "agat.decision.blind-review-session.v2"
 
 
 def source_identity(root):
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True, timeout=5).strip()
-    files = {}
-    for name in SOURCES:
-        raw = (root / name).read_bytes()
-        expected = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=root, timeout=5)
-        require(raw == expected, "Commit review sources before starting the session")
-        files[name] = hashlib.sha256(raw).hexdigest()
-    return commit, files
-
-
-def checkpoint(directory, review):
-    raw = (canonical_json(review) + "\n").encode("utf-8")
-    require(len(raw) <= MAX_REVIEW_BYTES, "Review checkpoint exceeds its byte bound")
-    temporary = directory / f".review-{uuid.uuid4().hex}.tmp"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-        os.replace(temporary, directory / "review.json")
-        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-    finally:
-        temporary.unlink(missing_ok=True)
+    return committed_source_identity(root, SOURCES)
 
 
 def main(argv=None, *, input_stream=None, output_stream=None):

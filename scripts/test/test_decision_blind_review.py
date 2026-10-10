@@ -13,6 +13,7 @@ from decision_runtime.annotations import finalize_reviews, prepare_review
 from decision_runtime.artifacts import verify_seal
 from decision_runtime.contracts import fingerprint
 from scripts.lib.decision_blind_review import interact, task_text, terminal_text, validate_progress
+from scripts.lib import decision_review_io as review_io
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("blind_review_cli", ROOT / "scripts/review-decision-pool.py")
@@ -286,7 +287,7 @@ class ReviewCliTest(unittest.TestCase):
         cli.checkpoint(directory, fixture())
         original = (directory / "review.json").read_bytes()
         value = fixture(); value["reviewerId"] = "fixture-reviewer"
-        with patch.object(cli.os, "replace", side_effect=OSError("fixture interruption")), self.assertRaises(OSError):
+        with patch.object(review_io.os, "replace", side_effect=OSError("fixture interruption")), self.assertRaises(OSError):
             cli.checkpoint(directory, value)
         self.assertEqual((directory / "review.json").read_bytes(), original)
         self.assertEqual([item.name for item in directory.iterdir()], ["review.json"])
@@ -339,7 +340,7 @@ class ReviewCliTest(unittest.TestCase):
     def test_source_identity_requires_actual_committed_bytes(self):
         for name in cli.SOURCES:
             target = self.root / name; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(b"fixture")
-        with patch.object(cli.subprocess, "check_output", side_effect=["a" * 40, b"changed"]), self.assertRaises(ValueError):
+        with patch.object(review_io.subprocess, "check_output", side_effect=["a" * 40, b"changed"]), self.assertRaises(ValueError):
             cli.source_identity(self.root)
 
 

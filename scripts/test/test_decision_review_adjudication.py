@@ -85,6 +85,7 @@ class ReviewAdjudicationTest(unittest.TestCase):
 
     def test_changed_resealed_comparison_is_refused(self):
         changed = deepcopy(self.comparison); changed["disagreements"][0]["firstRationale"] = "Changed control"
+        changed.pop('sha256')
         self.path.write_bytes(encoded(sealed(changed)))
         with self.assertRaises(ValueError): self.outputs()
 
