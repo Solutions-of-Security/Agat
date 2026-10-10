@@ -1,6 +1,7 @@
 # Prospective ABBA/BAAB replication: весь public inventory
 
-Статус: **реализован prospective planner; native measurement ещё не выполнен**.
+Статус: **sealed prospective plan + source-bound replay + independent audit PASS**.
+Native measurement ещё не выполнен.
 Этот этап фиксирует дизайн до результатов. Model calls и measured workflows=0;
 196 workflows / 196 primary scores / 98 decision scores — план будущего опыта.
 
@@ -67,3 +68,15 @@ source/whole-input pins, protocol, generation/settings, все blocks/batches/
 routes и точные planned counts. Replay проверяет file SHA, seal, исторические
 context/planner sources и пересчитывает полный порядок. Новый output directory
 создаётся только в `/docs/private`; существующие receipts не перезаписываются.
+
+## Sealed prospective evidence
+
+[Aggregate summary](./public-workflow-counterbalanced-design-summary.json) фиксирует
+plan file SHA `f72ba21086e9be0627d2848636e4b0e5a6e5bfd9b02446a377cfafcf503aa03b`,
+source `9883a5e02a0fb60aad67fa93d650bfa98b6f1d1e`: 219 files / 40 context sources.
+Полный sealed порядок находится в private plan. Source-bound replay PASS;
+независимый stdlib audit 6110 checks / 5700 JSON keys проверил весь
+порядок, исторические source bytes, generation/settings и planned denominator.
+17 новых / 1154 Python tests (4 optional skips) прошли. Protected resident
+27 checks и все 8 полей предыдущего snapshot неизменны. Model calls и measured
+workflows=0; actual overlap, outcomes и причинный эффект этим этапом не установлены.
