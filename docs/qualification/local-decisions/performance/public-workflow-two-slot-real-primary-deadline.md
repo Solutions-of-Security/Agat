@@ -109,3 +109,11 @@ Stream=false и immediate complete response сверены с [официаль�
 Ollama](https://docs.ollama.com/api/streaming). Queue и requested parallel slots
 сверены с [официальным FAQ](https://docs.ollama.com/faq#how-does-ollama-handle-concurrent-requests);
 фактические slots и context подтверждены pinned runner log.
+
+## Immutable archive receipt
+
+[Archive receipt](public-workflow-two-slot-real-primary-deadline-archive-summary.json): 91 files / 41402360 bytes, ZIP SHA `a4e2e57129f6bb3055c10ba32c8f0d72b73dbdfd75725c753c73be17d67cc5db`.
+All entries CRC/SHA/size, exclusive original-workspace copy и actual copy restored
+replay PASS; model calls=0. Original-copy proof seal `8b91eddb5b773e8c4371c305704bee737b217a6b21ab197dda4146327d912770`
+сохранён отдельным private sidecar вне immutable ZIP. Source roles:
+context=40, measurement=215, verifier=215, documentation=3; selected Git objects=3108.

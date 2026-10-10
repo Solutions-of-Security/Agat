@@ -881,8 +881,9 @@ typed terminal неизвестен. 14 owned PIDs absent, protected resident un
 files. Stdlib audit 772 checks / 29394 JSON keys;
 offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
 12 новых / 81 related tests, 1065 Python tests (4 optional skips),
-strict TypeScript / 12 Node docs tests прошли. Private immutable archive сохраняет
-raw/source/test/replay evidence; public payloads только metadata. Следующий
+strict TypeScript / 12 Node docs tests прошли. Immutable ZIP 91 files / 41402360 bytes сохраняет
+raw/source/test/replay evidence; every-entry CRC/SHA/size и actual original-copy
+restored replay PASS, model calls=0; public payloads только metadata. Следующий
 runtime gate — отдельный prospective fault protocol NUM_PARALLEL=2 с actual
 target-first admission и naturally pending peer; two-primary-slot deadline
 ещё не квалифицирован. Owners/customer/SLO/human labels/holdout открыты,
