@@ -1224,6 +1224,23 @@ Protected resident: 27 checks / 8 неизменных полей; три owned 
 Native model calls=3; planning/audit/archive replay=0; routing=false/not_assessed.
 Предметные gates реальных reviewers, владельца, accuracy, traffic, SLO и holdout открыты.
 
+## Reusable проверка native Python journal — выполнено
+
+[Verifier journal](./qualification/local-decisions/performance/native-python-journal-verification.md)
+различает entries, returns, raises и unfinished spans, проверяет external pins,
+SHA chain, nested call order, clocks и bound input schedule. Header-only,
+open model, returned model без backend end и первый ended score из expected
+четырёх остаются incomplete. Default CLI отказывает до записи; explicit opt-in
+сохраняет diagnostic artifact с completeScoringTrace=false.
+
+24 original CLI calls: две полные byte-identical проверки (включая standalone
+из двух файлов), пять incomplete outputs, 17 отказов без output directory.
+19 новых / 31 targeted / 1290 full Python tests PASS, четыре optional skips.
+Native protocol 134 checks; independent stdlib replay 3537 checks / 3146 keys.
+Protected resident: 27 checks / 8 неизменных полей, 25 owned PID отсутствуют.
+Новые model calls=0. Source/runtime authenticity, GPU time, quality, SLO и
+routing не подтверждаются journal verifier; предметные review gates остаются открыты.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
