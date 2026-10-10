@@ -1206,6 +1206,24 @@ Python 66 целевых / 1259 полных, четыре пропуска. Pro
 разногласий и критерии владельца. Техническая сверка готова; routing и
 qualification сохраняют прежний статус.
 
+## Наблюдение native Python execution — выполнено
+
+[Изолированное наблюдение](./qualification/local-decisions/performance/native-python-call-observations.md)
+выполнено на четырёх заранее запланированных dev-попытках. Original journal:
+25 records, 4 backend score entries, 3 text-backbone calls и 3 mx.eval calls.
+Повтор одного входа прошёл отдельное вычисление; полный 9253-token input
+отказан до model/eval. Это observed Python boundaries в owned worker;
+старые counts 100 HTTP attempts сохраняют source-inferred статус.
+GPU kernels/time, HTTP admission и model loading не измерены; host spans
+содержат instrumentation overhead и не задают прежнюю latency или SLO.
+
+12 новых / 1271 полных Python tests PASS, четыре optional skips; 12 Node tests.
+Native 104 checks, independent stdlib 3411 checks / 2779 keys. Первый auditor
+с ошибочно переписанным profile SHA сохранён; V2 PASS без повторения model calls.
+Protected resident: 27 checks / 8 неизменных полей; три owned PID отсутствуют.
+Native model calls=3; planning/audit/archive replay=0; routing=false/not_assessed.
+Предметные gates реальных reviewers, владельца, accuracy, traffic, SLO и holdout открыты.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
