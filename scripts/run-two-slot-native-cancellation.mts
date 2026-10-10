@@ -17,8 +17,9 @@ assert.ok(directory.startsWith(path.resolve("docs/private")+path.sep));
 assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && !["8766","9095","11434"].includes(url.port)
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
-const isRealDeadline=plan.schemaVersion==="agat.decision.two-slot-real-primary-deadline-plan.v1";
-const isProgressPrimary=plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v2";
+const isParallelDeadline=plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-deadline-plan.v1";
+const isRealDeadline=isParallelDeadline || plan.schemaVersion==="agat.decision.two-slot-real-primary-deadline-plan.v1";
+const isProgressPrimary=isParallelDeadline || plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v2";
 const isParallelPrimary=isProgressPrimary || plan.schemaVersion==="agat.decision.two-slot-parallel-real-primary-cancellation-plan.v1";
 const isDeadline=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
 const isRealPrimary=isRealDeadline || isParallelPrimary || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
