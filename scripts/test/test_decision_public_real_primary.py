@@ -35,11 +35,11 @@ def encoded(value):
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires installed Node diagnostic dependencies')
 class MatchedWorkflowTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls, suite=diagnostic):
+    def setUpClass(cls, suite=diagnostic, *, primary_variation=False):
         if hasattr(cls, 'artifacts'): return
         diagnostic = suite; cls.suite = suite
         context, _, cohort, _ = fixture.fixture(); cls.context = context
-        cls.primary_calls = []; cls.native_calls = []
+        cls.primary_calls = []; cls.native_calls = []; repeat_counts = Counter(); repeat_lock = threading.Lock()
         typed = {c['inputSha256']: t['decisionObservations'][0]['observation']['result'] for c, t in zip(context['inputs'], cohort['traces'])}
         paired = suite.PROTOCOL['workerConcurrency'] == 2; native_gate = threading.Lock(); counts = Counter({outcome(typed[context['inputs'][0]['inputSha256']]): 2})
         progress = [0]; metrics_origin = time.time()
@@ -64,8 +64,11 @@ class MatchedWorkflowTest(unittest.TestCase):
                     if paired: time.sleep(.6)
                     indices = [i for i, c in enumerate(context['inputs']) if c['request']['state'] in value['messages'][1]['content']]
                     assert len(indices) == 1
+                    with repeat_lock:
+                        repeat_counts[indices[0]] += 1
+                        suffix = '_REPEAT_'+str(repeat_counts[indices[0]]) if primary_variation else ''
                     self.respond(200, {'model': 'qwen3:8b', 'done': True, 'done_reason': 'stop',
-                        'message': {'role': 'assistant', 'content': '  FIXTURE_PRIMARY_'+str(indices[0])+'  '},
+                        'message': {'role': 'assistant', 'content': '  FIXTURE_PRIMARY_'+str(indices[0])+suffix+'  '},
                         'prompt_eval_count': 100, 'eval_count': 4, 'total_duration': 1000000, 'load_duration': 0,
                         'prompt_eval_duration': 500000, 'eval_duration': 500000})
                 elif self.path == '/v1/decisions':
