@@ -816,9 +816,46 @@ optional skips) / 12 Node docs tests прошли. Independent stdlib audit —
 resident unchanged. Immutable ZIP — 173 files / 41419474 bytes; CRC/SHA/size
 и actual original-workspace copy restored replay прошли, model calls 0.
 Raw/restorable archive сохраняется под /docs/private.
-Следующий runtime gate — cancellation во время active native caller при двух
-worker slots с actual real-primary peer и owned recovery. Owners/customer/SLO/
+Runtime cancellation gate с двумя worker slots и actual real-primary peer
+выполнен далее в явно закреплённом queued-primary профиле. Owners/customer/SLO/
 human calibration/holdout открыты, routing false / not_assessed.
+
+### 10.10.2026 — two-slot active cancellation с queued actual primary
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation-archive-summary.json)
+фиксируют actual native v2 gate: worker/global concurrency=2, actual primary
+NUM_PARALLEL=1 / queue=1 / context=32768, прежние Qwen3:8b generation settings.
+Whole 49 inputs / 44 groups остаются в sealed plan; focused indices
+[24,25,12,27] выбраны до scoring, peer — longest original whole input.
+Target actual primary admitted до создания peer, два HTTP requests действительно
+пересекались 5955.000 ms. Primary response не удержан.
+3 completed / 1 cancelled workflow; 4 actual primary responses / 3 durable
+outputs, 3 known callers / 1 unknown return_missing. Peer lease/stage/worker
+сохранены через cancel→EOF (566.000 ms), old native retirement
+(479.000 ms after EOF) и новый epoch с двумя warmups;
+actual peer response получен после recovery. Late observation/complete/fail=400,
+revoked renewal=404, target output=null. Healthy native: 2 abstain / 1 whole-context
+rejection; все 3 typed signatures совпали с frozen healthy control. Native physical
+8 starts / 7 known terminals / 2 epochs / 4 warmups; interrupted target counter
+неизвестен, retry=0. Все 14 owned PIDs absent, protected resident unchanged.
+
+Всего 3 native attempts / 1 successful: NUM_PARALLEL=2 attempts 1/2 FAILED и
+сохранены со всеми raw bodies/source/PID receipts. Первый выявил fixture wait=30s
+при заранее declared primary=180s; после исправления второй peer ответил до
+recovery/target caller. V2 one-model-slot профиль закреплён отдельно, первые
+attempts не превращены в PASS. Cancellation при двух primary model slots ещё
+не квалифицирована. 12 новых / 69 related tests, 1053 Python tests (4 optional
+skips), strict TypeScript / 12 Node docs tests прошли; prior actual cancellation,
+deadline и paired inventory offline replay PASS, model calls=0. Stdlib audit:
+743 checks / 28892 JSON keys. Source 210 / context 40 files. Immutable ZIP —
+149 files / 43362674 bytes; every entry CRC/SHA/size и actual original
+copy restored replay PASS, model calls 0. Все attempts сохранены; public payloads
+содержат только metadata. Следующий runtime gate — worker deadline с этими
+двумя worker slots и queued actual primary peer; затем отдельный prospective
+fault protocol NUM_PARALLEL=2. Owners/customer/SLO/human labels/holdout открыты,
+routing false / not_assessed.
 
 ## Вывод: что именно можно воспроизвести
 

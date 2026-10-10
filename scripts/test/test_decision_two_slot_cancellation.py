@@ -41,6 +41,7 @@ class TwoSlotActorTest(unittest.TestCase):
     def setUpClass(cls, suite=diagnostic):
         if hasattr(cls, 'artifacts'): return
         diagnostic = suite
+        real_primary = getattr(suite, 'REAL_PRIMARY', False)
         context, _, cohort, _ = fixture.fixture(); cls.context = context; cls.protocol = diagnostic.protocol(context, 1)
         projected = diagnostic.projection(context, 1)
         typed = {c['inputSha256']: t['decisionObservations'][0]['observation']['result'] for c, t in zip(context['inputs'], cohort['traces'])}
@@ -80,12 +81,27 @@ class TwoSlotActorTest(unittest.TestCase):
                     return
                 response = copy.deepcopy(typed[request.input_sha256]); response.update(id=request.id, durationMs=0.0)
                 with lock: counts[outcome(response)] += 1
-                self.respond(200, response)
+                self.respond(200 if context['inputs'][index]['contextEligible'] else 422, response)
 
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler); thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}); thread.start()
         proxy = diagnostic.make_proxy(server.server_port, projected, cls.protocol['nativeFault'])
         proxy.bind_warmups({outcome(warm_result): 2}, origins[0]); samples = []; warmup = []
         native = [[42, 43, 44], [45, 46, 47]]; start = time.monotonic()
+        primary_server = primary_thread = None
+        def primary_response(index=0):
+            return {'model': 'qwen3:8b', 'done': True, 'done_reason': 'stop', 'message': {'role': 'assistant', 'content': f'  Synthetic actual-HTTP primary response {index}.  '},
+                'prompt_eval_count': 100+index, 'eval_count': 8, 'total_duration': 1000000, 'load_duration': 0, 'prompt_eval_duration': 500000, 'eval_duration': 500000}
+        if real_primary:
+            class PrimaryHandler(Handler):
+                def do_POST(self):
+                    assert self.path == '/api/chat'
+                    request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                    index = next(i for i, case in enumerate(projected['inputs']) if request['messages'][1]['content'].endswith(case['request']['state']))
+                    assert request == {'model': 'qwen3:8b', 'messages': request['messages'], 'stream': False, 'keep_alive': '5m', **diagnostic.GENERATION}
+                    # Synthetic HTTP latency; no real model/capacity claim in these regressions.
+                    time.sleep(1.7 if index == 2 else .5 if index == 1 else .03); self.respond(200, primary_response(index))
+            primary_server = ThreadingHTTPServer(('127.0.0.1', 0), PrimaryHandler)
+            primary_thread = threading.Thread(target=primary_server.serve_forever, kwargs={'poll_interval': .01}); primary_thread.start()
         private = ROOT/'docs/private'; private.mkdir(parents=True, exist_ok=True)
         try:
             with tempfile.TemporaryDirectory(dir=private, prefix='two-slot-fixture-') as temporary:
@@ -103,11 +119,24 @@ class TwoSlotActorTest(unittest.TestCase):
                             'clock': 'monotonic', 'boundary': 'local_http_call', 'durationMs': 1}}, 'callerMs': 1, 'wallMs': 1} for i in range(2))
                 created = (datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                 cls.plan = {'schemaVersion': diagnostic.PLAN_SCHEMA, 'createdAt': created, 'context': context, 'config': diagnostic.shared_config(context), 'protocol': cls.protocol}
+                if real_primary:
+                    pin = (ROOT/diagnostic.real.primary.PRIMARY_SOURCES[2]).read_bytes()
+                    cls.plan['primary'] = {'model': 'qwen3:8b', 'manifestSha256': diagnostic.real.primary.DIGEST, 'blobCount': 5, 'blobBytes': 5225388164,
+                        'release': json.loads(pin), 'releaseFileSha256': digest(pin), 'generation': copy.deepcopy(diagnostic.GENERATION),
+                        'settings': copy.deepcopy(diagnostic.SETTINGS), 'warmupRequest': copy.deepcopy(diagnostic.WARMUP_REQUEST)}
+                    save('primary-warmup.json', {'request': diagnostic.WARMUP_REQUEST, 'response': primary_response(), 'wallMs': 1})
+                    def primary_snapshot():
+                        return {'capturedAt': now(), 'version': {'version': '0.35.1'}, 'tags': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST}]},
+                            'residence': {'models': [{'name': 'qwen3:8b', 'digest': diagnostic.real.primary.DIGEST, 'context_length': 32768}]}, 'ownedPids': [48, 49]}
+                    save('primary-before.json', primary_snapshot())
+                    parallel = int(diagnostic.SETTINGS['OLLAMA_NUM_PARALLEL'])
+                    (directory/'primary.log').write_bytes(f'Synthetic runner shape only: -np {parallel}\nn_seq_max = {parallel}\nn_ctx = {parallel*32768}\nn_ctx_seq = 32768\n'.encode())
                 save('plan.json', cls.plan)
                 early_timer = 'const timer=globalThis.setTimeout;let fired=false;globalThis.setTimeout=(callback,delay,...args)=>{if(!fired&&delay>500&&delay<=1000){fired=true;console.log("fixture: early start timer");return timer(callback,0,...args);}return timer(callback,delay,...args);};'
                 timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
                 process = subprocess.Popen(['node', '--import', 'tsx', '--import', timer_import, diagnostic.DRIVER_PATH,
-                    '--decision-url', f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    '--decision-url', f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory),
+                    *(['--primary-url', f'http://127.0.0.1:{primary_server.server_port}'] if real_primary else [])], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 armed = prepared = ready = drained = recovered = None; deadline = time.monotonic()+45
                 try:
                     while process.poll() is None:
@@ -143,17 +172,21 @@ class TwoSlotActorTest(unittest.TestCase):
                     assert b'fixture: early start timer' in output; assert not (directory/'worker-credentials.json').exists()
                     (directory/'driver.log').write_bytes(output); sample('after_inventory'); proxy.close(); save('active-transport.json', proxy.receipt())
                     driver = json.loads((directory/'workflow-driver.json').read_bytes()); cls.driver = driver; cls.recipe = json.loads((directory/'workflow-plan.json').read_bytes())
-                    owned = sorted({*native[0], *native[1], *driver['ownedPids']}); save('owned-pids.jsonl', {'recordedAt': now(), 'ownedPids': owned})
+                    if real_primary: save('primary-after.json', primary_snapshot())
+                    owned = sorted({*native[0], *native[1], *driver['ownedPids'], *([48, 49] if real_primary else [])}); save('owned-pids.jsonl', {'recordedAt': now(), 'ownedPids': owned})
                     cls.artifacts = {n: (directory/n).read_bytes() for n in diagnostic.ARTIFACTS}
                     cls.evidence = diagnostic.verify_actor(context, cls.protocol, cls.recipe, driver, cls.artifacts)
                     cls.result = {'schemaVersion': diagnostic.RESULT_SCHEMA, 'status': 'observed', 'evidence': cls.evidence, 'warmup': warmup, 'samples': samples,
                         'failure': None, 'ownedPids': owned, 'remainingOwnedPids': [], 'cleanupErrors': [], 'runtimeExitCodes': [75, 130], 'driverExitCode': 0,
                         'artifactSha256': {n: digest(b) for n, b in cls.artifacts.items()}, 'elapsedMs': (time.monotonic()-start)*1000, **diagnostic.AUTHORITY}
+                    if real_primary: cls.result['primaryExitCode'] = 0
                     cls.result['physical'] = diagnostic.verify_physical(projected, cls.result, proxy.receipt(), ready, retired, recovered, cls.artifacts)
                 finally:
                     if process.poll() is None: process.terminate(); process.communicate(timeout=10)
         finally:
             stop.set(); proxy.close(); server.shutdown(); server.server_close(); thread.join(2)
+            if primary_server is not None:
+                primary_server.shutdown(); primary_server.server_close(); primary_thread.join(2)
 
     def check(self, artifacts=None, protocol=None):
         return diagnostic.verify_actor(self.context, protocol or self.protocol, self.recipe, self.driver, artifacts or self.artifacts)
