@@ -17,15 +17,16 @@ assert.ok(directory.startsWith(path.resolve("docs/private")+path.sep));
 assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && !["8766","9095","11434"].includes(url.port)
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
-const isDeadline=plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
-const isRealPrimary=plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
+const isRealDeadline=plan.schemaVersion==="agat.decision.two-slot-real-primary-deadline-plan.v1";
+const isDeadline=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
+const isRealPrimary=isRealDeadline || plan.schemaVersion==="agat.decision.two-slot-real-primary-cancellation-plan.v2";
 assert.ok(isDeadline || isRealPrimary || plan.schemaVersion==="agat.decision.two-slot-cancellation-plan.v1");
 const primaryNativeUrl=isRealPrimary?new URL(values["primary-url"]!):undefined;
 if(primaryNativeUrl)assert.ok(primaryNativeUrl.protocol==="http:" && primaryNativeUrl.hostname==="127.0.0.1" && primaryNativeUrl.port
   && !["8766","9095","11434",url.port].includes(primaryNativeUrl.port) && primaryNativeUrl.pathname==="/" && !primaryNativeUrl.username && !primaryNativeUrl.password && !primaryNativeUrl.search && !primaryNativeUrl.hash);
 else assert.equal(values["primary-url"],undefined);
 assert.equal(spec.kind,isDeadline?"worker_deadline_while_peer_primary_in_flight":"cancel_active_native_task_while_peer_primary_in_flight");
-if(isDeadline){assert.equal(spec.targetCallerTimeoutMs,250);assert.equal(spec.healthyCallerTimeoutMs,10000);assert.deepEqual(spec.startOrder,[0,2,1,3]);}
+if(isDeadline){assert.equal(spec.targetCallerTimeoutMs,250);assert.equal(spec.healthyCallerTimeoutMs,10000);assert.deepEqual(spec.startOrder,isRealDeadline?[0,1,2,3]:[0,2,1,3]);}
 const preparedFile=isDeadline?"native-target-prepared.json":"coordinator-cancellation-prepared.json";
 const readyFile=isDeadline?"active-native-ready.json":"coordinator-cancellation-ready.json",drainedFile=isDeadline?"active-native-drained.json":"coordinator-cancellation-drained.json";
 assert.equal(spec.workerConcurrency,2);assert.equal(spec.globalMaxConcurrency,2);assert.equal(spec.localTargetIndex,1);assert.equal(spec.localPeerIndex,2);
@@ -175,7 +176,7 @@ try{
   start(0);await until(()=>store.getRun(runs[0].runId)!.status==="completed","Prefix did not complete",isRealPrimary?spec.primaryTimeoutMs:30000);route(0,await trace(0,"trace-prefix.http.json"));
   publish("native-prefix-ready.json",{runId:runs[0].runId,stageId:routes[0].stageId,traceFileSha256:pin("trace-prefix.http.json"),requestedAt:now()});
   await receipt("native-prefix-armed.json",10000);
-  if(isDeadline){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
+  if(isDeadline && !isRealPrimary){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
   else{start(1);if(isRealPrimary)await until(()=>primaryNativeStarted.has(1) && !primaryRows.some(r=>r.index===1),"Target primary must be pending before peer creation");
     start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
   await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending",isRealPrimary?spec.primaryTimeoutMs:30000);

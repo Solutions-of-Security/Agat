@@ -94,7 +94,7 @@ def verify_graph(context,spec,recipe,raw):
     require([i for i,c in enumerate(context['inputs']) if spec['targetSelector']['value'] in c['request']['state']]==[spec['targetIndex']],"Short deadline selects another case")
 
 
-def verify_http(context,spec,cohort,routes,bundle):
+def verify_http(context,spec,cohort,routes,bundle,*,primary_outputs=None):
     records=bundle['http']; require(isinstance(records,list) and len(routes)*3<=len(records)<=2000,"Incomplete deadline lease journal")
     for row in records:
         fields(row,{'method','path','startedAt','finishedAt','startedMs','finishedMs','requestBody','requestBodySha256','requestBodyComplete','httpStatus'})
@@ -122,7 +122,8 @@ def verify_http(context,spec,cohort,routes,bundle):
         leases.add(lease)
         posted=[r for r in returns if r['path']==lease+'/decision-shadow']; primary=[r for r in completions if r['path']==lease+'/complete']
         require(len(posted)==len(primary)==1,"Missing actual durable deadline return")
-        require(parse_json(primary[0]['requestBody'])['output']=='PRIMARY_OUTPUT'
+        expected_output='PRIMARY_OUTPUT' if primary_outputs is None else primary_outputs[route['runId']]
+        require(parse_json(primary[0]['requestBody'])['output']==expected_output
             and timestamp(matches[0]['finishedAt'],'intent.finishedAt')<=timestamp(posted[0]['startedAt'],'return.startedAt')
             and timestamp(posted[0]['finishedAt'],'return.finishedAt')<=timestamp(primary[0]['startedAt'],'primary.startedAt'),"Deadline bypassed intent, return or primary ordering")
         stored=traces[route['runId']]['decisionObservations'][0]['observation']; body=parse_json(posted[0]['requestBody'])
