@@ -1,10 +1,15 @@
 # Whole public inventory: primary-only A/A repeat control
 
-Дата протокола: 2026-10-10. Статус: harness подготовлен; native measurement ещё
-не выполнен. Это engineering control для следующей оценки overhead. В прежнем
-[paired real-primary inventory](./public-workflow-paired-real-primary.md)
-primary outputs различались в 4/49 matched пар, при одинаковых input и generation
-settings. Причина этих различий не установлена.
+Дата измерения: 2026-10-10. Статус: **observed, engineering A/A gate PASS**.
+Все 98 workflow completed; все primary outputs сохранены. Native case calls,
+caller intents и durable shadow returns — 0. Primary request bytes совпали
+в 49/49 пар. Primary outputs совпали в **46/49** пар;
+indices с различиями: `[12, 36, 43]`. Различия не требуют retry.
+
+В прежнем [paired real-primary inventory](./public-workflow-paired-real-primary.md)
+primary outputs различались в 4/49 matched пар. Этот A/A pass измеряет
+наблюдаемую вариацию primary-only на том же host/profile; причина прежних
+различий и causal shadow overhead остаются не установлены.
 
 ## Проспективный дизайн
 
@@ -70,3 +75,46 @@ Harness: [launcher](../../../../scripts/run-public-support-primary-repeat-contro
 [driver](../../../../scripts/run-public-support-primary-repeat-control.mts),
 [verifier](../../../../scripts/verify-public-support-primary-repeat-control.py),
 [invariants and negative tests](../../../../scripts/test/test_decision_public_primary_repeat_control.py).
+
+## Измеренный результат и воспроизведение
+
+| Метрика | repeatA | repeatB |
+|---|---:|---:|
+| Whole workflow p50, ms | 5680.382 | 5944.685 |
+| Whole workflow p95, ms | 12026.905 | 9600.748 |
+| Whole workflow max, ms | 30488.193 | 10943.050 |
+| Primary HTTP p50, ms | 5433.734 | 5659.171 |
+| Primary HTTP p95, ms | 11675.325 | 9276.081 |
+| Decode-limit returns | 41 | 42 |
+
+Matched repeatB − repeatA workflow delta: median
+-470.494 ms, mean
+-900.174 ms, range
+-23510.738…5190.623 ms.
+Это вариация между двумя одинаковыми контролями, не оценка эффекта shadow.
+Per-case output hashes, prompt/decode tokens, finish reasons и latency
+сохранены в [public metadata summary](./public-workflow-primary-repeat-control-summary.json).
+Output hashes сравнивают durable worker text после штатного trim; полные
+native response bytes находятся только в private archive.
+
+50 batch / 48 two-slot witnesses; minimum actual primary HTTP overlap
+2355.000 ms. Все 50 raw native background
+snapshots сохранили одну эпоху и counters двух warmup без case scores.
+Protected resident: 27 checks, 20 runtime sources, 4 process identity,
+health/metrics/monitor bytes до/после неизменны. Все
+105 owned PIDs независимо отсутствуют после teardown.
+Runtime/primary/driver exits: 130/0/0.
+
+Один native attempt / один completed result. Измеренный source commit
+`d08d9aa06b1aded3d07a36214aabb4b74d5d16df`, source closure 218 files,
+context closure 40 files. Stdlib audit:
+5644 checks / 152601 JSON keys;
+все outcome/latency/per-case metadata пересчитаны независимо от приложения.
+Offline replay PASS, model calls=0; прежние serial/paired native receipts
+повторно проверены без моделей. 18 новых / 47 связанных / 1119 полных
+Python tests (4 optional skips), strict TypeScript трёх primary
+harness и 12 Node docs tests прошли.
+
+Raw inputs/outputs не публикуются. Immutable evidence ZIP, source snapshots,
+CRC/SHA проверки и actual original-copy restored replay описаны в
+[archive receipt](./public-workflow-primary-repeat-control-archive-summary.json).

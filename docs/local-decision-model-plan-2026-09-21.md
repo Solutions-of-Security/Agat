@@ -948,6 +948,34 @@ Public payloads только metadata. Focused NUM_PARALLEL2 cancellation/deadli
 Owners/customer/SLO/human labels/holdout остаются открытыми,
 routing=false / not_assessed.
 
+### Whole inventory primary-only A/A repeat control, 2026-10-10
+
+[Проспективный A/A control](./qualification/local-decisions/performance/public-workflow-primary-repeat-control.md)
+реализован и измерен после NUM_PARALLEL2 cancellation/deadline. Все 49 whole
+inputs / 44 groups, включая 3 native-overlong inputs, дважды прошли один
+published process/version 1 без shadow: 98 completed workflow / 98 durable
+primary outputs / 49 byte-identical primary request pairs. Labels не входят
+в worker/native prompt. Worker/global concurrency 2, pinned Ollama 0.35.1,
+Qwen3:8B NUM_PARALLEL2 / actual np2 / total context 65536 / per-request 32768,
+decode 128, temperature/seed 0, think=false; retry/restart=0.
+
+Matched outputs 46/49; different original indices
+[12, 36, 43]. Output equality не является gate: все различия
+сохранены без lucky retry. 50 blocked batch / 48 actual pending-primary
+witnesses / положительное HTTP overlap; 50 native background snapshots
+сохраняют только два warmup, case scores/intents/returns=0.
+Repeat workflow median delta -470.494 ms —
+контрольная вариация на одном host, causal shadow overhead не установлен.
+Protected resident 27 checks неизменен, 105 owned PIDs отсутствуют.
+
+218 measured / 40 context sources;
+stdlib 5644 checks / 152601 JSON keys,
+model-free offline и legacy serial/paired replay PASS. 18 новых / 47 related /
+1119 Python tests (4 optional skips), strict TypeScript и Node docs
+пройдены. ZIP с raw/source/verification evidence и actual original-copy replay
+сохраняется в исходном workspace docs/private. Owners/customer/SLO/human
+labels, holdout и customer capacity открыты; routing=false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
