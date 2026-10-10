@@ -174,7 +174,7 @@ try{
   await receipt("native-prefix-armed.json",10000);
   if(isDeadline){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
   else{start(1);start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
-  await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending");
+  await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending",isRealPrimary?spec.primaryTimeoutMs:30000);
   const before=await trace(1,"trace-target-before.http.json"),peerBefore=await trace(2,"trace-peer-before.http.json");
   const targetStage=before.run.stages.find((s:any)=>s.processNodeId==="agent"),peerStage=peerBefore.run.stages.find((s:any)=>s.processNodeId==="agent");
   assert.equal(before.run.status,"running");assert.equal(peerBefore.run.status,"running");assert.equal(targetStage.nodeId,peerStage.nodeId);assert.ok(targetStage.nodeId);
