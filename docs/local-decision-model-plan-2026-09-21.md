@@ -1241,6 +1241,22 @@ Protected resident: 27 checks / 8 неизменных полей, 25 owned PID 
 Новые model calls=0. Source/runtime authenticity, GPU time, quality, SLO и
 routing не подтверждаются journal verifier; предметные review gates остаются открыты.
 
+## Пакет для разрешения разногласий review — выполнено
+
+[Adjudication handoff](./qualification/local-decisions/source-review/review-adjudication.md)
+повторно связывает два complete submitted review со сверкой и создаёт blank
+только для разногласий. Оба исходных мнения и rationale остаются в private notes;
+решения и adjudicator пусты. Full pool/seed сохраняются для finalize_reviews.
+Generic blind terminal пока не поддерживает subset: следующий этап — отдельная
+adjudication session с проверяемым explicit submit.
+
+7 original CLI calls: два byte-identical handoff (standalone 17 sources),
+5 отказов без output directory. 8 новых / 1298 full Python tests PASS,
+4 optional skips. Probe 118 checks; независимый replay 1491 checks / 1277 keys.
+Resident 27 checks / 8 неизменных полей, 8 owned PID отсутствуют.
+Новые labels/model calls=0; реальные reviewers и adjudicator не назначены,
+qualification=not_assessed, routing=false. Обе неудачные версии auditor сохранены.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

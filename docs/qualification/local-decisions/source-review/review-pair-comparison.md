@@ -72,3 +72,7 @@ Auditor на stdlib и Git восстановил comparison и обе влож�
 сохраняют source snapshots, PTY transcript, исходную и вторую synthetic
 квитанции, все controls, CLI logs и независимый auditor. Restored replay
 повторяет аудит имеющихся артефактов без нового terminal или model execution.
+
+[Adjudication handoff](./review-adjudication.md) создаёт пустой subset для
+разногласий, сохраняя исходные opinions и bindings. Заполнение и проверяемый
+submit этого subset требуют отдельной adjudication session.
