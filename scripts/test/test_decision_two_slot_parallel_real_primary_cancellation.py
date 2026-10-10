@@ -73,6 +73,9 @@ class ParallelRealPrimaryCancellationActorTest(unittest.TestCase):
         self.assertEqual(result['healthyNativeOutcomes'], {'ok': 2, 'context_rejected': 1})
         self.assertGreater(result['actualPrimaryHttpOverlapMs'], 0)
         self.assertEqual(result['primaryNumParallel'], 2)
+        self.assertGreaterEqual(result['actualTargetDecodedAtPeerAdmission'],116)
+        self.assertLess(result['actualTargetDecodedAtPeerAdmission'],128)
+        self.assertTrue(result['primaryProgressEndpointReadOnly'])
         self.assertTrue(result['peerResponseObservedWithoutArtificialHold']); self.assertTrue(self.eof.is_set())
         self.assertEqual(self.result['physical']['knownCompletedPhysicalCalls'], 7)
         self.assertFalse(result['primaryConcurrencyCapacityQualified']); self.assertFalse(result['classificationAccuracyMeasured'])
@@ -115,6 +118,54 @@ class ParallelRealPrimaryCancellationActorTest(unittest.TestCase):
             protocol = copy.deepcopy(self.protocol); protocol[key] = value
             with self.assertRaises(ValueError): self.check(protocol=protocol)
 
+    def test_late_decode_progress_cannot_be_early_completed_or_use_another_shape(self):
+        for changed in (115,128,True):
+            def corrupt(rows):
+                row=rows[-1];value=json.loads(row['body']);value[0]['next_token'][0]['n_decoded']=changed
+                row['body']=shared.encoded(value).decode();row['bodySha256']=shared.digest(row['body'].encode())
+            with self.subTest(decoded=changed),self.assertRaises(ValueError):self.check(self.alter_journal('primary-progress.jsonl',corrupt))
+        def old_shape(rows):
+            row=rows[-1];value=json.loads(row['body']);value[0]['next_token']=value[0]['next_token'][0]
+            row['body']=shared.encoded(value).decode();row['bodySha256']=shared.digest(row['body'].encode())
+        with self.assertRaises(ValueError):self.check(self.alter_journal('primary-progress.jsonl',old_shape))
+
+    def test_primary_progress_cannot_be_rebound_to_another_input_or_run(self):
+        for field,value in (('runId','other-run'),('inputSha256','0'*64),('nativeRequestBodySha256','0'*64),('method','POST')):
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                self.check(self.alter_journal('primary-progress.jsonl',lambda rows:rows[-1].update({field:value})))
+
+    def test_slot_decode_cannot_exceed_the_delivered_raw_native_response(self):
+        def change(rows):
+            row=next(r for r in rows if r['index']==1)
+            native=json.loads(row['nativeResponseBody']);native['eval_count']=100
+            translated=json.loads(row['responseBody']);translated['usage']['completion_tokens']=100
+            for field,value in (('nativeResponseBody',native),('responseBody',translated)):
+                row[field]=shared.encoded(value).decode();row[field+'Sha256']=shared.digest(row[field].encode())
+        with self.assertRaises(ValueError):self.check(self.alter_journal('primary-http.jsonl',change))
+        with self.assertRaises(ValueError):self.check({**self.artifacts,'primary.log':self.artifacts['primary.log'].replace(b'task 1 |',b'task 2 |')})
+
+    def test_progress_requires_owned_runner_and_fresh_prospective_boundary(self):
+        for mutate in (lambda value:value.update(runnerPid=42),lambda value:value.update(url='http://127.0.0.1:11434'),
+            lambda value:value.update(command=value['command'].replace('-np 2','-np 1'))):
+            with self.assertRaises(ValueError):self.check(self.alter_json('primary-runner.json',mutate))
+        protocol=copy.deepcopy(self.protocol);protocol['primaryProgress']['minDecoded']=1
+        with self.assertRaises(ValueError):self.check(protocol=protocol)
+        with self.assertRaises(ValueError):self.check(self.alter_journal('primary-progress.jsonl',lambda rows:rows[-1].update(receivedAt='2000-01-01T00:00:00Z')))
+
+    def test_two_processing_slots_cannot_be_inferred_from_http_overlap(self):
+        def change(rows, field, value):
+            row=rows[-1];slots=json.loads(row['body']);slots[1][field]=value
+            row['body']=shared.encoded(slots).decode();row['bodySha256']=shared.digest(row['body'].encode())
+        for field,value in (('is_processing',False),('id_task',1),('id_task',777),('n_ctx',65536)):
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                self.check(self.alter_journal('primary-parallel-progress.jsonl',lambda rows:change(rows,field,value)))
+
+    def test_parallel_slot_reads_require_both_original_requests_and_pending_target(self):
+        for field,value in (('targetRunId','other'),('peerRunId','other'),('targetInputSha256','0'*64),('peerInputSha256','0'*64),
+            ('targetNativeRequestBodySha256','0'*64),('peerNativeRequestBodySha256','0'*64),('method','POST'),('receivedAt','2999-01-01T00:00:00Z')):
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                self.check(self.alter_journal('primary-parallel-progress.jsonl',lambda rows:rows[-1].update({field:value})))
+
 
 @unittest.skipUnless(shutil.which('node') and (shared.ROOT/'node_modules/tsx').exists(), 'Requires Node diagnostic dependencies')
 class ParallelRealPrimaryCancellationReplayTest(unittest.TestCase):
@@ -135,6 +186,10 @@ class ParallelRealPrimaryCancellationReplayTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.replay(artifacts=artifacts)
         result = copy.deepcopy(self.result); result['samples'][-1]['counters']['ok'] += 1
         with self.assertRaises(ValueError): self.replay(result=result)
+        artifacts=copy.deepcopy(self.artifacts);artifacts.pop('primary-progress.jsonl')
+        with self.assertRaises(ValueError):self.replay(artifacts=artifacts)
+        artifacts=copy.deepcopy(self.artifacts);artifacts.pop('primary-parallel-progress.jsonl')
+        with self.assertRaises(ValueError):self.replay(artifacts=artifacts)
 
     def test_primary_settings_cleanup_or_actual_runner_shape_cannot_be_faked(self):
         plan = copy.deepcopy(self.plan); plan['primary']['settings']['OLLAMA_NUM_PARALLEL'] = '1'
