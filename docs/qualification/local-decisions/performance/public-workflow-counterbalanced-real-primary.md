@@ -56,7 +56,11 @@ Decision outcomes: ok=32, abstain=18, busy=46, context_rejected=2. Все 46 bus
 имеют активного peer той же pair/period/replica; четыре context-too-long
 наблюдения получили busy до context check. Это 98 HTTP attempts, включая
 admission refusals; число GPU inference из этого счётчика не выводится.
-Native warmup также может включать cached return.
+В pinned score path каждый успешный warmup вызывает отдельный model forward.
+`cache-limit-mib` ограничивает reusable buffers, а не memoized replies;
+[source-contract accounting](./public-workflow-native-execution-accounting.md)
+уточняет этот вывод. Прежнее предположение о cached native return исправлено;
+immutable archived report и raw measurement сохраняются без изменений.
 
 Все четыре primary request bodies каждого input совпадают. 95/98 matched
 control/shadow output pairs совпали; все четыре outputs совпали у 46/49 input.
@@ -74,7 +78,7 @@ control/shadow output pairs совпали; все четыре outputs совп
 Компоненты складываются в whole contrast в установленных допусках. Это
 описательное наблюдение данного запуска; +412.922 ms не является causal shadow
 cost, production estimate или customer SLO. Caller latency смешивает accepted,
-abstain, busy, context refusals и возможные cache hits. Неравное elapsed-time
+abstain, busy и context refusals. Неравное elapsed-time
 spacing, nonlinear drift, carryover и зависимые input groups остаются открыты.
 
 ## Проверки и сохранность
