@@ -135,3 +135,14 @@ worker slots с actual real-primary peer и owned recovery. Предыдущие
 cancellation/deadline gates использовали held fixture primary; этот inventory
 проверил complete real primary без interruption. Owners/customer/SLO/human
 calibration/holdout открыты, routing false / qualification not_assessed.
+
+## Immutable archive и actual original copy replay
+
+[Archive receipt](./public-workflow-paired-real-primary-archive-summary.json):
+173 files / 41419474 bytes, ZIP SHA
+`07af9ff9c6dbada47e313a54b8575bf49fd7583eba51251f1322a753d6db05fd`. Каждый entry проверен по CRC, SHA и size.
+Selected pack содержит 3111 Git objects; context/measurement/healthy-baseline/
+verifier/documentation roles сохранены отдельно. В original workspace записана
+exclusive копия; именно этот ZIP независимо распакован и прошёл source-bound
+offline replay: 209 source files / 40 context files / 120 raw artifacts,
+model calls 0. Original copy proof SHA `5ea725c431696fb0fca2440b7daa048b9798f23c55d3a344e2359418ba1660d6`.

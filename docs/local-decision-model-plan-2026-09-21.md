@@ -813,7 +813,9 @@ Source 209 / context 40 files; offline replay, 11 новых / 68 related tests,
 strict TypeScript, serial native compatibility и 1041 Python tests (четыре
 optional skips) / 12 Node docs tests прошли. Independent stdlib audit —
 7066 checks / 203542 JSON keys; все 117 recorded temporary PIDs absent,
-resident unchanged. Raw/restorable archive сохраняется под /docs/private.
+resident unchanged. Immutable ZIP — 173 files / 41419474 bytes; CRC/SHA/size
+и actual original-workspace copy restored replay прошли, model calls 0.
+Raw/restorable archive сохраняется под /docs/private.
 Следующий runtime gate — cancellation во время active native caller при двух
 worker slots с actual real-primary peer и owned recovery. Owners/customer/SLO/
 human calibration/holdout открыты, routing false / not_assessed.
