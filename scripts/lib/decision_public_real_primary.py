@@ -106,17 +106,22 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
     """Recompute matched evidence from exact native and authenticated trace bytes."""
     validate_context(context); same(protocol, PROTOCOL if suite is None else suite.PROTOCOL, 'Unsupported prospective primary protocol')
     count = len(context['inputs']); config = shared_config(context)
+    observations = protocol.get('observationsPerCondition', 1)
+    require(type(observations) is int and observations in (1, 2), 'Unsupported replication count')
+    scoring = count*observations
+    def identity(index, condition, replica=0):
+        return (index, condition, replica) if observations == 2 else (index, condition)
     same(recipe['protocol'], protocol, 'Driver changed prospective protocol')
     same(recipe['inputs'], [{'caseId': c['id'], 'inputSha256': c['inputSha256']} for c in context['inputs']], 'Original input inventory differs')
     require(recipe['schemaVersion'] == ('agat.decision.public-real-primary-workflow.v2' if suite is None else suite.WORKFLOW_SCHEMA)
         and recipe['primaryModel'] == primary.MODEL, 'Unsupported workflow recipe')
     require(driver['status'] == 'observed' and driver['failure'] is None and driver['workerExitCode'] == 0
-        and driver['primaryCalls'] == 2*count and driver['decisionCalls'] == count and driver['authenticatedStatus'] == 200
+        and driver['primaryCalls'] == 2*scoring and driver['decisionCalls'] == scoring and driver['authenticatedStatus'] == 200
         and driver['unauthenticatedStatus'] == 401 and driver['schedulerMode'] == 'sequential'
         and driver['globalMaxConcurrency'] == protocol['globalMaxConcurrency'], 'Driver or whole denominator failed')
     routes = journal(artifacts['workflow-routes.jsonl']); same(driver['routes'], routes, 'Route journal differs')
     primary_rows = journal(artifacts['primary-http.jsonl']); decisions = journal(artifacts['decision-http.jsonl']); leases = journal(artifacts['coordinator-http.jsonl'])
-    require(len(primary_rows) == len(routes) == 2*count and len(decisions) == count and driver['leaseCalls'] == len(leases), 'Extra/missing/retried actual HTTP call')
+    require(len(primary_rows) == len(routes) == 2*scoring and len(decisions) == scoring and driver['leaseCalls'] == len(leases), 'Extra/missing/retried actual HTTP call')
     for condition in protocol['conditions']:
         graph_raw = artifacts[f'graph-{condition}.json']; same(hashlib.sha256(graph_raw).hexdigest(), recipe['processes'][condition]['graphFileSha256'], 'Published graph SHA differs')
         graph = parse_json(graph_raw); nodes = graph['nodes']; require([n['id'] for n in nodes] == protocol['graphPath'], 'Different primary path')
@@ -132,7 +137,7 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
         cohort = parse_json(artifacts[f'cohort-{condition}.http.json'])
         require(cohort['schemaVersion'] == 'agat.decision.shadow-cohort.v1' and cohort['snapshot']['storedCohortComplete'] is True
             and cohort['snapshot']['truncated'] is False and cohort['snapshot']['consistency'] == 'single_database_snapshot', 'Incomplete authenticated census')
-        require(cohort['counts']['instances'] == cohort['counts']['runs'] == count and cohort['counts']['storedShadowStages'] == (count if condition == 'shadow' else 0), 'Wrong control/shadow census denominator')
+        require(cohort['counts']['instances'] == cohort['counts']['runs'] == scoring and cohort['counts']['storedShadowStages'] == (scoring if condition == 'shadow' else 0), 'Wrong control/shadow census denominator')
         scope = cohort['scope']; require(scope['processId'] == recipe['processes'][condition]['processId'] and scope['processVersion'] == protocol['processVersions'][condition]
             and scope['startAt'] == recipe['startAt'] and scope['endAt'] == driver['actualWindow']['endAt'] and scope['projectId'] == 'default'
             and scope['boundary'] == 'process_instance_created_at_half_open', 'Wrong census scope')
@@ -144,19 +149,23 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
     del shadow_graph['nodes'][1]['config']['decisionShadow']; same(shadow_graph, control_graph, 'Matched graphs differ beyond shadow config')
     expected_order = [(i, condition) for i in range(count) for condition in (('control', 'shadow') if i % 2 == 0 else ('shadow', 'control'))]
     if suite is not None:
-        expected_order = suite.route_order(count)
+        expected_order = suite.route_order_for(context, recipe) if hasattr(suite, 'route_order_for') else suite.route_order(count)
         primary_rows = suite.ordered_primary(primary_rows, expected_order)
-        require(len({d['index'] for d in decisions}) == count and {d['index'] for d in decisions} == set(range(count)), 'Repeated/missing paired native result')
-        decisions = sorted(decisions, key=lambda d: d['index'])
-    require([(r['index'], r['condition']) for r in routes] == expected_order and [(r['index'], r['condition']) for r in primary_rows] == expected_order, 'Reordered counterbalanced inventory')
+        require({(d['index'], d.get('replica', 0)) for d in decisions} == {(i, r) for i in range(count) for r in range(observations)}, 'Repeated/missing paired native result')
+    decisions_by_key = {(d['index'], d.get('replica', 0)): d for d in decisions}
+    require(len(decisions_by_key) == scoring, 'Repeated native replica identity')
+    require([identity(r['index'], r['condition'], r.get('replica', 0)) for r in routes] == expected_order
+        and [identity(r['index'], r['condition'], r.get('replica', 0)) for r in primary_rows] == expected_order, 'Reordered counterbalanced inventory')
     seen_runs = set(); outcomes = Counter(); primary_latency = {'control': [], 'shadow': []}; workflow_latency = {'control': [], 'shadow': []}
     primary_outputs = {}; requests = {}; length_returns = Counter(); prompts = []; shadow_latency = []; last_end = timestamp(recipe['startAt'], 'startAt')
     for ordinal, (route, row) in enumerate(zip(routes, primary_rows)):
-        index, condition = expected_order[ordinal]; case = context['inputs'][index]
+        key = expected_order[ordinal]; index, condition = key[:2]; replica = key[2] if observations == 2 else 0
+        case = context['inputs'][index]
         require(route['ordinal'] == ordinal and route['caseId'] == case['id'] and route['inputSha256'] == case['inputSha256']
             and route['runId'] == row['runId'] and route['runId'] not in seen_runs, 'Primary route is missing, repeated or rebound')
         seen_runs.add(route['runId']); trace_raw = artifacts[route['traceFile']]
-        require(route['traceFile'] == f'trace-{index:03d}-{condition}.http.json' and hashlib.sha256(trace_raw).hexdigest() == route['traceFileSha256'], 'Raw trace SHA differs')
+        trace_name = suite.trace_name(route) if suite is not None and hasattr(suite, 'trace_name') else f'trace-{index:03d}-{condition}.http.json'
+        require(route['traceFile'] == trace_name and hashlib.sha256(trace_raw).hexdigest() == route['traceFileSha256'], 'Raw trace SHA differs')
         trace = parse_json(trace_raw); run = trace['run']; require(trace['truncated'] is False and run['id'] == route['runId'] and run['status'] == 'completed'
             and run['input'] == case['request']['state'] and run['name'] == protocol['processName'] and run['replayOfRunId'] is None, 'Wrong actual primary input/run')
         stages = run['stages']; agents = [s for s in stages if s['processNodeId'] == 'agent']; require(len(agents) == 1, 'Extra/missing actual primary stage')
@@ -182,7 +191,7 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
         require(abs((pe-pb).total_seconds()*1000-number(row['elapsedMs'], 0, protocol['primaryTimeoutMs'])) <= 10
             and abs((returned-began).total_seconds()*1000-number(route['elapsedMs'], 0, protocol['instanceDeadlineMs'])) <= 10, 'Monotonic/wall-clock boundaries differ')
         primary_latency[condition].append(row['elapsedMs']); workflow_latency[condition].append(route['elapsedMs']); prompts.append(native['prompt_eval_count'])
-        length_returns[condition] += int(native['done_reason'] == 'length'); primary_outputs[index, condition] = output_sha; requests[index, condition] = native_request
+        length_returns[condition] += int(native['done_reason'] == 'length'); primary_outputs[key] = output_sha; requests[key] = native_request
         inventories = [trace[key]['stages'] for key in ('decisionStageInventory', 'decisionCallerAccounting', 'decisionAssignmentHistory')]
         if condition == 'control':
             require(all(not rows for rows in inventories) and trace['decisionObservations'] == [], 'Control has a shadow call/intent')
@@ -192,7 +201,7 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
                 and inv['callerTimeoutMs'] == 10000 and inv['assigned'] is True and inv['observationRecorded'] is True and inv['stageStatus'] == 'completed', 'Shadow stage/profile/input changed')
             require(caller['coverage'] == 'complete' and len(caller['assignments']) == 1 and caller['assignments'][0]['intent'] is True
                 and caller['assignments'][0]['stageAttempt'] == 1 and caller['assignments'][0]['negotiated'] is True and caller['assignments'][0]['outcome'] == 'returned', 'Unknown or revoked shadow return')
-            d = decisions[index]; require(d['index'] == index and d['runId'] == route['runId'] and d['stageId'] == stage['id'], 'Native shadow HTTP call rebound')
+            d = decisions_by_key[index, replica]; require(d['index'] == index and d['runId'] == route['runId'] and d['stageId'] == stage['id'], 'Native shadow HTTP call rebound')
             native_shadow_request = Request.from_dict(raw_body(d, 'requestBody')); expected = Request.from_dict({**case['request'], 'id': stage['id']})
             require(native_shadow_request == expected, 'Shadow transformed original decision input')
             result = raw_body(d, 'responseBody'); observation = trace['decisionObservations'][0]['observation']
@@ -212,7 +221,8 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
             same(history['assignments'][0]['observation'], observation, 'Assignment history differs from durable return')
             outcomes[native_outcome] += 1
             shadow_latency.append(number(observation['callerTiming']['durationMs'], 0, 10000))
-    require(all(requests[i, 'control'] == requests[i, 'shadow'] for i in range(count)), 'Matched native primary requests differ')
+    require(all(requests[identity(i, 'control', r)] == requests[identity(i, 'shadow', r)] for i in range(count) for r in range(observations)), 'Matched native primary requests differ')
+    require(all(requests[identity(i, 'control', 0)] == requests[identity(i, 'control', r)] for i in range(count) for r in range(observations)), 'Primary input changed across replicas')
     require(timestamp(driver['actualWindow']['endAt'], 'endAt') >= last_end, 'Census ended before final workflow')
     complete = []; intent = []; returned = []; by_run = {r['runId']: r for r in routes}; lease_bindings = {}
     for row in leases:
@@ -242,19 +252,23 @@ def verify_inventory(context, protocol, recipe, driver, artifacts, *, suite=None
                 else: suite.verify_posted_return(value, observation)
                 returned.append(row)
         else: require(path.endswith('/renew'), 'Unaccounted lease attempt')
-    require(len(complete) == 2*count and len(intent) == len(returned) == count, 'Wrong durable complete/intent/return denominator')
+    require(len(complete) == 2*scoring and len(intent) == len(returned) == scoring, 'Wrong durable complete/intent/return denominator')
     require(set(complete) == seen_runs and len(set(complete)) == len(complete), 'Repeated/missing durable completion')
     expected_shadow_runs = {r['runId'] for r in routes if r['condition'] == 'shadow'}
     require({r['runId'] for r in intent} == {r['runId'] for r in returned} == expected_shadow_runs
         and all(r['condition'] == 'shadow' for r in [*intent, *returned]), 'Control called shadow or a durable intent/return was omitted')
     require('truncating input prompt' not in artifacts['primary.log'].decode(errors='replace').lower(), 'Ollama truncated an original input')
-    deltas = [workflow_latency['shadow'][i]-workflow_latency['control'][i] for i in range(count)]
-    return {'schemaVersion': 'agat.decision.public-real-primary-inventory.v2', 'originalCases': count, 'actualWorkflows': 2*count,
-        'primaryCalls': 2*count, 'controlCalls': count, 'shadowCalls': count, 'durableShadowReturns': count,
-        'primaryOutputsPreserved': 2*count, 'matchedPrimaryRequests': count,
-        'matchedOutputPairs': sum(primary_outputs[i, 'control'] == primary_outputs[i, 'shadow'] for i in range(count)),
+    if observations == 1:
+        deltas = [workflow_latency['shadow'][i]-workflow_latency['control'][i] for i in range(count)]
+    else:
+        elapsed = {identity(r['index'], r['condition'], r['replica']): r['elapsedMs'] for r in routes}
+        deltas = [elapsed[identity(i, 'shadow', r)]-elapsed[identity(i, 'control', r)] for i in range(count) for r in range(observations)]
+    return {'schemaVersion': 'agat.decision.public-real-primary-inventory.v2', 'originalCases': count, 'actualWorkflows': 2*scoring,
+        'primaryCalls': 2*scoring, 'controlCalls': scoring, 'shadowCalls': scoring, 'durableShadowReturns': scoring,
+        'primaryOutputsPreserved': 2*scoring, 'matchedPrimaryRequests': scoring,
+        'matchedOutputPairs': sum(primary_outputs[identity(i, 'control', r)] == primary_outputs[identity(i, 'shadow', r)] for i in range(count) for r in range(observations)),
         'shadowOutcomes': dict(sorted(outcomes.items())), 'primaryPromptTokens': {'min': min(prompts), 'max': max(prompts)},
         'primaryLengthReturns': dict(sorted(length_returns.items())), 'primaryLatencyMs': {c: distribution(v) for c, v in primary_latency.items()},
         'workflowLatencyMs': {c: distribution(v) for c, v in workflow_latency.items()}, 'shadowCallerLatencyMs': distribution(shadow_latency),
-        'matchedWorkflowDeltaMs': {'min': min(deltas), 'max': max(deltas), 'mean': sum(deltas)/count},
+        'matchedWorkflowDeltaMs': {'min': min(deltas), 'max': max(deltas), 'mean': sum(deltas)/scoring},
         'retryCount': 0, 'classificationAccuracyMeasured': False, 'referenceLabels': 0, 'sloAccepted': False, 'routingEnabled': False, 'qualification': 'not_assessed'}

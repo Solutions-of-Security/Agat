@@ -23,7 +23,7 @@ from scripts.lib.decision_performance import profile_from_health
 from scripts.lib.decision_public_context import verify_profile
 from scripts.lib.decision_public_load import historical_context_sources, validate_context
 from scripts.lib.decision_public_load_verification import counters
-from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
+from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new, write_raw_new
 from scripts.lib.decision_public_workflow import PROFILE_PATH, shared_config
 from scripts.lib import decision_public_real_primary as diagnostic
 from workers.local_decisions import LocalDecisionClient
@@ -39,12 +39,16 @@ def main(argv=None, *, suite=diagnostic):
     for name in ('context-profile', 'runtime-python', 'manifest', 'primary-binaries', 'primary-models', 'evidence-dir'):
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--context-profile-file-sha256', required=True)
+    if hasattr(suite, 'prepare_design'):
+        parser.add_argument('--replication-design', type=Path, required=True)
+        parser.add_argument('--replication-design-file-sha256', required=True)
     args = parser.parse_args(argv)
     try:
         private = (ROOT/'docs/private').resolve()
         runtime.require(args.evidence_dir.resolve().is_relative_to(private) and args.evidence_dir.resolve() != private
             and not args.evidence_dir.exists() and not args.evidence_dir.is_symlink(), 'Use a new private evidence directory')
         context = validate_context(parse_json(pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024)))
+        initial = diagnostic.prepare_design(ROOT, args, context) if hasattr(diagnostic, 'prepare_design') else {'plan': {}, 'artifacts': {}}
         historical_context_sources(ROOT, context); config = shared_config(context)
         commit, sources = launcher.frozen_sources(diagnostic.SOURCE_PATHS)
         profile = parse_json(pinned_input(ROOT/PROFILE_PATH, context['profileFileSha256'], 1024*1024))
@@ -60,7 +64,10 @@ def main(argv=None, *, suite=diagnostic):
             'contextProfileFileSha256': args.context_profile_file_sha256, 'context': context, 'config': config, 'runtime': environment,
             'manifestFileSha256': context['manifestFileSha256'], 'primary': primary, 'protocol': diagnostic.PROTOCOL,
             'referenceLabels': 0, 'classificationAccuracyMeasured': False, 'ownersAppointed': False, 'sloAccepted': False,
-            'routingEnabled': False, 'qualification': 'not_assessed'})
+            'routingEnabled': False, 'qualification': 'not_assessed', **initial['plan']})
+        for name, raw in initial['artifacts'].items():
+            runtime.require(name in diagnostic.ARTIFACTS and Path(name).name == name, 'Unsafe prospective artifact name')
+            write_raw_new(directory/name, raw)
         write_json_new(directory/'plan.json', plan); plan_file_sha = sha256_file(directory/'plan.json')
     except Exception as error:
         print('Cannot prepare real-primary workflow: '+type(error).__name__+': '+str(error)[:200], file=sys.stderr); return 1

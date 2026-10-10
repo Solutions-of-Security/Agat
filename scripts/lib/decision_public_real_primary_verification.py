@@ -23,7 +23,7 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     plan = verify_seal(parse_json(pinned_input(directory/'plan.json', plan_sha, 64*1024*1024)), diagnostic.PLAN_SCHEMA)
     result = verify_seal(parse_json(pinned_input(directory/'result.json', result_sha, 64*1024*1024)), diagnostic.RESULT_SCHEMA)
     fields(plan, {'schemaVersion', 'sha256', 'createdAt', 'sourceCommit', 'sourceFiles', 'contextProfileFileSha256', 'context', 'config',
-        'runtime', 'manifestFileSha256', 'primary', 'protocol', 'referenceLabels', 'classificationAccuracyMeasured', 'ownersAppointed', 'sloAccepted', 'routingEnabled', 'qualification'})
+        'runtime', 'manifestFileSha256', 'primary', 'protocol', 'referenceLabels', 'classificationAccuracyMeasured', 'ownersAppointed', 'sloAccepted', 'routingEnabled', 'qualification'} | getattr(diagnostic, 'EXTRA_PLAN_FIELDS', set()))
     fields(result, {'schemaVersion', 'sha256', 'status', 'planSha256', 'evidence', 'warmup', 'samples', 'failure', 'ownedPids', 'remainingOwnedPids',
         'cleanupErrors', 'runtimeExitCode', 'primaryExitCode', 'driverExitCode', 'artifactSha256', 'elapsedMs', 'referenceLabels',
         'classificationAccuracyMeasured', 'ownersAppointed', 'sloAccepted', 'routingEnabled', 'qualification'})
@@ -60,9 +60,14 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     same(primary_profile['generation'], diagnostic.GENERATION, 'Primary generation settings differ')
     same(primary_profile['settings'], diagnostic.SETTINGS, 'Primary residency/concurrency settings differ')
     same(primary_profile['warmupRequest'], diagnostic.WARMUP_REQUEST, 'Primary warmup changed')
-    count = len(context['inputs']); names = diagnostic.ARTIFACTS | {f'trace-{i:03d}-{c}.http.json' for i in range(count) for c in diagnostic.PROTOCOL['conditions']}
+    count = len(context['inputs']); repeats = diagnostic.PROTOCOL.get('observationsPerCondition', 1)
+    require(type(repeats) is int and repeats in (1, 2), 'Unsupported source-bound replication count')
+    traces = diagnostic.trace_names(context) if hasattr(diagnostic, 'trace_names') else {f'trace-{i:03d}-{c}.http.json' for i in range(count) for c in diagnostic.PROTOCOL['conditions']}
+    names = diagnostic.ARTIFACTS | traces
     fields(result['artifactSha256'], names)
     artifacts = {name: pinned_input(directory/name, result['artifactSha256'][name], 32*1024*1024) for name in names}
+    if hasattr(diagnostic, 'verify_design'):
+        diagnostic.verify_design(root, directory, plan, context_path, context_sha)
     ledger = diagnostic.journal(artifacts['owned-pids.jsonl']); require(ledger and ledger[-1]['ownedPids'] == result['ownedPids'], 'Owned PID ledger omitted final inventory')
     previous_pids = set()
     for row in ledger:
@@ -102,8 +107,8 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     expected_final = expected_warm.copy()
     for row in diagnostic.journal(artifacts['decision-http.jsonl']): expected_final[outcome(parse_json(row['responseBody']))] += 1
     same(values[2], {key: expected_final[key] for key in values[2]}, 'Hidden, lost or extra physical native call')
-    native_case_calls = getattr(diagnostic, 'NATIVE_CASE_CALLS', count)
-    require(type(native_case_calls) is int and native_case_calls in (0, count), 'Unsupported native case denominator')
+    native_case_calls = getattr(diagnostic, 'NATIVE_CASE_CALLS', count*repeats)
+    require(type(native_case_calls) is int and native_case_calls in (0, count*repeats), 'Unsupported native case denominator')
     require(sum(values[2].values()) == native_case_calls+2, 'Wrong native terminal denominator')
     if hasattr(diagnostic, 'verify_native_origin'): diagnostic.verify_native_origin(result, artifacts)
     primary_warmup = parse_json(artifacts['primary-warmup.json']); same(primary_warmup['request'], diagnostic.WARMUP_REQUEST, 'Raw primary warmup changed')
@@ -119,5 +124,5 @@ def verify(root, directory, context_path, *, context_sha, plan_sha, result_sha, 
     return sealed({'schemaVersion': diagnostic.VERIFICATION_SCHEMA, 'status': 'pass', 'verifiedAt': diagnostic.now(),
         'rawFileSha256': {'context': context_sha, 'plan': plan_sha, 'result': result_sha}, 'sourceCommit': plan['sourceCommit'],
         'verifiedSourceFiles': len(sources), 'verifiedContextSourceFiles': len(context_sources), 'artifactCount': len(artifacts),
-        'evidence': evidence, 'nativeCalls': native_case_calls+2, 'primaryScoringCalls': 2*count, 'primaryWarmupCalls': 1,
+        'evidence': evidence, 'nativeCalls': native_case_calls+2, 'primaryScoringCalls': 2*count*repeats, 'primaryWarmupCalls': 1,
         'modelCallsDuringVerification': 0, 'referenceLabels': 0, 'ownersAppointed': False, 'sloAccepted': False, 'routingEnabled': False, 'qualification': 'not_assessed'})
