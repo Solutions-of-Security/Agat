@@ -1025,8 +1025,10 @@ attempts сохраняются; posthoc выбор порядка запрещ�
 
 219 design / 40 context sources; stdlib audit 6110 checks / 5700 JSON keys PASS.
 17 новых / 1154 Python tests (4 optional skips) прошли, protected resident
-27 checks и 8 snapshot fields неизменны. Actual overlap/completion/native
-outcomes ещё не измерены. Owners/customer/SLO/human labels/holdout открыты,
+27 checks и 8 snapshot fields неизменны. Immutable prospective ZIP: 36 files /
+39783532 bytes / 3145 Git objects; CRC/every SHA/size и actual original-copy
+restored replay model0 PASS. ZIP и proof сохранены в исходном docs/private.
+Actual overlap/completion/native outcomes ещё не измерены. Owners/customer/SLO/human labels/holdout открыты,
 routing=false / not_assessed.
 
 ## Вывод: что именно можно воспроизвести

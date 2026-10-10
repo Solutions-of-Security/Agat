@@ -80,3 +80,12 @@ source `9883a5e02a0fb60aad67fa93d650bfa98b6f1d1e`: 219 files / 40 context source
 17 новых / 1154 Python tests (4 optional skips) прошли. Protected resident
 27 checks и все 8 полей предыдущего snapshot неизменны. Model calls и measured
 workflows=0; actual overlap, outcomes и причинный эффект этим этапом не установлены.
+
+Planned scoring calls обозначают HTTP attempts, включая возможный admission
+отказ; этот счётчик не устанавливает количество будущих model inferences.
+
+[Immutable archive summary](./public-workflow-counterbalanced-design-archive-summary.json):
+36 files / 39783532 bytes / 3145 selected Git objects.
+SHA-256 `2a2f8935db19794b15b9a14b46163b270f41fb29e44e8cdc39548b0678611ba5`. CRC/every SHA/size и
+actual original-copy restored replay PASS; measured workflows и model calls=0.
+ZIP и отдельный proof сохранены в исходном workspace `/docs/private`.
