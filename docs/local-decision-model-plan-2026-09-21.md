@@ -772,6 +772,26 @@ runtime gate — active worker caller deadline при concurrency 2 с unaffecte
 in-flight primary peer и owned recovery. Owners/customer/SLO/human
 calibration/holdout открыты, routing false / not_assessed.
 
+[Active caller deadline при двух worker slots](./qualification/local-decisions/performance/public-workflow-two-slot-deadline.md),
+10.10: те же четыре full original inputs 24–27, actual coordinator/Python
+worker concurrency 2, sequential global 2. Две версии одного direct graph
+различаются только caller timeout 10000/250 ms; peer primary начат раньше
+target и остаётся открытым на той же lease/worker/attempt через native
+retirement/recovery. Все четыре workflow и primary outputs сохранены,
+четыре known caller returns: target `unavailable/timeout` за 250.736 ms,
+три healthy native returns (один ok / два abstain). Run cancellation нет,
+required writes 200 / renew 204, fail нет. Native starts 8 / known terminals 7,
+четыре warmups, два epochs; interrupted target counter unknown.
+Peer hold 6285 ms, native EOF→retirement 369 ms, recovery 5438 ms.
+Source 206 / context 40, три baseline signatures совпали; 14 новых /
+48 related tests, TypeScript и offline replay прошли. Independent audit
+708 checks / 27672 JSON keys; все 11 temporary PIDs absent, resident unchanged.
+Полный 1030-test Python suite (четыре optional skips) прошёл;
+raw/restorable archive остаётся приватным.
+Следующий performance gate — полный paired inventory с real primary и
+matched control при worker concurrency 2. Owners/customer/SLO/human
+calibration/holdout открыты, routing false / not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

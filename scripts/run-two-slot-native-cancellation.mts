@@ -17,8 +17,12 @@ assert.ok(directory.startsWith(path.resolve("docs/private")+path.sep));
 assert.ok(url.protocol==="http:" && url.hostname==="127.0.0.1" && url.port && !["8766","9095","11434"].includes(url.port)
   && url.pathname==="/" && !url.username && !url.password && !url.search && !url.hash);
 const plan=JSON.parse(fs.readFileSync(path.join(directory,"plan.json"),"utf8")),spec=plan.protocol;
-assert.equal(plan.schemaVersion,"agat.decision.two-slot-cancellation-plan.v1");
-assert.equal(spec.kind,"cancel_active_native_task_while_peer_primary_in_flight");
+const isDeadline=plan.schemaVersion==="agat.decision.two-slot-deadline-plan.v1";
+assert.ok(isDeadline || plan.schemaVersion==="agat.decision.two-slot-cancellation-plan.v1");
+assert.equal(spec.kind,isDeadline?"worker_deadline_while_peer_primary_in_flight":"cancel_active_native_task_while_peer_primary_in_flight");
+if(isDeadline){assert.equal(spec.targetCallerTimeoutMs,250);assert.equal(spec.healthyCallerTimeoutMs,10000);assert.deepEqual(spec.startOrder,[0,2,1,3]);}
+const preparedFile=isDeadline?"native-target-prepared.json":"coordinator-cancellation-prepared.json";
+const readyFile=isDeadline?"active-native-ready.json":"coordinator-cancellation-ready.json",drainedFile=isDeadline?"active-native-drained.json":"coordinator-cancellation-drained.json";
 assert.equal(spec.workerConcurrency,2);assert.equal(spec.globalMaxConcurrency,2);assert.equal(spec.localTargetIndex,1);assert.equal(spec.localPeerIndex,2);
 assert.equal(spec.schedulerMode,"sequential");assert.equal(spec.peerHoldDeadlineMs,30000);assert.equal(spec.driverDeadlineMs,180000);
 assert.equal(spec.retryCount,0);assert.equal(spec.nativeFault.targetIndex,1);
@@ -86,10 +90,12 @@ async function stopWorker(){if(worker && worker.exitCode===null && worker.signal
 try{
   const primaryUrl=await listen(primary),coordinatorUrl=await listen(coordinator);
   const processId=String(store.createProcess({name:spec.processName,graph}).id);store.publishProcess(processId);save("workflow-graph.json",store.getProcessVersion(processId,1)!.graph);
+  if(isDeadline){const targetGraph=structuredClone(graph);(targetGraph.nodes[1].config as any).decisionShadow.timeoutMs=spec.targetCallerTimeoutMs;
+    store.updateProcess(processId,{name:spec.processName,graph:targetGraph});store.publishProcess(processId);save("workflow-target-graph.json",store.getProcessVersion(processId,2)!.graph);}
   const startAt=new Date(Date.now()+1000).toISOString();save("workflow-plan.json",{schemaVersion:plan.schemaVersion,protocol:spec,processId,processVersion:1,startAt,
-    graphFileSha256:pin("workflow-graph.json"),endpoints:{primaryUrl,coordinatorUrl,decisionUrl:url.origin}});
+    graphFileSha256:pin("workflow-graph.json"),...(isDeadline?{caseVersions:[1,2,1,1],targetGraphFileSha256:pin("workflow-target-graph.json")}:{}),endpoints:{primaryUrl,coordinatorUrl,decisionUrl:url.origin}});
   const environment=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith("AGAT_") && !k.startsWith("OTEL_")));
-  worker=spawn("python3",["workers/agat_worker.py","--coordinator",coordinatorUrl,"--credentials",credential,"--name","two-slot-cancellation-diagnostic",
+  worker=spawn("python3",["workers/agat_worker.py","--coordinator",coordinatorUrl,"--credentials",credential,"--name",isDeadline?"two-slot-deadline-diagnostic":"two-slot-cancellation-diagnostic",
     "--models","fixture-primary","--model-url",primaryUrl+"/v1","--model-discovery","off","--no-web","--poll-interval","0.2","--concurrency","2","--decision-url",url.origin],
     {cwd:process.cwd(),stdio:["ignore",log,log],env:{...environment,AGAT_ENROLLMENT_TOKEN:enrollmentToken,OTEL_SDK_DISABLED:"true",NO_PROXY:"127.0.0.1,localhost"}});
   while(Date.now()<Date.parse(startAt))await new Promise(resolve=>setTimeout(resolve,Math.max(1,Date.parse(startAt)-Date.now())));
@@ -103,46 +109,52 @@ try{
     const response=await fetch(coordinatorUrl+endpoint,{headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(response.status,200);
     const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,name),raw,{flag:"wx",mode:0o600});
     journal("trace-http.jsonl",{index,path:endpoint,httpStatus:response.status,file:name,bodySha256:digest(raw),capturedAt:now()});return JSON.parse(raw);}
-  function start(index:number){const instance=store.startProcess(processId,{input:cases[index].request.state,version:1})!;runs[index]={instanceId:String(instance.id),runId:String(instance.runId)};}
+  function start(index:number){const version=isDeadline && index===1?2:1;const instance=store.startProcess(processId,{input:cases[index].request.state,version})!;runs[index]={instanceId:String(instance.id),runId:String(instance.runId)};}
   function route(index:number,t:any){const s=t.run.stages.find((s:any)=>s.processNodeId==="agent");assert.ok(s && s.attempt===1 && s.input===null);
     const row={index,originalIndex:spec.selectedOriginalIndices[index],caseId:cases[index].id,inputSha256:cases[index].inputSha256,...runs[index],stageId:s.id,runStatus:t.run.status};
     routes.push(row);journal("workflow-routes.jsonl",row);}
   start(0);await until(()=>store.getRun(runs[0].runId)!.status==="completed","Prefix did not complete");route(0,await trace(0,"trace-prefix.http.json"));
   publish("native-prefix-ready.json",{runId:runs[0].runId,stageId:routes[0].stageId,traceFileSha256:pin("trace-prefix.http.json"),requestedAt:now()});
   await receipt("native-prefix-armed.json",10000);
-  start(1);start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");
+  if(isDeadline){start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held before target");start(1);}
+  else{start(1);start(2);await until(()=>Boolean(peerHeld),"Peer primary was not held");}
   await until(()=>{const t=store.getRunTrace(runs[1].runId)! as any;return t.decisionCallerAccounting.stages.length===1 && t.decisionCallerAccounting.stages[0].assignments[0]?.intent===true;},"Target native intent was not pending");
   const before=await trace(1,"trace-target-before.http.json"),peerBefore=await trace(2,"trace-peer-before.http.json");
   const targetStage=before.run.stages.find((s:any)=>s.processNodeId==="agent"),peerStage=peerBefore.run.stages.find((s:any)=>s.processNodeId==="agent");
   assert.equal(before.run.status,"running");assert.equal(peerBefore.run.status,"running");assert.equal(targetStage.nodeId,peerStage.nodeId);assert.ok(targetStage.nodeId);
-  const unauthorized=await fetch(coordinatorUrl+`/api/v1/runs/${runs[1].runId}/cancel`,{method:"POST",signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(unauthorized.status,401);await unauthorized.text();
-  publish("coordinator-cancellation-prepared.json",{targetIndex:1,caseId:cases[1].id,stageId:targetStage.id,runId:runs[1].runId,inputSha256:cases[1].inputSha256,profileSha256:plan.context.profileSha256,
+  if(!isDeadline){const unauthorized=await fetch(coordinatorUrl+`/api/v1/runs/${runs[1].runId}/cancel`,{method:"POST",signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(unauthorized.status,401);await unauthorized.text();}
+  publish(preparedFile,{targetIndex:1,caseId:cases[1].id,stageId:targetStage.id,runId:runs[1].runId,inputSha256:cases[1].inputSha256,profileSha256:plan.context.profileSha256,
     peerRunId:runs[2].runId,peerStageId:peerStage.id,workerNodeId:targetStage.nodeId,
-    beforeTraceFileSha256:pin("trace-target-before.http.json"),peerTraceFileSha256:pin("trace-peer-before.http.json"),peerHeldFileSha256:pin("peer-primary-held.json"),preparedAt:now(),unauthenticatedStatus:401});
-  const ready=await receipt("coordinator-cancellation-ready.json",15000);assert.equal(ready.stageId,targetStage.id);assert.equal(ready.upstreamResponseBytesObserved,0);
-  assert.ok(Date.now()-Date.parse(ready.activeObservedAt)<=250);assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+    beforeTraceFileSha256:pin("trace-target-before.http.json"),peerTraceFileSha256:pin("trace-peer-before.http.json"),peerHeldFileSha256:pin("peer-primary-held.json"),preparedAt:now(),...(!isDeadline?{unauthenticatedStatus:401}:{})});
+  const ready=await receipt(readyFile,15000);assert.equal(ready.stageId,targetStage.id);assert.equal(ready.upstreamResponseBytesObserved,0);
+  if(!isDeadline)assert.ok(Date.now()-Date.parse(ready.activeObservedAt)<=250);assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+  if(!isDeadline){
   const requestStartedAt=now(),cancelStarted=performance.now(),requestPath=`/api/v1/runs/${runs[1].runId}/cancel`,cancelResponse=await fetch(coordinatorUrl+requestPath,{method:"POST",headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(5000),redirect:"error"});
   const responseBody=await cancelResponse.text();assert.equal(cancelResponse.status,204);assert.equal(responseBody,"");
   publish("coordinator-cancellation-applied.json",{targetIndex:1,caseId:cases[1].id,instanceId:runs[1].instanceId,stageId:targetStage.id,runId:runs[1].runId,inputSha256:cases[1].inputSha256,profileSha256:plan.context.profileSha256,
     requestStartedAt,responseCompletedAt:now(),cancelRequestElapsedMs:performance.now()-cancelStarted,requestMethod:"POST",requestPath,requestBody:"",requestBodySha256:digest(""),
     httpStatus:cancelResponse.status,responseBody,responseBodySha256:digest(responseBody),unauthenticatedStatus:401,readyFileSha256:pin("coordinator-cancellation-ready.json"),beforeTraceFileSha256:pin("trace-target-before.http.json")});
-  await trace(2,"trace-peer-after-cancel.http.json");assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
-  await receipt("coordinator-cancellation-drained.json",15000);await receipt("native-recovered.json",90000);
+  }else{await until(()=>store.getRun(runs[1].runId)!.status==="completed","Worker deadline did not preserve primary",10000);}
+  await trace(2,isDeadline?"trace-peer-after-deadline.http.json":"trace-peer-after-cancel.http.json");assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
+  await receipt(drainedFile,15000);await receipt("native-recovered.json",90000);
   await trace(2,"trace-peer-before-release.http.json");assert.ok(!peerClosed && peerResponse && !peerResponse.destroyed);
   peerReleased=true;save("peer-primary-released.json",{index:2,runId:runs[2].runId,releasedAt:now(),socketClosedBeforeRelease:peerClosed,socketOpenAtRelease:!peerResponse.destroyed,responseBytesWrittenBeforeRelease:0,
     recoveredFileSha256:pin("native-recovered.json"),heldFileSha256:pin("peer-primary-held.json")});resolvePeer!();
-  const targetAssignment=before.decisionCallerAccounting.stages.find((s:any)=>s.stageId===targetStage.id).assignments[0];
+  if(!isDeadline){const targetAssignment=before.decisionCallerAccounting.stages.find((s:any)=>s.stageId===targetStage.id).assignments[0];
   const targetIntent=coordinatorRows.find(r=>r.path.endsWith("/decision-shadow/intent") && JSON.parse(r.requestBody).assignmentId===targetAssignment.assignmentId);assert.ok(targetIntent);
   const targetLeasePath=targetIntent.path.slice(0,-"/decision-shadow/intent".length);
-  await until(()=>coordinatorRows.some(r=>r.path===targetLeasePath+"/decision-shadow" && r.httpStatus===400) && coordinatorRows.some(r=>r.path===targetLeasePath+"/complete" && r.httpStatus===400),"Target late writes were not fenced",10000);
+  await until(()=>coordinatorRows.some(r=>r.path===targetLeasePath+"/decision-shadow" && r.httpStatus===400) && coordinatorRows.some(r=>r.path===targetLeasePath+"/complete" && r.httpStatus===400),"Target late writes were not fenced",10000);}
   route(1,await trace(1,"trace-target.http.json"));
   await until(()=>store.getRun(runs[2].runId)!.status==="completed","Unaffected peer failed");route(2,await trace(2,"trace-peer.http.json"));
   start(3);await until(()=>store.getRun(runs[3].runId)!.status==="completed","Recovery suffix failed");route(3,await trace(3,"trace-suffix.http.json"));
   await stopWorker();assert.equal(worker.exitCode,0);assert.ok(!failure);const endAt=now();
-  const endpoint=coordinatorUrl+`/api/v1/processes/${processId}/decision-shadow-cohort?`+new URLSearchParams({processVersion:"1",startAt,endAt});
-  assert.equal((await fetch(endpoint,{signal:AbortSignal.timeout(5000)})).status,401);
+  for(const version of isDeadline?[1,2]:[1]){
+  const endpoint=coordinatorUrl+`/api/v1/processes/${processId}/decision-shadow-cohort?`+new URLSearchParams({processVersion:String(version),startAt,endAt});
+  const unauthorized=await fetch(endpoint,{signal:AbortSignal.timeout(5000),redirect:"error"});assert.equal(unauthorized.status,401);await unauthorized.text();
   const response=await fetch(endpoint,{headers:{"x-agat-admin-token":adminToken},signal:AbortSignal.timeout(10000),redirect:"error"});assert.equal(response.status,200);
-  const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,"cohort.http.json"),raw,{flag:"wx",mode:0o600});
+  const raw=await response.text();assert.ok(Buffer.byteLength(raw)<=16*1024*1024);fs.writeFileSync(path.join(directory,version===1?"cohort.http.json":"cohort-target.http.json"),raw,{flag:"wx",mode:0o600});
+  if(isDeadline)journal("cohort-http.jsonl",{version,path:new URL(endpoint).pathname+new URL(endpoint).search,httpStatus:response.status,
+    unauthenticatedStatus:unauthorized.status,bodySha256:digest(raw),capturedAt:now()});}
   save("workflow-driver.json",{status:"observed",failure:null,routes,primaryCalls:primaryRows.length,workerExitCode:worker.exitCode,ownedPids:[process.pid,worker.pid],
     nodeVersion:process.version,workerConcurrency:2,schedulerMode:store.getSetting("scheduler_mode"),globalMaxConcurrency:Number(store.getSetting("global_max_concurrency")),endAt,authenticatedStatus:200,unauthenticatedStatus:401});
 }finally{if(!peerReleased){peerResponse?.destroy();resolvePeer?.();}await stopWorker();fs.closeSync(log);if(fs.existsSync(credential))fs.unlinkSync(credential);

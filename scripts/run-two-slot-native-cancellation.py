@@ -40,20 +40,21 @@ now = lambda: datetime.now(timezone.utc).isoformat(timespec='milliseconds').repl
 
 
 def publish(directory, name, value):
-    runtime.require(name in {'native-prefix-armed.json', 'coordinator-cancellation-ready.json',
-        'coordinator-cancellation-drained.json', 'native-retired.json', 'native-recovered.json'}, 'Unknown two-slot barrier')
+    runtime.require(name in {'native-prefix-armed.json', 'coordinator-cancellation-ready.json', 'coordinator-cancellation-drained.json',
+        'active-native-ready.json', 'active-native-drained.json', 'native-retired.json', 'native-recovered.json'}, 'Unknown two-slot barrier')
     pending = directory/(name+'.pending')
     write_json_new(pending, value)
     try: os.link(pending, directory/name, follow_symlinks=False)
     finally: pending.unlink()
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, suite=diagnostic, target_flag='cancel-at-original-index'):
+    diagnostic = suite
+    parser = argparse.ArgumentParser(description=suite.__doc__)
     for name in ('context-profile', 'runtime-python', 'manifest', 'evidence-dir'):
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--context-profile-file-sha256', required=True)
-    parser.add_argument('--cancel-at-original-index', type=int, required=True)
+    parser.add_argument('--'+target_flag, dest='target_original_index', type=int, required=True)
     args = parser.parse_args(argv)
     try:
         private = (ROOT/'docs/private').resolve()
@@ -61,8 +62,8 @@ def main(argv=None):
             and not args.evidence_dir.exists() and not args.evidence_dir.is_symlink(), 'Use a new private evidence directory')
         context_raw = pinned_input(args.context_profile, args.context_profile_file_sha256, 32*1024*1024)
         context = validate_context(parse_json(context_raw)); historical_context_sources(ROOT, context)
-        projected = diagnostic.projection(context, args.cancel_at_original_index)
-        protocol = diagnostic.protocol(context, args.cancel_at_original_index); fault = protocol['nativeFault']
+        projected = diagnostic.projection(context, args.target_original_index)
+        protocol = diagnostic.protocol(context, args.target_original_index); fault = protocol['nativeFault']
         commit, sources = launcher.frozen_sources(diagnostic.SOURCE_PATHS)
         profile_raw = pinned_input(ROOT/PROFILE_PATH, context['profileFileSha256'], 1024*1024); profile = parse_json(profile_raw)
         manifest, _ = verify_manifest(args.manifest.resolve()); verify_profile(profile, manifest)
@@ -77,7 +78,7 @@ def main(argv=None):
             'profileFileSha256': context['profileFileSha256'], 'manifestFileSha256': context['manifestFileSha256'], 'protocol': protocol, **diagnostic.AUTHORITY})
         write_json_new(directory/'plan.json', plan); plan_file_sha = sha256_file(directory/'plan.json')
     except Exception as error:
-        print('Cannot prepare two-slot cancellation: '+type(error).__name__+': '+str(error)[:200], file=sys.stderr); return 1
+        print('Cannot prepare two-slot native gate: '+type(error).__name__+': '+str(error)[:200], file=sys.stderr); return 1
     stopped = threading.Event(); previous = {sig: signal.signal(sig, lambda *_: stopped.set()) for sig in (signal.SIGINT, signal.SIGTERM)}
     processes = []; owned = set(); errors = []; samples = []; warmup = []; proxy = driver = evidence = physical = failure = None
     ready = drained = retired = recovered = prefix = prepared = None; native_pids = []; child = None
@@ -129,11 +130,11 @@ def main(argv=None):
             return sample(process, epoch, 'after_warmup')
 
         child = launch(0); initial = warm(child, 0)
-        proxy = integration.PreparedActiveCancellationProxy(port, projected, fault)
+        proxy = diagnostic.make_proxy(port, projected, fault)
         proxy.bind_warmups(dict(Counter(row['status'] for row in warmup)), initial['serverStart'])
         env = {key: value for key, value in os.environ.items() if not key.startswith(('AGAT_', 'OTEL_'))}
         with runtime.open_private_log(directory/'driver.log') as log:
-            driver = subprocess.Popen(['node', '--import', 'tsx', 'scripts/run-two-slot-native-cancellation.mts', '--decision-url',
+            driver = subprocess.Popen(['node', '--import', 'tsx', diagnostic.DRIVER_PATH, '--decision-url',
                 f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory)], cwd=ROOT, env={**env, 'OTEL_SDK_DISABLED': 'true'},
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         owned.add(driver.pid); record_owned(); next_inventory = 0
@@ -149,8 +150,8 @@ def main(argv=None):
                 native_pids = sorted(runtime.shared.inventory(child.pid)[0]); owned.update(native_pids); record_owned()
                 publish(directory, 'native-prefix-armed.json', {'prefixFileSha256': sha256_file(directory/'native-prefix-ready.json'),
                     'runtimePid': child.pid, 'nativePids': native_pids, 'serverStartText': str(samples[-1]['serverStart']), 'armedAt': now()})
-            if prepared is None and (directory/'coordinator-cancellation-prepared.json').exists():
-                prepared = parse_json(pinned_input(directory/'coordinator-cancellation-prepared.json', sha256_file(directory/'coordinator-cancellation-prepared.json'), 65536))
+            if prepared is None and (directory/diagnostic.PREPARED_FILE).exists():
+                prepared = parse_json(pinned_input(directory/diagnostic.PREPARED_FILE, sha256_file(directory/diagnostic.PREPARED_FILE), 65536))
                 diagnostic.validate_preparation(projected, prepared, {name: (directory/name).read_bytes() for name in
                     ('trace-target-before.http.json', 'trace-peer-before.http.json', 'peer-primary-held.json')})
                 runtime.require(prefix is not None, 'Target bypassed original prefix accounting'); proxy.prepared.set()
@@ -158,11 +159,11 @@ def main(argv=None):
                 ready = proxy.ready_receipt()
                 if ready is not None:
                     runtime.require(prepared is not None and ready['stageId'] == prepared['stageId'], 'Target bypassed actual two-slot preparation')
-                    publish(directory, 'coordinator-cancellation-ready.json', ready)
+                    publish(directory, diagnostic.READY_FILE, ready)
             if drained is None:
                 drained = proxy.target_receipt()
                 if drained is not None:
-                    publish(directory, 'coordinator-cancellation-drained.json', drained); deadline = time.monotonic()+fault['retirementDeadlineMs']/1000
+                    publish(directory, diagnostic.DRAINED_FILE, drained); deadline = time.monotonic()+fault['retirementDeadlineMs']/1000
                     runtime.require(child.wait(max(.001, deadline-time.monotonic())) == 75, 'Native runtime did not retire after actual EOF')
                     remaining_native = integration.await_native_cleanup(native_pids, lambda pids: runtime.remaining_owned_processes(pids, errors), deadline=deadline)
                     retired = active.retired_receipt(fault, ready, drained, runtime_pid=child.pid, native_pids=native_pids, exit_code=child.returncode,
@@ -172,7 +173,7 @@ def main(argv=None):
                     recovered = active.recovered_receipt(fault, retired, runtime_pid=child.pid, profile_sha=context['profileSha256'],
                         server_start=samples[-1]['serverStart'], warmup_file_sha=sha256_file(directory/'recovery-warmup.json'), applied_at=now())
                     publish(directory, 'native-recovered.json', recovered)
-            runtime.require(child.poll() is None, 'Owned native runtime exited outside declared cancellation'); time.sleep(.005)
+            runtime.require(child.poll() is None, 'Owned native runtime exited outside declared interruption'); time.sleep(.005)
         runtime.require(driver.returncode == 0 and recovered is not None, 'Actual two-slot driver failed or omitted recovery')
         observed = parse_json((directory/'workflow-driver.json').read_bytes()); owned.update(observed['ownedPids']); record_owned()
         proxy.close(); write_json_new(directory/'active-transport.json', proxy.receipt()); sample(child, 1, 'after_inventory')

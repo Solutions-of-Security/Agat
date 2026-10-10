@@ -38,8 +38,9 @@ now = lambda: datetime.now(timezone.utc).isoformat(timespec='milliseconds').repl
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires Node diagnostic dependencies')
 class TwoSlotActorTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls, suite=diagnostic):
         if hasattr(cls, 'artifacts'): return
+        diagnostic = suite
         context, _, cohort, _ = fixture.fixture(); cls.context = context; cls.protocol = diagnostic.protocol(context, 1)
         projected = diagnostic.projection(context, 1)
         typed = {c['inputSha256']: t['decisionObservations'][0]['observation']['result'] for c, t in zip(context['inputs'], cohort['traces'])}
@@ -82,7 +83,7 @@ class TwoSlotActorTest(unittest.TestCase):
                 self.respond(200, response)
 
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler); thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}); thread.start()
-        proxy = integration.PreparedActiveCancellationProxy(server.server_port, projected, cls.protocol['nativeFault'])
+        proxy = diagnostic.make_proxy(server.server_port, projected, cls.protocol['nativeFault'])
         proxy.bind_warmups({outcome(warm_result): 2}, origins[0]); samples = []; warmup = []
         native = [[42, 43, 44], [45, 46, 47]]; start = time.monotonic()
         private = ROOT/'docs/private'; private.mkdir(parents=True, exist_ok=True)
@@ -105,7 +106,7 @@ class TwoSlotActorTest(unittest.TestCase):
                 save('plan.json', cls.plan)
                 early_timer = 'const timer=globalThis.setTimeout;let fired=false;globalThis.setTimeout=(callback,delay,...args)=>{if(!fired&&delay>500&&delay<=1000){fired=true;console.log("fixture: early start timer");return timer(callback,0,...args);}return timer(callback,delay,...args);};'
                 timer_import = 'data:text/javascript;base64,'+base64.b64encode(early_timer.encode()).decode()
-                process = subprocess.Popen(['node', '--import', 'tsx', '--import', timer_import, 'scripts/run-two-slot-native-cancellation.mts',
+                process = subprocess.Popen(['node', '--import', 'tsx', '--import', timer_import, diagnostic.DRIVER_PATH,
                     '--decision-url', f'http://127.0.0.1:{proxy.port}', '--evidence-dir', str(directory)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 armed = prepared = ready = drained = recovered = None; deadline = time.monotonic()+45
                 try:
@@ -115,17 +116,17 @@ class TwoSlotActorTest(unittest.TestCase):
                             sample('before_target'); prefix = json.loads((directory/'native-prefix-ready.json').read_bytes())
                             armed = {'prefixFileSha256': digest((directory/'native-prefix-ready.json').read_bytes()), 'runtimePid': 42, 'nativePids': native[0], 'serverStartText': str(origins[0]), 'armedAt': now()}
                             cli.publish(directory, 'native-prefix-armed.json', armed)
-                        if prepared is None and (directory/'coordinator-cancellation-prepared.json').exists():
-                            prepared = json.loads((directory/'coordinator-cancellation-prepared.json').read_bytes())
+                        if prepared is None and (directory/diagnostic.PREPARED_FILE).exists():
+                            prepared = json.loads((directory/diagnostic.PREPARED_FILE).read_bytes())
                             diagnostic.validate_preparation(projected, prepared, {n: (directory/n).read_bytes() for n in ('trace-target-before.http.json', 'trace-peer-before.http.json', 'peer-primary-held.json')})
                             proxy.prepared.set()
                         if ready is None:
                             ready = proxy.ready_receipt()
-                            if ready is not None: cli.publish(directory, 'coordinator-cancellation-ready.json', ready)
+                            if ready is not None: cli.publish(directory, diagnostic.READY_FILE, ready)
                         if drained is None:
                             drained = proxy.target_receipt()
                             if drained is not None:
-                                assert cls.eof.wait(2), 'Synthetic upstream never received actual EOF'; cli.publish(directory, 'coordinator-cancellation-drained.json', drained)
+                                assert cls.eof.wait(2), 'Synthetic upstream never received actual EOF'; cli.publish(directory, diagnostic.DRAINED_FILE, drained)
                                 log = encoded({'schemaVersion': 'agat.decision.retirement.v1', 'eventName': 'decision.backend_retired', 'runtimeVersion': '0.12.3',
                                     'profileSha256': context['profileSha256'], 'exitCode': 75, 'reason': 'inference_cancelled', 'childPid': 44, 'childExitCode': -15})
                                 (directory/'runtime.log').write_bytes(log)
@@ -243,12 +244,14 @@ class PreparationTest(unittest.TestCase):
 @unittest.skipUnless(shutil.which('node') and (ROOT/'node_modules/tsx').exists(), 'Requires Node diagnostic dependencies')
 class ReplayTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
-        TwoSlotActorTest.setUpClass(); cls.temporary = tempfile.TemporaryDirectory(); cls.root = Path(cls.temporary.name)/'sources'; cls.root.mkdir()
+    def setUpClass(cls, suite=diagnostic, actor=TwoSlotActorTest):
+        diagnostic = suite; cls.suite = suite
+        actor.setUpClass(); cls.temporary = tempfile.TemporaryDirectory(); cls.root = Path(cls.temporary.name)/'sources'; cls.root.mkdir()
         paths = list(dict.fromkeys([*diagnostic.SOURCE_PATHS, *CONTEXT_PATHS]))
         names = set(subprocess.check_output(['git', 'ls-files', '--', *paths], cwd=ROOT, text=True).splitlines())
         # New files may still be untracked during the first development replay.
         names.update(p for p in paths if (ROOT/p).is_file()); names.add('scripts/lib/decision_two_slot_cancellation.py')
+        names.add(Path(suite.__file__).relative_to(ROOT).as_posix())
         for name in sorted(names):
             target = cls.root/name; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes((ROOT/name).read_bytes())
         for args in (['init', '--quiet'], ['add', '.'], ['-c', 'user.name=Synthetic fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Synthetic receipt replay sources']):
@@ -257,12 +260,12 @@ class ReplayTest(unittest.TestCase):
         def pins(paths):
             selected = subprocess.check_output(['git', 'ls-files', '--', *paths], cwd=cls.root, text=True).splitlines()
             return {name: digest((cls.root/name).read_bytes()) for name in selected}
-        cls.context = copy.deepcopy(TwoSlotActorTest.context); cls.context.update(sourceCommit=commit, sourceFiles=pins(CONTEXT_PATHS))
+        cls.context = copy.deepcopy(actor.context); cls.context.update(sourceCommit=commit, sourceFiles=pins(CONTEXT_PATHS))
         cls.context = sealed({k: v for k, v in cls.context.items() if k != 'sha256'})
-        cls.plan = sealed({**TwoSlotActorTest.plan, 'context': cls.context, 'contextProfileFileSha256': digest(encoded(cls.context)), 'sourceCommit': commit,
+        cls.plan = sealed({**actor.plan, 'context': cls.context, 'contextProfileFileSha256': digest(encoded(cls.context)), 'sourceCommit': commit,
             'sourceFiles': pins(diagnostic.SOURCE_PATHS), 'runtime': cls.context['tokenizerEnvironment'], 'profileFileSha256': cls.context['profileFileSha256'],
             'manifestFileSha256': cls.context['manifestFileSha256'], **diagnostic.AUTHORITY})
-        cls.result = sealed({**TwoSlotActorTest.result, 'planSha256': cls.plan['sha256']}); cls.artifacts = copy.deepcopy(TwoSlotActorTest.artifacts)
+        cls.result = sealed({**actor.result, 'planSha256': cls.plan['sha256']}); cls.artifacts = copy.deepcopy(actor.artifacts)
         cls().replay()
 
     @classmethod
@@ -281,7 +284,7 @@ class ReplayTest(unittest.TestCase):
                 if args[0] != 'git': raise AssertionError('Replay attempted model/worker process')
                 return original_popen(args, *positional, **kwargs)
             with patch.object(cli.subprocess, 'Popen', side_effect=git_only), patch('socket.create_connection', side_effect=AssertionError('Replay attempted network')):
-                return diagnostic.verify(self.root, directory, context_path, context_sha=digest(encoded(self.context)), plan_sha=digest(encoded(plan)), result_sha=digest(encoded(result)))
+                return self.suite.verify(self.root, directory, context_path, context_sha=digest(encoded(self.context)), plan_sha=digest(encoded(plan)), result_sha=digest(encoded(result)))
 
     def test_complete_historical_source_and_raw_replay_makes_no_model_calls(self):
         receipt = self.replay(); self.assertEqual(receipt['status'], 'pass')
