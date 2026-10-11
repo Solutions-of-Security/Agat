@@ -82,3 +82,39 @@ raw pin/source mutations, foreign pool, late artifact/source drift и private
 saved-report replay. Тестовые метки явно synthetic; они не являются реальными
 review исходных 49 случаев. Первый test fixture был отклонён из-за отсутствующего
 обязательного declared entrypoint; fixture исправлен без ослабления verifier.
+
+## Проверка production CLI и сохранение доказательств
+
+На committed sources `3913aae` production CLI выполнила три успешных
+проверки и пять ожидаемых отказов. Положительные diagnostics и saved-report
+replay используют шесть sourced inputs / 42 variants с явно synthetic
+measurements и synthetic submitted labels. Отдельная независимая арифметическая
+проверка выполнила 88 assertions; восемь собственных CLI processes завершились.
+Это не native model inference и не человеческая разметка.
+
+Три закреплённых original archives прошли 91 проверку; SHA и размер каждого
+из семи восстановленных real artifacts сверены с их archive entries.
+Штатный native verifier повторно проверил существующие 49 cases / 343 variants
+без inference. Новый CLI отклонил посторонние synthetic labels для этого
+real pool до output. Первый private probe сохраняется локально; итоговый v2
+дополнительно сверяет все семь artifacts с исходными archive pins.
+
+Полный Python-набор: 1393 tests / 535,087 секунды, четыре optional skips.
+18 Node documentation tests и links/catalog прошли. Первый полный запуск
+был выполнен в sandbox и получил отказы loopback sockets/process inventory;
+его failed log сохранён отдельно. Те же committed sources прошли полный
+повтор с разрешёнными локальными test fixtures.
+
+[Public summary](./review-native-diagnostics-summary.json) содержит только
+allowlisted aggregate facts. [Archive summary](./review-native-diagnostics-archive-summary.json)
+закрепляет private ZIP: 408 файлов, 79910488 байт, SHA
+`1adcc735351f8bdd551209e81170eb84a1239a6f9d8a72cbb72240d007607b25`.
+CRC, closed inventory, все file SHA/size и исходная workspace copy проверены.
+Production CLI из восстановленной копии получила byte-identical diagnostic
+без inference и resident runtime. В ZIP входят 196 Git files собственного
+synthetic fixture repo: они нужны для проверки committed historical sources;
+remote repository и его полный checkout для этого replay не нужны.
+
+Настоящие независимые reviews для 49 исходных cases остаются следующим
+предметным gate. Ни archived evidence, ни successful test не подтверждают
+human execution, expertise, classification accuracy или разрешение routing.

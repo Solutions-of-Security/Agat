@@ -1396,9 +1396,19 @@ rejections, abstentions, group census, macro-F1/NLL/Brier/ECE и все cases.
 Saved report пересчитывается полностью; rehashed numbers/authority и late
 artifact/source drift не публикуются. Новые inference/calibration/holdout
 calls=0, human/source authority=false, accuracy qualification не заявляется.
-14 новых / 59 related Python tests прошли на explicit synthetic measurements
-и test labels. Реальные 49 submitted reviews остаются необходимым предметным
-gate; эта инженерная связка не подменяет их model pseudo-labels.
+14 новых / 59 related и полный набор 1393 Python tests прошли (4 optional
+skips), 18 Node documentation tests и links/catalog PASS. Production CLI:
+три positive / пять refusal commands, 88 independent arithmetic checks,
+91 parent archive checks, восемь собственных processes absent. Existing real
+49 cases / 343 variants повторно проверены без inference; чужие synthetic
+labels для real pool отвергнуты до output. Positive diagnostics используют
+explicit synthetic measurements и test labels.
+ZIP 408 files / 79910488 bytes сохранён в original docs/private; CRC/every
+SHA/size проверены, production CLI из actual original-copy restore выдала
+byte-identical diagnostic без resident runtime/inference, используя embedded
+owned synthetic fixture Git. Failed sandbox log сохранён отдельно от успешного
+полного повторного прогона. Реальные 49 submitted reviews остаются необходимым
+предметным gate; эта инженерная связка не подменяет их model pseudo-labels.
 
 ## Вывод: что именно можно воспроизвести
 
