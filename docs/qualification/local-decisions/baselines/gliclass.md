@@ -9,7 +9,7 @@
 ## Проспективный профиль
 
 [Model card](https://huggingface.co/knowledgator/gliclass-edge-v3.0) описывает
-32.7M / 131 MB Edge v3 и declares Apache-2.0. Выбрана одна ревизия
+32.7M / 131 MB Edge v3, указана лицензия Apache-2.0. Выбрана одна ревизия
 `df03993a2ed98e5e4a0d2dd7efbbd105abe874cf`; SHA и размеры всех пяти inference
 файлов закреплены в [каталоге](./gliclass-model.json). Маленькие файлы сверены с
 Git blob из API этой ревизии, SHA весов — с LFS metadata; загрузчик затем

@@ -1,6 +1,8 @@
 import copy
 from contextlib import nullcontext
 import hashlib
+import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -77,6 +79,27 @@ def reseal(value): return sealed({key: item for key, item in value.items() if ke
 
 
 class GLiClassBaselineTest(unittest.TestCase):
+    def test_real_cli_decodes_sha_pinned_json_and_replays_complete_report(self):
+        spec = importlib.util.spec_from_file_location('gliclass_cli_unit_fixture', baseline.ROOT / 'scripts/evaluate-gliclass-development.py')
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source_raw = b'synthetic CLI source fixture'
+            identity = {'sourceCommit': '1' * 40, 'sourceFiles': {'fixture.py': hashlib.sha256(source_raw).hexdigest()}}
+            raw = json.dumps(dataset()).encode(); data_path = root / 'dataset.json'; data_path.write_bytes(raw)
+            output, verified = root / 'docs/private/measured', root / 'docs/private/verified'
+            args = ['--model-dir', str(root / 'fake-model'), '--dataset', str(data_path),
+                    '--dataset-file-sha256', hashlib.sha256(raw).hexdigest()]
+            with patch.object(cli, 'ROOT', root), patch.object(cli, 'frozen_sources', return_value=identity), \
+                 patch.object(cli, 'verify_local', return_value={'sha256': '3' * 64}), \
+                 patch.object(cli, 'GLiClassBackend', return_value=backend()):
+                self.assertEqual(cli.main(['measure', *args, '--output-dir', str(output)]), 0)
+                report_path = output / 'report.json'; report_raw = report_path.read_bytes()
+                with patch.object(cli.subprocess, 'check_output', return_value=source_raw):
+                    self.assertEqual(cli.main(['verify', *args, '--report', str(report_path),
+                        '--report-file-sha256', hashlib.sha256(report_raw).hexdigest(), '--output-dir', str(verified)]), 0)
+                self.assertEqual((verified / 'verified-report.json').read_bytes(), report_raw)
+                self.assertEqual(json.loads((verified / 'execution.json').read_bytes())['modelCalls'], 0)
+
     def test_complete_request_candidate_order_and_no_gold_reaches_native_forward(self):
         native = backend(); result = baseline.measure(dataset(), native, {'sourceCommit': '1' * 40,
             'sourceFiles': {'fixture.py': '2' * 64}})

@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from decision_runtime.artifacts import sealed
-from decision_runtime.contracts import fingerprint
+from decision_runtime.contracts import fingerprint, parse_json
 from scripts.lib.decision_gliclass_baseline import (GLiClassBackend, development_dataset, download, frozen_sources,
                                                    measure, verify_local, verify_report)
 from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
@@ -43,14 +43,14 @@ def main(argv=None):
         private = (ROOT / 'docs/private').resolve()
         require(args.output_dir.resolve().is_relative_to(private) and args.output_dir.resolve() != private,
                 'Use a new private output directory')
-        dataset = development_dataset(pinned_input(args.dataset, args.dataset_file_sha256, 4 * 1024 * 1024))
+        dataset = development_dataset(parse_json(pinned_input(args.dataset, args.dataset_file_sha256, 4 * 1024 * 1024)))
         manifest = verify_local(args.model_dir)
         if args.command == 'measure':
             backend = GLiClassBackend(args.model_dir)
             report = verify_report(dataset, measure(dataset, backend, identity))
             model_calls = report['summary']['nativeInferenceAttempts']
         else:
-            report = verify_report(dataset, pinned_input(args.report, args.report_file_sha256, 32 * 1024 * 1024))
+            report = verify_report(dataset, parse_json(pinned_input(args.report, args.report_file_sha256, 32 * 1024 * 1024)))
             require(report['sourceIdentity']['sourceFiles'] == identity['sourceFiles'], 'Measured source files differ from current verifier snapshot')
             measured = report['sourceIdentity']['sourceCommit']
             require(len(measured) == 40, 'Invalid measured commit')
@@ -60,7 +60,7 @@ def main(argv=None):
                 require(hashlib.sha256(raw).hexdigest() == sha, 'Measured committed source differs')
             model_calls = 0
         require(frozen_sources(ROOT) == identity and verify_local(args.model_dir) == manifest
-                and fingerprint(pinned_input(args.dataset, args.dataset_file_sha256, 4 * 1024 * 1024)) == fingerprint(dataset),
+                and fingerprint(parse_json(pinned_input(args.dataset, args.dataset_file_sha256, 4 * 1024 * 1024))) == fingerprint(dataset),
                 'Sources, dataset or local weights changed during baseline execution')
         directory = private_directory(ROOT, args.output_dir)
         write_json_new(directory / ('report.json' if args.command == 'measure' else 'verified-report.json'), report)
