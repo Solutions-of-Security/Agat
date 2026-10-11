@@ -6,6 +6,8 @@
 
 Границы исходного анализа от 21.09.2026: локальное выполнение, архитектура модели, данные, обучение, калибровка, ресурсы и интеграция. На момент анализа рассматривались открытые исходники и model cards; модели ещё не скачивались и не запускались, оборудование не профилировалось. Исходные оценки не являются доказательством качества кандидатов.
 
+[Полный native benchmark на опубликованных русских references TERRa](./qualification/local-decisions/external/terra-native-baselines.md), **11.10.2026**, завершён: все 307 случаев / 282 группы, два зависимых порядка, четыре pinned candidate и 2456 forwards без backend/context errors. decider — 267/269 правильных argmax, Qwen Base — 265/271, GLiClass — 157/150, NanoJev — 153/153; у каждого раскрыты accepted errors, coverage, F1/NLL/Brier/ECE и order sensitivity. Новые веса, tuning и source prefilter не использовались. 72726 независимых арифметических checks, 6754 actual tokenizer arrays, 66 actual CLI refusals + 4 replays; 1494 scripts tests / 4 skip и 18 Node tests PASS. Evidence архив и исходные weight bundles перепроверены; четыре copied CLI в original workspace воспроизводят отчёты точно. Это внешний development diagnostic: внутренние human reviews, representative calibration/holdout, владельцы/SLO и routing остаются открытыми. Следующий независимый data этап — реальный русский yes/no corpus для Boolean; числовой Score требует своего предметного эталона.
+
 ## Прогресс реализации на 26.09.2026
 
 | Блок | Выполнено | Остаток |
