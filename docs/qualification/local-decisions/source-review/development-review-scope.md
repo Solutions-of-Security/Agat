@@ -46,7 +46,7 @@ file pins не совпадает с полным source replay.
 
 ## Проверка
 
-12 новых / 99 related Python tests прошли: standalone copy/load/development
+12 новых / 109 related Python tests прошли: standalone copy/native diagnostic
 inventory validation, refusal до model construction, resealed split/authority mutations,
 consensus record consistency, idempotent scoping, legacy byte replay,
 v1/v2 bundles и сохранение mixed splits. Все тестовые метки synthetic;
@@ -58,3 +58,25 @@ review helpers внутри `decision_runtime` изменяли SHA всего s
 и расходились с закреплёнными native profiles 0.12.3. Guard вынесен в
 `scripts/lib`; все runtime files восстановлены побайтно. Model/profile artifacts
 не менялись, implementation verifier не ослаблен. Failed log сохранён.
+
+Полный повтор на committed `caa0153`: 1405 scripts tests / 509,742 секунды
+(4 optional skips) и 135 runtime tests / 23,459 секунды (3 optional skips).
+Serving package совпадает побайтно с прежним `58a5cfd`; full-suite и Git diff
+подтверждают сохранение frozen implementation binding.
+
+Production CLI выполнили восемь positive и шесть refusal commands на шести
+synthetic labelled cases / 42 synthetic measured variants. V2 finalization,
+verification, packaging и diagnostic replay прошли; обычный runtime отверг
+scoped data и resealed split/authority mutations до weight loading. V1 bundle
+и прежний saved diagnostic снова приняты; diagnostic bytes и per-order
+comparison не изменились. Все 14 собственных Python CLI PID отсутствуют.
+[Public summary](./development-review-scope-summary.json) содержит aggregate
+facts и file pins, без reviewer identifiers и исходных текстов.
+
+[Archive summary](./development-review-scope-archive-summary.json): 888 files /
+2891714 bytes, SHA `f45af7fc5a73126fdec95eaf950db144e87ba38a02b1fafdf9832131ab0a27c0`.
+CRC/every SHA/size и closed inventory проверены. Production CLI из actual
+original-workspace copy restore получила byte-identical scoped diagnostic
+без inference и resident runtime. В ZIP сохранены failed/successful logs и
+оба собственных synthetic fixture Git repos (422 Git files); source checks
+используют их committed snapshots. Реальных human/reference labels — 0.

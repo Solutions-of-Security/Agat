@@ -1421,8 +1421,14 @@ Resealed split/authority mutations отвергаются. Serving runtime files
 закреплённые profiles сохранены побайтно; guard находится в offline review lib.
 Mixed pool сохраняет прежние dataset bytes. Pinned v1 receipt выбирает прежний
 replay, поэтому исторические bundles и native diagnostics остаются проверяемыми.
-12 новых / 99 related Python tests прошли. Реальные 49 reviews не получены;
-human authority=false, routing=false/not_assessed.
+12 новых / 109 related / 1405 full scripts tests (4 skips) и 135 runtime tests
+(3 skips) прошли. Восемь positive / шесть refusal production CLI commands,
+14 own Python CLI PID absent; legacy diagnostic byte-identical, scoped
+comparison unchanged. ZIP 888 files сохранён в original docs/private,
+CRC/every SHA/size и actual original-copy restored production replay PASS,
+model0. Failed architectural-boundary log сохранён вместе с исправленным
+прогоном. Реальные 49 reviews не получены; human authority=false,
+routing=false/not_assessed.
 
 ## Вывод: что именно можно воспроизвести
 
