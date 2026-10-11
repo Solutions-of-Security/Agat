@@ -13,6 +13,7 @@ from scripts.lib.decision_review_finalization import prepare_finalization, verif
 from scripts.lib.decision_review_finalization_cli import REVIEW_INPUTS, ADJUDICATION_INPUTS
 from scripts.lib.decision_review_pair import compare_pair
 import scripts.test.test_decision_adjudication_session as fixtures
+import scripts.test.test_decision_review_form as form_fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
 def load(name):
@@ -76,6 +77,20 @@ class ReviewFinalizationTest(unittest.TestCase):
         self.assertEqual(verify_finalization(self.first,self.second,self.comparison,sha(self.comparison),
                          report,sha(report),dataset,sha(dataset))['status'],'pass')
         with self.assertRaises(ValueError):self.prepare()
+
+    def test_browser_import_and_terminal_review_interoperate_without_translation_authority(self):
+        bundle=form_fixtures.bundle_fixture()
+        receipt,review=form_fixtures.receipt(bundle,form_fixtures.exported(bundle,complete=True))
+        first=[]
+        for name,value in [('browser-session',receipt),('browser-initial',bundle['blank']),('browser-saved',review)]:
+            path=self.private/(name+'.json');path.write_bytes(encoded(value));first.extend((path,sha(path)))
+        second=self.helper.helper.binding('terminal-other',bundle['blank'],answers=['other']*3)
+        comparison=self.private/'mixed-comparison.json';comparison.write_bytes(encoded(compare_pair(first,second)))
+        output=prepare_finalization(first,second,comparison,sha(comparison))
+        self.assertEqual(output['finalization.json']['adjudicatedCases'],0)
+        self.assertFalse(output['finalization.json']['reviewVerifications'][0]['translationEquivalenceVerified'])
+        self.assertFalse(output['finalization.json']['expertQualificationsVerified'])
+        self.assertTrue(all(case['expectedOptionId']=='other' for case in output['dataset.json']['cases']))
 
     def test_missing_or_partial_adjudication_bindings_are_refused(self):
         for binding in (None,self.adjudication[:-2]):

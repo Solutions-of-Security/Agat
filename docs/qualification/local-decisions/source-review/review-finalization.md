@@ -69,6 +69,34 @@ review record, provenance, split, порядка или authority flags отве
 human execution и qualification остаются непроверенными. Finalization не
 включает routing, не выбирает calibration thresholds и не измеряет accuracy.
 
+## Проверка 11.10.2026
+
+17 новых и 87 связанных Python tests прошли, включая совместимость browser
+import с terminal review, отказ при incomplete submit, другой source pair,
+переименованных scalar types, изменённом dataset и ошибке второй записи.
+Первый mutation test присвоил уже существующий split и потому не менял fixture;
+после исправления контроль всегда выбирает другой split. Production guards
+не ослаблялись.
+
+Из `9e8099e` настоящий CLI один раз финализировал исходную synthetic pair
+предыдущих этапов: три cases, два agreed / один adjudicated. Standard-library
+probe независимо восстановил весь dataset, provenance, review records и
+group split, выполнив 40 checks. Original offline replay прошёл; четыре controls
+отклонились без output directory. Новые human review, model calls и реальные
+reference labels — 0.
+
+[Summary](./review-finalization-summary.json) закрепляет plan/result и outputs.
+[Archive metadata](./review-finalization-archive-summary.json) сохраняет 53 files /
+89350 bytes и 23 code sources. CRC, every-entry SHA/size и копия в исходном
+workspace проверены. Standalone verifier, восстановленный из этой копии,
+получил byte-identical verification без моделей или новых review sessions.
+
+Общий локальный прогон предыдущего этапа: 1337 tests / четыре optional skips
+и один error в старом paired timing fixture — wall duration 361 ms против
+monotonic 623.513 ms. Изолированный повтор этого сценария прошёл без изменения
+кода. Причина расхождения не установлена; исходный полный лог сохранён, PASS
+ему не присвоен. Полный GitHub CI test job предыдущего этапа прошёл отдельно.
+
 Следующий предметный этап — получение двух реальных независимых review,
 разбор их фактических разногласий и development-сравнение на закреплённых
 ответах. Техническая проверка работает на synthetic fixtures; публичным
