@@ -21,6 +21,7 @@ SCHEMA = 'agat.decision.public-support-native-baseline.v1'
 AUTHORITY = {**gl.AUTHORITY, 'classificationAccuracyMeasured': False, 'representativeAgatTraffic': False,
              'sloAccepted': False, 'referenceLabelsVerified': 0}
 SOURCE_PATHS = tuple(dict.fromkeys((*gl.SOURCE_PATHS, *nano.SOURCE_PATHS,
+    'workers/local_decisions.py',
     'scripts/evaluate-public-native-baseline.py', 'scripts/test/test_decision_public_native_baseline.py',
     'scripts/test/test_decision_public_load.py', 'scripts/test/test_decision_public_context.py')))
 CANDIDATES = {'gliclass': gl, 'nanojev': nano}

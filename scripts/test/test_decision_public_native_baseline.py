@@ -2,6 +2,9 @@ import copy
 import hashlib
 import importlib.util
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -32,6 +35,29 @@ def report(kind='nanojev', context=None, native=None):
 
 
 class PublicNativeBaselineTest(unittest.TestCase):
+    def test_frozen_source_inventory_imports_cli_in_isolation_without_model_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = subprocess.check_output(['git', 'ls-files', '--', *baseline.SOURCE_PATHS], cwd=ROOT, text=True).splitlines()
+            for name in names:
+                target = root / name; target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            program = """import runpy, sys
+sys.argv = [sys.argv[1], '--help']
+try:
+    runpy.run_path(sys.argv[0], run_name='__main__')
+except SystemExit as error:
+    assert error.code == 0
+else:
+    raise AssertionError('CLI help did not exit')
+assert not any(name.split('.')[0] in {'torch','transformers','gliclass','tokenizers','numpy','safetensors'} for name in sys.modules)
+print('closed-source-cli modelPackagesImported=0')
+"""
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', program,
+                str(root / 'scripts/evaluate-public-native-baseline.py')], cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('closed-source-cli modelPackagesImported=0', result.stdout)
+
     def test_whole_unlabelled_inventory_not_filtered_by_other_model_context(self):
         context = context_fixture()
         self.assertEqual(sum(not row['contextEligible'] for row in context['inputs']), 1)

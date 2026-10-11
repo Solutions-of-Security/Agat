@@ -63,9 +63,12 @@ directory. Один native process загружает одну модель; thr
 [PyTorch threading guidance](https://docs.pytorch.org/docs/2.14/notes/cpu_threading_torchscript_inference.html),
 оптимальная конкурентность этим опытом не устанавливается.
 
-[14 regression tests](../../../../scripts/test/test_decision_public_native_baseline.py)
+[15 regression tests](../../../../scripts/test/test_decision_public_native_baseline.py)
 проверяют complete denominator без чужого context prefilter, no-label scope
 до model factory, ordered bindings, over-context zero-forward, native logits
 и EOS/semantic mapping, typed False/Score, resources, authority и actual CLI
-byte pins/publication bound. Native observation и переносимый архив
-будут записаны после завершённого прогонов на committed source.
+byte pins/publication bound. Отдельный isolated source-copy smoke запускает
+CLI стандартным Python с `-I`, без исходного checkout и model packages;
+транзитивный `workers/local_decisions.py` входит в frozen inventory.
+Native observation и переносимый архив будут записаны после завершённых
+прогонов на committed source.
