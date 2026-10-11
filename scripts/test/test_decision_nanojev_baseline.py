@@ -262,3 +262,18 @@ class NanoJevBaselineTest(unittest.TestCase):
                         '--report-file-sha256', hashlib.sha256(report_raw).hexdigest(), '--output-dir', str(verified)]), 0)
                 self.assertEqual(report_raw, (verified / 'verified-report.json').read_bytes())
                 self.assertEqual(json.loads((verified / 'execution.json').read_bytes())['modelCalls'], 0)
+
+    def test_publisher_bound_includes_the_final_written_newline(self):
+        spec = importlib.util.spec_from_file_location('nanojev_byte_bound_fixture', baseline.ROOT / 'scripts/evaluate-nanojev-development.py')
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        fixed = report()
+        compact_size = len(baseline.canonical_json(fixed).encode('utf-8'))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); data = root / 'dataset.json'; raw = json.dumps(fixtures.dataset()).encode(); data.write_bytes(raw)
+            output = root / 'docs/private/over-bound'
+            with patch.object(cli, 'ROOT', root), patch.object(cli, 'frozen_sources', return_value=IDENTITY), \
+                 patch.object(cli, 'verify_local', return_value={'sha256': '3' * 64}), patch.object(cli, 'weights_header', return_value=layout()), \
+                 patch.object(cli, 'measure', return_value=fixed), patch.object(cli, 'MAX_REPORT_BYTES', compact_size):
+                self.assertEqual(cli.main(['measure', '--model-dir', str(root / 'synthetic-model'), '--dataset', str(data),
+                    '--dataset-file-sha256', hashlib.sha256(raw).hexdigest(), '--output-dir', str(output)]), 1)
+            self.assertFalse(output.exists())

@@ -14,6 +14,8 @@ from scripts.lib.decision_nanojev_baseline import development_dataset, download,
 from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
 from scripts.lib.decision_shadow_pilot import require
 
+MAX_REPORT_BYTES = 32 * 1024**2
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -48,7 +50,7 @@ def main(argv=None):
             report = verify_report(dataset, measure(dataset, args.model_dir, identity))
             model_calls = report['summary']['nativeInferenceAttempts']
         else:
-            report = verify_report(dataset, parse_json(pinned_input(args.report, args.report_file_sha256, 32 * 1024**2)))
+            report = verify_report(dataset, parse_json(pinned_input(args.report, args.report_file_sha256, MAX_REPORT_BYTES)))
             require(report['sourceIdentity']['sourceFiles'] == identity['sourceFiles'], 'Measured native sources differ from current verifier')
             for name, digest in report['sourceIdentity']['sourceFiles'].items():
                 raw = subprocess.check_output(['git', 'show', report['sourceIdentity']['sourceCommit'] + ':' + name], cwd=ROOT, timeout=15)
@@ -58,7 +60,7 @@ def main(argv=None):
         require(frozen_sources(ROOT) == identity and verify_local(args.model_dir) == manifest
             and fingerprint(parse_json(pinned_input(args.dataset, args.dataset_file_sha256, 4 * 1024**2))) == fingerprint(dataset),
             'Native sources, dataset or artifacts changed')
-        require(len(canonical_json(report).encode()) <= 32 * 1024**2, 'Complete report exceeds verifier byte bound')
+        require(len((canonical_json(report) + '\n').encode('utf-8')) <= MAX_REPORT_BYTES, 'Complete report exceeds verifier byte bound')
         output = private_directory(ROOT, args.output_dir)
         write_json_new(output / ('report.json' if args.command == 'measure' else 'verified-report.json'), report)
         write_json_new(output / 'execution.json', sealed({'schemaVersion': 'agat.decision.nanojev-execution.v1', 'command': args.command,
