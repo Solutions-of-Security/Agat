@@ -1,5 +1,8 @@
 # Finalization с проверкой исходных квитанций
 
+Для переноса всех inputs и outputs используйте
+[immutable bundle](./review-bundle.md) с одной external manifest SHA.
+
 [Finalizer](../../../../scripts/finalize-decision-reviews.py) связывает готовый
 dataset с двумя явно отправленными review и, при разногласиях, с completed
 [adjudication session](./adjudication-session-verification.md).
