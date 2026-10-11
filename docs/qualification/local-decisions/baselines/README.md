@@ -1,5 +1,7 @@
 # Генеративный baseline на тех же development-входах
 
+[DaNetQA: внешний русский Boolean corpus](../external/danetqa-development.md) импортирован целиком: 821 published references / 779 groups, duplicate rows сохранены, 0 model calls. Native comparison следует отдельным этапом.
+
 [Внешний русский TERRa development corpus](../external/README.md) импортирован
 полностью: 307 published references / 282 normalized premise groups.
 [Native comparison всех четырёх кандидатов](../external/terra-native-baselines.md) завершён: 2456 forwards, accuracy/калибровка/selective risk и обе перестановки на исходных опубликованных references. Локальная human/routing qualification остаётся открытой.

@@ -117,3 +117,5 @@ production CLI в этой original копии повторил dataset byte-for
 0 model calls; owned verifier PID завершён.
 
 [Native scoring четырёх кандидатов](terra-native-baselines.md) завершён отдельным этапом: 2456 forwards, опубликованные references и независимый replay метрик. Импорт выше остаётся этапом с 0 model calls. Qualification Агат требует representative внутренних данных, calibration/holdout, human reviews и SLO.
+
+[DaNetQA Boolean development corpus](danetqa-development.md) импортирован отдельным этапом: все 821 references / 779 групп, исходные false/true и duplicate rows сохранены. 0 model calls; следующий этап — native Boolean scoring.
