@@ -9,6 +9,7 @@ import { AgatStore } from "../apps/coordinator/src/database.ts";
 import { loadConfig } from "../apps/coordinator/src/config.ts";
 import { createCoordinatorServer } from "../apps/coordinator/src/server.ts";
 import type { ProcessGraph } from "../apps/coordinator/src/types.ts";
+import { BATCH_CLOCK_SCHEMA, sampleBatchClock, batchElapsedMs } from "./lib/decision_workflow_batch_clock.mts";
 
 const { values } = parseArgs({ options: { "decision-url": { type: "string" }, "evidence-dir": { type: "string" } } });
 assert.ok(values["decision-url"] && values["evidence-dir"]);
@@ -244,14 +245,16 @@ try {
   if (pairing) {
     for (let offset=0; offset<input.context.inputs.length; offset+=pairedConcurrency.batchSize) {
       assert.equal(worker.exitCode,null); assert.equal(worker.signalCode,null); assert.ok(Date.now()<globalDeadline);
-      const startedAt = new Date().toISOString(); const started = performance.now();
+      const startClock = sampleBatchClock();
       const entries = input.context.inputs.slice(offset,offset+2).map((item: any,j: number) => {
         const instance = store.startProcess(processId,{input:item.request.state})!;
         return {index:offset+j,item,instance,runId:String(instance.runId)};
       });
-      const deadline = Math.min(Date.now()+pairedConcurrency.batchCompletionDeadlineMs,globalDeadline);
+      const deadline = startClock.monotonicBeforeMs + pairedConcurrency.batchCompletionDeadlineMs;
       while (entries.some((r: any) => store.getRun(r.runId)!.status !== "completed")) {
-        assert.equal(worker.exitCode,null); assert.equal(worker.signalCode,null); assert.ok(Date.now()<deadline,"Actual pair completion deadline exceeded");
+        assert.equal(worker.exitCode,null); assert.equal(worker.signalCode,null);
+        assert.ok(performance.now()<deadline,"Actual pair completion deadline exceeded");
+        assert.ok(Date.now()<globalDeadline,"Actual workflow deadline exceeded");
         assert.ok(entries.every((r: any) => !["failed","cancelled"].includes(String(store.getRun(r.runId)!.status))));
         await new Promise(resolve => setTimeout(resolve,20));
       }
@@ -264,8 +267,12 @@ try {
           wrongBranch:stages.some(s => s.processNodeId === "wrong"),runStatus:run.status};
         routes.push(route); fs.appendFileSync(path.join(directory,"workflow-routes.jsonl"),JSON.stringify(route)+"\n",{mode:0o600});
       }
-      pairedBatches.push({index:pairedBatches.length,inputIndices:entries.map((r: any) => r.index),runIds:entries.map((r: any) => r.runId),
-        startedAt,completedAt:new Date().toISOString(),elapsedMs:Math.round((performance.now()-started)*1000)/1000});
+      const endClock = sampleBatchClock();
+      assert.ok(endClock.monotonicAfterMs<=deadline,"Actual pair completion deadline exceeded");
+      pairedBatches.push({schemaVersion:BATCH_CLOCK_SCHEMA,index:pairedBatches.length,
+        inputIndices:entries.map((r: any) => r.index),runIds:entries.map((r: any) => r.runId),
+        startedAt:startClock.wallAt,completedAt:endClock.wallAt,elapsedMs:batchElapsedMs(startClock,endClock),
+        clockSamples:{start:startClock,end:endClock}});
     }
   } else for (const [index, item] of input.context.inputs.entries()) {
     assert.equal(worker.exitCode, null, "Owned worker exited early"); assert.equal(worker.signalCode, null);

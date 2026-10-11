@@ -1329,6 +1329,19 @@ fixture; один isolated replay PASS не превращает его в по�
 test job прошёл отдельно. Следующий предметный gate — получение фактических двух
 review и разрешение их разногласий; development accuracy без них не вычисляется.
 
+## Границы измерения paired workflow — реализовано, 11.10.2026
+
+[Versioned clock brackets](./qualification/local-decisions/performance/paired-batch-clock.md)
+добавлены после обнаруженного local timing error. Wall read теперь окружён
+двумя monotonic samples; elapsed независимо пересчитывается, sampling входит
+в прежний 20 s deadline, sequential barrier проверяется теми же часами.
+Historical receipts сохраняют прежнее правило ±2 ms и прежние reports;
+неподтверждённое clock difference и mixed schemas отклоняются.
+11 новых / 32 related Python tests и 18 Node documentation tests прошли,
+включая actual model-free worker/coordinator. Причина исходного старого
+failure не утверждается. Human reference labels/model calls=0; quality gates
+по-прежнему требуют двух фактических независимых review.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
