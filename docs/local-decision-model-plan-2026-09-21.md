@@ -1365,6 +1365,26 @@ byte-identical. Неверное имя module в первом test command со
 false, routing=false/not_assessed. Следующий предметный gate требует двух
 фактических независимых review 49 development inputs и разрешения разногласий.
 
+## Полный native gate для paired clock — выполнено, 11.10.2026
+
+[Свежий MLX-прогон](./qualification/local-decisions/performance/paired-batch-clock-native.md)
+выполнил неизменные 49 inputs / 44 groups через 25 bounded pairs и fixture
+primary на committed 225 sources. Все instances/primary/returns завершены:
+24 computed (16 ok / 8 abstain), 24 native busy и один context rejection.
+Два warmups дают 51 physical HTTP call / 26 model scores. Все 25 v2 clock
+receipts проходят независимый пересчёт sampling, elapsed, deadline и barrier.
+Максимальный sampling interval 0.004625 ms, wall/lower residual 0.862 ms.
+
+Production offline verifier PASS; independent stdlib audit — 2870 checks,
+35933 JSON keys, 198 actual lease records и 25 совпавших healthy signatures.
+Admitted участник изменился в девяти парах, поэтому новые 16/8 не измеряют
+изменение accuracy. Все 39 own PID отсутствуют, восемь protected resident
+fields и четыре permanent PID/counters unchanged. ZIP 305 files сохранён
+в original workspace; restored no-Git/no-inference audit на том же host
+byte-identical. Human reference labels=0, accuracy/owner/SLO не подтверждены,
+routing=false/not_assessed. Следующий предметный gate требует фактических
+двух независимых review исходных 49 development inputs.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
