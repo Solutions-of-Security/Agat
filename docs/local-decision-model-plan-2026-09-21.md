@@ -1385,6 +1385,31 @@ byte-identical. Human reference labels=0, accuracy/owner/SLO не подтвер
 routing=false/not_assessed. Следующий предметный gate требует фактических
 двух независимых review исходных 49 development inputs.
 
+## Связка finalized reviews и whole native diagnostic — реализована, 11.10.2026
+
+[Development diagnostic CLI](./qualification/local-decisions/source-review/review-native-diagnostics.md)
+заново проверяет source review bundle и полный native option-order history
+по пяти independent file pins. Original pool/requests/groups/seed и whole
+development denominator должны совпасть; partial/foreign/holdout inputs
+отклоняются. Per-order comparison со submitted labels сохраняет context
+rejections, abstentions, group census, macro-F1/NLL/Brier/ECE и все cases.
+Saved report пересчитывается полностью; rehashed numbers/authority и late
+artifact/source drift не публикуются. Новые inference/calibration/holdout
+calls=0, human/source authority=false, accuracy qualification не заявляется.
+14 новых / 59 related и полный набор 1393 Python tests прошли (4 optional
+skips), 18 Node documentation tests и links/catalog PASS. Production CLI:
+три positive / пять refusal commands, 88 independent arithmetic checks,
+91 parent archive checks, восемь собственных processes absent. Existing real
+49 cases / 343 variants повторно проверены без inference; чужие synthetic
+labels для real pool отвергнуты до output. Positive diagnostics используют
+explicit synthetic measurements и test labels.
+ZIP 408 files / 79910488 bytes сохранён в original docs/private; CRC/every
+SHA/size проверены, production CLI из actual original-copy restore выдала
+byte-identical diagnostic без resident runtime/inference, используя embedded
+owned synthetic fixture Git. Failed sandbox log сохранён отдельно от успешного
+полного повторного прогона. Реальные 49 submitted reviews остаются необходимым
+предметным gate; эта инженерная связка не подменяет их model pseudo-labels.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
