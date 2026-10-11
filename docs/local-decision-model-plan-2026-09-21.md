@@ -1529,6 +1529,47 @@ replay — PASS. [Aggregate](./qualification/local-decisions/baselines/evidence/
 и [archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/nanojev-archive-summary.json)
 позволяют сверить claims; routing не включён.
 
+## GLiClass и NanoJev: все публичные входы — реализовано и измерено, 11.10.2026
+
+[Whole-input native baseline](./qualification/local-decisions/baselines/public-native-inputs.md)
+сохраняет все 49 unlabelled English support cases / 44 dependency groups,
+включая длинные входы. Отбор по context eligibility прежнего decider
+не применяется; каждому кандидату задан свой прежний limit 1024 tokens
+до forward, без truncation/translation. Calibration/holdout не использованы.
+На двух порядках двух кандидатов — 196 variants / 166 actual forwards.
+
+GLiClass: 41 computed / 8 context refusals в каждом порядке, accepted 0/1,
+abstained 41/40; argmax changed 6/41. NanoJev: 42 computed / 7 context
+refusals в каждом порядке, accepted 0/0, abstained 42/42; argmax changed
+0/42. Unexpected backend errors=0, admission changes=0. Меток нет:
+accepted/argmax — только поведение модели, accuracy не измерена.
+Все token arrays, включая refused: GLiClass 98 / 73346 tokens,
+NanoJev 490 / 323080 tokens; processed 32832/135320 tokens.
+
+Native p50/p95 — 38.457/127.615 и 1275.943/4883.865 ms;
+whole-process max RSS — 736755712/5269979136 bytes. Один host, concurrent
+full suite, разные token paths: controlled latency/capacity/SLO не заявлены.
+155 frozen sources; serving body/version/policy/weights не менялись.
+
+15 new / 49 related / 1454 full scripts tests, 4 skips / 543.263 s — PASS.
+Independent stdlib 6081 checks, реальные tokenizer replay 588/588 arrays,
+35 CLI refusals + 2 byte-identical replays, model0; все owned PID absent,
+4 protected resident PID / 20 serving sources / 8 fields прежние. Первая
+source-copy попытка (missing transitive worker source) отказала до model
+import; inventory исправлен и isolated CLI regression добавлен. Первый
+full suite прерван и не считается PASS; обе истории сохранены.
+
+Private archive в исходном workspace — 2164356018 bytes / 1230 ZIP entries /
+1248 restored logical files, SHA-256
+`850f3e52418a04842e9e9efa8c4652098552ad391fddaa63c36b8a033a093313`.
+Обе copies закрыты CRC/SHA/size, включают все model bytes и own Git.
+Оба actual copied production CLI с `-I` воспроизвели reports byte-identical
+без model calls. [Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/public-native-summary.json)
+и [archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/public-native-archive-summary.json)
+не публикуют per-case predictions. Human labels=0; qualification/routing
+false/not_assessed. Реальные reviews, независимые calibration/holdout,
+подтверждение representative Agat/Russian quality и owner/SLO остаются открытыми.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
