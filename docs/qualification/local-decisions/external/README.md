@@ -119,3 +119,5 @@ production CLI в этой original копии повторил dataset byte-for
 [Native scoring четырёх кандидатов](terra-native-baselines.md) завершён отдельным этапом: 2456 forwards, опубликованные references и независимый replay метрик. Импорт выше остаётся этапом с 0 model calls. Qualification Агат требует representative внутренних данных, calibration/holdout, human reviews и SLO.
 
 [DaNetQA Boolean development corpus](danetqa-development.md) импортирован отдельным этапом: все 821 references / 779 групп, исходные false/true и duplicate rows сохранены. 0 model calls; следующий этап — native Boolean scoring.
+
+[Native DaNetQA Boolean comparison](./danetqa-native-baselines.md): все 821 cases в обоих порядках, 6568 forwards, typed bool, сохранённые duplicate rows; реальные errors/coverage и order sensitivity. Полный 1520-test suite PASS, independent audit и restored copied CLI replay. External references не открывают human/holdout/routing qualification.
