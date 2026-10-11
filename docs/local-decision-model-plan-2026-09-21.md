@@ -1291,7 +1291,23 @@ adjudication receipt. Реальные reviewers/adjudicator и quality gates о
 сохраняют исходный пул и поддерживают прежнюю сверку пары. Тестовые ответы
 создаются только на синтетических заданиях; настоящие review и reference labels
 пока не получены. Эквивалентность перевода и предметное качество не подтверждены.
-Продолжение общего плана остановлено по указанию пользователя.
+Продолжение общего плана было остановлено по указанию пользователя; 11.10.2026
+пользователь поручил возобновить последовательную реализацию с commit/push/merge
+каждого этапа.
+
+## Проверка сохранённых adjudication receipts — выполнено, 11.10.2026
+
+[Reusable CLI verifier](./qualification/local-decisions/source-review/adjudication-session-verification.md)
+связывает шесть external file SHA, handoff notes, full pool/seed и disputed subset.
+Partial/failed/completed не смешиваются; completed требует explicit submit.
+Шесть прежних synthetic receipts сохранили пять partial / один completed;
+восемь controls отклонены до output. Standalone из 17 sources и replay копии
+архива исходного workspace дали byte-identical report, model calls=0.
+413 independent artifact checks, 10 новых / 70 related Python tests, 18 Node
+documentation tests и links/catalog прошли. Private evidence сохранён под /docs.
+Declared human/source authority остаётся false, labels не создаются.
+Следующий инженерный шаг — связывание completed adjudication с исходной
+проверенной парой и finalization receipt; реальные review и quality gates открыты.
 
 ## Вывод: что именно можно воспроизвести
 

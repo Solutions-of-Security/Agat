@@ -46,6 +46,29 @@ symlink inputs и неполный набор pinned файлов не прин�
 Qualification остаётся `not_assessed`, routing выключен, новые reference labels
 не создаются.
 
+## Проверка 11.10.2026
+
+10 новых и 70 связанных Python tests прошли. Настоящий CLI из `e12f499`
+проверил шесть оригинальных synthetic receipts предыдущего этапа: пять partial
+и один completed. Отдельная копия из 17 файлов без Git дала byte-identical
+результат; восемь refusal controls не создали output directory. Standard-library
+probe независимо восстановил counts, pins, whole pool и статусы, выполнив
+413 artifact checks. Новые terminal sessions, model calls и реальные labels — 0.
+
+18 Node documentation tests, links и catalog прошли на Node 24. Первые Node
+проверки отказали из-за отсутствующих зависимостей в новом checkout; использована
+установленная копия с идентичным package-lock SHA. Первый общий Python run на
+3.14 был прерван после sandbox socket errors; лог сохранён, полный повтор
+использует CI-версию 3.13 и разрешённые локальные тестовые сокеты.
+
+[Summary](./adjudication-session-verification-summary.json) связывает plan/result.
+[Private archive metadata](./adjudication-session-verification-archive-summary.json)
+сохраняет 79 files / 144109 bytes; CRC и SHA каждого entry проверены. Архив
+скопирован в `docs/private` исходного workspace. Verifier, восстановленный из
+этой копии, повторно дал byte-identical отчёт без terminal/model execution.
+Тестовые логи в архиве отражают границу копирования; окончательный полный test
+log сохраняется отдельно. Runtime сервисы этим этапом не вызываются.
+
 Следующий инженерный этап — связывание completed adjudication с исходной
 проверенной парой review и finalization receipt. Реальные независимые review,
 критерии владельца, calibration и holdout остаются предметными gates.
