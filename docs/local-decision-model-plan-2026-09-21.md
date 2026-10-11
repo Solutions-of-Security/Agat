@@ -1656,9 +1656,20 @@ Actual copied import/replay, 7865 независимых stdlib checks, 35 CLI r
 фиксируют полную source/corpus копию и actual original-workspace byte-identical
 verify после closed CRC/SHA/size проверки. 20 serving source files не менялись.
 
-Следующий этап — native Boolean comparison четырёх прежних pinned candidates.
-External references не заменяют внутренние human reviews, representative
-calibration/holdout и owner/SLO. Numeric Score требует отдельного эталона.
+[Native Boolean comparison](./qualification/local-decisions/external/danetqa-native-baselines.md)
+завершён на всех 821 cases и обоих порядках: 6568 forwards, 0 context/backend
+errors, без новых моделей, tuning или truncation. Decider correct 695/701,
+Base 686/689, GLiClass 420/398, NanoJev 412/412 и всегда true; accepted errors
+и coverage раскрыты отдельно. Changed argmax: 24/69/548/0 из 821. Все source
+и logits перепроверены 191294 независимыми checks; 16420 tokenizer arrays,
+6568 letter decodes, 77 actual CLI refusals + 4 replays PASS. 14 новых tests,
+полный 1520-test suite / 4 skip / 619.260 s и 18 Node tests PASS. Closed archive
+в original workspace восстановлен: independent audit до model prerequisites
+и четыре actual stdlib CLI byte-identical. Новое evidence ZIP явно требует
+двух сохранённых pinned weight bundles. Serving sources/resident unchanged.
+Следующий этап — внешний numeric Score development corpus с сохранением
+дробных references. Internal human reviews, representative calibration/holdout
+и owner/SLO остаются открытыми; routing disabled и qualification=not_assessed.
 
 ## Вывод: что именно можно воспроизвести
 
