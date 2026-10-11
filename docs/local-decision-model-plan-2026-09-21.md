@@ -1410,6 +1410,26 @@ owned synthetic fixture Git. Failed sandbox log сохранён отдельн�
 полного повторного прогона. Реальные 49 submitted reviews остаются необходимым
 предметным gate; эта инженерная связка не подменяет их model pseudo-labels.
 
+## Назначение standalone development reviews — реализовано, 11.10.2026
+
+[Finalization v2](./qualification/local-decisions/source-review/development-review-scope.md)
+добавляет sealed development-only usage для whole-development submitted labels.
+Source records, annotation, порядок и assignments сохранены; standalone
+dataset не допускается в runtime evaluation/freeze/validate experiment;
+comparison доступен через source-verified native diagnostic без inference.
+Resealed split/authority mutations отвергаются. Serving runtime files и
+закреплённые profiles сохранены побайтно; guard находится в offline review lib.
+Mixed pool сохраняет прежние dataset bytes. Pinned v1 receipt выбирает прежний
+replay, поэтому исторические bundles и native diagnostics остаются проверяемыми.
+12 новых / 109 related / 1405 full scripts tests (4 skips) и 135 runtime tests
+(3 skips) прошли. Восемь positive / шесть refusal production CLI commands,
+14 own Python CLI PID absent; legacy diagnostic byte-identical, scoped
+comparison unchanged. ZIP 888 files сохранён в original docs/private,
+CRC/every SHA/size и actual original-copy restored production replay PASS,
+model0. Failed architectural-boundary log сохранён вместе с исправленным
+прогоном. Реальные 49 reviews не получены; human authority=false,
+routing=false/not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
