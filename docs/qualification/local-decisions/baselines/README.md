@@ -2,8 +2,7 @@
 
 [Внешний русский TERRa development corpus](../external/README.md) импортирован
 полностью: 307 published references / 282 normalized premise groups.
-Это подготовка следующего native comparison; inference и локальная human
-qualification из импорта не выводятся.
+[Native comparison всех четырёх кандидатов](../external/terra-native-baselines.md) завершён: 2456 forwards, accuracy/калибровка/selective risk и обе перестановки на исходных опубликованных references. Локальная human/routing qualification остаётся открытой.
 
 [decider и Qwen Base на всех 49 публичных development-входах](./public-mlx-inputs.md)
 измерены исходным MLX scorer: 184 native forwards, raw tokenizer/logit replay,

@@ -116,6 +116,4 @@ fixture с Git history, imported dataset, completed checks и draft history.
 production CLI в этой original копии повторил dataset byte-for-byte,
 0 model calls; owned verifier PID завершён.
 
-Native scoring четырёх кандидатов и accuracy на этом корпусе — следующий
-этап. Qualification Агат требует representative внутренних данных,
-calibration/holdout, human reviews и SLO.
+[Native scoring четырёх кандидатов](terra-native-baselines.md) завершён отдельным этапом: 2456 forwards, опубликованные references и независимый replay метрик. Импорт выше остаётся этапом с 0 model calls. Qualification Агат требует representative внутренних данных, calibration/holdout, human reviews и SLO.
