@@ -85,9 +85,10 @@ reviewerIdentityVerified, independentReviewVerified и expertQualificationsVerif
 handoffSourcesRevalidated=false. Reference labels и dataset не создаются.
 Finalization compatibility проверена только на unit synthetic fixture.
 
-Следующий инженерный шаг — отдельный CLI проверки сохранённой adjudication
-квитанции с external pins всех входов и явным разделением partial, failed и
-completed. Реальные независимые review, adjudicator и предметные gates остаются
+Следующий инженерный шаг реализован: [CLI проверки сохранённой adjudication
+квитанции](./adjudication-session-verification.md) использует external pins всех
+входов и явно разделяет partial, failed и completed.
+Реальные независимые review, adjudicator и предметные gates остаются
 неподтверждёнными. Новые model calls=0, qualification=not_assessed, routing=false.
 
 Пользователь подтвердил состав будущих reviewers: он сам и независимый эксперт.
