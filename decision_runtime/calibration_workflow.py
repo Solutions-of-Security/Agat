@@ -89,6 +89,8 @@ def validate_plan(plan: dict, dataset: dict) -> None:
                   "model", "splitCounts", "schemaSha256s", "sha256"}
            | ({"executionProfile", "executionProfileSha256"} if schema == PROFILED_PLAN_SCHEMA else set()))
     validate_dataset(dataset)
+    if dataset.get("usage") == "development-only":
+        raise ValueError("Development-only data cannot be used for a calibration/holdout experiment")
     validate_criteria(plan["criteria"])
     Policy.from_dict(plan["policy"])
     if plan["datasetSha256"] != fingerprint(dataset):

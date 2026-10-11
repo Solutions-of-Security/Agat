@@ -2,6 +2,9 @@
 
 Для переноса всех inputs и outputs используйте
 [immutable bundle](./review-bundle.md) с одной external manifest SHA.
+Новый v2 receipt также сохраняет
+[назначение standalone development dataset](./development-review-scope.md);
+исторические v1 receipts продолжают проверяться побайтно.
 
 [Finalizer](../../../../scripts/finalize-decision-reviews.py) связывает готовый
 dataset с двумя явно отправленными review и, при разногласиях, с completed

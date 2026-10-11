@@ -28,9 +28,24 @@ def validate_dataset(dataset: dict) -> dict:
     if dataset.get("usage") == "development-only":
         verify_seal(dataset, "agat.decision.dataset.v1")
         if (dataset.get("routingEnabled") is not False or dataset.get("qualifiedForRouting") is not False
-                or any(not isinstance(c, dict) or c.get("split") != "development"
-                       or c.get("labelSource") != "assistant-reviewed" or "review" in c for c in dataset["cases"])):
-            raise ValueError("Development-only assistant labels cannot become calibration, holdout or expert reviews")
+                or any(not isinstance(c, dict) or c.get("split") != "development" for c in dataset["cases"])):
+            raise ValueError("Development-only labels cannot become calibration, holdout or routing data")
+        kind = dataset.get("developmentLabelKind", "assistant-reviewed")
+        if kind == "assistant-reviewed":
+            if any(c.get("labelSource") != "assistant-reviewed" or "review" in c for c in dataset["cases"]):
+                raise ValueError("Development-only assistant labels cannot become expert reviews")
+        elif kind == "submitted-review":
+            from .annotations import REVIEW_AUTHORITY_FLAGS, consistent_review_records
+
+            if (not isinstance(dataset.get("annotation"), dict)
+                    or dataset.get("classificationAccuracyMeasured") is not False
+                    or dataset.get("qualification") != "not_assessed"
+                    or any(dataset.get(key) is not False for key in REVIEW_AUTHORITY_FLAGS)
+                    or any(c.get("labelSource") != "expert-reviewed"
+                           or not consistent_review_records(c) for c in dataset["cases"])):
+                raise ValueError("Development-only submitted labels require review records and no inferred authority")
+        else:
+            raise ValueError("Unknown development label kind")
     string(dataset.get("id"), 100, identifier=True)
     ids, groups, states, sources = set(), {}, {}, {}
     for case in dataset["cases"]:

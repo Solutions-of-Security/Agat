@@ -1,7 +1,7 @@
 """Bind a finalized dataset to submitted reviews and an optional disputed-case session."""
 import hashlib
 
-from decision_runtime.annotations import finalize_reviews
+from decision_runtime.annotations import finalize_reviews, scope_development_reviews
 from decision_runtime.artifacts import sealed
 from decision_runtime.contracts import canonical_json, fingerprint, parse_json
 from scripts.lib.decision_adjudication_verification import verify_session as verify_adjudication
@@ -17,7 +17,8 @@ def artifact_binding(binding):
             'outputReviewFileSha256': binding[5]}
 
 
-def prepare_finalization(first, second, comparison_path, comparison_sha, adjudication=None):
+def prepare_finalization(first, second, comparison_path, comparison_sha, adjudication=None, *, version=2):
+    require(type(version) is int and version in (1, 2), 'Unsupported review finalization version')
     comparison = parse_json(pinned_input(comparison_path, comparison_sha, MAX_REVIEW_BYTES))
     expected = compare_pair(first, second)
     require(canonical_json(comparison) == canonical_json(expected),
@@ -42,9 +43,12 @@ def prepare_finalization(first, second, comparison_path, comparison_sha, adjudic
     else:
         require(adjudication is None, 'Adjudication supplied without disagreements')
     dataset = finalize_reviews(*reviews, final_adjudication)
+    development_only = all(case['split'] == 'development' for case in dataset['cases'])
+    if version == 2 and development_only:
+        dataset = scope_development_reviews(dataset)
     raw = encoded(dataset)
     require(len(raw) <= MAX_REVIEW_BYTES, 'Finalized dataset exceeds the review byte bound')
-    report = sealed({'schemaVersion': 'agat.decision.review-finalization.v1', 'status': 'finalized',
+    report = sealed({'schemaVersion': 'agat.decision.review-finalization.v' + str(version), 'status': 'finalized',
         'comparisonFileSha256': comparison_sha, 'comparisonSha256': expected['sha256'],
         'sourceReviewBindings': [artifact_binding(binding) for binding in (first, second)],
         'adjudicationBindings': adjudication_bindings,
@@ -59,7 +63,9 @@ def prepare_finalization(first, second, comparison_path, comparison_sha, adjudic
         'labelsMaterialized': len(dataset['cases']),
         **{flag: False for flag in AUTHORITY_FLAGS},
         'expertiseInferredFromLabelSource': False, 'classificationAccuracyMeasured': False,
-        'modelCallsDuringFinalization': 0, 'qualification': 'not_assessed'})
+        'modelCallsDuringFinalization': 0, 'qualification': 'not_assessed',
+        **({'developmentOnly': development_only,
+            'datasetUsage': 'development-only' if development_only else 'group-split-review'} if version == 2 else {})})
     return {'dataset.json': dataset, 'finalization.json': report}
 
 
@@ -68,16 +74,21 @@ def verify_finalization(first, second, comparison_path, comparison_sha,
     report_raw = pinned_input(report_path, report_sha, MAX_REVIEW_BYTES)
     dataset_raw = pinned_input(dataset_path, dataset_sha, MAX_REVIEW_BYTES)
     # Strict parsing rejects malformed/duplicate JSON before comparing expected canonical bytes.
-    parse_json(report_raw); parse_json(dataset_raw)
-    expected = prepare_finalization(first, second, comparison_path, comparison_sha, adjudication)
+    parsed_report = parse_json(report_raw); parse_json(dataset_raw)
+    require(isinstance(parsed_report, dict) and parsed_report.get('schemaVersion') in
+            ('agat.decision.review-finalization.v1', 'agat.decision.review-finalization.v2'),
+            'Unsupported review finalization receipt')
+    version = int(parsed_report['schemaVersion'][-1])
+    expected = prepare_finalization(first, second, comparison_path, comparison_sha, adjudication, version=version)
     require(report_raw == encoded(expected['finalization.json']) and dataset_raw == encoded(expected['dataset.json']),
             'Finalization receipt or dataset differs from submitted source artifacts')
     report = expected['finalization.json']
-    return sealed({'schemaVersion': 'agat.decision.review-finalization-verification.v1', 'status': 'pass',
+    return sealed({'schemaVersion': 'agat.decision.review-finalization-verification.v' + str(version), 'status': 'pass',
         'finalizationFileSha256': report_sha, 'datasetFileSha256': dataset_sha,
         'finalizationSha256': report['sha256'], 'datasetSha256': report['datasetSha256'],
         'caseCount': report['caseCount'], 'groupCount': report['groupCount'],
         'agreedCases': report['agreedCases'], 'adjudicatedCases': report['adjudicatedCases'],
         'sourceReviewsRevalidated': True, 'handoffReconstructedFromSourceReviews': bool(adjudication),
         **{flag: False for flag in AUTHORITY_FLAGS}, 'classificationAccuracyMeasured': False,
-        'modelCallsDuringVerification': 0, 'qualification': 'not_assessed'})
+        'modelCallsDuringVerification': 0, 'qualification': 'not_assessed',
+        **({'developmentOnly': report['developmentOnly'], 'datasetUsage': report['datasetUsage']} if version == 2 else {})})

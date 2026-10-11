@@ -1410,6 +1410,18 @@ owned synthetic fixture Git. Failed sandbox log сохранён отдельн�
 полного повторного прогона. Реальные 49 submitted reviews остаются необходимым
 предметным gate; эта инженерная связка не подменяет их model pseudo-labels.
 
+## Назначение standalone development reviews — реализовано, 11.10.2026
+
+[Finalization v2](./qualification/local-decisions/source-review/development-review-scope.md)
+добавляет sealed development-only usage для whole-development submitted labels.
+Source records, annotation, порядок и assignments сохранены; standalone
+dataset не допускается в freeze/validate calibration-holdout experiment.
+Resealed split/authority mutations отвергаются, development evaluation доступна.
+Mixed pool сохраняет прежние dataset bytes. Pinned v1 receipt выбирает прежний
+replay, поэтому исторические bundles и native diagnostics остаются проверяемыми.
+12 новых / 99 related Python tests прошли. Реальные 49 reviews не получены;
+human authority=false, routing=false/not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.

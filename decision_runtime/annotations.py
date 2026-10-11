@@ -5,10 +5,13 @@ from __future__ import annotations
 import copy
 from collections import Counter
 
+from .artifacts import sealed
 from .contracts import Request, fields, fingerprint, string
 
 POOL_SCHEMA = "agat.decision.pool.v1"
 REVIEW_SCHEMA = "agat.decision.review.v1"
+REVIEW_AUTHORITY_FLAGS = ("humanExecutionVerified", "reviewerIdentityVerified",
+                         "independentReviewVerified", "expertQualificationsVerified")
 
 
 def group_split(seed: str, group: str) -> str:
@@ -131,3 +134,48 @@ def finalize_reviews(first: dict, second: dict, adjudication: dict | None = None
     from .evaluation import validate_dataset
 
     return validate_dataset(dataset)
+
+
+def scope_development_reviews(dataset: dict) -> dict:
+    """Carry the development boundary into the standalone submitted-label dataset."""
+    from .evaluation import validate_dataset
+
+    validate_dataset(dataset)
+    if (any(case["split"] != "development" or case["labelSource"] != "expert-reviewed"
+            or not isinstance(case.get("review"), dict) for case in dataset["cases"])
+            or not isinstance(dataset.get("annotation"), dict)):
+        raise ValueError("Scope only a complete finalized development review dataset")
+    result = sealed({**{key: copy.deepcopy(value) for key, value in dataset.items() if key != "sha256"},
+                     "usage": "development-only",
+                     "developmentLabelKind": "submitted-review", "routingEnabled": False,
+                     "qualifiedForRouting": False, **{key: False for key in REVIEW_AUTHORITY_FLAGS},
+                     "classificationAccuracyMeasured": False, "qualification": "not_assessed"})
+    return validate_dataset(result)
+
+
+def consistent_review_records(case: dict) -> bool:
+    """Validate declared consensus records; this does not authenticate reviewers."""
+    review = case.get("review", {})
+    if not isinstance(review, dict):
+        return False
+    records = review.get("records", [])
+    if not isinstance(records, list) or len(records) not in (2, 3) or any(not isinstance(r, dict) for r in records):
+        return False
+    request = Request.from_dict(case.get("request"))
+    reviewers = []
+    for row in records:
+        if (not isinstance(row.get("reviewerId"), str) or not row["reviewerId"].strip()
+                or not isinstance(row.get("rationale"), str) or not row["rationale"].strip()
+                or not isinstance(row.get("reviewedAt"), str) or not row["reviewedAt"].strip()
+                or row.get("inputSha256") != request.input_sha256 or row.get("id") != case.get("id")
+                or not isinstance(row.get("expectedOptionId"), str)
+                or row.get("expectedOptionId") not in {o.id for o in request.options}):
+            return False
+        reviewers.append(row["reviewerId"])
+    if len(set(reviewers)) != len(records):
+        return False
+    if review.get("status") == "agreed":
+        return len(records) == 2 and all(r["expectedOptionId"] == case.get("expectedOptionId") for r in records)
+    return (review.get("status") == "adjudicated" and len(records) == 3
+            and records[0]["expectedOptionId"] != records[1]["expectedOptionId"]
+            and records[-1]["expectedOptionId"] == case.get("expectedOptionId"))

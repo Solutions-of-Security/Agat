@@ -5,10 +5,11 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 
+from .annotations import consistent_review_records
 from .artifacts import sealed
 from .calibration import Calibration
 from .calibration_workflow import PROFILED_PLAN_SCHEMA, scoring_rows, validate_execution_evidence, validate_plan
-from .contracts import Policy, Request, fingerprint
+from .contracts import Policy, fingerprint
 from .evaluation import metrics, replay_scores
 
 
@@ -44,30 +45,7 @@ def expert_reviewed(case: dict) -> bool:
     """Check explicit review records; local IDs are declarations, not authenticated identities."""
     if case.get("labelSource") != "expert-reviewed" or case.get("provenance", {}).get("kind") != "real":
         return False
-    review = case.get("review", {})
-    if not isinstance(review, dict):
-        return False
-    records = review.get("records", [])
-    if not isinstance(records, list) or len(records) not in (2, 3) or any(not isinstance(r, dict) for r in records):
-        return False
-    request = Request.from_dict(case["request"])
-    reviewers = []
-    for row in records:
-        if (not isinstance(row.get("reviewerId"), str) or not row["reviewerId"].strip()
-                or not isinstance(row.get("rationale"), str) or not row["rationale"].strip()
-                or not isinstance(row.get("reviewedAt"), str) or not row["reviewedAt"].strip()
-                or row.get("inputSha256") != request.input_sha256 or row.get("id") != case["id"]
-                or not isinstance(row.get("expectedOptionId"), str)
-                or row.get("expectedOptionId") not in {o.id for o in request.options}):
-            return False
-        reviewers.append(row["reviewerId"])
-    if len(set(reviewers)) != len(records):
-        return False
-    if review.get("status") == "agreed":
-        return len(records) == 2 and all(r["expectedOptionId"] == case["expectedOptionId"] for r in records)
-    return (review.get("status") == "adjudicated" and len(records) == 3
-            and records[0]["expectedOptionId"] != records[1]["expectedOptionId"]
-            and records[-1]["expectedOptionId"] == case["expectedOptionId"])
+    return consistent_review_records(case)
 
 
 def group_risk(rows: list[dict], confidence: float) -> dict:

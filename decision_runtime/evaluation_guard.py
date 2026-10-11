@@ -9,6 +9,8 @@ from .contracts import fingerprint
 
 def validate_evaluation_start(dataset: dict, split: str, plan: dict | None, artifact: dict | None,
                               *, reverse_options: bool, calibrated: bool) -> None:
+    if dataset.get("usage") == "development-only" and split != "development":
+        raise ValueError("Development-only labels cannot be evaluated as calibration or holdout")
     if split == "development":
         if plan is not None or artifact is not None:
             raise ValueError("Development evaluation does not use a qualification plan or frozen calibration")
