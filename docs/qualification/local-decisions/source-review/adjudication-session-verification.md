@@ -69,6 +69,6 @@ probe независимо восстановил counts, pins, whole pool и с
 Тестовые логи в архиве отражают границу копирования; окончательный полный test
 log сохраняется отдельно. Runtime сервисы этим этапом не вызываются.
 
-Следующий инженерный этап — связывание completed adjudication с исходной
-проверенной парой review и finalization receipt. Реальные независимые review,
+Связывание completed adjudication с исходной проверенной парой реализовано в
+[finalization receipt](./review-finalization.md). Реальные независимые review,
 критерии владельца, calibration и holdout остаются предметными gates.

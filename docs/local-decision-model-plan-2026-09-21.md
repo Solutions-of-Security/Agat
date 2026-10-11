@@ -1306,8 +1306,28 @@ Partial/failed/completed не смешиваются; completed требует e
 413 independent artifact checks, 10 новых / 70 related Python tests, 18 Node
 documentation tests и links/catalog прошли. Private evidence сохранён под /docs.
 Declared human/source authority остаётся false, labels не создаются.
-Следующий инженерный шаг — связывание completed adjudication с исходной
-проверенной парой и finalization receipt; реальные review и quality gates открыты.
+Этот шаг реализован далее в source-bound finalization; реальные review и
+quality gates открыты.
+
+## Finalization с проверкой исходных review — выполнено, 11.10.2026
+
+[Finalizer и offline replay](./qualification/local-decisions/source-review/review-finalization.md)
+заново проверяют два submitted review, comparison и полный adjudication bundle.
+Handoff восстанавливается из фактической source pair; другая pair или полный
+unsubmitted draft не создают finalized dataset. Согласованные и спорные случаи
+сохраняют все записи, source inputs, provenance и прежний group split.
+
+Original synthetic CLI: три cases / два agreed / один adjudicated; два positive
+calls и четыре отказа до output. Независимый stdlib rebuild всего dataset —
+40 checks; 17 новых / 87 related Python tests прошли. Private archive из 53 files /
+23 code sources сохранён под /docs; replay actual original-copy без Git дал
+byte-identical verification. Human/identity/expertise flags остаются false;
+реальные reference labels и model calls=0, routing=false/not_assessed.
+
+Полный локальный прогон предыдущего этапа сохранил timing error старого paired
+fixture; один isolated replay PASS не превращает его в полный PASS. GitHub CI
+test job прошёл отдельно. Следующий предметный gate — получение фактических двух
+review и разрешение их разногласий; development accuracy без них не вычисляется.
 
 ## Вывод: что именно можно воспроизвести
 
