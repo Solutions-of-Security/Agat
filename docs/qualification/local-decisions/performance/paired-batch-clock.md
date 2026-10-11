@@ -81,3 +81,7 @@ byte-identical inventory.
 успешные проверки. Actual original-workspace ZIP copy проверена целиком;
 restored standalone replay дал тот же inventory. Новые native MLX inference,
 quality measurements и human labels отсутствуют.
+
+Последующий [полный native MLX gate](./paired-batch-clock-native.md) выполнен
+отдельно на тех же 49 development inputs. Он сохраняет оба предыдущих опыта
+и проверяет новые clock receipts при настоящем scoring.
