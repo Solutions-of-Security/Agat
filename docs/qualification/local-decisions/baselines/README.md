@@ -1,5 +1,8 @@
 # Генеративный baseline на тех же development-входах
 
+[Закреплённый NanoJev CPU reference](./nanojev.md) фиксирует native decision
+heads и полные candidate paths; результаты добавляются после actual run.
+
 [Закреплённый GLiClass baseline](./gliclass.md) реализован отдельно для лёгкого
 классификатора из плана: полный вход, native logits и явный context refusal.
 
