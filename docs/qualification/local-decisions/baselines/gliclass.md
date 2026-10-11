@@ -79,7 +79,8 @@ python3.13 -B scripts/evaluate-gliclass-development.py verify \
 порядок — зависимая диагностика тех же случаев. CPU FP32 latency этого этапа
 не является контролируемым сравнением с предыдущими MLX/GPU/quantized runs.
 Базовая model card не доказывает русскую предметную точность. Фактическое
-native измерение выполнено ниже; memory/representative qualification ещё
+native измерение выполнено ниже; [process-memory profiler](./gliclass-resources.md)
+реализован отдельно, representative qualification ещё
 требуют отдельного этапа.
 
 ## Фактическое измерение, 11.10.2026
