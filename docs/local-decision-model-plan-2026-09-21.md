@@ -1443,7 +1443,8 @@ original/reversed forward, 200–267 токенов, backend errors=0. GLiClass 
 с synthetic labels 11/36 и 15/36, изменил 22/36 argmax; accepted 3/36 (0 errors)
 и 2/36 (2 errors). Ранее измеренные decider дали 31/36 и 30/36, Base — 18/36
 и 28/36. Порядковая нестабильность и низкое покрытие не обосновывают замену
-scorer этим профилем. CPU latency описательная; memory ещё не измерена.
+scorer этим профилем. CPU latency описательная; отдельный memory-профиль
+приведён в следующем этапе.
 Синтетические группы и permutations не превращены в human qualification.
 
 Независимый stdlib audit: 3086 checks; отдельный real tokenizer replay —
@@ -1458,6 +1459,33 @@ human labels, representative calibration/holdout и owners/SLO остаются 
 Финальный private archive: 1097 ZIP entries / 1114 logical files, веса и
 143 measured source files включены. CRC/every SHA/size, завершённые 1417/135
 logs и byte-identical verifier из actual original-copy — PASS, model0.
+
+## GLiClass process memory/CPU — реализовано и измерено, 11.10.2026
+
+[Offline profiler](./qualification/local-decisions/baselines/gliclass-resources.md)
+добавляет три raw RUSAGE_SELF снимка и проверяемую сводку вокруг прежнего
+full-input scorer. Current Darwin RSS unit проверена 96 MiB allocation/touch
+с независимым ps RSS; Linux conversion покрыта fixture. Это whole-process
+high-water mark, включая imports/model/tokenizer/allocator, не model-only
+allocation и не доказанный concurrency SLO.
+
+Actual CPU FP32 run: 36 synthetic development cases / 3 dependent groups,
+72 native forwards / 0 errors; все 72 typed distributions совпали с прежним
+запуском. Max RSS до backend / после load / после scoring:
+45858816 / 479854592 / 552878080 bytes (43.7 / 457.6 / 527.3 MiB).
+Полный load + scoring — 10309.713–10309.724 ms, user/system CPU
+5.030461 / 1.405390 s. Результаты относятся к одному процессу; сравнение
+latency с предыдущим run не контролировалось.
+
+Independent stdlib audit: 1248 checks; production stdlib verifier
+byte-identical, model0; 10 refusals / 1 positive без leaked output, все 11
+owned PID завершены. Четыре resident PID / 20 serving files / 8 полей
+сохранены. 8 new / 1425 full scripts tests, 4 skips — PASS.
+Private archive: 391 ZIP entries / 390 logical files с весами, 146 measured
+sources, raw snapshots и завершённым full-suite log. CRC/every SHA/size и
+actual original-copy production replay — PASS, model0. Human quality,
+representative calibration/holdout и владельцы/SLO остаются открытыми gates;
+authority/routing=false/not_assessed.
 
 ## Вывод: что именно можно воспроизвести
 
