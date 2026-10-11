@@ -1329,7 +1329,7 @@ fixture; один isolated replay PASS не превращает его в по�
 test job прошёл отдельно. Следующий предметный gate — получение фактических двух
 review и разрешение их разногласий; development accuracy без них не вычисляется.
 
-## Границы измерения paired workflow — реализовано, 11.10.2026
+## Границы измерения paired workflow — выполнено, 11.10.2026
 
 [Versioned clock brackets](./qualification/local-decisions/performance/paired-batch-clock.md)
 добавлены после обнаруженного local timing error. Wall read теперь окружён
@@ -1337,10 +1337,16 @@ review и разрешение их разногласий; development accuracy
 в прежний 20 s deadline, sequential barrier проверяется теми же часами.
 Historical receipts сохраняют прежнее правило ±2 ms и прежние reports;
 неподтверждённое clock difference и mixed schemas отклоняются.
-11 новых / 32 related Python tests и 18 Node documentation tests прошли,
-включая actual model-free worker/coordinator. Причина исходного старого
-failure не утверждается. Human reference labels/model calls=0; quality gates
-по-прежнему требуют двух фактических независимых review.
+11 новых / 32 related / 1365 full Python tests (четыре optional skips),
+18 Node documentation tests и strict driver typecheck прошли. Actual model-free
+worker/coordinator сохранил шесть synthetic inputs и три busy; 255 independent
+checks и standalone из 224 sources дали pass. Current CLI перепроверил прежние
+49 native cases / 25 batches, historical inventory byte-identical. Private
+archive 271 files сохранён в original workspace; restored copy replay pass.
+Причина исходного старого failure не утверждается. Human reference labels/model
+calls=0; quality gates требуют двух фактических независимых review.
+Следующий инженерный шаг — переносимый finalized-review bundle с одной
+external manifest SHA для полного offline replay исходных reviews и adjudication.
 
 ## Вывод: что именно можно воспроизвести
 

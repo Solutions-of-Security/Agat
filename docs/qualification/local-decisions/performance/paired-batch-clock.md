@@ -56,6 +56,28 @@ Historical v8 batches без новых полей продолжают пров
 подмену elapsed, неучтённый clock difference, deadline, rounding, malformed
 samples, monotonic barrier и historical receipts. Related suite — 32 PASS,
 включая actual model-free coordinator/worker с шестью исходными synthetic
-inputs, тремя pairs и native HTTP busy. 18 Node documentation tests прошли.
+inputs, тремя pairs и fixture HTTP `503/busy`. 18 Node documentation tests прошли.
 Это synthetic integration evidence; model calls и новые real reference labels
 равны нулю. Human review и qualification остаются открытыми.
+
+Свежий сохранённый actual driver replay из committed
+`ec04c2fa22de265f3b0eecdb4913cd07ec565904` выполнил те же шесть synthetic inputs:
+три busy, шесть primary calls, три batches. Stdlib math/source audit —
+255 checks. Все recorded temporary PID завершены. Clock pause внутри отдельного
+Node sampling command намеренно искусственная; её размер не является latency
+runtime. Standalone replay из 224 committed sources без Git сохранил
+byte-identical inventory.
+
+Прежний native архив из [v8 gate](./public-workflow-paired-concurrency.md)
+сверен по outer SHA, CRC и SHA/size всех 102 entries. Current CLI заново проверил
+49 original cases / 25 historical batches; canonical inventory и его seal
+остались byte-identical, новые clock claims не добавились.
+
+Полный local Python 3.13 / Node 24 прогон — **1365 PASS**, четыре optional skips,
+513.574 s. Strict driver TypeScript check и 2831 local link targets прошли.
+[Сводка](./paired-batch-clock-summary.json) содержит counts и file pins.
+[Private archive](./paired-batch-clock-archive-summary.json): 271 files,
+1 396 043 bytes, 224 committed sources, original failed log и последующие
+успешные проверки. Actual original-workspace ZIP copy проверена целиком;
+restored standalone replay дал тот же inventory. Новые native MLX inference,
+quality measurements и human labels отсутствуют.
