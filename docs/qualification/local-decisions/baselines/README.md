@@ -1,5 +1,10 @@
 # Генеративный baseline на тех же development-входах
 
+[decider и Qwen Base на всех 49 публичных development-входах](./public-mlx-inputs.md)
+измерены исходным MLX scorer: 184 native forwards, raw tokenizer/logit replay,
+memory observations и standalone archive. Base изменил argmax на 46/46
+computed inputs при reversed order; reference quality не измерена.
+
 [GLiClass и NanoJev на всех 49 публичных unlabelled development-входах](./public-native-inputs.md)
 измерены без context prefilter другой модели: 166 native forwards,
 явные context refusals, полный tokenizer replay и переносимый архив.

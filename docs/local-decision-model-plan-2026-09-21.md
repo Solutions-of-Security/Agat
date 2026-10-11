@@ -1570,6 +1570,44 @@ Private archive в исходном workspace — 2164356018 bytes / 1230 ZIP en
 false/not_assessed. Реальные reviews, независимые calibration/holdout,
 подтверждение representative Agat/Russian quality и owner/SLO остаются открытыми.
 
+## decider и Qwen Base: все публичные входы — реализовано и измерено, 11.10.2026
+
+[Whole-input MLX baseline](./qualification/local-decisions/baselines/public-mlx-inputs.md)
+использует прежний MlxBackend.score, runtime 0.12.3 и все 49 unlabelled
+development inputs / 44 source groups в двух dependent orders. 196 variants,
+184 actual native forwards; все входы сохранены, по 3 context refusals
+на модель/order до backbone/eval, backend errors=0. Calibration/holdout
+не использованы. 13 immutable publisher files закреплены SHA/size;
+decider bytes переиспользованы, Qwen Base явно скачан вне Documents.
+
+decider: 46 computed в каждом порядке, policy accepted 31/34,
+abstained 15/12, argmax changed 4/46. Qwen Base: 46 computed, accepted
+33/0, abstained 13/46, argmax changed 46/46. Эта чувствительность к порядку
+зафиксирована без вывода об accuracy. Verified human references=0,
+routing/qualification остаются false/not_assessed.
+
+Native p50/p95: 170.744/550.190 ms и 168.736/548.693 ms. Whole-process
+high-water RSS: 3511582720/3539681280 bytes; MLX allocator peak:
+4475192924/4531778140 bytes. Разные scopes не смешиваются; cache/wired
+budgets не считаются hard cap total allocations. Одноhostовые concurrent
+observations не дают controlled speed, capacity или принятый SLO.
+
+Перепроверены 7443 stdlib checks, 1312 actual token arrays и 920 decoded
+continuations, 50 CLI refusals + 2 positive replays; все owned PIDs завершены,
+4 resident PIDs / 20 serving files / 8 fields сохранены. 15 новых regression
+tests, 45 related tests и полный **1469-test suite PASS / 4 skip / 553.522 s**.
+Первый full attempt с недоступными sandbox loopback/process inspection
+сохранён как failed; passing повтор использовал тот же source и необходимые
+permissions, не подменяя первый результат.
+
+[Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/public-mlx-summary.json)
+не раскрывает per-case predictions будущим human reviewers.
+[Archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/public-mlx-archive-summary.json)
+закрывает один standalone ZIP в original workspace с обоими полными
+artifacts, historical source/input evidence и actual relocated copied CLI
+replays: оба report byte-identical, 0 model calls. Следующая qualification
+зависит от настоящих независимых human reviews и representative datasets.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
