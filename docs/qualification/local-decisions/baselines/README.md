@@ -1,5 +1,10 @@
 # Генеративный baseline на тех же development-входах
 
+[GLiClass и NanoJev на всех 49 публичных unlabelled development-входах](./public-native-inputs.md)
+измерены без context prefilter другой модели: 166 native forwards,
+явные context refusals, полный tokenizer replay и переносимый архив.
+Human quality/routing qualification остаётся false/not_assessed.
+
 [Закреплённый NanoJev CPU reference](./nanojev.md) фиксирует native decision
 heads и полные candidate paths: 72 actual forward на прежних 36 synthetic
 development cases, отдельный Score/Boolean/Choice contract smoke и memory
