@@ -1345,8 +1345,25 @@ checks и standalone из 224 sources дали pass. Current CLI перепро�
 archive 271 files сохранён в original workspace; restored copy replay pass.
 Причина исходного старого failure не утверждается. Human reference labels/model
 calls=0; quality gates требуют двух фактических независимых review.
-Следующий инженерный шаг — переносимый finalized-review bundle с одной
-external manifest SHA для полного offline replay исходных reviews и adjudication.
+Переносимый finalized-review bundle реализован следующим этапом ниже.
+
+## Переносимый finalized-review bundle — выполнено, 11.10.2026
+
+[Packager и bundle verifier](./qualification/local-decisions/source-review/review-bundle.md)
+копируют exact source bytes и завершённые outputs в immutable private folder.
+Один external manifest SHA позволяет заново проверить source reviews,
+comparison, adjudication и dataset после переноса без original paths/Git.
+Fixed names, точные sizes, ранний byte budget, missing/extra/symlink/path-escape
+refusals и completion manifest последним сохраняют проверяемую границу output.
+
+14 новых / 101 related tests и текущий synthetic native CLI из 24 sources
+прошли. 119 independent checks, два positive calls и пять refusals; dataset
+и package manifest byte-identical предыдущим исходным artifacts. Private
+archive 138 files сохранён в original workspace, restored production replay
+byte-identical. Неверное имя module в первом test command сохранено отдельно.
+Новые model calls / real reference labels=0, human/identity/expertise flags
+false, routing=false/not_assessed. Следующий предметный gate требует двух
+фактических независимых review 49 development inputs и разрешения разногласий.
 
 ## Вывод: что именно можно воспроизвести
 

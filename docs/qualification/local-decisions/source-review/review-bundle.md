@@ -57,8 +57,28 @@ Bundle переносит конкретные review-решения и их п�
 qualification — `not_assessed`, model calls — 0. Formal `expert-reviewed`
 labelSource не используется как доказательство профессиональной квалификации.
 
-14 новых тестов проверяют полный и agreeing bundle, перенос после удаления
+14 новых / 101 related Python tests прошли. Они проверяют полный и agreeing bundle, перенос после удаления
 оригинальных source files, все file pins, rehashed claims, path escape,
 symlink, missing/extra artifacts, byte limits, partial review, interrupted
 write, private modes и отказ overwrite. Реальные human reviews этим не
 создаются; дальнейший quality gate сохраняется.
+
+Свежий CLI protocol из committed
+`d005ff5698d0fb8cf93da37f6bdd0b12141601ba` упаковал прежнюю synthetic
+source pair и finalized dataset: три cases, два agreed, один adjudicated,
+15 artifacts. Dataset file SHA остался
+`9e07af47891efe856db38fd1c9de8605aaac4ce7eceb592f64c27c84e6e361b2`.
+119 independent byte/source checks, два positive CLI calls и пять отказов
+до output прошли. Relocated replay из 24 sources без Git сохранил verification.
+Проверка общего byte budget теперь выполняется до полного разбора inputs;
+новый тест подтверждает отсутствие replay при превышении бюджета.
+
+Первый related run включал неверное имя test module и завершился import error;
+исправленный и финальный наборы прошли, прежний log сохранён. После изменения
+порядка проверки бюджета исходный protocol повторён на новом commit;
+manifest остался byte-identical предыдущему native package.
+[Сводка](./review-bundle-summary.json) содержит реальные file pins и counts.
+[Текущий archive](./review-bundle-archive-summary.json): 138 files / 211931 bytes.
+Все entries и actual original-workspace copy проверены по CRC/SHA/size;
+restored production CLI дал byte-identical verification без Git/model calls.
+Первый архив с 137 files также сохранён отдельно как предыдущее evidence.
