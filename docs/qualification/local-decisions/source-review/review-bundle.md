@@ -1,5 +1,9 @@
 # Переносимый bundle завершённого review
 
+Следующий [development diagnostic](./review-native-diagnostics.md) связывает
+полностью проверенный bundle с исходным whole native inventory и считает
+agreement относительно submitted labels без нового inference.
+
 11.10.2026. После [source-bound finalization](./review-finalization.md)
 можно собрать все её inputs и outputs в отдельный immutable каталог.
 Получателю достаточно одного external SHA файла `bundle.json`: verifier
