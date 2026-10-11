@@ -3,13 +3,14 @@ from collections import defaultdict
 
 from decision_runtime.artifacts import sealed
 from decision_runtime.contracts import canonical_json, fingerprint, parse_json
-from decision_runtime.evaluation import metrics, validate_dataset
+from decision_runtime.evaluation import metrics
 from scripts.lib.decision_public_development_review import review_outputs
 from scripts.lib.decision_public_load import validate_context
 from scripts.lib.decision_public_permutation_diagnostic import verify as verify_native, verify_phase
 from scripts.lib.decision_public_permutations import variants
 from scripts.lib.decision_public_sources import pinned_input
 from scripts.lib.decision_review_bundle import verify_bundle
+from scripts.lib.decision_review_development_scope import for_native_diagnostics
 from scripts.lib.decision_review_session import AUTHORITY_FLAGS, MAX_REVIEW_BYTES
 from scripts.lib.decision_shadow_pilot import require
 
@@ -40,7 +41,7 @@ def _metrics(rows):
 
 def analyse(dataset, context, inputs, phase):
     """Keep original cases as the unit; option variants are dependent diagnostics."""
-    validate_dataset(dataset); validate_context(context)
+    dataset = for_native_diagnostics(dataset); validate_context(context)
     pool = review_outputs(context)['pool.json']
     require(dataset['annotation']['poolSha256'] == fingerprint(pool)
             and dataset['annotation']['splitSeed'] == context['splitSeed'],

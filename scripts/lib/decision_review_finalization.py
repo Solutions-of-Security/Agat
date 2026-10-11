@@ -1,12 +1,13 @@
 """Bind a finalized dataset to submitted reviews and an optional disputed-case session."""
 import hashlib
 
-from decision_runtime.annotations import finalize_reviews, scope_development_reviews
+from decision_runtime.annotations import finalize_reviews
 from decision_runtime.artifacts import sealed
 from decision_runtime.contracts import canonical_json, fingerprint, parse_json
 from scripts.lib.decision_adjudication_verification import verify_session as verify_adjudication
 from scripts.lib.decision_public_sources import pinned_input
 from scripts.lib.decision_review_adjudication import encoded, prepare_handoff
+from scripts.lib.decision_review_development_scope import scope_development_reviews
 from scripts.lib.decision_review_pair import compare_pair
 from scripts.lib.decision_review_session import AUTHORITY_FLAGS, MAX_REVIEW_BYTES
 from scripts.lib.decision_shadow_pilot import require

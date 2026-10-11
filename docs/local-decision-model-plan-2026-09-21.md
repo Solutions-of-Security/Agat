@@ -1415,8 +1415,10 @@ owned synthetic fixture Git. Failed sandbox log сохранён отдельн�
 [Finalization v2](./qualification/local-decisions/source-review/development-review-scope.md)
 добавляет sealed development-only usage для whole-development submitted labels.
 Source records, annotation, порядок и assignments сохранены; standalone
-dataset не допускается в freeze/validate calibration-holdout experiment.
-Resealed split/authority mutations отвергаются, development evaluation доступна.
+dataset не допускается в runtime evaluation/freeze/validate experiment;
+comparison доступен через source-verified native diagnostic без inference.
+Resealed split/authority mutations отвергаются. Serving runtime files и
+закреплённые profiles сохранены побайтно; guard находится в offline review lib.
 Mixed pool сохраняет прежние dataset bytes. Pinned v1 receipt выбирает прежний
 replay, поэтому исторические bundles и native diagnostics остаются проверяемыми.
 12 новых / 99 related Python tests прошли. Реальные 49 reviews не получены;

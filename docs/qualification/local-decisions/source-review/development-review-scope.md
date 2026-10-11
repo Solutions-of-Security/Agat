@@ -12,18 +12,21 @@ independence, expertise и classification accuracy. Original annotation,
 source requests, порядок, метки, rationale и все review records сохраняются.
 Mixed calibration/holdout pool сохраняет прежние assignments и dataset bytes.
 
-[Dataset validator](../../../../decision_runtime/evaluation.py) различает
-старые assistant-reviewed development data и новую submitted-review форму.
-Для второй нужны declared consistent consensus/adjudication records,
-annotation, только development splits и отсутствие inferred authority.
+[Review validator](../../../../scripts/lib/decision_review_development_scope.py)
+проверяет новую submitted-review форму. Нужны declared consistent
+consensus/adjudication records, annotation, только development splits и
+отсутствие inferred authority. Original pool восстанавливается целиком;
+каждый case заново проходит прежний strict consensus/adjudication finalizer.
 Даже resealed dataset с calibration/holdout/train split или human/routing claim
-отклоняется. Проверка записей общая с прежним qualification gate; значения
+отклоняется. Проверка записей использует прежний finalizer; значения
 reviewer ID и timestamps остаются декларациями, а не аутентификацией людей.
 
-Standalone development dataset нельзя передать в freeze или validate experiment
-plan. Evaluation preflight отвергает calibration/holdout до загрузки весов;
-CLI также проверяет наличие запрошенного split до backend construction.
-Обычная development evaluation доступна. SHA и seal проверяют целостность;
+Standalone scoped dataset нельзя передать в обычную runtime evaluation,
+freeze или validate experiment plan. Прежний runtime validator отвергает
+такой dataset до загрузки весов. Метрики доступны через
+[source-bound native diagnostic](./review-native-diagnostics.md), который
+проверяет scope и все source reviews перед comparison с сохранённым native
+history; новых model calls нет. SHA и seal проверяют целостность;
 переписывание данных вне проверенного source bundle не создаёт происхождение.
 
 Это решение сохраняет независимый итоговый holdout. В
@@ -44,8 +47,14 @@ file pins не совпадает с полным source replay.
 ## Проверка
 
 12 новых / 99 related Python tests прошли: standalone copy/load/development
-evaluation, refusal до model construction, resealed split/authority mutations,
+inventory validation, refusal до model construction, resealed split/authority mutations,
 consensus record consistency, idempotent scoping, legacy byte replay,
 v1/v2 bundles и сохранение mixed splits. Все тестовые метки synthetic;
 реальные independent reviews для 49 исходных cases остаются необходимыми.
 Routing=false; qualification=not_assessed.
+
+Первый полный прогон выявил ошибку архитектурной границы: изменения offline
+review helpers внутри `decision_runtime` изменяли SHA всего serving package
+и расходились с закреплёнными native profiles 0.12.3. Guard вынесен в
+`scripts/lib`; все runtime files восстановлены побайтно. Model/profile artifacts
+не менялись, implementation verifier не ослаблен. Failed log сохранён.

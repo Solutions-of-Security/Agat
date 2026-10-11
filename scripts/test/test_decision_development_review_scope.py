@@ -8,19 +8,19 @@ import unittest
 from unittest.mock import patch
 
 from decision_runtime.__main__ import main as runtime_main
-from decision_runtime.annotations import (REVIEW_AUTHORITY_FLAGS, finalize_reviews, group_split,
-                                           prepare_review, scope_development_reviews)
+from decision_runtime.annotations import finalize_reviews, group_split, prepare_review
 from decision_runtime.artifacts import sealed, verify_seal
 from decision_runtime.calibration_workflow import freeze_plan, validate_plan
 from decision_runtime.contracts import Policy, fingerprint, parse_json
 from decision_runtime.engine import DecisionEngine
-from decision_runtime.evaluation import evaluate, load_dataset, validate_dataset
-from decision_runtime.evaluation_guard import validate_evaluation_start
+from decision_runtime.evaluation import evaluate, load_dataset
 from decision_runtime.tests.test_calibration import FixtureBackend, criteria, pipeline
 from scripts.lib.decision_review_adjudication import encoded
 from scripts.lib.decision_review_bundle import prepare_bundle, verify_bundle, write_bundle
 from scripts.lib.decision_review_finalization import prepare_finalization, verify_finalization
 from scripts.lib.decision_review_pair import compare_pair
+from scripts.lib.decision_review_development_scope import for_native_diagnostics, scope_development_reviews
+from scripts.lib.decision_review_session import AUTHORITY_FLAGS
 from scripts.test import test_decision_review_pair as pair_fixtures
 
 sha = pair_fixtures.hashlib.sha256
@@ -62,25 +62,25 @@ class DevelopmentReviewScopeTest(unittest.TestCase):
         self.assertEqual(report['schemaVersion'], 'agat.decision.review-finalization.v2')
         self.assertEqual(data['cases'], self.prepare(1)['dataset.json']['cases'])
         self.assertEqual(data['annotation'], self.prepare(1)['dataset.json']['annotation'])
-        for flag in (*REVIEW_AUTHORITY_FLAGS, 'routingEnabled', 'qualifiedForRouting', 'classificationAccuracyMeasured'):
+        for flag in (*AUTHORITY_FLAGS, 'qualifiedForRouting', 'classificationAccuracyMeasured'):
             self.assertIs(data[flag], False)
         verified = self.verify(*self.written(output)); self.assertTrue(verified['developmentOnly'])
         self.assertEqual(verified['schemaVersion'], 'agat.decision.review-finalization-verification.v2')
 
-    def test_standalone_copy_loads_and_development_evaluation_keeps_all_cases(self):
+    def test_standalone_copy_validates_for_native_diagnostics_and_keeps_all_cases(self):
         _, path = self.written(self.prepare()); copied = self.root/'standalone.json'; copied.write_bytes(path.read_bytes())
-        data = load_dataset(copied); backend = FixtureBackend()
+        data = for_native_diagnostics(parse_json(copied.read_bytes())); backend = FixtureBackend()
         report = evaluate(DecisionEngine(backend), data, 'development', reverse_options=True)
         self.assertEqual(backend.calls, 6); self.assertEqual(len(report['cases']), 3)
         self.assertEqual({case['id'] for case in report['cases']}, {case['id'] for case in data['cases']})
-        validate_evaluation_start(data, 'development', None, None, reverse_options=True, calibrated=False)
+        with self.assertRaises(ValueError): load_dataset(copied)
 
     def test_resealed_split_changes_remain_forbidden(self):
         data = self.prepare()['dataset.json']
         for split in ('calibration', 'holdout', 'train'):
             changed = deepcopy(data); changed['cases'][0]['split'] = split
             with self.subTest(split=split), self.assertRaisesRegex(ValueError, 'Development-only'):
-                validate_dataset(reseal(changed))
+                for_native_diagnostics(reseal(changed))
 
     def test_standalone_scope_refuses_freezing_and_rebound_experiment_plan(self):
         data = self.prepare()['dataset.json']
@@ -102,9 +102,7 @@ class DevelopmentReviewScopeTest(unittest.TestCase):
                 self.assertEqual(runtime_main(), 1)
             backend.assert_not_called(); self.assertTrue(error.getvalue())
             self.assertFalse((self.root/(split+'.json')).exists())
-            with self.assertRaisesRegex(ValueError, 'Development-only'):
-                validate_evaluation_start(load_dataset(data), split, None, None,
-                                          reverse_options=False, calibrated=False)
+            self.assertIn('Development-only', error.getvalue())
 
     def test_scoping_is_idempotent_without_a_nested_checksum(self):
         data = self.prepare()['dataset.json']; self.assertEqual(scope_development_reviews(data), data)
@@ -120,11 +118,11 @@ class DevelopmentReviewScopeTest(unittest.TestCase):
                      lambda d: d.update(developmentLabelKind='assistant-reviewed'),
                      lambda d: d.pop('annotation')]
         mutations += [lambda d, key=key: d.update({key: True}) for key in
-                      (*REVIEW_AUTHORITY_FLAGS, 'routingEnabled', 'qualifiedForRouting', 'classificationAccuracyMeasured')]
+                      (*AUTHORITY_FLAGS, 'qualifiedForRouting', 'classificationAccuracyMeasured')]
         mutations += [lambda d: d.update(humanExecutionVerified=0), lambda d: d.update(qualification='pass')]
         for mutate in mutations:
             changed = deepcopy(original); mutate(changed)
-            with self.subTest(mutate=mutate), self.assertRaises(ValueError): validate_dataset(reseal(changed))
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError): for_native_diagnostics(reseal(changed))
 
     def test_v2_receipt_scope_and_dataset_cannot_be_removed_with_new_pins(self):
         output = self.prepare(); report, dataset = self.written(output)
@@ -164,7 +162,9 @@ class DevelopmentReviewScopeTest(unittest.TestCase):
                                         report, file_sha(report), dataset, file_sha(dataset))
         path = write_bundle(self.root, self.root/'docs/private/scoped-bundle', manifest, files)/'bundle.json'
         self.assertEqual(verify_bundle(path, file_sha(path))['status'], 'pass')
-        self.assertEqual(load_dataset(path.parent/'dataset.json')['usage'], 'development-only')
+        data = parse_json((path.parent/'dataset.json').read_bytes())
+        self.assertEqual(data['usage'], 'development-only')
+        self.assertEqual(len(for_native_diagnostics(data)['cases']), 3)
 
     def test_mixed_split_review_keeps_original_calibration_holdout_assignments(self):
         first = self.helper.binding('mixed-first', self.helper.a); second = self.helper.binding('mixed-second', self.helper.b)
