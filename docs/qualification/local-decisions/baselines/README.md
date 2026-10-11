@@ -1,7 +1,9 @@
 # Генеративный baseline на тех же development-входах
 
 [Закреплённый NanoJev CPU reference](./nanojev.md) фиксирует native decision
-heads и полные candidate paths; результаты добавляются после actual run.
+heads и полные candidate paths: 72 actual forward на прежних 36 synthetic
+development cases, отдельный Score/Boolean/Choice contract smoke и memory
+profile. Human/routing qualification остаётся false/not_assessed.
 
 [Закреплённый GLiClass baseline](./gliclass.md) реализован отдельно для лёгкого
 классификатора из плана: полный вход, native logits и явный context refusal.

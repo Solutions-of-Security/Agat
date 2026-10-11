@@ -1487,6 +1487,48 @@ actual original-copy production replay — PASS, model0. Human quality,
 representative calibration/holdout и владельцы/SLO остаются открытыми gates;
 authority/routing=false/not_assessed.
 
+## NanoJev CPU reference — реализовано и измерено, 11.10.2026
+
+[Pinned native-heads baseline](./qualification/local-decisions/baselines/nanojev.md)
+закрепляет immutable HF revision, все 12 inference/provenance files, source
+и dependency pins. Официальный predictor требует CUDA; отдельный CPU FP32/
+eager reference использует тот же builtin Qwen3 body и pinned DecisionModel
+со strict загрузкой всех 322 FP32 tensors. Serving runtime сохранён.
+
+Вся исходная 36-case authored development inventory / 3 dependent groups:
+72 native forwards / 192 полных candidate paths / 0 errors. Original/reversed
+matches — 13/36 и 13/36; accepted — 12/36, errors among accepted — 6/12;
+changed argmax — 0/36. Все accepted были Boolean `False`; 24 Choice остались
+abstain. Current profile сохраняется diagnostic_only. Все четыре planned
+кандидата сравнены на том же whole development dataset; descriptive scores
+не заменяют representative human qualification/calibration/holdout.
+
+Process high-water RSS: 49364992 bytes до backend, 5258067968 после load и
+после scoring; это process peak, не isolated model allocation. Native p50/
+p95 — 409.685 / 535.440 ms; load + 72 scoring — 57850.445–57850.456 ms.
+SLO/capacity и controlled latency improvement не заявлены.
+
+Independent audit — 4909 checks, direct Tokenizers JSON replay — 192/192
+full arrays, production stdlib verifier byte-identical/model0, 17 refusals
+без outputs. Все 18 refusal/replay PID и 4 main native/capture/replay PID
+завершены; 4 protected resident PID / 20 sources / 8 полей прежние.
+Separate native typed-contract smoke: 3 synthetic cases / 1 group, 6 forwards
+Choice/Boolean/Score; это interface evidence, не quality benchmark.
+14 new / 1439 full scripts tests, 4 skips / 524.970 s — PASS. Два whole runs
+сохраняют те же 36 cases / 3 groups; 144 native/typed pairs между runs
+bit-identical, кроме duration. Byte-bound regression включает завершающий
+newline canonical JSON до публикации output. Human references не получены;
+authority/routing=false/not_assessed.
+
+Private v2 archive сохранён в исходном workspace: 1958090546 bytes / 870 ZIP
+entries / 908 restored logical files, SHA-256
+`2a99134b51e95d6082ef935115c1c6dca956b40402ccd00884a57a60e0fe9e90`.
+Both native runs, pinned weights, own Git и завершённые full logs сохранены.
+Обе copies CRC/SHA/size и actual copied production CLI/model0 byte-identical
+replay — PASS. [Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/nanojev-summary.json)
+и [archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/nanojev-archive-summary.json)
+позволяют сверить claims; routing не включён.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
