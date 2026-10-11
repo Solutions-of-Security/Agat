@@ -46,14 +46,14 @@ def _manifest(files, verification, has_adjudication):
 
 
 def prepare_bundle(first, second, comparison, comparison_sha, report, report_sha, dataset, dataset_sha, adjudication=None):
-    verification = verify_finalization(first, second, comparison, comparison_sha, report, report_sha,
-                                      dataset, dataset_sha, adjudication)
     files = {}; total = 0
     for name, (path, sha) in file_bindings(first, second, comparison, comparison_sha, report, report_sha,
                                         dataset, dataset_sha, adjudication).items():
-        raw = pinned_input(path, sha, MAX_REVIEW_BYTES); total += len(raw)
+        raw = pinned_input(path, sha, min(MAX_REVIEW_BYTES, MAX_BUNDLE_BYTES-total)); total += len(raw)
         require(total <= MAX_BUNDLE_BYTES, 'Review bundle exceeds its total byte bound')
         files[name] = raw
+    verification = verify_finalization(first, second, comparison, comparison_sha, report, report_sha,
+                                      dataset, dataset_sha, adjudication)
     return _manifest(files, verification, adjudication is not None), files
 
 

@@ -144,6 +144,9 @@ class ReviewBundleTest(unittest.TestCase):
             with self.subTest(size=size), self.assertRaises(ValueError): bundle.verify_bundle(path, sha(path))
         path.write_bytes(encoded(original))
         with patch.object(bundle, 'MAX_BUNDLE_BYTES', 1), self.assertRaises(ValueError): bundle.verify_bundle(path, sha(path))
+        with patch.object(bundle, 'MAX_BUNDLE_BYTES', 1), patch.object(bundle, 'verify_finalization') as replay:
+            with self.assertRaises(ValueError): self.prepare()
+            replay.assert_not_called()
 
     def test_partial_review_cannot_be_packaged_and_creates_no_output_directory(self):
         self.second = self.helper.helper.helper.binding('partial', self.helper.helper.helper.b, state='partial')
