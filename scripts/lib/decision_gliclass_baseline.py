@@ -218,8 +218,8 @@ class GLiClassBackend:
         try:
             rendered = render_request(request)
             row['renderedInputSha256'] = hashlib.sha256(rendered.encode()).hexdigest()
-            encoded = self.tokenizer(rendered, truncation=False, padding=False,
-                return_attention_mask=True, return_token_type_ids=False)
+            encoded = dict(self.tokenizer(rendered, truncation=False, padding=False,
+                return_attention_mask=True, return_token_type_ids=False))
             row['tokenIds'] = list(encoded['input_ids'])
             validate_encoding(encoded, len(request.options))
             tensors = {key: self.torch.tensor([values], dtype=self.torch.long, device='cpu') for key, values in encoded.items()}

@@ -1,4 +1,5 @@
 import copy
+from collections import UserDict
 from contextlib import nullcontext
 import hashlib
 import importlib.util
@@ -51,7 +52,8 @@ class FakeTokenizer:
         ids = [2] + [baseline.CLASS_TOKEN, 12] * text.count('<<LABEL>>') + [baseline.TEXT_TOKEN, 13, 3]
         ids += [14] * self.extra
         if self.wrong_marker: ids[1] = 14
-        return {'input_ids': ids, 'attention_mask': [1] * len(ids)}
+        # Hugging Face BatchEncoding is a UserDict, rather than a dict subclass.
+        return UserDict({'input_ids': ids, 'attention_mask': [1] * len(ids)})
 
 
 def backend():
