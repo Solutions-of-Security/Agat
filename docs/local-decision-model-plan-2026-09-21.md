@@ -6,7 +6,7 @@
 
 Границы исходного анализа от 21.09.2026: локальное выполнение, архитектура модели, данные, обучение, калибровка, ресурсы и интеграция. На момент анализа рассматривались открытые исходники и model cards; модели ещё не скачивались и не запускались, оборудование не профилировалось. Исходные оценки не являются доказательством качества кандидатов.
 
-[Полный native benchmark на опубликованных русских references TERRa](./qualification/local-decisions/external/terra-native-baselines.md), **11.10.2026**, завершён: все 307 случаев / 282 группы, два зависимых порядка, четыре pinned candidate и 2456 forwards без backend/context errors. decider — 267/269 правильных argmax, Qwen Base — 265/271, GLiClass — 157/150, NanoJev — 153/153; у каждого раскрыты accepted errors, coverage, F1/NLL/Brier/ECE и order sensitivity. Новые веса, tuning и source prefilter не использовались. 72726 независимых арифметических checks, 6754 actual tokenizer arrays, 66 actual CLI refusals + 4 replays; 1494 scripts tests / 4 skip и 18 Node tests PASS. Evidence архив и исходные weight bundles перепроверены; четыре copied CLI в original workspace воспроизводят отчёты точно. Это внешний development diagnostic: внутренние human reviews, representative calibration/holdout, владельцы/SLO и routing остаются открытыми. Следующий независимый data этап — реальный русский yes/no corpus для Boolean; числовой Score требует своего предметного эталона.
+[Полный native benchmark на опубликованных русских references TERRa](./qualification/local-decisions/external/terra-native-baselines.md), **11.10.2026**, завершён: все 307 случаев / 282 группы, два зависимых порядка, четыре pinned candidate и 2456 forwards без backend/context errors. decider — 267/269 правильных argmax, Qwen Base — 265/271, GLiClass — 157/150, NanoJev — 153/153; у каждого раскрыты accepted errors, coverage, F1/NLL/Brier/ECE и order sensitivity. Новые веса, tuning и source prefilter не использовались. 72726 независимых арифметических checks, 6754 actual tokenizer arrays, 66 actual CLI refusals + 4 replays; 1494 scripts tests / 4 skip и 18 Node tests PASS. Evidence архив и исходные weight bundles перепроверены; четыре copied CLI в original workspace воспроизводят отчёты точно. Это внешний development diagnostic: внутренние human reviews, representative calibration/holdout, владельцы/SLO и routing остаются открытыми. [Русский Boolean corpus DaNetQA](./qualification/local-decisions/external/danetqa-development.md) импортирован отдельным этапом; числовой Score требует своего предметного эталона.
 
 ## Прогресс реализации на 26.09.2026
 
@@ -1634,10 +1634,31 @@ Actual committed-source CLI import/replay в 148-file source fixture,
 фиксируют standalone complete source/corpus ZIP, CRC/SHA/size всех 824
 entries и actual copied original-workspace CLI byte-identical replay.
 
-Следующий этап — native comparison четырёх pinned кандидатов на этих
-русских references в original/reversed order. Он измерит external benchmark
-behavior; representative quality, local human reviews, calibration/holdout
-и SLO по-прежнему требуют собственного qualification evidence.
+[Native comparison четырёх pinned кандидатов на TERRa](./qualification/local-decisions/external/terra-native-baselines.md)
+завершён отдельным этапом: 2456 forwards, опубликованные references и
+независимый replay. Representative quality, local human reviews,
+calibration/holdout и SLO требуют собственного qualification evidence.
+
+## Внешний русский DaNetQA Boolean corpus — импортирован, 11.10.2026
+
+[DaNetQA development](./qualification/local-decisions/external/danetqa-development.md)
+сохранён целиком: 821 опубликованный typed Boolean reference, 409 false / 412 true,
+779 passage groups, оба дополнительных duplicate rows сохранены. ZIP/development
+member/MIT license имеют immutable SHA/size; исходные passage/question и
+Boolean values не меняются, references находятся вне model requests. Train/test,
+calibration/holdout и inference в этом этапе не использовались.
+
+Actual copied import/replay, 7865 независимых stdlib checks, 35 CLI refusals и
+1 positive replay PASS, все owned PIDs завершены, 0 model imports/calls.
+12 новых tests, полный 1506-test suite / 4 skip / 518.658 s и 18 Node tests PASS.
+[Aggregate](./qualification/local-decisions/external/evidence/2026-10-11/danetqa-import-summary.json)
+и [standalone archive receipt](./qualification/local-decisions/external/evidence/2026-10-11/danetqa-import-archive-summary.json)
+фиксируют полную source/corpus копию и actual original-workspace byte-identical
+verify после closed CRC/SHA/size проверки. 20 serving source files не менялись.
+
+Следующий этап — native Boolean comparison четырёх прежних pinned candidates.
+External references не заменяют внутренние human reviews, representative
+calibration/holdout и owner/SLO. Numeric Score требует отдельного эталона.
 
 ## Вывод: что именно можно воспроизвести
 
