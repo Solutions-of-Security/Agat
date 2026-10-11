@@ -80,6 +80,42 @@ bytes и эту проверку; bare self-seal не допускает referen
 packages, positive byte-identical replay, refused outputs и final-newline
 bound. Synthetic unit fixtures не заявляются как реальные human labels.
 
-Native scoring и accuracy на этом корпусе будут отдельным следующим этапом
-после committed import и независимой проверки. Qualification Агат требует
-representative внутренних данных, calibration/holdout, human reviews и SLO.
+## Committed import и независимая перепроверка
+
+Source feature `91169b214d49de890399472c757b49bfc72d94a0`, отдельный source
+fixture `b801c0d9a3636243e7ebe4f898c8b5edd2ff4fdd`: **148 source files**
+закреплены current bytes и обеими Git histories. Actual copied CLI import
+сохранил весь корпус; actual `verify` повторил **516166-byte dataset**
+byte-for-byte. File SHA:
+`9b31000641df590f84e8b152319c5747ad31a33ca280c88ce354c43cad383771`;
+canonical artifact SHA:
+`9dad46c252d520125446c760c9f57f5d60ce266e869d2fc88a6032ef0360b68d`.
+
+Независимый stdlib script пересчитал **2924 checks**: все 307 source rows,
+state/hypothesis/reference projections, ID/order/group bindings, raw row
+hashes, request hashes, полный label denominator и authority, actual bytes
+148 files и обе Git sources. **22 actual CLI refusals + 1 positive replay**
+проверены на реальном корпусе: resealed changed gold/text/options/group,
+partial/reordered data, calibration/holdout, fake reviewer/human/routing
+authority и wrong/missing byte pins. Refused outputs отсутствуют, все
+23 probe PIDs и оба import/replay PIDs завершены, **0 model imports/calls**.
+
+**1482 scripts tests PASS / 4 skip / 515.775 s**, включая 13 новых.
+20 serving source files не менялись.
+[Aggregate evidence](./evidence/2026-10-11/terra-import-summary.json)
+не заявляет accuracy: inference ещё не выполнялся.
+
+[Archive receipt](./evidence/2026-10-11/terra-import-archive-summary.json):
+один standalone ZIP `docs/private/terra-development-import-20261011.zip`
+в original workspace, **47571825 bytes / 824 entries**, SHA
+`b810884e66f05058bbbd88250ee1f3c4c9e35837c5e7ef184ceff44a522a166f`.
+Он содержит полный original source ZIP/лицензию/publisher evidence, source
+fixture с Git history, imported dataset, completed checks и draft history.
+Каждый entry проверен по CRC/SHA/size; 823 files восстановлены в
+`docs/private/terra-development-original-copy-20261011`. Actual copied
+production CLI в этой original копии повторил dataset byte-for-byte,
+0 model calls; owned verifier PID завершён.
+
+Native scoring четырёх кандидатов и accuracy на этом корпусе — следующий
+этап. Qualification Агат требует representative внутренних данных,
+calibration/holdout, human reviews и SLO.

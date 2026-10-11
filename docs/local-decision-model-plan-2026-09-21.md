@@ -1608,6 +1608,35 @@ artifacts, historical source/input evidence и actual relocated copied CLI
 replays: оба report byte-identical, 0 model calls. Следующая qualification
 зависит от настоящих независимых human reviews и representative datasets.
 
+## Внешний русский TERRa corpus — импортирован и проверен, 11.10.2026
+
+[Pinned external development import](./qualification/local-decisions/external/README.md)
+добавляет настоящие опубликованные reference labels для русского textual
+entailment. Все 307 development rows / 282 normalized premise groups,
+153 entailment / 154 not_entailment; immutable publisher revision, ZIP,
+development member и оригинальный MIT license закреплены по SHA/size.
+Train/test members не читаются, calibration/holdout не создаются.
+
+Исходный premise сохранён целиком в state, hypothesis — в фиксированном
+вопросе; два Choice options, gold/provenance/group находятся вне model
+request. Перевод, truncation, выбор по model outputs и переписывание
+publisher labels отсутствуют. `published-corpus` / `external-development-only`
+не превращаются в локальные human reviews или representative Agat traffic.
+
+Actual committed-source CLI import/replay в 148-file source fixture,
+2924 independent stdlib checks и 22 CLI refusals + 1 positive replay PASS.
+Все owned PIDs завершены, model imports/calls=0; 13 новых regression tests
+и полный **1482-test suite PASS / 4 skip / 515.775 s**.
+[Aggregate](./qualification/local-decisions/external/evidence/2026-10-11/terra-import-summary.json)
+и [original archive receipt](./qualification/local-decisions/external/evidence/2026-10-11/terra-import-archive-summary.json)
+фиксируют standalone complete source/corpus ZIP, CRC/SHA/size всех 824
+entries и actual copied original-workspace CLI byte-identical replay.
+
+Следующий этап — native comparison четырёх pinned кандидатов на этих
+русских references в original/reversed order. Он измерит external benchmark
+behavior; representative quality, local human reviews, calibration/holdout
+и SLO по-прежнему требуют собственного qualification evidence.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
