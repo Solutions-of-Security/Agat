@@ -244,6 +244,8 @@ globalThis.setTimeout=(callback,delay,...args)=>{
                     self.assertEqual({k:stage[k] for k in ('inputSha256','profileSha256','callerTimeoutMs')},
                         {'inputSha256':case['inputSha256'],'profileSha256':context['profileSha256'],'callerTimeoutMs':10000})
                 result=workflow.verify_inventory(context,recipe,captured,driver['routes'],transport,paired.receipt_bundle(raw))
+                self.assertTrue(result['batchClockSamplesVerified'])
+                self.assertEqual(result['batchClockSchemaVersion'],'agat.decision.paired-workflow-batch.v2')
                 self.assertEqual(result['scheduled'],6); self.assertEqual(result['boundCallerReturns'],6); self.assertEqual(result['primaryFixtureCalls'],6)
                 self.assertGreaterEqual(result['nativeBusyRefusals'],1); self.assertEqual(len(seen),len(set(seen))); self.assertEqual(len(seen),6)
                 self.assertEqual(result['workerConcurrency'],2); self.assertEqual(result['workflowBatches'],3); self.assertFalse(result['runtimeRestarted'])

@@ -18,6 +18,7 @@ from scripts.lib.decision_performance import validate_result
 from scripts.lib.decision_public_load_verification import same
 from scripts.lib.decision_shadow_pilot import require, timestamp
 from scripts.lib.decision_shadow_sli import same_json
+from scripts.lib.decision_workflow_batch_clock import BATCH_CLOCK_SCHEMA, verify_batch_clock
 
 PLAN_SCHEMA='agat.decision.public-workflow-plan.v8'
 RESULT_SCHEMA='agat.decision.public-workflow-result.v8'
@@ -176,15 +177,20 @@ def verify_transport(context,spec,transport,cohort,routes,bundle):
     require(busy>=spec['minimumBusyReturns'],'No actual native busy admission refusal')
     verify_lease_http(context,cohort,routes,bundle)
     batches=bundle['batches']; require(isinstance(batches,list) and len(batches)==(count+1)//2,'Paired batches omitted')
-    previous=timestamp(cohort['scope']['startAt'],'scope.startAt')
+    previous=timestamp(cohort['scope']['startAt'],'scope.startAt'); previous_monotonic=None; clock_diagnostics=[]
+    versioned=all(isinstance(batch,dict) and batch.get('schemaVersion')==BATCH_CLOCK_SCHEMA for batch in batches)
+    require(versioned or all(isinstance(batch,dict) and 'schemaVersion' not in batch for batch in batches),
+            'Mixed or unknown paired batch clock schemas')
     for ordinal,batch in enumerate(batches):
-        fields(batch,{'index','inputIndices','runIds','startedAt','completedAt','elapsedMs'})
+        if versioned:
+            previous_monotonic,diagnostic=verify_batch_clock(batch,previous_monotonic); clock_diagnostics.append(diagnostic)
+        else: fields(batch,{'index','inputIndices','runIds','startedAt','completedAt','elapsedMs'})
         indices=list(range(ordinal*2,min(ordinal*2+2,count))); require(type(batch['index']) is int and batch['index']==ordinal
             and batch['inputIndices']==indices and batch['runIds']==[routes[i]['runId'] for i in indices],'Original pair reordered or repeated')
         started=timestamp(batch['startedAt'],'batch.startedAt'); completed=timestamp(batch['completedAt'],'batch.completedAt')
         wall_ms=(completed-started).total_seconds()*1000
         require(previous<=started<=completed and wall_ms<=20001
-            and abs(number(batch['elapsedMs'],0,20000)-wall_ms)<=2,
+            and (versioned or abs(number(batch['elapsedMs'],0,20000)-wall_ms)<=2),
             f"Pair crossed completion barrier/deadline: index={ordinal}, previous={previous.isoformat()}, "
             f"started={started.isoformat()}, completed={completed.isoformat()}, wallMs={wall_ms}, monotonicMs={batch['elapsedMs']}")
         previous=completed
@@ -194,7 +200,9 @@ def verify_transport(context,spec,transport,cohort,routes,bundle):
     verify_primary(context,cohort,routes,bundle['primary'],bundle['http'])
     return {'nativeBusyRefusals':busy,'durableBusyReturns':busy,'contextIneligibleInputsRejectedBusyBeforeContextCheck':busy_context_ineligible,
         'physicalScheduledOutcomes':dict(physical),'physicalScheduledPostStarts':count,'completedPhysicalScheduledPosts':count,
-        'runtimeRestarted':False,'workerConcurrency':2,'workflowBatches':len(batches),'pairedPrimaryRoutesPreserved':True}
+        'runtimeRestarted':False,'workerConcurrency':2,'workflowBatches':len(batches),'pairedPrimaryRoutesPreserved':True,
+        **({'batchClockSchemaVersion':BATCH_CLOCK_SCHEMA,'batchClockSamplesVerified':True,
+            'maximumClockSamplingMs':max(ms for row in clock_diagnostics for ms in row['samplingMs'])} if versioned else {})}
 
 
 def verify_lease_http(context,cohort,routes,bundle):
