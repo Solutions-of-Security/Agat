@@ -91,3 +91,5 @@ CLI требует sealed dataset с `usage: development-only`; calibration/hold
 На [отдельных синтетических длинных входах](../performance/robustness.md#сравнение-с-генеративным-qwen3) Qwen3 также последовал вложенной команде во всех 18 вариантах. Сравнение сохраняет публичные поля задачи и использует непрозрачные ID; это диагностика, не qualification.
 
 [Native DaNetQA Boolean comparison](../external/danetqa-native-baselines.md): все 821 cases в обоих порядках, 6568 forwards, typed bool, сохранённые duplicate rows; реальные errors/coverage и order sensitivity. Полный 1520-test suite PASS, independent audit и restored copied CLI replay. External references не открывают human/holdout/routing qualification.
+
+[RuSTSBenchmark numeric Score import](../external/ru-stsb-development.md): все 1336 исходных float ratings, 943 дробных; dependencies/duplicates/conflicts и CC-BY-SA attribution сохранены. Actual copied CLI и closed original-copy replay PASS, inference ещё не выполнялся.

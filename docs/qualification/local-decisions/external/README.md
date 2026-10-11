@@ -121,3 +121,5 @@ production CLI в этой original копии повторил dataset byte-for
 [DaNetQA Boolean development corpus](danetqa-development.md) импортирован отдельным этапом: все 821 references / 779 групп, исходные false/true и duplicate rows сохранены. 0 model calls; следующий этап — native Boolean scoring.
 
 [Native DaNetQA Boolean comparison](./danetqa-native-baselines.md): все 821 cases в обоих порядках, 6568 forwards, typed bool, сохранённые duplicate rows; реальные errors/coverage и order sensitivity. Полный 1520-test suite PASS, independent audit и restored copied CLI replay. External references не открывают human/holdout/routing qualification.
+
+[RuSTSBenchmark numeric Score import](./ru-stsb-development.md): все 1336 исходных float ratings, 943 дробных; dependencies/duplicates/conflicts и CC-BY-SA attribution сохранены. Actual copied CLI и closed original-copy replay PASS, inference ещё не выполнялся.
