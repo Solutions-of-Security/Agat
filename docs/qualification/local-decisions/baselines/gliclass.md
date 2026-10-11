@@ -79,4 +79,72 @@ python3.13 -B scripts/evaluate-gliclass-development.py verify \
 порядок — зависимая диагностика тех же случаев. CPU FP32 latency этого этапа
 не является контролируемым сравнением с предыдущими MLX/GPU/quantized runs.
 Базовая model card не доказывает русскую предметную точность. Фактическое
-native измерение и архив добавляются после проверки production CLI.
+native измерение выполнено ниже; memory/representative qualification ещё
+требуют отдельного этапа.
+
+## Фактическое измерение, 11.10.2026
+
+[Публичная машинная сводка](./evidence/2026-10-11/gliclass-summary.json)
+содержит SHA private native report, source/fixture commits и scope flags.
+
+Весь исходный [development.v1](../development.v1.json): 36 authored synthetic
+случаев, **три общих task-template groups**, 24 Choice / 12 Boolean. Это те же
+input bytes и synthetic labels, на которых раньше измерены два Qwen scorer.
+Score-контракт покрыт синтетическим adapter test; native Score на этих 36
+случаях не измерялся. Original + reversed дают 72 зависимых forward-вызова,
+200–267 полных токенов, без truncation/backend errors.
+
+| Кандидат | Совпадение с synthetic labels, original | reversed | Смена argmax при перестановке |
+|---|---:|---:|---:|
+| decider-2b, прежний MLX run | 31/36 | 30/36 | 1/36 |
+| Qwen3.5 2B Base, прежний MLX run | 18/36 | 28/36 | 10/36 |
+| GLiClass Edge v3, CPU FP32 | 11/36 | 15/36 | 22/36 |
+
+При прежнем policy original accepted 3/36, errors среди принятых 0/3;
+reversed accepted 2/36, errors **2/2**. Whole-attempt coverage: 8.33% / 5.56%.
+Family original/reversed matches: evidence 3/12 и 6/12, classification 0/12
+и 5/12, clarification 8/12 и 4/12. Низкое покрытие и чувствительность к порядку
+не обосновывают замену основного scorer этим профилем. Обобщение на другие
+GLiClass checkpoint или реальные источники из этих данных не следует.
+
+Model load 6492.902 ms; original total request p50/p95 21.290/97.377 ms,
+reversed 20.861/84.040 ms; native forward pooled p50/p95 20.604/82.993 ms.
+Это описательные CPU-измерения одной последовательности без отдельного warmup.
+Первый запрос и зависимые permutations сохранены отдельно; latency разных
+исторических runtimes не сравнивается как выигрыш. Process memory не измерена
+в этом run. Temperature/threshold/split/labels/weights не менялись после вывода.
+
+Независимый stdlib audit сделал 3086 checks и повторно вычислил softmax,
+typed Boolean, NLL, Brier, macro F1, ECE, coverage, argmax и прежние Qwen
+counts из исходных logits. Два stdlib production replay дали byte-identical
+native report, modelCalls=0. Реальный pinned tokenizer отдельно перепроверил
+все 72 полных token-ID массива без model calls. Ещё 11 production CLI refusals отвергли чужие
+splits, SHA, rehashed authority/summary/typed Boolean/clipping и лишний model
+file до output; 12 записанных CLI PID этой проверки отсутствуют.
+Protected resident: прежние четыре PID, 20 runtime source files и все восемь
+защищённых полей совпали до/после; 27 checks в каждом capture.
+
+Первоначальные два неуспешных запуска сохранены: неверный bytes→JSON переход
+CLI и неприведённый `BatchEncoding` контейнер. Оба исправлены и покрыты тестом
+entrypoint/native container; они не используются как успешное inference.
+Первоначальный sandbox-related test log и отменённый дублирующий docs:check
+также сохраняются отдельно. Native run выполнен из собственного fixture Git,
+с копиями committed измеряемых исходников; fake model tests не смешиваются
+с 72 фактическими forward-вызовами.
+
+12 adapter tests, полный scripts suite 1417 (4 optional skips), runtime 135
+(3 optional skips) прошли. 18 Node documentation tests — PASS; links и process
+catalog проверены отдельно. Прерванный дублирующий Python прогон через
+`docs:check` не заявлен успешным.
+
+Финальный [archive receipt](./evidence/2026-10-11/gliclass-archive-summary.json):
+`docs/private/gliclass-baseline-20261011-v2.zip` в исходном workspace,
+126761271 bytes, SHA256
+`b7480eebf5a61e855f84915b6524ee7209599babcbd4b5614c3ac10362290dbb`.
+1097 ZIP entries восстанавливают 1114 logical files; 18 повторных model files
+хранятся один раз и восстанавливаются из той же проверенной копии. CRC, каждый
+SHA/size, closed inventory и actual copied production CLI replay — PASS,
+modelCalls=0, private native report byte-identical. Завершённые 1417/135 logs
+в финальном archive совпали с оригиналом побайтно. Первая archive-копия с
+progress snapshot runtime log сохранена отдельно; её log не используется
+как подтверждение полного runtime suite.

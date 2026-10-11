@@ -1430,6 +1430,35 @@ model0. Failed architectural-boundary log сохранён вместе с ис�
 прогоном. Реальные 49 reviews не получены; human authority=false,
 routing=false/not_assessed.
 
+## GLiClass baseline — реализовано и измерено, 11.10.2026
+
+[Закреплённый offline GLiClass Edge v3](./qualification/local-decisions/baselines/gliclass.md)
+добавлен как opt-in кандидат: CPU FP32, два threads, один full-input forward,
+нативные logits всего списка, прежний softmax/policy, явный context refusal
+вместо обрезания. Serving runtime/profiles сохранены. Публичная сводка
+ссылается на SHA весов, dataset, source/fixture commits и private report.
+
+На тех же 36 authored synthetic случаях / 3 template groups выполнены 72
+original/reversed forward, 200–267 токенов, backend errors=0. GLiClass совпал
+с synthetic labels 11/36 и 15/36, изменил 22/36 argmax; accepted 3/36 (0 errors)
+и 2/36 (2 errors). Ранее измеренные decider дали 31/36 и 30/36, Base — 18/36
+и 28/36. Порядковая нестабильность и низкое покрытие не обосновывают замену
+scorer этим профилем. CPU latency описательная; memory ещё не измерена.
+Синтетические группы и permutations не превращены в human qualification.
+
+Независимый stdlib audit: 3086 checks; отдельный real tokenizer replay —
+72/72 полных массивов tokens. Production verifier без inference восстановил
+byte-identical report, 11 typed/scope/byte/inventory refusals — без output.
+Все четыре protected resident PID, 20 source files и 8 полей остались прежними.
+12 новых / 1417 full scripts tests (4 skips), runtime 135 (3 skips), 18 Node
+tests, links/catalog — PASS. Initial CLI JSON/BatchEncoding failures сохранены
+и исправлены с entrypoint/container tests. Routing=false/not_assessed;
+human labels, representative calibration/holdout и owners/SLO остаются gates.
+
+Финальный private archive: 1097 ZIP entries / 1114 logical files, веса и
+143 measured source files включены. CRC/every SHA/size, завершённые 1417/135
+logs и byte-identical verifier из actual original-copy — PASS, model0.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
