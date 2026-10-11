@@ -1671,6 +1671,27 @@ Base 686/689, GLiClass 420/398, NanoJev 412/412 и всегда true; accepted e
 дробных references. Internal human reviews, representative calibration/holdout
 и owner/SLO остаются открытыми; routing disabled и qualification=not_assessed.
 
+## Внешний русский numeric RuSTSBenchmark corpus — импортирован, 11.10.2026
+
+[RuSTSBenchmark development](./qualification/local-decisions/external/ru-stsb-development.md)
+сохранён целиком: 1336 continuous float references 0.0–5.0, 943 дробных,
+2561 normalized sentences / 1242 connected components по обоим sentence roles.
+Все 3 additional duplicate rows и 2 conflicting score pairs сохранены без
+округления, invented class targets или adjudication. Original dev JSON,
+publisher declaration и полный CC-BY-SA-4.0 legal code имеют immutable byte
+pins; derived dataset сохраняет attribution/license и framing modifications.
+
+Actual copied import/replay, 12514 independent BFS/source/float checks,
+43 actual CLI refusals + 1 positive replay PASS; все owned PIDs завершены,
+0 model imports/calls. 12 новых / 37 related tests, полный 1532-test suite
+/ 4 skip / 540.387 s и 18 Node tests PASS. Closed standalone archive
+в original workspace восстановлен: actual stdlib CLI byte-identical после
+CRC/SHA/size проверки. Serving sources unchanged. Следующий этап — actual
+numeric Score comparison прежних pinned candidates с MAE/RMSE/Pearson/Spearman,
+whole/accepted denominators и отдельными dependent orders. External ratings
+не заменяют internal human reviews, representative calibration/holdout,
+owner/SLO; routing disabled и qualification=not_assessed.
+
 ## Вывод: что именно можно воспроизвести
 
 **Функциональный локальный аналог сделать реалистично: готовая языковая основа → оценка разрешённых вариантов → вероятности → проверяемое решение.** Первую работающую версию можно получить без обучения собственной фундаментальной модели. Затем качество и калибровку придётся подтвердить на данных Агат и при необходимости дообучить модель.
