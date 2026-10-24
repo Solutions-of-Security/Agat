@@ -137,6 +137,7 @@ export interface ProcessGraphNode {
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;
+    reportFormat?: "business-report-markdown.v1";
     forkId?: string;
     signalName?: string;
     signalCorrelationKey?: string;

@@ -7,6 +7,10 @@ Legacy nodes keep their existing text behavior. The next increment adds the
 [input contract and pinned instructions](./business-input-contracts.md).
 Pack v2 and document ingestion remain separate increments.
 
+Validated structured output can be saved using the deterministic
+[Markdown artifact format](./validated-report-markdown.md); source validation is
+repeated at export rather than relying on a prior model response or human wait.
+
 The bundled draft-07 JSON Schema is in
 [`business-contracts.ts`](../apps/coordinator/src/business-contracts.ts). Each JSON
 object requires `schemaVersion`, `status`, `summary`, `claims`, `calculations`,
