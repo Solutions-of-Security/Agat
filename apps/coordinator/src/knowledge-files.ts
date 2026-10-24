@@ -3,13 +3,14 @@ import { Worker } from "node:worker_threads";
 import type { ExtractedKnowledgeFile } from "./knowledge-file-parser.js";
 import { normalizeKnowledgeDocumentInput } from "./knowledge.js";
 import type { UploadKnowledgeDocumentInput } from "./types.js";
+import { KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 
 export const KNOWLEDGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const KNOWLEDGE_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export function normalizeKnowledgeUpload(input: UploadKnowledgeDocumentInput) {
-  if (!input || !["application/pdf", KNOWLEDGE_DOCX_MEDIA_TYPE].includes(input.mediaType)) {
-    throw new Error("Поддерживаются PDF и DOCX");
+  if (!input || !["application/pdf", KNOWLEDGE_DOCX_MEDIA_TYPE, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE].includes(input.mediaType)) {
+    throw new Error("Поддерживаются PDF и DOCX, CSV и XLSX");
   }
   const metadata = normalizeKnowledgeDocumentInput({ name: input.name, sourceUri: input.sourceUri, content: "file" });
   const encoded = input.contentBase64;

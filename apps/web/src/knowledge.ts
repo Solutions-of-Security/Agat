@@ -2,11 +2,14 @@ import type { KnowledgeSource, UploadKnowledgeDocumentRequest } from "./types";
 
 export const MAX_KNOWLEDGE_FILE_BYTES = 5 * 1024 * 1024;
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export async function readKnowledgeFile(file: File): Promise<UploadKnowledgeDocumentRequest | { name: string; mediaType: string; content: string }> {
   const extension = file.name.split(".").at(-1)?.toLowerCase();
+  if (["xls", "xlsm", "xlsb"].includes(extension ?? "")) throw new Error("Сохраните таблицу как CSV UTF-8 или XLSX только со значениями");
   const binaryType = extension === "pdf" ? "application/pdf" : extension === "docx" ? DOCX_TYPE
-    : ["application/pdf", DOCX_TYPE].includes(file.type) ? file.type : null;
+    : extension === "xlsx" ? XLSX_TYPE : extension === "csv" ? "text/csv"
+      : ["application/pdf", DOCX_TYPE, XLSX_TYPE, "text/csv"].includes(file.type) ? file.type : null;
   if (file.size > (binaryType ? MAX_KNOWLEDGE_FILE_BYTES : 2_000_000)) {
     throw new Error(binaryType ? "Файл больше 5 МиБ" : "Текстовый файл больше 2 МБ");
   }
@@ -18,7 +21,7 @@ export async function readKnowledgeFile(file: File): Promise<UploadKnowledgeDocu
     return { name: file.name, mediaType: binaryType, contentBase64: btoa(parts.join("")) };
   }
   if (!file.type.startsWith("text/") && !["md", "txt", "csv", "json"].includes(extension ?? "")) {
-    throw new Error("Выберите PDF, DOCX или текстовый файл");
+    throw new Error("Выберите PDF, DOCX, CSV, XLSX или текстовый файл");
   }
   return { name: file.name, mediaType: file.type.startsWith("text/") ? file.type : "text/plain", content: await file.text() };
 }
