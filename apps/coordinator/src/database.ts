@@ -37,6 +37,7 @@ import { recoveryLink, scenarioTrigger, ScenarioPreflightError, type ScenarioBlo
 import { getInternalReportPack, internalReportGraph, validateProcessPackInput, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview } from "./process-packs.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
+import { chunkTabularKnowledgeText, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
 import { BusinessInputValidationError, businessOutputContractDescriptor, businessOutputSystemPrompt, normalizeBusinessInputContract,
@@ -8724,7 +8725,9 @@ export class AgatStore {
             VALUES (?, ?, ?, ?, ?, ?)`).run(documentId, collectionId, document.name, sha256Text(document.content), timestamp, timestamp);
         }
         const locations = document.pages.length ? document.pages : [{ pageNumber: null, charStart: 0, charEnd: document.content.length }];
-        const chunks = locations.flatMap((location) => chunkKnowledgeText(
+        const chunkText = [KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE].includes(document.mediaType)
+          && document.originalBase64 !== null ? chunkTabularKnowledgeText : chunkKnowledgeText;
+        const chunks = locations.flatMap((location) => chunkText(
           document.content.slice(location.charStart, location.charEnd), Number(collection.chunk_size), Number(collection.chunk_overlap),
         ).map((chunk) => ({ ...chunk, charStart: chunk.charStart + location.charStart,
           charEnd: chunk.charEnd + location.charStart, pageNumber: location.pageNumber })));

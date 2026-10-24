@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { zipSync, strToU8 } from "fflate";
 import { AgatStore } from "../src/database.js";
 import { parseKnowledgeFile, normalizeKnowledgeUpload } from "../src/knowledge-files.js";
-import { KNOWLEDGE_XLSX_MEDIA_TYPE as XLSX, KNOWLEDGE_CSV_MEDIA_TYPE as CSV } from "../src/knowledge-tables.js";
+import { chunkTabularKnowledgeText, KNOWLEDGE_XLSX_MEDIA_TYPE as XLSX, KNOWLEDGE_CSV_MEDIA_TYPE as CSV } from "../src/knowledge-tables.js";
 
 const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 export function xlsxFixture(cells = '<c r="A1" t="s"><v>0</v></c><c r="B1"><v>120.50</v></c><c r="C1" t="b"><v>1</v></c>', extra: Record<string, string> = {}) {
@@ -74,6 +74,35 @@ test("XLSX reads every declared sheet in workbook order and identifies hidden sh
   assert.ok(parsed.content.indexOf('"First"!A1') < parsed.content.indexOf('"Hidden"!D3'));
   assert.match(parsed.content, /состояние: hidden/);
   assert.ok(parsed.content.includes('"Hidden"!D3 [inlineStr] = "Hidden evidence"'));
+});
+
+test("long cell parts retain their address in every chunk, exact offsets and a stable reindex", async () => {
+  const value = 'Long quoted \\" value and emoji 🌍 '.repeat(80);
+  const exact = await parseKnowledgeFile(Buffer.from(`description\n"${value.replaceAll('"', '""')}"`), CSV);
+  assert.ok(exact.content.includes("часть"));
+  for (const overlap of [0, 160, 399]) {
+    const chunks = chunkTabularKnowledgeText(exact.content, 400, overlap);
+    const recovered = new Map();
+    for (const chunk of chunks) {
+      assert.equal(exact.content.slice(chunk.charStart, chunk.charEnd), chunk.content);
+      assert.ok(chunk.content.length <= 400);
+      for (const line of chunk.content.split("\n").filter(line => line.includes("часть"))) {
+        const match = /^"CSV"!A2 \[text\] \(часть (\d+)\/(\d+)\) = (.*)$/.exec(line);
+        assert.ok(match, "no fragment may separate a cell part from its address");
+        recovered.set(Number(match[1]), JSON.parse(match[3]));
+      }
+    }
+    assert.equal([...recovered.entries()].sort((a, b) => a[0] - b[0]).map(([, part]) => part).join(""), value);
+  }
+  const store = new AgatStore(":memory:", { seedDemo: false });
+  try {
+    const collection = store.createKnowledgeCollection({ name: "Long cells", embeddingModel: "embed", chunkSize: 400, chunkOverlap: 160 });
+    const document = await store.uploadKnowledgeDocument(String(collection.id), { name: "Long.csv", mediaType: CSV,
+      contentBase64: Buffer.from(`description\n"${value.replaceAll('"', '""')}"`).toString("base64") });
+    const before = store.getKnowledgeDocument(String(document.id))!.chunks;
+    await store.reindexKnowledgeDocument(String(document.id));
+    assert.deepEqual(store.getKnowledgeDocument(String(document.id))!.chunks, before);
+  } finally { store.close(); }
 });
 
 test("table ingestion preserves originals, indexes cell references, records provenance and survives retry", async () => {

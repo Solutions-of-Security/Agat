@@ -37,7 +37,10 @@ Each nonempty value is emitted with an exact source label, for example
 `"Revenue"!B7 [n] = "120.50"`. These labels stay in preview, indexed chunks and
 retrieval snapshots; existing citations open the document/chunk containing them.
 There is no invented PDF page for a spreadsheet and no new clickable spreadsheet
-grid. Numeric dates and number formatting are deliberately not interpreted;
+grid. Long values are emitted as numbered parts, each retaining its exact cell
+address. Table chunking preserves complete labeled lines with bounded overlap and
+exact character offsets; it never cuts a value away from its address. Numeric
+dates and number formatting are deliberately not interpreted;
 style indices and this limitation are visible. Charts, images, comments and
 layout are outside this values-only extractor. This is not OCR or an Excel
 calculation engine. Save a values-only copy before importing a formula workbook.

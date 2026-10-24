@@ -1,6 +1,7 @@
 import { parse } from "csv-parse/sync";
 import { unzipSync } from "fflate";
 import { SaxesParser, type SaxesTagNS } from "saxes";
+import type { KnowledgeTextChunk } from "./knowledge.js";
 
 export const KNOWLEDGE_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 export const KNOWLEDGE_CSV_MEDIA_TYPE = "text/csv";
@@ -31,13 +32,40 @@ function outputBuilder() {
     cell(sheet: string, address: string, type: string, value: string) {
       if (++cells > MAX_CELLS) throw new Error("Таблица содержит больше 100 000 ячеек");
       if (value.length > MAX_CELL_TEXT) throw new Error("Содержимое ячейки превышает 32 000 символов");
-      this.append(`${JSON.stringify(sheet)}!${address} [${type}] = ${JSON.stringify(value)}\n`);
+      const segments: string[] = [];
+      let segment = ""; let encodedLength = 0;
+      for (const character of value) {
+        const size = JSON.stringify(character).length - 2;
+        if (encodedLength + size > 200) { segments.push(segment); segment = ""; encodedLength = 0; }
+        segment += character; encodedLength += size;
+      }
+      segments.push(segment);
+      segments.forEach((part, index) => this.append(`${JSON.stringify(sheet)}!${address} [${type}]`
+        + `${segments.length > 1 ? ` (часть ${index + 1}/${segments.length})` : ""} = ${JSON.stringify(part)}\n`));
     },
     result() {
       if (!cells) throw new Error("Таблица не содержит извлекаемых значений");
       return { content: parts.join(""), pages: [] };
     },
   };
+}
+
+/** Preserve whole labeled values/parts and exact offsets into the extracted document. */
+export function chunkTabularKnowledgeText(content: string, chunkSize: number, overlap: number): KnowledgeTextChunk[] {
+  const lines = [...content.matchAll(/[^\n]*\n|[^\n]+$/g)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+  const chunks: KnowledgeTextChunk[] = [];
+  let line = 0;
+  while (line < lines.length) {
+    const start = line; const charStart = lines[start]!.start;
+    if (lines[line]!.end - charStart > chunkSize) throw new Error("Строка таблицы превышает размер фрагмента");
+    while (line < lines.length && lines[line]!.end - charStart <= chunkSize) line++;
+    const charEnd = lines[line - 1]!.end - (content[lines[line - 1]!.end - 1] === "\n" ? 1 : 0);
+    chunks.push({ ordinal: chunks.length, content: content.slice(charStart, charEnd), charStart, charEnd });
+    if (line === lines.length) break;
+    const end = line;
+    while (line > start + 1 && lines[end - 1]!.end - lines[line - 1]!.start <= overlap) line--;
+  }
+  return chunks;
 }
 
 /** Determine the first nonempty logical record, excluding separators inside quotes. */
@@ -125,7 +153,9 @@ export function extractXlsx(bytes: Uint8Array) {
     if (tag.local === "sheet") {
       if (sheets.length >= 20) throw new Error("XLSX содержит больше 20 листов");
       const sheet = { name: attribute(tag, "name"), id: attribute(tag, "id"), state: attribute(tag, "state") || "visible" };
-      if (!sheet.name || sheet.name.length > 100 || !sheet.id || sheets.some((item) => item.name === sheet.name || item.id === sheet.id)) {
+      if (!sheet.name || sheet.name.length > 31 || /[\x00-\x1f\\/?*\[\]:]/.test(sheet.name)
+        || !["visible", "hidden", "veryHidden"].includes(sheet.state)
+        || !sheet.id || sheets.some((item) => item.name === sheet.name || item.id === sheet.id)) {
         throw new Error("Некорректный или повторный лист XLSX");
       }
       sheets.push(sheet);
@@ -181,6 +211,7 @@ export function extractXlsx(bytes: Uint8Array) {
           seen.add(address);
           if (seen.size > MAX_CELLS) throw new Error("XLSX содержит слишком много ячеек");
           cell = { address, type: attribute(tag, "t") || "n", style: attribute(tag, "s"), value: "", inline: "" };
+          if (cell.style && !/^\d{1,6}$/.test(cell.style)) throw new Error("Некорректный индекс стиля XLSX");
         }
         if (tag.local === "v") inValue = true;
         if (tag.local === "t") inText = true;
