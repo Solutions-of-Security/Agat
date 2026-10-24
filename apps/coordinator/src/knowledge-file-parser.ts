@@ -1,6 +1,7 @@
 import { unzipSync } from "fflate";
 import { SaxesParser } from "saxes";
 import type { KnowledgePageLocation } from "./types.js";
+import { extractCsv, extractXlsx, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 
 const MAX_TEXT = 2_000_000;
 const MAX_XML_BYTES = 8 * 1024 * 1024;
@@ -13,6 +14,11 @@ export interface ExtractedKnowledgeFile {
 // Called in a bounded worker thread. No URLs, relationships or embedded objects
 // from the document are fetched or executed.
 export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string): Promise<ExtractedKnowledgeFile> {
+  if (mediaType === KNOWLEDGE_CSV_MEDIA_TYPE) return extractCsv(bytes);
+  if (mediaType === KNOWLEDGE_XLSX_MEDIA_TYPE) return extractXlsx(bytes);
+  if (!["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(mediaType)) {
+    throw new Error("Неподдерживаемый формат документа");
+  }
   if (mediaType === "application/pdf") {
     if (Buffer.from(bytes.subarray(0, 5)).toString() !== "%PDF-") throw new Error("Некорректная сигнатура PDF");
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");

@@ -335,7 +335,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
         <section className="large-empty-state">
           <Icon name="knowledge" size={34} />
           <h2>Коллекций пока нет</h2>
-          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте PDF, DOCX или текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
+          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте PDF, DOCX, CSV, XLSX или текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
           {canManage ? <button className="button button--primary" type="button" onClick={() => setCreateOpen(true)}><Icon name="plus" size={16} />Создать первую коллекцию</button> : null}
         </section>
       ) : (
@@ -372,10 +372,10 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                       <label className="field"><span>Название</span><input required maxLength={180} value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Privacy policy.md" /></label>
                       <label className="field"><span>Source URI</span><input name="sourceUri" maxLength={2_048} placeholder="agat://handbook/privacy" /></label>
                       <label className="field"><span>Media type</span><input required readOnly={documentBase64 !== null} maxLength={120} value={documentMediaType} onChange={(event) => setDocumentMediaType(event.target.value)} /></label>
-                      <label className="field knowledge-file"><span>PDF/DOCX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*,.pdf,.docx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
+                      <label className="field knowledge-file"><span>PDF, DOCX, CSV, XLSX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/*,.pdf,.docx,.xlsx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
                     </div>
                     {documentBase64 !== null ? <p>Файл выбран. После загрузки откроется предпросмотр извлечённого текста.</p> : <label className="field"><span>Текст</span><textarea required rows={7} maxLength={2_000_000} value={documentContent} onChange={(event) => setDocumentContent(event.target.value)} placeholder="Вставьте текст или выберите файл" /></label>}
-                    <footer><small>Текст извлекается локально. PDF-сканы без текстового слоя требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и индексировать"}</button></footer>
+                    <footer><small>Разбор выполняется локально. Для CSV нужен UTF-8, для XLSX — копия без формул и макросов. Даты и форматирование ячеек не интерпретируются. PDF-сканы требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и индексировать"}</button></footer>
                   </form>
                 ) : null}
 
