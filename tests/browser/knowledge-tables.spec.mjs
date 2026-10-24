@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { zipSync, strToU8 } from "fflate";
 import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 // Browser plugin not available. Flow: Knowledge -> choose CSV/XLSX -> upload -> exact-cell preview/error.
 function xlsx(formula = false) {
@@ -23,7 +25,8 @@ test("tabular file upload preserves cells in preview and exposes unsupported for
   await page.goto("/#knowledge");
   await expect(page).toHaveURL(/#knowledge$/); await expect(page).toHaveTitle(/АГАТ|Agat/i);
   await expect(page.getByRole("heading", { name: collectionName })).toBeVisible();
-  await mkdir("/private/tmp/agat-tabular-qa", { recursive: true });
+  const screenshots = path.join(tmpdir(), "agat-tabular-qa");
+  await mkdir(screenshots, { recursive: true });
   for (const [name, mimeType, buffer, expected] of [
     ["Rows.csv", "text/csv", Buffer.from("period,requests\n2026-07,100\n2026-08,120\n"), '"CSV"!B3 [text] = "120"'],
     ["Cells.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx(), '"Показатели"!B2 [n] = "120"'],
@@ -43,7 +46,7 @@ test("tabular file upload preserves cells in preview and exposes unsupported for
     await expect(preview).toContainText(expected);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await preview.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `/private/tmp/agat-tabular-qa/${testInfo.project.name}-${name}.png`, fullPage: false });
+    await page.screenshot({ path: path.join(screenshots, `${testInfo.project.name}-${name}.png`), fullPage: false });
     if (name === "Formulas.xlsx") await expect(preview.getByRole("alert")).toContainText("формулы");
     await page.goto("/#knowledge");
     const stored = await (await request.get("/api/v1/knowledge")).json();
