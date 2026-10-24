@@ -8,7 +8,7 @@ test("formatted report keeps source links exact, active content inert and source
   const errors = []; const external = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
-  page.on("request", request => { if (request.url().startsWith("https://invalid.example")) external.push(request.url()); });
+  page.on("request", request => { if (new URL(request.url()).hostname === "invalid.example") external.push(request.url()); });
   const collectionResponse = await request.post("/api/v1/knowledge/collections", { data: {
     name: `Markdown sources ${testInfo.project.name}`, embeddingModel: "fixture-embedding", chunkSize: 4000, chunkOverlap: 0 } });
   expect(collectionResponse.ok()).toBe(true); const collection = await collectionResponse.json();
