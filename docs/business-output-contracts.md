@@ -3,8 +3,9 @@
 Implemented 25 October 2026. An agent node can opt into the fixed server contract
 `config.outputContract: "business-report.v1"`. Its process version and running
 instance retain that selection through publication, restart and BPMN round trips.
-Legacy nodes keep their existing text behavior. This increment supplies the output
-boundary; pack v2, input contracts and document ingestion are separate increments.
+Legacy nodes keep their existing text behavior. The next increment adds the
+[input contract and pinned instructions](./business-input-contracts.md).
+Pack v2 and document ingestion remain separate increments.
 
 The bundled draft-07 JSON Schema is in
 [`business-contracts.ts`](../apps/coordinator/src/business-contracts.ts). Each JSON

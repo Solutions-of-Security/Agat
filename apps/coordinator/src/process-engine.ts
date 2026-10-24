@@ -8,7 +8,7 @@ import type {
   ProcessNodeType,
 } from "./types.js";
 import { normalizeProcessApprovalForm } from "./process-forms.js";
-import { normalizeBusinessOutputContract } from "./business-contracts.js";
+import { normalizeBusinessInputContract, normalizeBusinessOutputContract } from "./business-contracts.js";
 import { normalizeDecisionShadowConfig } from "./local-decisions.js";
 
 const NODE_TYPES = new Set<ProcessNodeType>([
@@ -180,8 +180,15 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
     );
   }
   if (normalized.type === "start") {
+    if (config.inputContract !== undefined) {
+      normalized.config.inputContract = normalizeBusinessInputContract(config.inputContract);
+      if (config.inputTemplate) throw new Error("Контракт входных данных несовместим с шаблоном стартового шага");
+    }
     const inputTemplate = optionalText(config.inputTemplate, `Шаг ${normalized.name || id}: шаблон входных данных`, 100_000);
     if (inputTemplate) normalized.config.inputTemplate = inputTemplate;
+  }
+  if (normalized.type !== "start" && config.inputContract !== undefined) {
+    throw new Error("Контракт входных данных доступен только на стартовом шаге");
   }
   if (normalized.type === "transform") {
     const template = optionalText(config.template, `Шаг ${normalized.name || id}: шаблон`, 100_000);
