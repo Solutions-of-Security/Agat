@@ -42,6 +42,28 @@ export function knowledgeSourceLocation(source: KnowledgeSource): string {
   return `${p.pageNumber ? `стр. ${p.pageNumber} · ` : ""}фрагмент ${p.chunkOrdinal + 1}`;
 }
 
+/** One resolver per source snapshot, shared by plain-text and Markdown views. */
+export function createKnowledgeCitationResolver(sources: KnowledgeSource[]) {
+  const unique = new Map<string, KnowledgeSource | null>();
+  for (const source of sources) unique.set(source.marker, unique.has(source.marker) ? null : source);
+  return (text: string) => {
+    const segments: Array<{ text: string; source: KnowledgeSource | null }> = [];
+    const add = (value: string, source: KnowledgeSource | null = null) => {
+      if (!value) return;
+      const last = segments.at(-1);
+      if (!source && last && !last.source) last.text += value;
+      else segments.push({ text: value, source });
+    };
+    for (const part of text.split(/(\[K\d+(?:[ \t]*[,/][ \t]*K\d+)*\])/g)) {
+      if (/^\[K\d+\]$/.test(part)) add(part, unique.get(part.slice(1, -1)) ?? null);
+      else if (/^\[K\d+(?:[ \t]*[,/][ \t]*K\d+)+\]$/.test(part)) {
+        for (const token of part.split(/(K\d+)/g)) add(token, /^K\d+$/.test(token) ? unique.get(token) ?? null : null);
+      } else add(part);
+    }
+    return segments;
+  };
+}
+
 export function knowledgeReport(output: string, sources: KnowledgeSource[], baseUrl: string): string {
   if (!sources.length) return output;
   const escape = (value: string) => value.replace(/[\\`*_{}\[\]()<>#!|]/g, "\\$&").replace(/[\r\n]+/g, " ");

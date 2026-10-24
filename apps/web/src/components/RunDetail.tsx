@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { buildApprovalInboxItems } from "../approvalInbox";
 import { api } from "../lib/api";
@@ -23,6 +23,9 @@ import { ApprovalPanel } from "./ApprovalPanel";
 import { Icon } from "./Icon";
 import { PolicyControl } from "./PolicyControl";
 import { DecisionObservations } from "./DecisionObservations";
+import { ReportFormatBoundary } from "./ReportFormatBoundary";
+
+const ReportMarkdown = lazy(() => import("./ReportMarkdown").then((module) => ({ default: module.ReportMarkdown })));
 
 const stageStatusCopy: Record<StageStatus, string> = {
   pending: "Ожидает",
@@ -534,6 +537,7 @@ export function RunDetail({
   const [traceError, setTraceError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [outputView, setOutputView] = useState<"source" | "formatted">("source");
   const runId = run?.id ?? null;
   const runUpdatedAt = run?.updatedAt ?? null;
   const eventRevision = events.at(-1)?.id ?? 0;
@@ -560,6 +564,7 @@ export function RunDetail({
     setTrace(null);
     setTraceError(null);
     setDownloadError(null);
+    setOutputView("source");
   }, [runId]);
 
   useEffect(() => {
@@ -634,7 +639,7 @@ export function RunDetail({
           : detailedRun.status === "compensating"
             ? "Система безопасно отменяет уже выполненные изменения."
             : detailedRun.status === "completed"
-              ? "Все этапы завершены, результат готов к использованию."
+              ? "Этапы завершены. Проверьте результат и источники перед использованием."
               : detailedRun.status === "failed"
                 ? "Проверьте ошибку и технические детали перед повтором."
                 : "Выполнение остановлено; завершённые данные сохранены.";
@@ -811,7 +816,17 @@ export function RunDetail({
           ) : null}
         </header>
         {latestError && detailedRun.status === "failed" ? <p className="run-result__error" role="alert">{latestError}</p> : null}
-        {result ? <KnowledgeLinkedOutput text={result} sources={sources} /> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
+        {result ? <>
+          <div className="run-result__view" role="group" aria-label="Представление результата">
+            <button className="button button--secondary" type="button" aria-pressed={outputView === "source"} onClick={() => setOutputView("source")}>Исходный текст</button>
+            <button className="button button--secondary" type="button" aria-pressed={outputView === "formatted"} onClick={() => setOutputView("formatted")}>Форматированный</button>
+          </div>
+          {outputView === "formatted" ? <ReportFormatBoundary key={run.id} text={result} sources={sources}>
+            <Suspense fallback={<p role="status">Готовим форматированный результат…</p>}>
+              <ReportMarkdown text={result} sources={sources} />
+            </Suspense>
+          </ReportFormatBoundary> : <KnowledgeLinkedOutput text={result} sources={sources} />}
+        </> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
         {sourceLoading ? <p role="status">Загружаем источники…</p> : null}
         {sourceState?.runId === run.id && sourceState.error ? <p role="alert">Источники недоступны: {sourceState.error} <button type="button" onClick={() => setSourceRetry((value) => value + 1)}>Повторить загрузку источников</button></p> : null}
         <KnowledgeSources sources={sources} stages={detailedRun.stages} />
