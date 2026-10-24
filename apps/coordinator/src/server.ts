@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getProcessTemplateCatalog } from "./process-catalog.js";
 import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
-import { getInternalReportPack, type ProcessPackInput } from "./process-packs.js";
+import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
 
 import {
   loadConfig,
@@ -1828,21 +1828,41 @@ export function createCoordinatorServer(
       if (request.method === "GET" && pathname === "/api/v1/process-packs") {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
         const manifest = getInternalReportPack();
-        json(response, 200, { packs: [{ ...manifest, installation: store.getProcessPackInstallation(manifest.id, auth.projectId) }] });
+        json(response, 200, {
+          // Existing qualification clients explicitly consume the v1 catalog shape.
+          packs: [{ ...manifest, installation: store.getProcessPackInstallation(manifest.id, auth.projectId, 1) }],
+          releases: getProcessPackReleases().map((release) => ({ ...release, installation: store.getProcessPackInstallation(release.id, auth.projectId, release.version) })),
+          activeInstallation: store.getProcessPackInstallation(manifest.id, auth.projectId),
+        });
         return;
       }
 
-      const packMatch = /^\/api\/v1\/process-packs\/([^/]+)\/(preflight|install)$/.exec(pathname);
+      const packHistoryMatch = /^\/api\/v1\/process-packs\/([^/]+)\/history$/.exec(pathname);
+      if (request.method === "GET" && packHistoryMatch) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const id = decodeURIComponent(packHistoryMatch[1]!);
+        if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
+        json(response, 200, { history: store.getProcessPackHistory(id, auth.projectId), activeInstallation: store.getProcessPackInstallation(id, auth.projectId) });
+        return;
+      }
+
+      const packMatch = /^\/api\/v1\/process-packs\/([^/]+)\/(preflight|install|activate)$/.exec(pathname);
       if (request.method === "POST" && packMatch) {
         const installing = packMatch[2] === "install";
-        const auth = await authorize(request, config, oidcVerifier, installing ? ["admin", "designer"] : READ_ROLES, installing);
+        const activating = packMatch[2] === "activate";
+        const auth = await authorize(request, config, oidcVerifier, installing || activating ? ["admin", "designer"] : READ_ROLES, installing || activating);
         const id = decodeURIComponent(packMatch[1]!);
         if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
-        const body = await readJson<ProcessPackInput>(request);
-        const alreadyInstalled = store.getProcessPackInstallation(id, auth.projectId);
         const context = scenarioContext(auth.projectId);
-        const result = installing ? store.installProcessPack(id, body, auth.projectId, context) : store.preflightProcessPack(id, body, auth.projectId, context);
-        json(response, installing && !alreadyInstalled ? 201 : 200, result);
+        if (activating) {
+          json(response, 200, store.activateProcessPack(id, await readJson<ProcessPackActivation>(request), auth.projectId, context));
+          return;
+        }
+        const body = await readJson<ProcessPackInput>(request);
+        if (installing) {
+          const result = store.installProcessPack(id, body, auth.projectId, context);
+          json(response, result.created ? 201 : 200, result);
+        } else json(response, 200, store.preflightProcessPack(id, body, auth.projectId, context));
         return;
       }
 

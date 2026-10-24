@@ -27,10 +27,22 @@
 сборки. Статус удалённого CI и merge нужно проверять в GitHub, а не выводить из
 этого локального evidence. Изменение типов ScheduleSpec сохраняет runtime values.
 
+Следующая ветка `codex/versioned-report-pack` добавляет
+[versioned report pack](./versioned-report-pack.md): v2 на коллекциях проекта,
+неизменную v1, exact manifests/history, install/diff/activate/rollback и schema v31.
+Пройдены 101 целевой тест, typechecks всех workspaces, coordinator build,
+docs links/catalog; настоящие PostgreSQL 17 и две coordinator replicas проверили
+четыре конкурентных install и tenant RLS. SQLite → PostgreSQL import/verify и
+rehearsal rollback прошли. Гонка HTTP 201, найденная реальным concurrent тестом,
+исправлена определением `created` под project lock. Полный docs replay запускается
+с сетью для исторических Git blobs partial clone; первоначальный sandbox-прогон
+с ошибками сети не считается PASS. UI v2 остаётся следующим этапом.
+
 ## Границы и следующий остаток
 
-- SP-001/SP-005: новая версия pack с пользовательскими источниками, lifecycle и
-  сохранением истории v1; новый контракт сам не устанавливает новый pack.
+- SP-001/SP-005: завершить поставку versioned pack и UI выбора release,
+  пользовательских sources, diff, update/rollback и структурированного запуска;
+  сохранить exact историю и v1 compatibility.
 - USE-003: общий knowledge → pack path, completeness для частично извлекаемых
   документов, dedupe переименованных файлов и квалификация на пользовательских данных.
 - USE-004: DOCX/PDF из canonical content; append-only accept/rework на exact artifact/run.

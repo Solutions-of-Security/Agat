@@ -19,6 +19,7 @@ import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../sr
 import type { ProcessGraph } from "../src/types.js";
 import { interceptCallerAccountingCommit, interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
 import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
+import { getInternalReportPack, type ProcessPackPreview } from "../src/process-packs.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -384,6 +385,44 @@ async function embeddingLeaseFixture(replicas = 1, options: { content?: string; 
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
+  });
+
+  it("serializes report pack installs across real coordinator replicas and preserves version history with tenant RLS", async () => {
+    const suffix = randomUUID().slice(0, 8), project = `pack-${suffix}`, foreign = `pack-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-pack-history-"));
+    const first = store(`pack-history-${suffix}`, artifacts);
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const pack = getInternalReportPack(2), legacy = getInternalReportPack();
+      const collection = String(first.createKnowledgeCollection({ name: "User sources", embeddingModel: pack.defaults.embeddingModel }, project).id);
+      first.ingestKnowledgeDocument(collection, { name: "Source", content: "Synthetic replica test: 100 then 120 requests." }, project);
+      const options = { version: 2, manifestSha256: pack.manifestSha256, model: pack.defaults.model, knowledgeCollectionIds: [collection] };
+      const token = `pack-test-${suffix}`;
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`pack-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const post = (index: number, action: string, body: unknown, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/process-packs/internal-report/${action}`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index, "install", options)));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201]);
+      const previews = await Promise.all(responses.map(response => response.json() as Promise<ProcessPackPreview>));
+      const installed = previews[0]!.installation!;
+      for (const preview of previews) assert.deepEqual(preview.installation, installed);
+      assert.equal(first.listProcesses(project).length, 1); assert.equal(first.getProcessPackHistory(pack.id, project).length, 1);
+      assert.equal((await post(1, "install", options, foreign)).status, 400, "foreign collection cannot be bound");
+      const oldResponse = await post(1, "install", { version: 1, manifestSha256: legacy.manifestSha256, model: legacy.defaults.model });
+      assert.equal(oldResponse.status, 201);
+      assert.equal(first.getProcessPackInstallation(pack.id, project)!.version, 2, "install does not switch the active version");
+      const rollback = await post(0, "activate", { version: 1, manifestSha256: legacy.manifestSha256, expectedActiveManifestSha256: installed.manifestSha256 });
+      assert.equal(rollback.status, 200); await rollback.arrayBuffer();
+      assert.equal(first.getProcessPackInstallation(pack.id, project)!.version, 1);
+      assert.equal(first.getProcessPackHistory(pack.id, project).length, 2);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);
+    } finally {
+      await Promise.all(children.map(child => child.stop())); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+    }
   });
 
   it("backfills scheduled workflow ownership from the schema 28 column layout with project isolation", async () => {

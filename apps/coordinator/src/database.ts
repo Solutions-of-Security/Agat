@@ -34,7 +34,7 @@ import { exportProcessBpmn as serializeProcessBpmn, importProcessBpmn as parsePr
 import { diffProcessDocuments } from "./process-versioning.js";
 import { getProcessTemplateCatalog, instantiateCatalogTemplate } from "./process-catalog.js";
 import { recoveryLink, scenarioTrigger, ScenarioPreflightError, type ScenarioBlocker, type ScenarioPreflight, type ScenarioPreflightInput, type ScenarioPreflightContext } from "./scenario-preflight.js";
-import { getInternalReportPack, internalReportGraph, validateProcessPackInput, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview } from "./process-packs.js";
+import { getInternalReportPack, internalReportGraph, validateProcessPackInput, processPackChanges, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview, type ProcessPackActivation, type ProcessPackHistoryEntry } from "./process-packs.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
 import { chunkTabularKnowledgeText, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
@@ -261,8 +261,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 30;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-scheduled-cancellation-intent-v30";
+export const POSTGRES_SCHEMA_VERSION = 31;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-process-pack-history-v31";
 
 export class ScheduledStartConflictError extends Error {}
 export class ScheduledStartCancelledError extends Error {}
@@ -1521,6 +1521,15 @@ export class AgatStore {
         pack_id TEXT NOT NULL,
         installation_json TEXT NOT NULL,
         PRIMARY KEY (project_id, pack_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS process_pack_history (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        pack_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        manifest_json TEXT NOT NULL,
+        installation_json TEXT NOT NULL,
+        PRIMARY KEY (project_id, pack_id, version)
       );
 
       CREATE TABLE IF NOT EXISTS process_scheduled_start_receipts (
@@ -2950,7 +2959,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 30;");
+    this.db.exec("PRAGMA user_version = 31;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -3260,6 +3269,7 @@ export class AgatStore {
       events: "project_id = agat_current_project()",
       processes: "project_id = agat_current_project()",
       process_pack_installations: "project_id = agat_current_project()",
+      process_pack_history: "project_id = agat_current_project()",
       process_scheduled_start_receipts: "project_id = agat_current_project()",
       process_signal_waits: "project_id = agat_current_project()",
       process_webhooks: "project_id = agat_current_project()",
@@ -10031,60 +10041,140 @@ export class AgatStore {
     return { blockers, signatures, notices };
   }
 
-  getProcessPackInstallation(packId: string, projectId = "default"): ProcessPackInstallation | null {
+  getProcessPackInstallation(packId: string, projectId = "default", version?: number): ProcessPackInstallation | null {
     const project = this.requireProject(projectId);
+    if (version !== undefined) {
+      const historical = this.db.prepare("SELECT installation_json FROM process_pack_history WHERE project_id = ? AND pack_id = ? AND version = ?").get(project, packId, version) as Row | undefined;
+      if (historical) return parseJson<ProcessPackInstallation | null>(historical.installation_json, null);
+    }
     const row = this.db.prepare("SELECT installation_json FROM process_pack_installations WHERE project_id = ? AND pack_id = ?").get(project, packId) as Row | undefined;
-    return row ? parseJson<ProcessPackInstallation | null>(row.installation_json, null) : null;
+    const active = row ? parseJson<ProcessPackInstallation | null>(row.installation_json, null) : null;
+    return version === undefined || active?.version === version ? active : null;
+  }
+
+  getProcessPackHistory(packId: string, projectId = "default"): ProcessPackHistoryEntry[] {
+    const project = this.requireProject(projectId);
+    const rows = this.db.prepare("SELECT manifest_json, installation_json FROM process_pack_history WHERE project_id = ? AND pack_id = ? ORDER BY version DESC").all(project, packId) as Row[];
+    const entries = rows.map((row) => {
+      const manifest = JSON.parse(String(row.manifest_json)) as ProcessPackHistoryEntry["manifest"];
+      const installation = JSON.parse(String(row.installation_json)) as ProcessPackInstallation;
+      const { manifestSha256, ...content } = manifest;
+      if (manifestSha256 !== installation.manifestSha256 || manifest.id !== packId || manifest.version !== installation.version
+        || createHash("sha256").update(JSON.stringify(content)).digest("hex") !== manifestSha256) throw new Error("История пакета повреждена");
+      return { manifest, installation };
+    });
+    // Legacy v1 rows are visible without a write during GET/preflight. Snapshot them before activation changes the pointer.
+    const active = this.getProcessPackInstallation(packId, project);
+    if (active && !entries.some((entry) => entry.installation.version === active.version)) {
+      const manifest = getInternalReportPack(active.version);
+      if (manifest.manifestSha256 !== active.manifestSha256) throw new Error("Исторический manifest пакета недоступен");
+      entries.push({ manifest, installation: active });
+    }
+    return entries.sort((a, b) => b.installation.version - a.installation.version);
+  }
+
+  private recordProcessPackHistory(installation: ProcessPackInstallation, project: string): void {
+    const manifest = getInternalReportPack(installation.version);
+    if (manifest.manifestSha256 !== installation.manifestSha256) throw new Error("Исторический manifest пакета недоступен");
+    this.db.prepare(`INSERT INTO process_pack_history(project_id, pack_id, version, manifest_json, installation_json)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, pack_id, version) DO NOTHING`)
+      .run(project, installation.packId, installation.version, JSON.stringify(manifest), JSON.stringify(installation));
   }
 
   preflightProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
     const options = validateProcessPackInput(packId, input);
     const project = this.requireProject(projectId);
-    const manifest = getInternalReportPack();
-    const installation = this.getProcessPackInstallation(packId, project);
+    const manifest = getInternalReportPack(options.version);
+    const activeInstallation = this.getProcessPackInstallation(packId, project);
+    const installation = this.getProcessPackInstallation(packId, project, options.version);
+    const changes = processPackChanges(activeInstallation ? getInternalReportPack(activeInstallation.version) : null, manifest, activeInstallation, options, installation);
     if (installation) {
-      if (installation.manifestSha256 !== options.manifestSha256 || installation.model !== options.model) throw new Error("Пакет уже установлен с другой конфигурацией. Откройте установленный процесс; повторная установка не перезаписывает его.");
+      if (installation.manifestSha256 !== options.manifestSha256 || installation.model !== options.model
+        || (options.version === 2 && JSON.stringify([...installation.knowledgeCollectionIds].sort()) !== JSON.stringify(options.knowledgeCollectionIds))) {
+        throw new Error("Пакет уже установлен с другой конфигурацией. Откройте установленный процесс; повторная установка не перезаписывает его.");
+      }
       const preflight = this.preflightProcess(installation.processId, { version: installation.processVersion, knowledgeCollectionIds: installation.knowledgeCollectionIds }, project, context);
       if (!preflight) throw new Error("Установленный процесс удалён. Восстановите процесс из резервной копии проекта.");
-      return { manifest, installation, preflight };
+      return { manifest, installation, preflight, activeInstallation, changes };
     }
     const agents = Object.fromEntries(manifest.roles.map((role) => [role.id, {
       id: `pack-${role.id}`, name: role.name, role: role.responsibility, system_prompt: role.systemPrompt,
       model: options.model, runtime: "single", runtime_config_json: JSON.stringify({ profile: "tool_loop_v1", maxIterations: 3 }),
     }]));
-    const graph = internalReportGraph(Object.fromEntries(manifest.roles.map((role) => [role.id, String(agents[role.id]!.id)])), []);
+    const graph = internalReportGraph(Object.fromEntries(manifest.roles.map((role) => [role.id, String(agents[role.id]!.id)])), options.knowledgeCollectionIds ?? [], options.version);
     const preflight = this.evaluateScenario(null, null, graph, {}, project, context, Object.values(agents));
     const recovery = { label: "Установить пакет: роли, знания и опубликованный процесс", href: recoveryLink("processes", { packId }) };
     preflight.blockers = preflight.blockers.filter((blocker) => blocker.code !== "version_unavailable");
-    preflight.blockers.unshift({ code: "pack_installation", category: "version", blocks: "queue", message: "Пакет ещё не установлен в текущем проекте.", recovery },
-      { code: "pack_knowledge", category: "knowledge", blocks: "queue", message: `Нужна коллекция «${manifest.knowledge.name}» с двумя учебными документами. Установка создаст её и поставит документы на индексацию.`, recovery });
-    preflight.notices.push(`После установки дождитесь индексации. Worker агента должен поддерживать ${manifest.defaults.embeddingModel}.`);
-    return { manifest, installation, preflight };
+    preflight.blockers.unshift({ code: "pack_installation", category: "version", blocks: "queue", message: "Пакет ещё не установлен в текущем проекте.", recovery });
+    if (options.version === 1) preflight.blockers.push({ code: "pack_knowledge", category: "knowledge", blocks: "queue", message: `Нужна коллекция «${manifest.knowledge.name}» с двумя учебными документами. Установка создаст её и поставит документы на индексацию.`, recovery });
+    preflight.saved = false; preflight.queueable = false; preflight.runnableNow = false;
+    preflight.notices.push(options.version === 1 ? `После установки дождитесь индексации. Worker агента должен поддерживать ${manifest.defaults.embeddingModel}.`
+      : "Дождитесь индексации. Worker каждого агента должен поддерживать модели embeddings выбранных коллекций.");
+    return { manifest, installation, preflight, activeInstallation, changes };
   }
 
-  installProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
+  installProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview & { created: boolean } {
     const options = validateProcessPackInput(packId, input);
     const project = this.requireProject(projectId);
     return this.transaction(() => {
       // Serialize installations for a project, including concurrent PostgreSQL requests.
       this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
-      if (this.getProcessPackInstallation(packId, project)) return this.preflightProcessPack(packId, options, project, context);
-      const manifest = getInternalReportPack();
+      if (this.getProcessPackInstallation(packId, project, options.version)) return { ...this.preflightProcessPack(packId, options, project, context), created: false };
+      const manifest = getInternalReportPack(options.version);
+      if (options.version === 2) {
+        for (const id of options.knowledgeCollectionIds!) {
+          if (!this.db.prepare("SELECT id FROM knowledge_collections WHERE id = ? AND project_id = ?").get(id, project)) throw new Error("Выбранная коллекция недоступна в текущем проекте");
+        }
+      }
       const agentIds = Object.fromEntries(manifest.roles.map((role) => [role.id, String(this.createAgent({
         name: `${manifest.name} · ${role.name}`, role: role.responsibility, systemPrompt: role.systemPrompt,
         model: options.model, runtime: "single", runtimeConfig: { profile: "tool_loop_v1", maxIterations: 3 },
       }, project).id)]));
-      const collection = this.createKnowledgeCollection({ name: manifest.knowledge.name, description: manifest.knowledge.description,
-        embeddingModel: manifest.defaults.embeddingModel }, project);
-      const knowledgeCollectionIds = [String(collection.id)];
-      for (const document of manifest.knowledge.documents) this.ingestKnowledgeDocument(String(collection.id), document, project);
+      let knowledgeCollectionIds = options.knowledgeCollectionIds ?? [];
+      if (options.version === 1) {
+        const collection = this.createKnowledgeCollection({ name: manifest.knowledge.name, description: manifest.knowledge.description,
+          embeddingModel: manifest.defaults.embeddingModel }, project);
+        knowledgeCollectionIds = [String(collection.id)];
+        for (const document of manifest.knowledge.documents) this.ingestKnowledgeDocument(String(collection.id), document, project);
+      }
       // Legacy state stores still enforce a global process-name constraint.
-      const process = this.createProcess({ name: `${manifest.name} · ${project}`, description: manifest.description, graph: internalReportGraph(agentIds, knowledgeCollectionIds) }, project);
+      const process = this.createProcess({ name: `${manifest.name} · ${project}`, description: manifest.description, graph: internalReportGraph(agentIds, knowledgeCollectionIds, options.version) }, project);
       const published = this.publishProcess(String(process.id), project)!;
       const installation: ProcessPackInstallation = { packId, version: manifest.version, manifestSha256: manifest.manifestSha256, model: options.model,
         processId: String(process.id), processVersion: Number(published.publishedVersion), agentIds, knowledgeCollectionIds, installedAt: nowIso() };
-      this.db.prepare("INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)").run(project, packId, JSON.stringify(installation));
+      this.recordProcessPackHistory(installation, project);
+      if (!this.getProcessPackInstallation(packId, project)) {
+        this.db.prepare("INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)").run(project, packId, JSON.stringify(installation));
+      }
       this.addEvent(null, null, null, "info", "process.pack.installed", `Установлен пакет «${manifest.name}» v${manifest.version}`, { projectId: project, ...installation });
+      return { ...this.preflightProcessPack(packId, options, project, context), created: true };
+    });
+  }
+
+  activateProcessPack(packId: string, input: ProcessPackActivation, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
+    const project = this.requireProject(projectId);
+    if (!input || typeof input !== "object" || Array.isArray(input) || !Number.isInteger(input.version)
+      || Object.keys(input).some((key) => !["version", "manifestSha256", "expectedActiveManifestSha256"].includes(key))
+      || (input.expectedActiveManifestSha256 !== null && !/^[a-f0-9]{64}$/.test(String(input.expectedActiveManifestSha256)))) throw new Error("Укажите версию и ожидаемый manifest активной установки");
+    return this.transaction(() => {
+      this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
+      const installation = this.getProcessPackInstallation(packId, project, input.version);
+      if (!installation || installation.manifestSha256 !== input.manifestSha256) throw new Error("Установленная версия пакета с таким manifest не найдена");
+      const active = this.getProcessPackInstallation(packId, project);
+      const options: ProcessPackInput = { version: installation.version, manifestSha256: installation.manifestSha256, model: installation.model,
+        ...(installation.version === 2 ? { knowledgeCollectionIds: installation.knowledgeCollectionIds } : {}) };
+      const preview = this.preflightProcessPack(packId, options, project, context);
+      if (active?.manifestSha256 === installation.manifestSha256) return preview;
+      if ((active?.manifestSha256 ?? null) !== input.expectedActiveManifestSha256) throw new Error("Активная версия изменилась. Повторите проверку различий перед переключением.");
+      if (!preview.preflight.queueable) throw new ScenarioPreflightError(preview.preflight);
+      if (active) this.recordProcessPackHistory(active, project);
+      this.recordProcessPackHistory(installation, project);
+      this.db.prepare(`INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)
+        ON CONFLICT(project_id, pack_id) DO UPDATE SET installation_json = excluded.installation_json`).run(project, packId, JSON.stringify(installation));
+      this.addEvent(null, null, null, "info", "process.pack.activated", "Изменена активная версия пакета", {
+        projectId: project, packId, fromVersion: active?.version ?? null, fromManifestSha256: active?.manifestSha256 ?? null,
+        toVersion: installation.version, toManifestSha256: installation.manifestSha256, processId: installation.processId,
+      });
       return this.preflightProcessPack(packId, options, project, context);
     });
   }
