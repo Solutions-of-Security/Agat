@@ -39,7 +39,8 @@ import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
-import { normalizeBusinessOutputContract, validateBusinessReportOutput } from "./business-contracts.js";
+import { BusinessInputValidationError, businessOutputContractDescriptor, businessOutputSystemPrompt, normalizeBusinessInputContract,
+  normalizeBusinessOutputContract, validateBusinessReportInput, validateBusinessReportOutput } from "./business-contracts.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -10202,7 +10203,9 @@ export class AgatStore {
         if (!agent) { add(`agent_missing:${owner}:${node.id}`, "team", "queue", `«${node.name}»: назначьте агента проекта.`, "processes", stepTarget, "Назначить агента этому шагу"); continue; }
         let snapshot: AgentExecutionSnapshot;
         try {
-          snapshot = previewAgent ? agentSnapshot(agent, "process_queue") : this.captureAgentSnapshot(agent, "process_queue", project);
+          const effectiveAgent = node.config.outputContract ? { ...agent,
+            system_prompt: businessOutputSystemPrompt(String(agent.system_prompt), node.config.outputContract) } : agent;
+          snapshot = previewAgent ? agentSnapshot(effectiveAgent, "process_queue") : this.captureAgentSnapshot(effectiveAgent, "process_queue", project);
           this.validateSpecialistTeamConfig(snapshot.runtimeConfig, project, snapshot.id);
           snapshots.push(snapshot);
         } catch {
@@ -10394,6 +10397,12 @@ export class AgatStore {
         .get(processId, version) as Row | undefined;
       if (!versionRow) throw new Error("Опубликованная версия процесса не найдена");
       const graph = parseJson<ProcessGraph>(versionRow.graph_json, { nodes: [], edges: [] });
+      const inputContract = graph.nodes.find((node) => node.type === "start")?.config.inputContract;
+      const inputReceipt = inputContract === undefined ? null : (() => {
+        normalizeBusinessInputContract(inputContract);
+        if (input.startNodeId) throw new BusinessInputValidationError("partial_start_not_allowed");
+        return validateBusinessReportInput(processInput);
+      })();
       const runId = randomUUID();
       const instanceId = randomUUID();
       const timestamp = nowIso();
@@ -10474,6 +10483,8 @@ export class AgatStore {
         processInstanceId: instanceId,
         processVersion: version,
       });
+      if (inputReceipt) this.addEvent(runId, null, null, "info", "business.input.validated",
+        "Входные данные проверены по закреплённому контракту", inputReceipt);
       const requestedStartNodeId = typeof input.startNodeId === "string" ? input.startNodeId.trim() : "";
       const start = requestedStartNodeId
         ? graph.nodes.find((node) => node.id === requestedStartNodeId)
@@ -10580,8 +10591,18 @@ export class AgatStore {
       }, project);
       const stage = this.db.prepare("SELECT id FROM stages WHERE run_id = ? ORDER BY position LIMIT 1").get(created.id) as Row;
       this.db.prepare("UPDATE stages SET process_node_id = ?, activity_json = ? WHERE id = ?").run(
-        node.id, JSON.stringify(node.config.decisionShadow ? { decisionShadowConfig: node.config.decisionShadow } : {}), String(stage.id),
+        node.id, JSON.stringify({
+          ...(node.config.decisionShadow ? { decisionShadowConfig: node.config.decisionShadow } : {}),
+          ...(node.config.outputContract ? { businessOutputContract: businessOutputContractDescriptor(node.config.outputContract) } : {}),
+        }), String(stage.id),
       );
+      if (node.config.outputContract) {
+        const agent = this.effectiveAgentRow(node.config.agentId, project)!;
+        const snapshot = this.captureAgentSnapshot({ ...agent,
+          system_prompt: businessOutputSystemPrompt(String(agent.system_prompt), node.config.outputContract),
+        }, "process_queue", project);
+        this.db.prepare("UPDATE stages SET agent_snapshot_json = ? WHERE id = ?").run(JSON.stringify(snapshot), String(stage.id));
+      }
       this.addEvent(created.id, String(stage.id), null, "info", "process.node.test.created", `Создан тест шага «${node.name}»`, {
         processNodeId: node.id,
         agentId: node.config.agentId,
@@ -12470,7 +12491,7 @@ export class AgatStore {
     const result = this.transaction(() => {
       const stage = this.db
         .prepare(`
-          SELECT s.*, r.result_destination, r.artifact_path, a.name AS agent_name
+          SELECT s.*, r.project_id, r.result_destination, r.artifact_path, a.name AS agent_name
           FROM stages s
           JOIN runs r ON r.id = s.run_id
           JOIN agents a ON a.id = s.agent_id
@@ -12511,11 +12532,13 @@ export class AgatStore {
         ? parseJson<ProcessGraph>(contractInstance.graph_json, { nodes: [], edges: [] }).nodes
           .find((node) => node.id === stage.process_node_id)
         : undefined;
-      if (contractNode?.config.outputContract !== undefined) {
+      const selectedOutputContract = contractNode?.config.outputContract
+        ?? (shadowActivity.businessOutputContract as { id?: unknown } | undefined)?.id;
+      if (selectedOutputContract !== undefined) {
         let receipt;
         try {
-          normalizeBusinessOutputContract(contractNode.config.outputContract);
-          const projectId = String(contractInstance!.project_id);
+          normalizeBusinessOutputContract(selectedOutputContract);
+          const projectId = String(stage.project_id);
           const currentSource = this.db.prepare(`
             SELECT k.id FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
             JOIN knowledge_collections c ON c.id = k.collection_id
@@ -12535,6 +12558,10 @@ export class AgatStore {
               return String(this.getArtifactDownload(id, projectId)?.artifact.sha256 ?? "");
             },
           });
+          const pinnedContract = shadowActivity.businessOutputContract as { schemaSha256?: string } | undefined;
+          if (pinnedContract && pinnedContract.schemaSha256 !== receipt.schemaSha256) {
+            receipt = { ...receipt, status: "invalid", codes: ["schema_revision_mismatch"] };
+          }
         } catch {
           receipt = { status: "invalid", codes: ["validator_unavailable"] };
         }
@@ -12547,8 +12574,14 @@ export class AgatStore {
           this.db.prepare(`UPDATE stages SET status = 'failed', output = ?, metrics_json = ?, lease_expires_at = NULL,
             completed_at = ?, updated_at = ? WHERE id = ?`)
             .run(output, JSON.stringify(metrics), timestamp, timestamp, String(stage.id));
-          this.failProcessInstance(String(contractInstance!.id), String(stage.run_id),
-            `Контракт бизнес-результата: ${receipt.codes.join(", ")}. Требуется ручная проверка.`);
+          const failure = `Контракт бизнес-результата: ${receipt.codes.join(", ")}. Требуется ручная проверка.`;
+          if (!contractInstance) {
+            this.db.prepare("UPDATE runs SET status = 'failed', completed_at = ?, updated_at = ? WHERE id = ?")
+              .run(timestamp, timestamp, String(stage.run_id));
+            this.addEvent(String(stage.run_id), String(stage.id), nodeId, "error", "stage.failed", failure, null);
+            return { runCompleted: false, processInstanceId: null };
+          }
+          this.failProcessInstance(String(contractInstance.id), String(stage.run_id), failure);
           const parent = this.db.prepare("SELECT parent_instance_id FROM process_subprocess_links WHERE child_instance_id = ?")
             .get(String(contractInstance!.id)) as Row | undefined;
           return { runCompleted: false, processInstanceId: String(parent?.parent_instance_id ?? contractInstance!.id) };
@@ -13364,6 +13397,7 @@ export class AgatStore {
         worker,
         routing,
         metrics,
+        ...(activity.businessOutputContract ? { businessOutputContract: activity.businessOutputContract } : {}),
         ...(activity.decisionShadowConfig ? { decisionShadow: {
           profileSha256: shadowLease?.profileSha256 ?? null,
           inputSha256: shadowLease?.inputSha256 ?? null,
@@ -15350,6 +15384,8 @@ export class AgatStore {
     const requiresApproval = node.config.approvalRequired === true;
     const status = requiresApproval ? "waiting_approval" : "queued";
     const stageId = randomUUID();
+    const effectiveAgent = node.config.outputContract ? { ...agentRow,
+      system_prompt: businessOutputSystemPrompt(String(agentRow.system_prompt), node.config.outputContract) } : agentRow;
     this.db
       .prepare(`
         INSERT INTO stages(
@@ -15367,9 +15403,10 @@ export class AgatStore {
         node.id,
         tokenId,
         lastOutput,
-        JSON.stringify(this.captureAgentSnapshot(agentRow, "process_queue", projectId, timestamp)),
+        JSON.stringify(this.captureAgentSnapshot(effectiveAgent, "process_queue", projectId, timestamp)),
         JSON.stringify({
           ...(requiresApproval && node.config.approvalForm ? { form: node.config.approvalForm } : {}),
+          ...(node.config.outputContract ? { businessOutputContract: businessOutputContractDescriptor(node.config.outputContract) } : {}),
           ...this.replayDecisionShadow(instanceId, runId, node, stageId, lastOutput),
         }),
         timestamp,
@@ -15796,22 +15833,29 @@ export class AgatStore {
       ) VALUES (?, ?, '__agat_system__', ?, 'waiting_external', 0, ?, ?, 'subprocess', ?, ?, ?)
     `).run(stageId, runId, position, node.id, tokenId, lastOutput, timestamp, timestamp);
     this.setProcessWaitingState(instanceId, runId, "waiting_external", node.id, lastOutput, loopCounts, transitionCount, timestamp);
-    const child = this.startProcessLocked(
-      childProcessId,
-      {
-        input: childInput.trim(),
-        priority: Number(parentRun.priority),
-        resultDestination: normalizeResultDestination(parentRun.result_destination),
-        artifactPath: String(parentRun.artifact_path ?? ""),
-        knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
-      },
-      String(parentRun.project_id),
-      {
-        knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
-        version: childVersion,
-        runtime: "embedded",
-      },
-    );
+    let child: Record<string, unknown> | null;
+    try {
+      child = this.startProcessLocked(
+        childProcessId,
+        {
+          input: childInput.trim(),
+          priority: Number(parentRun.priority),
+          resultDestination: normalizeResultDestination(parentRun.result_destination),
+          artifactPath: String(parentRun.artifact_path ?? ""),
+          knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
+        },
+        String(parentRun.project_id),
+        {
+          knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
+          version: childVersion,
+          runtime: "embedded",
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof BusinessInputValidationError)) throw error;
+      this.triggerProcessFailure(instanceId, runId, error.message, "failed");
+      return;
+    }
     if (!child) {
       this.triggerProcessFailure(instanceId, runId, `Subprocess ${childProcessId} v${childVersion} не найден`, "failed");
       return;

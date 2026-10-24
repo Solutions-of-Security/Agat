@@ -110,6 +110,8 @@ export interface ProcessGraphNode {
     decisionShadow?: DecisionShadowConfig;
     /** Fixed server-side schema selected by an immutable process version. */
     outputContract?: import("./business-contracts.js").BusinessOutputContract;
+    /** Validated before creating a run, including subprocess and replay entry points. */
+    inputContract?: import("./business-contracts.js").BusinessInputContract;
     condition?: ProcessCondition;
     maxIterations?: number;
     inputTemplate?: string;
