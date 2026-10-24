@@ -39,6 +39,7 @@ import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
+import { normalizeBusinessOutputContract, validateBusinessReportOutput } from "./business-contracts.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -12465,6 +12466,7 @@ export class AgatStore {
   ): { runCompleted: boolean; processInstanceId: string | null } {
     const metrics = normalizeExecutionMetrics(executionMetrics);
     let completedRunId: string | null = null;
+    let outputRejected = false;
     const result = this.transaction(() => {
       const stage = this.db
         .prepare(`
@@ -12501,6 +12503,57 @@ export class AgatStore {
       const snapshot = parseAgentSnapshot(stage.agent_snapshot_json);
       if (snapshot) stage.agent_name = snapshot.name;
       const timestamp = nowIso();
+
+      const contractInstance = this.db.prepare(`
+        SELECT pi.*, r.project_id FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.run_id = ?
+      `).get(String(stage.run_id)) as Row | undefined;
+      const contractNode = contractInstance
+        ? parseJson<ProcessGraph>(contractInstance.graph_json, { nodes: [], edges: [] }).nodes
+          .find((node) => node.id === stage.process_node_id)
+        : undefined;
+      if (contractNode?.config.outputContract !== undefined) {
+        let receipt;
+        try {
+          normalizeBusinessOutputContract(contractNode.config.outputContract);
+          const projectId = String(contractInstance!.project_id);
+          const currentSource = this.db.prepare(`
+            SELECT k.id FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
+            JOIN knowledge_collections c ON c.id = k.collection_id
+            WHERE c.project_id = ? AND c.id = ? AND d.id = ? AND k.id = ?
+              AND d.content_sha256 = ? AND k.content_sha256 = ?
+          `);
+          receipt = validateBusinessReportOutput(output, {
+            sourceMarkers: new Set((this.getRunKnowledgeSources(String(stage.run_id), projectId) ?? [])
+              .filter((source) => currentSource.get(projectId, source.provenance.collectionId,
+                source.provenance.documentId, source.provenance.chunkId,
+                source.provenance.documentSha256, source.provenance.chunkSha256))
+              .map((source) => source.marker)),
+            artifactSha256: (id) => {
+              const artifact = this.db.prepare("SELECT id FROM artifacts WHERE id = ? AND run_id = ?")
+                .get(id, String(stage.run_id));
+              if (!artifact) return null;
+              return String(this.getArtifactDownload(id, projectId)?.artifact.sha256 ?? "");
+            },
+          });
+        } catch {
+          receipt = { status: "invalid", codes: ["validator_unavailable"] };
+        }
+        this.addEvent(String(stage.run_id), String(stage.id), nodeId,
+          receipt.status === "validated" ? "info" : "warn", "business.output.validated",
+          receipt.status === "validated" ? "Структура, ссылки и расчёты проверены; утверждения требуют решения человека"
+            : "Бизнес-результат требует исправления или ручной проверки", { ...receipt });
+        if (receipt.status !== "validated") {
+          outputRejected = true;
+          this.db.prepare(`UPDATE stages SET status = 'failed', output = ?, metrics_json = ?, lease_expires_at = NULL,
+            completed_at = ?, updated_at = ? WHERE id = ?`)
+            .run(output, JSON.stringify(metrics), timestamp, timestamp, String(stage.id));
+          this.failProcessInstance(String(contractInstance!.id), String(stage.run_id),
+            `Контракт бизнес-результата: ${receipt.codes.join(", ")}. Требуется ручная проверка.`);
+          const parent = this.db.prepare("SELECT parent_instance_id FROM process_subprocess_links WHERE child_instance_id = ?")
+            .get(String(contractInstance!.id)) as Row | undefined;
+          return { runCompleted: false, processInstanceId: String(parent?.parent_instance_id ?? contractInstance!.id) };
+        }
+      }
 
       this.db
         .prepare(`
@@ -12638,7 +12691,7 @@ export class AgatStore {
     if (metrics.inputTokens !== undefined) spanAttributes["gen_ai.usage.input_tokens"] = metrics.inputTokens;
     if (metrics.outputTokens !== undefined) spanAttributes["gen_ai.usage.output_tokens"] = metrics.outputTokens;
     if (metrics.model) spanAttributes["gen_ai.response.model"] = metrics.model;
-    this.telemetry.endStage(leaseId, { status: "completed", attributes: spanAttributes });
+    this.telemetry.endStage(leaseId, { status: outputRejected ? "failed" : "completed", attributes: spanAttributes });
     if (completedRunId) {
       const terminal = this.db.prepare("SELECT status FROM runs WHERE id = ?").get(completedRunId) as Row | undefined;
       if (terminal?.status === "completed") this.telemetry.endRun(completedRunId, { status: "completed" });

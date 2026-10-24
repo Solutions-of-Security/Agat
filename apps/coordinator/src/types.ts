@@ -108,6 +108,8 @@ export interface ProcessGraphNode {
     agentId?: string;
     approvalRequired?: boolean;
     decisionShadow?: DecisionShadowConfig;
+    /** Fixed server-side schema selected by an immutable process version. */
+    outputContract?: import("./business-contracts.js").BusinessOutputContract;
     condition?: ProcessCondition;
     maxIterations?: number;
     inputTemplate?: string;
