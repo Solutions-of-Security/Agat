@@ -5,6 +5,7 @@ import {
   Connection,
   type CalendarSpec,
   type ConnectionOptions,
+  type ScheduleSpec,
   ScheduleAlreadyRunning,
   ScheduleNotFoundError,
   ScheduleOverlapPolicy,
@@ -307,7 +308,7 @@ export function normalizeProcessScheduleInput(
 }
 
 export function processScheduleDefinition(input: ProcessScheduleInput, taskQueue: string) {
-  const spec = input.kind === "interval"
+  const spec: ScheduleSpec = input.kind === "interval"
     ? { intervals: [{ every: `${input.everySeconds} seconds` }] }
     : input.kind === "cron"
       ? { cronExpressions: [input.cronExpression], timezone: input.timezone }
@@ -335,7 +336,7 @@ export function processScheduleDefinition(input: ProcessScheduleInput, taskQueue
     },
     policies: {
       overlap: ScheduleOverlapPolicy.SKIP,
-      catchupWindow: "5 minutes",
+      catchupWindow: "5 minutes" as const,
       pauseOnFailure: true,
     },
     state: {

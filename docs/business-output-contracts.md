@@ -5,7 +5,8 @@ Implemented 25 October 2026. An agent node can opt into the fixed server contrac
 instance retain that selection through publication, restart and BPMN round trips.
 Legacy nodes keep their existing text behavior. The next increment adds the
 [input contract and pinned instructions](./business-input-contracts.md).
-Pack v2 and document ingestion remain separate increments.
+Pack v2 remains a separate increment. Document parsing is extended in the
+[tabular ingestion increment](./tabular-knowledge-ingest.md).
 
 Validated structured output can be saved using the deterministic
 [Markdown artifact format](./validated-report-markdown.md); source validation is

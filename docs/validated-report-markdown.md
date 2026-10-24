@@ -43,6 +43,7 @@ scheduler/process/internal-report v1 tests remain the compatibility gate.
 These are synthetic checks; factual correctness and a real business owner's
 acceptance remain independent qualification requirements.
 
-Remaining USE-004 scope includes in-app rich Markdown presentation, DOCX/PDF from
-the same canonical content, and a persisted accept/rework decision tied to exact
-artifact version/run. Installing this formatter does not close the full epic.
+The [readable report view](./readable-report-view.md) adds in-app Markdown
+presentation. Remaining USE-004 scope includes DOCX/PDF from the same canonical
+content and a persisted accept/rework decision tied to exact artifact version/run.
+Installing this formatter does not close the full epic.
