@@ -129,6 +129,7 @@ export interface ProcessGraphNode {
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;
+    reportFormat?: import("./business-report-markdown.js").BusinessReportFormat;
     /** Fork paired with this converging gateway. */
     forkId?: string;
     /** Stable public signal name. Correlation is rendered from process input/context. */

@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import { normalizeProcessApprovalForm } from "./process-forms.js";
 import { normalizeBusinessInputContract, normalizeBusinessOutputContract } from "./business-contracts.js";
+import { normalizeBusinessReportFormat } from "./business-report-markdown.js";
 import { normalizeDecisionShadowConfig } from "./local-decisions.js";
 
 const NODE_TYPES = new Set<ProcessNodeType>([
@@ -272,8 +273,10 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
     }
   }
   if (normalized.type === "artifact") {
+    if (config.reportFormat !== undefined) normalized.config.reportFormat = normalizeBusinessReportFormat(config.reportFormat);
     const artifactName = optionalText(config.artifactName, `Шаг ${normalized.name || id}: имя файла`, 160);
-    const artifactContent = optionalText(config.artifactContent, `Шаг ${normalized.name || id}: содержимое`, 100_000);
+    const artifactContent = optionalText(config.artifactContent, `Шаг ${normalized.name || id}: содержимое`, 100_000)
+      || (normalized.config.reportFormat ? "{{ lastOutput }}" : "");
     if (strict && !artifactName) throw new Error(`Шаг ${normalized.name || id}: имя файла обязательно`);
     if (strict && !artifactContent) throw new Error(`Шаг ${normalized.name || id}: содержимое обязательно`);
     normalized.config.artifactName = artifactName;
@@ -281,9 +284,14 @@ function normalizeNode(raw: unknown, knownAgentIds: Set<string>, strict: boolean
       config.artifactMediaType,
       `Шаг ${normalized.name || id}: media type`,
       120,
-    ) || "text/plain; charset=utf-8";
+    ) || (normalized.config.reportFormat ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8");
+    if (normalized.config.reportFormat && !/^text\/markdown(?:;\s*charset=utf-8)?$/i.test(normalized.config.artifactMediaType)) {
+      throw new Error("Бизнес-отчёт требует формат text/markdown");
+    }
+    if (normalized.config.reportFormat) normalized.config.artifactMediaType = "text/markdown; charset=utf-8";
     normalized.config.artifactContent = artifactContent;
   }
+  if (normalized.type !== "artifact" && config.reportFormat !== undefined) throw new Error("Формат бизнес-отчёта доступен только на шаге артефакта");
   if (normalized.type === "parallel_join") {
     const forkId = strict
       ? requiredText(config.forkId, `Шаг ${normalized.name || id}: fork gateway`, 100)

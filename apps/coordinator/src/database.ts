@@ -42,6 +42,7 @@ import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInp
 import { appendKnowledgeSources } from "./knowledge-citations.js";
 import { BusinessInputValidationError, businessOutputContractDescriptor, businessOutputSystemPrompt, normalizeBusinessInputContract,
   normalizeBusinessOutputContract, validateBusinessReportInput, validateBusinessReportOutput } from "./business-contracts.js";
+import { BusinessReportRenderingError, normalizeBusinessReportFormat, renderValidatedBusinessReport } from "./business-report-markdown.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -10669,6 +10670,7 @@ export class AgatStore {
     }
 
     if (node.type === "artifact") {
+      if (node.config.reportFormat) throw new Error("Предпросмотр бизнес-отчёта требует выполнения процесса с доступными источниками");
       const content = renderProcessTemplate(node.config.artifactContent ?? "", {
         input: testInput,
         lastOutput: testInput,
@@ -12481,6 +12483,27 @@ export class AgatStore {
     );
   }
 
+  private businessOutputContext(runId: string, projectId: string) {
+    const currentSource = this.db.prepare(`
+      SELECT k.id FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
+      JOIN knowledge_collections c ON c.id = k.collection_id
+      WHERE c.project_id = ? AND c.id = ? AND d.id = ? AND k.id = ?
+        AND d.content_sha256 = ? AND k.content_sha256 = ?
+    `);
+    const sources = (this.getRunKnowledgeSources(runId, projectId) ?? []).filter((source) => currentSource.get(
+      projectId, source.provenance.collectionId, source.provenance.documentId, source.provenance.chunkId,
+      source.provenance.documentSha256, source.provenance.chunkSha256));
+    const markerCounts = new Map<string, number>();
+    for (const source of sources) markerCounts.set(source.marker, (markerCounts.get(source.marker) ?? 0) + 1);
+    return { sources, context: {
+      sourceMarkers: new Set(sources.filter((source) => markerCounts.get(source.marker) === 1).map((source) => source.marker)),
+      artifactSha256: (id: string) => {
+        if (!this.db.prepare("SELECT id FROM artifacts WHERE id = ? AND run_id = ?").get(id, runId)) return null;
+        return String(this.getArtifactDownload(id, projectId)?.artifact.sha256 ?? "");
+      },
+    } };
+  }
+
   completeLease(
     nodeId: string,
     leaseId: string,
@@ -12542,25 +12565,7 @@ export class AgatStore {
         try {
           normalizeBusinessOutputContract(selectedOutputContract);
           const projectId = String(stage.project_id);
-          const currentSource = this.db.prepare(`
-            SELECT k.id FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
-            JOIN knowledge_collections c ON c.id = k.collection_id
-            WHERE c.project_id = ? AND c.id = ? AND d.id = ? AND k.id = ?
-              AND d.content_sha256 = ? AND k.content_sha256 = ?
-          `);
-          receipt = validateBusinessReportOutput(output, {
-            sourceMarkers: new Set((this.getRunKnowledgeSources(String(stage.run_id), projectId) ?? [])
-              .filter((source) => currentSource.get(projectId, source.provenance.collectionId,
-                source.provenance.documentId, source.provenance.chunkId,
-                source.provenance.documentSha256, source.provenance.chunkSha256))
-              .map((source) => source.marker)),
-            artifactSha256: (id) => {
-              const artifact = this.db.prepare("SELECT id FROM artifacts WHERE id = ? AND run_id = ?")
-                .get(id, String(stage.run_id));
-              if (!artifact) return null;
-              return String(this.getArtifactDownload(id, projectId)?.artifact.sha256 ?? "");
-            },
-          });
+          receipt = validateBusinessReportOutput(output, this.businessOutputContext(String(stage.run_id), projectId).context);
           const pinnedContract = shadowActivity.businessOutputContract as { schemaSha256?: string } | undefined;
           if (pinnedContract && pinnedContract.schemaSha256 !== receipt.schemaSha256) {
             receipt = { ...receipt, status: "invalid", codes: ["schema_revision_mismatch"] };
@@ -15150,11 +15155,29 @@ export class AgatStore {
       }
       if (node.type === "artifact") {
         const name = safeArtifactName(renderProcessTemplate(node.config.artifactName ?? "artifact.txt", expressionContext()));
-        const content = renderProcessTemplate(node.config.artifactContent ?? "", expressionContext());
+        let content = renderProcessTemplate(node.config.artifactContent ?? "", expressionContext());
+        if (node.config.reportFormat) {
+          try {
+            normalizeBusinessReportFormat(node.config.reportFormat);
+            const projectId = String((this.db.prepare("SELECT project_id FROM runs WHERE id = ?").get(runId) as Row).project_id);
+            const { sources, context } = this.businessOutputContext(runId, projectId);
+            const rendered = renderValidatedBusinessReport(content, sources, context);
+            content = rendered.content;
+            this.addEvent(runId, null, null, "info", "business.report.rendered", "Подготовлен Markdown из проверенного JSON", rendered.receipt);
+          } catch (error) {
+            const known = error instanceof BusinessReportRenderingError;
+            this.addEvent(runId, null, null, "warn", "business.report.rejected", "Сохранение отчёта остановлено проверкой", {
+              format: node.config.reportFormat, code: known ? error.code : "renderer_unavailable", reasons: known ? error.reasons : [],
+            });
+            this.failProcessInstance(instanceId, runId, known ? error.message
+              : "Не удалось проверить и сохранить бизнес-отчёт. Проверьте доступность валидатора и источников.");
+            return false;
+          }
+        }
         const mediaType = node.config.artifactMediaType && /^[\w.+-]+\/[\w.+-]+(?:;\s*charset=[\w-]+)?$/i.test(node.config.artifactMediaType)
           ? node.config.artifactMediaType
           : "text/plain; charset=utf-8";
-        const stage = this.recordInternalStage(runId, tokenId, node, "artifact", lastOutput, lastOutput ?? "");
+        const stage = this.recordInternalStage(runId, tokenId, node, "artifact", lastOutput, node.config.reportFormat ? content : lastOutput ?? "");
         const position = String(Number(stage.position) + 1).padStart(2, "0");
         this.persistArtifact(stage, name, "process_artifact", mediaType, content, path.posix.join("artifacts", `${position}-${name}`));
         this.addEvent(runId, String(stage.id), null, "info", "process.artifact.completed", `Артефакт «${name}» сохранён`, {
