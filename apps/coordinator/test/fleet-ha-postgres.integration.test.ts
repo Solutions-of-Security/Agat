@@ -21,6 +21,7 @@ import { interceptCallerAccountingCommit, interceptEmbeddingCommit, interceptRet
 import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
 import { getInternalReportPack, type ProcessPackPreview } from "../src/process-packs.js";
 import { pdfFile, fixtureExtractionReview } from "./knowledge-file-fixtures.js";
+import { completedOfficeReport } from "./business-report-office-fixtures.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -517,6 +518,66 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         // Empty model advertisements are a legacy wildcard in the router. This
         // synthetic embedder must never attract another fixture's pinned model.
         if (fixtureWorkerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(fixtureWorkerId);
+        first.close();
+      });
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes frozen office exports across real replicas and keeps bytes and receipts behind tenant RLS", async context => {
+    const suffix = randomUUID().slice(0, 8), project = `office-${suffix}`, foreign = `office-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-office-"));
+    const first = store(`office-store-${suffix}`, artifacts);
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    let workerId: string | undefined;
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const { canonical, runId, worker } = completedOfficeReport(first, project); workerId = worker.id;
+      const token = `office-fixture-${suffix}`, origin = "https://office.agat.example";
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`office-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const headers = (tenant = project) => ({ "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant, host: new URL(origin).host });
+      // A reverse proxy presents the same external Host to both replicas. Node's
+      // fetch may replace a supplied Host, so exercise that transport with http.
+      const post = (index: number, format = "docx", tenant = project) => new Promise<Response>((resolve, reject) => {
+        const request = http.request(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${canonical.id}/export`, {
+          method: "POST", headers: headers(tenant),
+        }, response => {
+          const chunks: Buffer[] = [];
+          response.on("data", chunk => chunks.push(Buffer.from(chunk)));
+          response.once("error", reject);
+          response.once("end", () => resolve(new Response(Buffer.concat(chunks), { status: response.statusCode })));
+        });
+        request.setTimeout(30_000, () => request.destroy(new Error("Office export HTTP deadline")));
+        request.once("error", reject);
+        request.end(JSON.stringify({ format, origin, expectedSha256: canonical.sha256 }));
+      });
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index)));
+      const bodies = await Promise.all(responses.map(response => response.json() as Promise<{ artifact: Record<string, unknown> }>));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(bodies));
+      const exported = bodies[0]!.artifact;
+      for (const body of bodies) assert.deepEqual(body.artifact, exported);
+      const pdfResponse = await post(1, "pdf"); assert.equal(pdfResponse.status, 201, await pdfResponse.clone().text());
+      const pdf = (await pdfResponse.json() as { artifact: Record<string, unknown> }).artifact;
+      assert.equal((exported.rendering as Record<string, unknown>).documentSha256, (pdf.rendering as Record<string, unknown>).documentSha256);
+      for (const artifact of [exported, pdf]) {
+        const download = await fetch(`http://127.0.0.1:${children[0]!.port}/api/v1/artifacts/${artifact.id}/download`, { headers: headers() });
+        assert.equal(download.status, 200);
+        assert.equal(createHash("sha256").update(Buffer.from(await download.arrayBuffer())).digest("hex"), artifact.sha256);
+        assert.equal(artifact.sourceArtifactId, canonical.id);
+        assert.equal((await fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/artifacts/${artifact.id}/download`, { headers: headers(foreign) })).status, 404);
+      }
+      assert.equal((await post(0)).status, 200); assert.equal((await post(1, "pdf")).status, 200);
+      assert.equal((await post(0, "pdf", foreign)).status, 404);
+      assert.equal(first.listRunArtifacts(runId).filter(row => row.kind === "business_report_export").length, 2);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.exported").length, 2);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT rendering_json, content_blob FROM artifacts WHERE run_id = ?").all(runId).length, 0);
+      assert.equal(first.db.prepare("UPDATE artifacts SET rendering_json = rendering_json WHERE run_id = ?").run(runId).changes, 0);
+      context.diagnostic("Four requests / two coordinator processes: one DOCX, one PDF, exact download hashes, shared presentation hash and tenant RLS");
+    } finally {
+      await Promise.all(children.map(child => child.stop()));
+      runWithPostgresSystemScope(() => {
+        if (workerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(workerId);
         first.close();
       });
       fs.rmSync(artifacts, { recursive: true, force: true });

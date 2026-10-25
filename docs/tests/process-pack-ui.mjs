@@ -1,6 +1,7 @@
 // Real UI and coordinator; only the model/embeddings worker is deterministic.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { build } from "vite";
@@ -168,6 +169,26 @@ try {
     const result = page.locator("#run-result");
     await result.getByRole("button", { name: "Форматированный", exact: true }).click();
     await result.locator(".report-markdown table").waitFor();
+    const office = result.getByRole("group", { name: "Экспорт сохранённого отчёта" });
+    await office.getByRole("button", { name: "Скачать DOCX", exact: true }).waitFor();
+    const modelCompletions = store.listEvents(0, 1000, projectId).filter(event => event.type === "stage.completed").length;
+    for (const format of ["docx", "pdf", "pdf"]) {
+      const downloaded = page.waitForEvent("download");
+      await office.getByRole("button", { name: `Скачать ${format.toUpperCase()}`, exact: true }).click();
+      const file = await downloaded; assert.equal(file.suggestedFilename(), `internal-report.${format}`);
+      const bytes = readFileSync(await file.path());
+      const saved = store.listRunArtifacts(ownRunId).filter(item => item.kind === "business_report_export" && item.name.endsWith(`.${format}`));
+      assert.equal(saved.length, 1, "repeated export reuses the stored file");
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), saved[0].sha256);
+      assert.equal(saved[0].sourceArtifactId, ownArtifact.id);
+      if (format === "pdf") assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+      await office.getByRole("button", { name: "Скачать DOCX", exact: true }).waitFor({ state: "visible" });
+      await page.waitForFunction(() => !document.querySelector('.report-export button')?.disabled);
+    }
+    assert.equal(store.listEvents(0, 1000, projectId).filter(event => event.type === "stage.completed").length, modelCompletions, "export must not invoke a model");
+    await office.scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-office.png`), fullPage: false });
     await result.locator(".report-markdown").scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-report.png`), fullPage: false });
     await result.locator(".report-markdown").getByRole("link", { name: `[${sourceMarker}]`, exact: true }).first().focus();
@@ -181,7 +202,7 @@ try {
     assert.equal(store.listProcesses(projectId).length, 2);
     assert.equal(await page.locator("vite-error-overlay").count(), 0);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${projectId}: ${base} · v1 compatibility; binary CSV -> v2 selection/diff/install -> update/rollback -> structured request -> validated report -> exact source; no console errors`);
+    console.log(`PASS ${projectId}: ${base} · v1 compatibility; binary CSV -> v2 selection/diff/install -> update/rollback -> structured request -> validated report -> exact DOCX/PDF downloads and retry reuse -> exact source; no console errors`);
     await context.close();
   }
 } catch (error) {

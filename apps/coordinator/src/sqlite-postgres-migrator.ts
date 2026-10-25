@@ -544,7 +544,10 @@ async function importTable(
     }
   }
   await insertBatch(client, table, batch);
-  if (requiresDependencyOrder) return digestSourceTable(database, table);
+  // Dependency order is only for insertion; reconciliation uses primary-key
+  // order after the same filesystem -> BYTEA transformation as the import.
+  // Keep the second pass's verification counters out of the import totals.
+  if (requiresDependencyOrder) return digestSourceTable(database, table, options, { verified: 0, backfilledFromFilesystem: 0, bytes: 0 });
   return finishDigest(hash, count);
 }
 

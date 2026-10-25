@@ -44,6 +44,8 @@ import { appendKnowledgeSources } from "./knowledge-citations.js";
 import { BusinessInputValidationError, businessOutputContractDescriptor, businessOutputSystemPrompt, normalizeBusinessInputContract,
   normalizeBusinessOutputContract, validateBusinessReportInput, validateBusinessReportOutput } from "./business-contracts.js";
 import { BusinessReportRenderingError, normalizeBusinessReportFormat, renderValidatedBusinessReport } from "./business-report-markdown.js";
+import { renderBusinessReportOffice } from "./business-report-office.js";
+import { BUSINESS_REPORT_OFFICE_PROFILE, BUSINESS_REPORT_OFFICE_RENDERER_SHA256, BusinessReportOfficeError, normalizeOfficeFormat, normalizeOfficeOrigin } from "./business-report-office-document.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -262,8 +264,11 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 33;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-knowledge-file-dedupe-v33";
+export const POSTGRES_SCHEMA_VERSION = 34;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-business-report-office-v34";
+
+const ARTIFACT_METADATA_FIELDS = ["id", "run_id", "stage_id", "name", "kind", "media_type", "relative_path", "size_bytes", "sha256",
+  "storage_backend", "storage_state", "retention_until", "legal_hold", "deleted_at", "created_at", "rendering_json", "source_artifact_id", "export_key", "project_id"];
 
 export class ScheduledStartConflictError extends Error {}
 export class ScheduledStartCancelledError extends Error {}
@@ -2594,12 +2599,16 @@ export class AgatStore {
       ["deleted_at", "TEXT"],
       ["last_storage_error", "TEXT"],
       ["project_id", "TEXT"],
+      ["rendering_json", "TEXT"],
+      ["source_artifact_id", "TEXT REFERENCES artifacts(id) ON DELETE CASCADE"],
+      ["export_key", "TEXT"],
     ] as const;
     for (const [name, definition] of artifactAdditions) {
       if (!artifactColumns.some((column) => column.name === name)) {
         this.db.exec(`ALTER TABLE artifacts ADD COLUMN ${name} ${definition};`);
       }
     }
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_export_key ON artifacts(export_key) WHERE export_key IS NOT NULL;");
     if (this.stateStoreDriver === "postgresql") {
       this.db.exec("UPDATE artifacts SET storage_backend = 'postgresql' WHERE storage_backend = 'filesystem' AND content_blob IS NOT NULL;");
     }
@@ -2971,7 +2980,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 33;");
+    this.db.exec("PRAGMA user_version = 34;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -13750,8 +13759,87 @@ export class AgatStore {
 
   listRunArtifacts(runId: string): Array<Record<string, unknown>> {
     return (this.db
-      .prepare("SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at ASC, name ASC")
+      .prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.join(", ")} FROM artifacts WHERE run_id = ? ORDER BY created_at ASC, name ASC`)
       .all(runId) as Row[]).map((row) => this.artifactDto(row));
+  }
+
+  getRunArtifacts(runId: string, projectId = "default") {
+    if (!this.db.prepare("SELECT id FROM runs WHERE id = ? AND project_id = ?").get(runId, normalizeProjectId(projectId))) return null;
+    return { artifacts: this.listRunArtifacts(runId) };
+  }
+
+  private legacyBusinessReportReceipt(row: Row): Record<string, unknown> | null {
+    if (row.kind !== "process_artifact" || !String(row.media_type).startsWith("text/markdown") || !row.stage_id || row.source_artifact_id) return null;
+    const stage = this.db.prepare(`SELECT s.output, s.process_node_id, pi.graph_json FROM stages s
+      JOIN process_instances pi ON pi.run_id = s.run_id WHERE s.id = ? AND s.run_id = ? AND s.stage_kind = 'artifact' AND s.status = 'completed'`)
+      .get(String(row.stage_id), String(row.run_id)) as Row | undefined;
+    if (!stage || sha256Text(String(stage.output)) !== row.sha256) return null;
+    const graph = parseJson<ProcessGraph>(stage.graph_json, { nodes: [], edges: [] });
+    if (!graph.nodes.some(node => node.id === stage.process_node_id && node.type === "artifact" && node.config.reportFormat === "business-report-markdown.v1")) return null;
+    const candidates = (this.db.prepare("SELECT data_json FROM events WHERE run_id = ? AND type = 'business.report.rendered' ORDER BY id LIMIT 201")
+      .all(String(row.run_id)) as Row[]);
+    if (candidates.length > 200) return null;
+    const receipts = candidates.map(event => parseJson<Record<string, unknown>>(event.data_json, {})).filter(receipt => this.validBusinessReportReceipt(receipt, row));
+    return receipts.length && new Set(receipts.map(receipt => receipt.inputSha256)).size === 1 ? receipts[0]! : null;
+  }
+
+  private validBusinessReportReceipt(receipt: Record<string, unknown>, row: Row): boolean {
+    return receipt.format === "business-report-markdown.v1" && receipt.contract === "business-report.v1" && receipt.contentSha256 === row.sha256
+      && receipt.sizeBytes === Number(row.size_bytes) && typeof receipt.inputSha256 === "string" && /^[a-f0-9]{64}$/.test(receipt.inputSha256)
+      && typeof receipt.schemaSha256 === "string" && /^[a-f0-9]{64}$/.test(receipt.schemaSha256);
+  }
+
+  private businessReportArtifactSource(artifactId: string, projectId: string, lock = false): Row | undefined {
+    const row = this.db.prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.map(field => `a.${field}`).join(", ")}, r.status AS run_status, r.artifact_path
+      FROM artifacts a JOIN runs r ON r.id = a.run_id WHERE a.id = ? AND r.project_id = ? AND a.project_id = ?
+      ${lock && this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF a" : ""}`).get(artifactId, projectId, projectId) as Row | undefined;
+    if (!row) return undefined;
+    if (row.run_status !== "completed" || row.storage_state !== "ready" || row.deleted_at || row.kind !== "process_artifact" || !row.stage_id) {
+      throw new BusinessReportOfficeError("report_not_ready", "Экспорт доступен для сохранённого проверенного отчёта завершённого запуска", 409);
+    }
+    const receipt = parseJson<Record<string, unknown> | null>(row.rendering_json, null) ?? this.legacyBusinessReportReceipt(row);
+    if (!receipt || !this.validBusinessReportReceipt(receipt, row)) throw new BusinessReportOfficeError("receipt_unavailable", "Для файла нет сохранённой квитанции проверки. Доступен исходный файл.", 409);
+    return { ...row, rendering_json: JSON.stringify(receipt) };
+  }
+
+  async exportBusinessReportArtifact(artifactId: string, input: { format: unknown; expectedSha256: unknown; origin: unknown }, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId);
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !["format", "expectedSha256", "origin"].includes(key))) throw new BusinessReportOfficeError("invalid_request", "Нужны формат, текущий SHA-256 и адрес АГАТ");
+    const format = normalizeOfficeFormat(input.format), origin = normalizeOfficeOrigin(input.origin);
+    if (typeof input.expectedSha256 !== "string" || !/^[a-f0-9]{64}$/.test(input.expectedSha256)) throw new BusinessReportOfficeError("invalid_hash", "Нужен текущий SHA-256 исходного отчёта");
+    const source = this.businessReportArtifactSource(artifactId, project);
+    if (!source) return null;
+    if (source.sha256 !== input.expectedSha256) throw new BusinessReportOfficeError("source_changed", "Исходный отчёт изменился. Обновите список артефактов", 409);
+    const exportKey = sha256Text(JSON.stringify({ artifactId, sha256: source.sha256, format, origin, renderer: BUSINESS_REPORT_OFFICE_RENDERER_SHA256 }));
+    const cached = () => this.db.prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.join(", ")} FROM artifacts WHERE export_key = ? AND project_id = ?`).get(exportKey, project) as Row | undefined;
+    const available = (row: Row) => {
+      if (row.storage_state !== "ready" || row.deleted_at || !this.getArtifactDownload(String(row.id), project)) throw new BusinessReportOfficeError("export_unavailable", "Сохранённый экспорт недоступен. Проверьте Artifact Store", 503);
+      return { artifact: this.artifactDto(row), created: false };
+    };
+    const existing = cached(); if (existing) return available(existing);
+    const download = this.getArtifactDownload(artifactId, project);
+    if (!download) throw new BusinessReportOfficeError("source_unavailable", "Исходный отчёт недоступен в Artifact Store", 503);
+    if (Number(source.size_bytes) > 800_000) throw new BusinessReportOfficeError("source_too_large", "Исходный отчёт превышает лимит экспорта");
+    const markdown = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(download.filePath));
+    const rendered = await renderBusinessReportOffice({ format, markdown, canonicalSha256: input.expectedSha256, canonicalArtifactId: artifactId, origin, createdAt: String(source.created_at) });
+    return this.transaction(() => {
+      const current = this.businessReportArtifactSource(artifactId, project, true);
+      if (!current || current.sha256 !== input.expectedSha256) throw new BusinessReportOfficeError("source_changed", "Исходный отчёт изменился во время экспорта", 409);
+      const prior = cached(); if (prior) return available(prior);
+      // Preserve an exact historical receipt recovered from the original stage and audit event.
+      this.db.prepare("UPDATE artifacts SET rendering_json = ? WHERE id = ? AND rendering_json IS NULL").run(String(current.rendering_json), artifactId);
+      const name = safeArtifactName(String(source.name).replace(/\.md$/i, "") + `.${format}`);
+      const metadata = { profile: BUSINESS_REPORT_OFFICE_PROFILE, format, rendererSha256: BUSINESS_REPORT_OFFICE_RENDERER_SHA256,
+        sourceArtifactId: artifactId, sourceSha256: input.expectedSha256, documentSha256: rendered.documentSha256, origin };
+      const artifact = this.persistArtifact({ id: String(source.stage_id), run_id: String(source.run_id), artifact_path: source.artifact_path ?? null }, name, "business_report_export",
+        format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", rendered.bytes,
+        path.posix.join("exports", artifactId, exportKey, name), metadata, artifactId, exportKey);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.exported", "Подготовлен файл из сохранённого проверенного отчёта", {
+        artifactId: artifact.id, sourceArtifactId: artifactId, sourceSha256: input.expectedSha256, format, rendererSha256: BUSINESS_REPORT_OFFICE_RENDERER_SHA256,
+        documentSha256: rendered.documentSha256, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes, actor: actor.slice(0, 200),
+      });
+      return { artifact, created: true };
+    });
   }
 
   getArtifactDownload(artifactId: string, projectId = "default"): { artifact: Record<string, unknown>; filePath: string } | null {
@@ -15404,6 +15492,7 @@ export class AgatStore {
       if (node.type === "artifact") {
         const name = safeArtifactName(renderProcessTemplate(node.config.artifactName ?? "artifact.txt", expressionContext()));
         let content = renderProcessTemplate(node.config.artifactContent ?? "", expressionContext());
+        let renderingMetadata: Record<string, unknown> | null = null;
         if (node.config.reportFormat) {
           try {
             normalizeBusinessReportFormat(node.config.reportFormat);
@@ -15411,6 +15500,7 @@ export class AgatStore {
             const { sources, context } = this.businessOutputContext(runId, projectId);
             const rendered = renderValidatedBusinessReport(content, sources, context);
             content = rendered.content;
+            renderingMetadata = rendered.receipt;
             this.addEvent(runId, null, null, "info", "business.report.rendered", "Подготовлен Markdown из проверенного JSON", rendered.receipt);
           } catch (error) {
             const known = error instanceof BusinessReportRenderingError;
@@ -15427,7 +15517,7 @@ export class AgatStore {
           : "text/plain; charset=utf-8";
         const stage = this.recordInternalStage(runId, tokenId, node, "artifact", lastOutput, node.config.reportFormat ? content : lastOutput ?? "");
         const position = String(Number(stage.position) + 1).padStart(2, "0");
-        this.persistArtifact(stage, name, "process_artifact", mediaType, content, path.posix.join("artifacts", `${position}-${name}`));
+        this.persistArtifact(stage, name, "process_artifact", mediaType, content, path.posix.join("artifacts", `${position}-${name}`), renderingMetadata);
         this.addEvent(runId, String(stage.id), null, "info", "process.artifact.completed", `Артефакт «${name}» сохранён`, {
           processInstanceId: instanceId,
           processNodeId: node.id,
@@ -16529,7 +16619,10 @@ export class AgatStore {
     mediaType: string,
     content: string | Buffer,
     pathWithinRun: string,
-  ): void {
+    renderingMetadata: Record<string, unknown> | null = null,
+    sourceArtifactId: string | null = null,
+    exportKey: string | null = null,
+  ): Record<string, unknown> {
     const artifactId = randomUUID();
     const relativePath = path.posix.join(
       this.artifactRunBase(String(stage.run_id), stage.artifact_path),
@@ -16611,8 +16704,8 @@ export class AgatStore {
               id, run_id, stage_id, name, kind, media_type, relative_path,
               size_bytes, sha256, content_blob, storage_backend, storage_state,
               object_bucket, object_key, object_version_id, retention_until,
-              legal_hold, deleted_at, last_storage_error, project_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
+              legal_hold, deleted_at, last_storage_error, project_id, created_at, rendering_json, source_artifact_id, export_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?)
           `).run(
             artifactId,
             String(stage.run_id),
@@ -16631,6 +16724,9 @@ export class AgatStore {
             retentionUntil,
             String(artifactRun.project_id),
             createdAt,
+            renderingMetadata ? JSON.stringify(renderingMetadata) : null,
+            sourceArtifactId,
+            exportKey,
           );
         this.addEvent(
           String(stage.run_id),
@@ -16660,6 +16756,9 @@ export class AgatStore {
       }
       throw error;
     }
+    return this.artifactDto({ id: artifactId, run_id: String(stage.run_id), stage_id: stage.id ?? null, name, kind, media_type: mediaType, relative_path: relativePath,
+      size_bytes: buffer.byteLength, sha256, storage_backend: this.artifactStoreDriver, storage_state: "ready", retention_until: retentionUntil,
+      created_at: createdAt, rendering_json: renderingMetadata ? JSON.stringify(renderingMetadata) : null, source_artifact_id: sourceArtifactId });
   }
 
   private nodeDto(row: Row): Record<string, unknown> {
@@ -16841,6 +16940,8 @@ export class AgatStore {
       legalHold: Number(row.legal_hold ?? 0) === 1,
       deletedAt: row.deleted_at ?? null,
       createdAt: row.created_at,
+      rendering: parseJson<Record<string, unknown> | null>(row.rendering_json, null) ?? this.legacyBusinessReportReceipt(row),
+      sourceArtifactId: row.source_artifact_id ?? null,
     };
   }
 

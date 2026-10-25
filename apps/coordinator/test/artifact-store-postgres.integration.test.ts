@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +17,7 @@ import {
 import { AgatStore } from "../src/database.js";
 import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.js";
 import { enterPostgresTenantScope, runWithPostgresSystemScope } from "../src/postgres-database.js";
+import { completedOfficeReport } from "./business-report-office-fixtures.js";
 
 const endpoint = process.env.AGAT_TEST_S3_ENDPOINT ?? "";
 const accessKeyId = process.env.AGAT_TEST_S3_ACCESS_KEY_ID ?? "";
@@ -158,6 +159,30 @@ describe("S3-compatible Artifact Store integration", { skip: !enabled }, () => {
       assert.equal(migrated?.content_blob, null);
       assert.equal(typeof migrated?.object_key, "string");
       assert.equal(typeof migrated?.object_version_id, "string");
+
+      const officeProject = `office-s3-${randomUUID().slice(0, 8)}`;
+      first.createProject({ id: officeProject, name: officeProject });
+      const office = completedOfficeReport(first, officeProject);
+      try {
+        for (const format of ["docx", "pdf"]) {
+          const input = { format, expectedSha256: office.canonical.sha256, origin: "https://s3.agat.example" };
+          const exported = (await first.exportBusinessReportArtifact(String(office.canonical.id), input, officeProject))!;
+          const repeated = (await second.exportBusinessReportArtifact(String(office.canonical.id), input, officeProject))!;
+          assert.equal(repeated.created, false); assert.deepEqual(repeated.artifact, exported.artifact);
+          const download = second.getArtifactDownload(String(exported.artifact.id), officeProject)!;
+          assert.equal(createHash("sha256").update(fs.readFileSync(download.filePath)).digest("hex"), exported.artifact.sha256);
+          const metadata = first.db.prepare("SELECT storage_backend, object_version_id, content_blob, rendering_json FROM artifacts WHERE id = ?").get(String(exported.artifact.id))!;
+          assert.equal(metadata.storage_backend, "s3"); assert.equal(metadata.content_blob, null);
+          assert.ok(metadata.object_version_id); assert.equal(JSON.parse(String(metadata.rendering_json)).sourceArtifactId, office.canonical.id);
+        }
+      } finally { runWithPostgresSystemScope(() => first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(office.worker.id)); }
+      const officeFiles = first.listRunArtifacts(office.runId).length;
+      enterPostgresTenantScope(officeProject);
+      assert.equal(first.db.prepare("DELETE FROM runs WHERE id = ?").run(office.runId).changes, 1);
+      const officeDeletes = runWithPostgresSystemScope(() => first.db.prepare("SELECT COUNT(*) AS count FROM artifact_storage_outbox WHERE project_id = ? AND status = 'pending'").get(officeProject));
+      assert.equal(Number(officeDeletes!.count), officeFiles, "cascade must enqueue the original and both office formats once");
+      assert.equal(runWithPostgresSystemScope(() => first.runArtifactLifecycle(20)).delivered, officeFiles);
+      enterPostgresTenantScope(legacy!.projectId);
 
       const firstDownload = first.getArtifactDownload(legacy!.artifactId, legacy!.projectId);
       const secondDownload = second.getArtifactDownload(legacy!.artifactId, legacy!.projectId);

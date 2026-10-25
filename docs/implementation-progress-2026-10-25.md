@@ -16,6 +16,8 @@
 | USE-004, чтение результата | Безопасный форматированный вид, точные source links, raw/download fallback при сбое renderer | [#229](https://github.com/Solutions-of-Security/Agat/pull/229), `a6122d39c594bb17eb4fc0cec70bb8ad4682d99f` |
 | SP-001/SP-005, backend v2 | Свои коллекции, versioned manifest, exact history, diff, install/activate/rollback и v1 compatibility | [#230](https://github.com/Solutions-of-Security/Agat/pull/230), `3d69bf5826fe2d03789e08ec864d66d10c289c48` |
 | SP-001/SP-005, UI v2 | Release/sources/diff/history, update/rollback и структурированный вопрос/период | [#231](https://github.com/Solutions-of-Security/Agat/pull/231), `3ad622ea61302445415af919419bc4f8bebbb67a` |
+| USE-003 / UX-206, проверка извлечения | Scope/gaps PDF/DOCX, exact review до индексации и model lease | [#232](https://github.com/Solutions-of-Security/Agat/pull/232), `0281c5e4288e3014dcbb157e9eeabf4b93fb1d0b` |
+| USE-003, dedupe | Original bytes identity одной коллекции, сохранение review/vectors, parser busy 503 | [#233](https://github.com/Solutions-of-Security/Agat/pull/233), `e9b1dad304a1100cb3ad125728f5dddfb2f157de` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -89,9 +91,9 @@ CI на `850f37f468616889fee70257228f19ac1c4eee6e` выявил wildcard fixture
 влиявший на последующие retrieval tests. Отказ воспроизведён; модель fixture
 ограничена и worker выключается при cleanup. Пять последовательных PostgreSQL
 checks с budget/lease/isolation passed. Новый head
-`55e69df1de70467dccfe0899988c242093641c79` проходит полный CI перед merge.
+`55e69df1de70467dccfe0899988c242093641c79` успешно прошёл required, все verify jobs и CodeQL. Merge #232 — `0281c5e4288e3014dcbb157e9eeabf4b93fb1d0b`.
 
-## Подготовленная дедупликация USE-003
+## Поставленная дедупликация USE-003
 
 Ветка `codex/knowledge-file-dedupe` реализует
 [повторную загрузку исходных bytes](./knowledge-file-deduplication.md):
@@ -107,15 +109,20 @@ dedupe tests, включая добавленный reindex saturation case; 70 
 вернули один 201 и три 200 с одним document/job/queued event. Скриншоты desktop
 и mobile просмотрены: notice показывает сохранённое имя, review сохраняется,
 переполнения по ширине, console warnings/errors и overlay нет. Browser plugin
-недоступен, использован Playwright. Links/catalog прошли. CI и merge этапа
-будут записаны после завершения поставки предыдущего этапа. Дедупликация включает
-исправление изоляции fixture из #232; её merge выполняется после merge #232.
+недоступен, использован Playwright. Links/catalog прошли. Final head `80a18b4154e2534d9b4938be8b13b0d967aacbf2` прошёл required, все verify jobs и CodeQL; merge #233 — `e9b1dad304a1100cb3ad125728f5dddfb2f157de`, после #232.
+
+## Текущий этап USE-004: DOCX/PDF
+
+Ветка `codex/business-report-office-export` добавляет [экспорт сохранённого проверенного отчёта](./business-report-office-export.md), schema 34, exact source/renderer identity и download из результата запуска. Оба формата используют одно дерево без model calls. Legacy receipt восстанавливается только по точному stage/graph/event; при отсутствии доказательств доступен исходный файл.
+
+Проверены 381 coordinator tests / 28 opt-in skips, 70 web tests, 32 browser checks, typechecks/builds, четыре concurrent requests двух PostgreSQL replicas и offline apply/verify/rehearsal. Перепроверка выявила и исправила PDF footer с лишними страницами и неверную pre-transform checksum сверку self-referenced artifacts при migration. На финальных samples просмотрены все 19 страниц (DOCX 2/8, PDF 2/7); exact source URI, все 25 table IDs и 50 source lines подтверждены. [QA manifest](./qualification/internal-report/office-export-2026-10-25.json) фиксирует bytes/hashes/pages. Настоящий desktop/mobile UI скачивает оба формата и повтор использует тот же artifact.
+
+Локальный Docker image дошёл до export layers, затем storage Docker Desktop отказал с input/output и read-only filesystem; на host осталось 244 МиБ. S3 replay прерван средой. Эти попытки не считаются PASS. В required CI добавлен production image/renderer smoke; полный S3 gate уже входит в integration matrix. CI/merge будут зафиксированы после проверки final head.
 
 ## Границы и следующий остаток
 
-- USE-003: завершить поставку проверки частичного извлечения и dedupe;
-  квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: DOCX/PDF из canonical content; append-only accept/rework на exact artifact/run.
+- USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
+- USE-004: завершить CI/поставку DOCX/PDF; затем append-only accept/rework на exact artifact/run.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением

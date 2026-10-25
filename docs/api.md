@@ -101,9 +101,11 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/process-instances/:id/cancel` | Отменить активный экземпляр и его run |
 | `GET` | `/runs/:id` | Один запуск и его этапы |
 | `GET` | `/runs/:id/trace` | Trace, outputs, artifacts, execution manifest и eval comparison |
+| `GET` | `/runs/:id/artifacts` | Project-scoped metadata файлов без содержимого и технической трассировки |
 | `POST` | `/runs/:id/replay` | Создать один replay либо два A/B-кандидата (`admin/designer/operator`) |
 | `POST` | `/runs` | Создать запуск |
 | `GET` | `/artifacts/:id/download` | Скачать authenticated артефакт по ID |
+| `POST` | `/artifacts/:id/export` | DOCX/PDF из сохранённого проверенного Markdown; `{ format, expectedSha256, origin }`, 201 новый / 200 существующий файл; read-roles и legacy admin token, [контракт](./business-report-office-export.md) |
 | `PATCH` | `/settings/scheduler` | Изменить глобальный режим |
 | `PATCH` | `/settings/model-router` | Изменить глобальную Model Router policy (`admin`) |
 | `POST` | `/approvals/:stageId` | `approve` с ответами формы или `reject` с причиной |

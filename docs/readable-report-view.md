@@ -49,7 +49,9 @@ Design sources reviewed 25 October 2026:
 The implementation does not enable raw HTML plugins or weaken the default URL
 transform; scoped citation checks add another restriction on active links.
 
-Remaining USE-004 scope is DOCX/PDF export from the same canonical content and a
-persisted accept/rework decision tied to exact artifact version and run. Real
+[DOCX/PDF export](./business-report-office-export.md) now uses the saved canonical
+Markdown and appears directly in the run result, including runs saved to history.
+Remaining USE-004 scope is a persisted accept/rework decision tied to exact
+artifact version and run. Real
 model/business acceptance, physical mobile devices and screen-reader usability
 remain separate qualification work.

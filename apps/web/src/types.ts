@@ -1104,6 +1104,9 @@ export interface Artifact {
   sizeBytes: number;
   sha256: string;
   createdAt: string;
+  rendering?: { format?: string; profile?: string; contentSha256?: string; sourceArtifactId?: string; sourceSha256?: string;
+    documentSha256?: string; rendererSha256?: string; origin?: string } | null;
+  sourceArtifactId?: string | null;
 }
 
 export interface RunDecisionObservation {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +12,7 @@ import { AgatStore } from "../src/database.js";
 import { migrateSqliteToPostgres } from "../src/sqlite-postgres-migrator.js";
 import { getInternalReportPack } from "../src/process-packs.js";
 import { pdfFile, acceptFixtureExtraction } from "./knowledge-file-fixtures.js";
+import { completedOfficeReport } from "./business-report-office-fixtures.js";
 
 const systemUrl = process.env.AGAT_TEST_MIGRATION_POSTGRES_URL ?? "";
 const runtimeUrl = process.env.AGAT_TEST_MIGRATION_RUNTIME_URL ?? "";
@@ -36,6 +38,7 @@ describe("SQLite to PostgreSQL migration integration", {
     let packProcessId = "";
     let reviewedDocumentId = "";
     let extractionRevision = "";
+    let officeSourceId = "", officeExportId = "", officeSha256 = "";
     const source = new AgatStore(sourcePath, {
       temporalProcesses: true,
       region: "eu-migration-test",
@@ -52,6 +55,11 @@ describe("SQLite to PostgreSQL migration integration", {
       acceptFixtureExtraction(source, document);
       const renamed = await source.uploadKnowledgeDocument(String(fileCollection.id), { name: "Renamed.pdf", mediaType: "application/pdf", contentBase64: pdfFile().toString("base64") });
       assert.equal(renamed.id, document.id); assert.equal(renamed.status, "pending");
+      const office = completedOfficeReport(source);
+      officeSourceId = String(office.canonical.id);
+      const exported = (await source.exportBusinessReportArtifact(officeSourceId, { format: "docx", expectedSha256: office.canonical.sha256, origin: "https://migration.agat.example" }))!;
+      officeExportId = String(exported.artifact.id); officeSha256 = String(exported.artifact.sha256);
+      source.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(office.worker.id);
       const node = source.registerNode({
         enrollmentToken: "test",
         name: "migration-node",
@@ -160,6 +168,12 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.equal(reviewed.rows[0].extraction_revision, extractionRevision);
         assert.equal(JSON.parse(reviewed.rows[0].extraction_review_json).extractionRevision, extractionRevision);
         assert.equal(JSON.parse(reviewed.rows[0].extraction_report_json).profile, "pdf-text-layer.v1");
+        const office = await client.query("SELECT source_artifact_id, rendering_json, export_key, content_blob, sha256 FROM artifacts WHERE id = $1", [officeExportId]);
+        assert.equal(office.rowCount, 1); assert.equal(office.rows[0].source_artifact_id, officeSourceId);
+        assert.equal(JSON.parse(office.rows[0].rendering_json).format, "docx");
+        assert.match(office.rows[0].export_key, /^[a-f0-9]{64}$/);
+        assert.equal(office.rows[0].sha256, officeSha256);
+        assert.equal(createHash("sha256").update(office.rows[0].content_blob).digest("hex"), officeSha256);
       } finally {
         await client.end();
       }
