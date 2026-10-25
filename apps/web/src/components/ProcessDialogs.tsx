@@ -26,7 +26,7 @@ interface NewProcessDialogProps extends DialogStateProps {
   agents: Agent[];
   onSubmit: (payload: CreateProcessRequest) => void;
   onPackInstalled: () => void;
-  onPackRun: (runId: string) => void;
+  onPackRun: (runId: string) => void | Promise<void>;
 }
 
 export function NewProcessDialog({ open, busy, error, processes, agents, onClose, onSubmit, roles, onPackInstalled, onPackRun }: NewProcessDialogProps) {
@@ -109,7 +109,7 @@ export function NewProcessDialog({ open, busy, error, processes, agents, onClose
   }
 
   return (
-    <dialog className="run-dialog process-dialog process-catalog-dialog" ref={dialogRef} aria-labelledby="new-process-dialog-title" onCancel={onClose} onClose={onClose}>
+    <dialog className="run-dialog process-dialog process-catalog-dialog" ref={dialogRef} aria-labelledby="new-process-dialog-title" onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <form ref={formRef} onSubmit={submit}>
         <div className="dialog-head">
           <div><h2 id="new-process-dialog-title">Новый процесс</h2><p>Установите готовый пакет или выберите схему для настройки</p></div>

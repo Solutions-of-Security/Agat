@@ -44,7 +44,18 @@ rehearsal rollback прошли. Гонка HTTP 201, найденная реа�
 cleanup пытался закрыть глобальную replica под tenant scope. Cleanup переведён в
 system scope; concurrent pack test вместе со следующим schema-upgrade test прошли
 на PostgreSQL. Production migration gate не ослаблялся. Повторный полный CI
-обязателен до merge. UI v2 реализуется отдельно следующим этапом.
+обязателен до merge.
+
+Ветка `codex/report-pack-installer-v2` добавляет UI следующего этапа: выбор
+release/коллекций, exact diff, install/update/rollback/history, форму вопроса и
+периода. 68 web tests, все workspace typechecks и production builds прошли.
+Оба Chromium UI пути 1440×1100 и 390×844 прошли на настоящем coordinator:
+v1 compatibility → binary CSV → v2 → update/rollback → structured request →
+approval → Markdown → keyboard source highlight → reload bindings. Screenshots
+в системном temp просмотрены; console warnings/errors и overlay отсутствуют.
+Browser plugin not available — использован Playwright. Общая browser-регрессия:
+30 desktop/mobile checks прошли; удалённый CI фиксируется отдельно. Установка и synthetic worker не означают
+квалификацию модели или пилота.
 
 ## Границы и следующий остаток
 

@@ -1,6 +1,6 @@
 // Real UI and coordinator; only the model/embeddings worker is deterministic.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { build } from "vite";
@@ -11,6 +11,8 @@ import { getInternalReportPack } from "../../apps/coordinator/src/process-packs.
 
 const { chromium } = await import(process.env.AGAT_PLAYWRIGHT_MODULE || "playwright");
 const artifactsDir = mkdtempSync(path.join(tmpdir(), "agat-pack-ui-"));
+const screenshotDir = path.resolve(process.env.AGAT_PACK_UI_SCREENSHOTS || tmpdir());
+mkdirSync(screenshotDir, { recursive: true });
 const store = new AgatStore(":memory:", { seedDemo: false, artifactsDir });
 store.updateModelRouterPolicy({ enabled: false });
 const token = "process-pack-ui-test-only";
@@ -38,15 +40,18 @@ try {
     lastPage = page;
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    page.on("console", (message) => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
     await page.goto(`${base}#processes`);
     assert.match(await page.title(), /Агат|Agat/i);
     await page.getByRole("button", { name: "Новый процесс", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Новый процесс" });
     await dialog.getByRole("button", { name: "Установить пакет", exact: true }).waitFor();
+    assert.equal(await dialog.getByLabel("Версия пакета", { exact: true }).inputValue(), "2", "a cold project offers the user-document release");
+    assert.equal(await dialog.getByRole("button", { name: "Установить пакет", exact: true }).isDisabled(), true, "empty source selection cannot install");
+    await dialog.getByLabel("Версия пакета", { exact: true }).selectOption("1");
     await page.waitForFunction(() => !document.querySelector("#install-report-pack")?.disabled);
     await dialog.evaluate((element) => { element.scrollTop = 0; });
-    await page.screenshot({ path: path.join(tmpdir(), `agat-pack-${projectId}-overview.png`), fullPage: false });
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-${projectId}-overview.png`), fullPage: false });
     assert.match(await dialog.innerText(), /Пакет ещё не установлен в текущем проекте/);
     if (projectId === "desktop") assert.match(await dialog.innerText(), /нет свободного online worker/);
     await dialog.getByRole("button", { name: "Установить пакет", exact: true }).click();
@@ -56,7 +61,7 @@ try {
     assert.ok(installation);
     const recovery = dialog.getByRole("link", { name: "Завершить индексацию коллекции" });
     assert.equal(await recovery.getAttribute("href"), `#knowledge?collectionId=${installation.knowledgeCollectionIds[0]}`);
-    await page.screenshot({ path: path.join(tmpdir(), `agat-pack-${projectId}-blocked.png`), fullPage: false });
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-${projectId}-blocked.png`), fullPage: false });
     await recovery.click();
     await page.waitForURL(/#knowledge\?collectionId=/);
     assert.equal(await dialog.isVisible(), false);
@@ -76,7 +81,7 @@ try {
     assert.equal(await page.locator("vite-error-overlay").count(), 0);
     const bounds = await dialog.boundingBox();
     assert.ok(bounds.width <= viewport.width && bounds.x >= 0);
-    await page.screenshot({ path: path.join(tmpdir(), `agat-pack-${projectId}-ready.png`), fullPage: false });
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-${projectId}-ready.png`), fullPage: false });
     await dialog.getByRole("button", { name: "Запустить пример", exact: true }).click();
     await page.waitForURL(/#runs\//);
     const runId = new URL(page.url()).hash.split("/")[1];
@@ -92,13 +97,97 @@ try {
     const artifact = store.listRunArtifacts(runId).find((item) => item.name === "internal-report.md"); assert.ok(artifact);
     const download = await context.request.get(`${apiBase}/api/v1/artifacts/${artifact.id}/download`, { headers: { "x-agat-admin-token": token, "x-agat-project-id": projectId } });
     assert.match(await download.text(), /SUPPORT-DEMO/);
+
+    // Same real project, now a binary CSV through the common ingest API, then v1 -> v2 -> v1 -> v2.
+    const headers = { "x-agat-admin-token": token, "x-agat-project-id": projectId };
+    const createdCollection = await context.request.post(`${apiBase}/api/v1/knowledge/collections`, { headers,
+      data: { name: `My report sources ${projectId}`, embeddingModel: pack.defaults.embeddingModel, chunkSize: 4000, chunkOverlap: 0 } });
+    assert.equal(createdCollection.status(), 201); const ownCollection = await createdCollection.json();
+    const uploaded = await context.request.post(`${apiBase}/api/v1/knowledge/collections/${ownCollection.id}/documents/upload`, { headers,
+      data: { name: "Counts.csv", mediaType: "text/csv", contentBase64: Buffer.from("period,requests\n2026-07,100\n2026-08,120\n").toString("base64") } });
+    assert.equal(uploaded.status(), 201); const ownDocument = await uploaded.json();
+    await page.goto(`${base}#processes?packId=internal-report`);
+    await dialog.getByLabel("Версия пакета", { exact: true }).selectOption("2");
+    assert.equal(await dialog.getByRole("button", { name: "Установить пакет", exact: true }).isDisabled(), true);
+    await dialog.getByRole("checkbox", { name: new RegExp(`My report sources ${projectId}`) }).check();
+    await dialog.getByRole("region", { name: "Различия версий", exact: true }).waitFor();
+    await dialog.getByRole("button", { name: "Установить пакет", exact: true }).click();
+    await dialog.getByRole("button", { name: "Переключить на v2", exact: true }).waitFor();
+    assert.equal(store.getProcessPackInstallation(pack.id, projectId).version, 1, "installation preserves the active release");
+    const ownInstallation = store.getProcessPackInstallation(pack.id, projectId, 2);
+    assert.deepEqual(ownInstallation.knowledgeCollectionIds, [ownCollection.id]);
+    assert.equal(store.listProcesses(projectId).length, 2);
+    assert.equal(await dialog.getByRole("checkbox", { name: new RegExp(`My report sources ${projectId}`) }).isDisabled(), true);
+    await dialog.getByRole("region", { name: "Различия версий", exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-diff.png`), fullPage: false });
+    for (let job = store.leaseKnowledgeEmbedding(node); job; job = store.leaseKnowledgeEmbedding(node)) {
+      store.completeKnowledgeEmbedding(node, job.leaseId, job.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0, 0] })));
+    }
+    await dialog.getByRole("button", { name: "Проверить снова" }).click();
+    await dialog.getByRole("button", { name: "Переключить на v2", exact: true }).click();
+    await dialog.getByText("Активная версия пакета: v2.", { exact: false }).waitFor();
+    await dialog.getByLabel("Версия пакета", { exact: true }).selectOption("1");
+    await dialog.getByRole("button", { name: "Вернуться к v1", exact: true }).click();
+    await dialog.getByText("Активная версия пакета: v1.", { exact: false }).waitFor();
+    assert.equal(store.getProcessPackInstallation(pack.id, projectId).version, 1);
+    await dialog.getByLabel("Версия пакета", { exact: true }).selectOption("2");
+    await dialog.getByRole("button", { name: "Переключить на v2", exact: true }).click();
+    await dialog.getByText("Активная версия пакета: v2.", { exact: false }).waitFor();
+    assert.equal(store.listProcesses(projectId).length, 2, "activation and rollback do not duplicate resources");
+    await dialog.getByLabel("Вопрос для отчёта", { exact: true }).fill("Сравни число заявок и покажи изменение со ссылкой на CSV.");
+    assert.equal(await dialog.getByRole("button", { name: "Запустить отчёт", exact: true }).isDisabled(), true, "period is mandatory");
+    await dialog.getByLabel("Период документов", { exact: true }).fill("Июль и август 2026");
+    await dialog.getByLabel("Требования к отчёту", { exact: true }).fill("Покажи формулу\nОтдели причины от фактов");
+    await dialog.locator(".process-pack__history > summary").click();
+    assert.equal(await dialog.locator(".process-pack__history > ul > li").count(), 2);
+    await dialog.getByRole("region", { name: "Задание для отчёта", exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-request.png`), fullPage: false });
+    assert.ok((await dialog.boundingBox()).width <= viewport.width);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    await dialog.getByRole("button", { name: "Запустить отчёт", exact: true }).click();
+    await page.waitForURL(/#runs\//);
+    const ownRunId = new URL(page.url()).hash.split("/")[1];
+    assert.equal(JSON.parse(store.getRun(ownRunId, projectId).input).period, "Июль и август 2026");
+    let sourceMarker;
+    for (const role of getInternalReportPack(2).roles) {
+      const lease = store.leaseNext(node); assert.ok(lease); assert.equal(lease.agent.id, ownInstallation.agentIds[role.id]);
+      const retrieved = store.searchKnowledge(node, lease.leaseId, { queries: [{ embeddingModel: pack.defaults.embeddingModel, collectionIds: [ownCollection.id], vector: [1, 0, 0] }] });
+      sourceMarker = retrieved.hits[0].marker;
+      store.completeLease(node, lease.leaseId, role.id === "reviewer" ? JSON.stringify({ schemaVersion: "business-report.v1", status: "ready", summary: "Объём заявок вырос",
+        claims: [{ id: "counts", text: "100 → 120 заявок", sourceRefs: [sourceMarker] }],
+        calculations: [{ id: "growth", operation: "percent_change", operands: [100, 120], result: 20, sourceRefs: [sourceMarker] }], artifactRefs: [], limitations: ["Причины изменений неизвестны"] }) : `100 → 120 [${sourceMarker}].`);
+    }
+    assert.equal(store.getRun(ownRunId, projectId).status, "waiting_approval");
+    assert.equal(store.listRunArtifacts(ownRunId).length, 0);
+    const ownApproval = store.getRun(ownRunId, projectId).stages.find(stage => stage.status === "waiting_approval");
+    assert.equal((await context.request.post(`${apiBase}/api/v1/approvals/${ownApproval.id}`, { headers, data: { decision: "approve" } })).status(), 204);
+    const ownArtifact = store.listRunArtifacts(ownRunId).find(item => item.name === "internal-report.md"); assert.ok(ownArtifact);
+    const ownDownload = await context.request.get(`${apiBase}/api/v1/artifacts/${ownArtifact.id}/download`, { headers });
+    assert.equal(ownDownload.status(), 200); assert.ok((await ownDownload.text()).includes(`documentId=${ownDocument.id}`));
+    await page.reload();
+    const result = page.locator("#run-result");
+    await result.getByRole("button", { name: "Форматированный", exact: true }).click();
+    await result.locator(".report-markdown table").waitFor();
+    await result.locator(".report-markdown").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-report.png`), fullPage: false });
+    await result.locator(".report-markdown").getByRole("link", { name: `[${sourceMarker}]`, exact: true }).first().focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(new RegExp(`documentId=${ownDocument.id}`));
+    const highlight = page.getByRole("region", { name: "Предпросмотр документа" }).locator("mark");
+    await highlight.waitFor(); assert.match(await highlight.innerText(), /100/); assert.match(await highlight.innerText(), /120/);
+    await page.goto(`${base}#processes?packId=internal-report`); await page.reload();
+    assert.equal(await dialog.getByLabel("Версия пакета", { exact: true }).inputValue(), "2");
+    assert.equal(await dialog.getByRole("checkbox", { name: new RegExp(`My report sources ${projectId}`) }).isChecked(), true);
+    assert.equal(store.listProcesses(projectId).length, 2);
+    assert.equal(await page.locator("vite-error-overlay").count(), 0);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${projectId}: ${base} · install, recovery target, disabled/ready start, run, approval, artifact; no console errors`);
+    console.log(`PASS ${projectId}: ${base} · v1 compatibility; binary CSV -> v2 selection/diff/install -> update/rollback -> structured request -> validated report -> exact source; no console errors`);
     await context.close();
   }
 } catch (error) {
   if (lastPage && !lastPage.isClosed()) {
-    await lastPage.screenshot({ path: path.join(tmpdir(), "agat-pack-ui-failure.png") });
+    await lastPage.screenshot({ path: path.join(screenshotDir, "agat-pack-ui-failure.png") });
+    console.error(`UI failure URL: ${lastPage.url()}`);
     console.error((await lastPage.locator("body").innerText()).slice(-6000));
   }
   throw error;

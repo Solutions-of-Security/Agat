@@ -793,7 +793,7 @@ export default function App() {
       <NewProcessDialog
         key={currentProjectId}
         onPackInstalled={() => { void refresh(); }}
-        onPackRun={(runId) => { setProcessDialogOpen(false); void refresh(); openRun(runId); }}
+        onPackRun={async (runId) => { await refresh(); setProcessDialogOpen(false); await openRun(runId); }}
         roles={user?.roles ?? []}
         open={processDialogOpen}
         processes={overview.processes}
