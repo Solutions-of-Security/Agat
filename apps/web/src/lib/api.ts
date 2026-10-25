@@ -310,6 +310,9 @@ export const api = {
     request<void>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   downloadArtifact: (artifactId: string) =>
     requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/download`),
+  runArtifacts: (runId: string, signal?: AbortSignal) => request<{ artifacts: import("../types").Artifact[] }>(`/runs/${encodeURIComponent(runId)}/artifacts`, { signal }),
+  exportArtifact: (artifactId: string, payload: { format: "docx" | "pdf"; expectedSha256: string; origin: string }) =>
+    request<{ artifact: import("../types").Artifact; created: boolean }>(`/artifacts/${encodeURIComponent(artifactId)}/export`, { method: "POST", body: JSON.stringify(payload) }),
   localWorkers: (signal?: AbortSignal) =>
     request<LocalWorkerLauncherSnapshot>("/local-workers", { signal }),
   launchLocalWorkers: (payload: LaunchLocalWorkersRequest) =>

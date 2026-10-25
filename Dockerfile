@@ -32,6 +32,8 @@ WORKDIR /app
 RUN mkdir -p /data && chown node:node /data
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/apps/coordinator/dist ./apps/coordinator/dist
+COPY --from=build --chown=node:node /app/apps/coordinator/assets ./apps/coordinator/assets
+COPY --chown=node:node docs/licenses/DejaVuSans-LICENSE.txt ./docs/licenses/DejaVuSans-LICENSE.txt
 COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist
 
 USER node

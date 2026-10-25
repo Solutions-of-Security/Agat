@@ -8,6 +8,7 @@ import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext,
 import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
 import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
 import { KnowledgeParserBusyError } from "./knowledge-files.js";
+import { BusinessReportOfficeError, normalizeOfficeOrigin } from "./business-report-office-document.js";
 
 import {
   loadConfig,
@@ -2298,6 +2299,30 @@ export function createCoordinatorServer(
         return;
       }
 
+      const artifactRunId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/artifacts$/);
+      if (request.method === "GET" && artifactRunId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const result = store.getRunArtifacts(artifactRunId, auth.projectId);
+        if (!result) throw new HttpError(404, "Запуск не найден");
+        json(response, 200, result);
+        return;
+      }
+
+      const exportArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/export$/);
+      if (request.method === "POST" && exportArtifactId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const body = await readJson<{ format: unknown; expectedSha256: unknown; origin: unknown }>(request);
+        const origin = normalizeOfficeOrigin(body?.origin);
+        // Hash navigation in exported files must target this installation. The
+        // normalized origin is part of the persisted derivative identity.
+        const host = typeof request.headers.host === "string" ? request.headers.host : "";
+        if (!host || new URL(origin).host !== new URL(`${new URL(origin).protocol}//${host}`).host) throw new HttpError(400, "Ссылки экспорта должны вести на текущий адрес АГАТ");
+        const result = await store.exportBusinessReportArtifact(exportArtifactId, body, auth.projectId, auth.subject);
+        if (!result) throw new HttpError(404, "Артефакт не найден");
+        json(response, result.created ? 201 : 200, result);
+        return;
+      }
+
       const artifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/download$/);
       if (request.method === "GET" && artifactId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
@@ -2816,6 +2841,7 @@ export function createCoordinatorServer(
       }
       const status = error instanceof HttpError
         || error instanceof KnowledgeParserBusyError
+        || error instanceof BusinessReportOfficeError
         || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError
