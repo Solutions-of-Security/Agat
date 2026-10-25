@@ -56,7 +56,9 @@ Actor берётся из аутентифицированного subject. Со
 actor и время. Audit event содержит hashes, revision и hash причины без её текста.
 Tenant/project scope и `admin/designer` проверяются сервером.
 
-Подтверждение сериализуется блокировкой строки документа. Повтор того же
+Подтверждение сериализуется блокировкой коллекции и строки документа.
+Review/reindex сохраняют порядок collection → existing job → document,
+совместимый с завершением embeddings. Повтор того же
 запроса возвращает существующую квитанцию и не создаёт новую embedding job
 или audit event. Повторный разбор сбрасывает квитанцию, отзывает старые leases
 и всегда получает новую UUID revision, даже если bytes и текст совпали.
@@ -111,6 +113,9 @@ WordprocessingML состоит из нескольких stories/parts, а не
   restart, одинаковые bytes при новой revision, legacy migration, provenance;
 - настоящий PostgreSQL и две coordinator replicas: четыре одновременных review,
   одна job/event, foreign project denial, stale revision rejection;
+- принудительные PostgreSQL barriers: review против reindex и embedding complete
+  против reindex; новое извлечение не наследует job, stale reindex не стирает
+  принятый текст и не создаёт deadlock;
 - offline SQLite → PostgreSQL apply/verify и rehearsal rollback;
 - desktop/mobile Chromium: загрузка, пустая страница, точные original bytes,
   выключенный checkbox, обязательная причина, подтверждение, reload и сброс

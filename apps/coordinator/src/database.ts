@@ -8747,7 +8747,7 @@ export class AgatStore {
     const requiresReview = !document.parseError && Boolean(document.extraction?.reviewRequired);
     try {
       this.transaction(() => {
-        const collection = this.db.prepare("SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?")
+        const collection = this.db.prepare(`SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`)
           .get(collectionId, project) as Row | undefined;
         if (!collection) throw new Error("Knowledge collection не найдена");
         if (previous) {
@@ -8819,6 +8819,13 @@ export class AgatStore {
     const project = this.requireProject(projectId);
     const input = validateExtractionReview(raw);
     return this.transaction(() => {
+      if (this.stateStoreDriver === "postgresql") {
+        // Parent -> job -> document is also the embedding completion order.
+        // NO KEY UPDATE lets unrelated FK inserts continue using the collection.
+        const collection = this.db.prepare(`SELECT c.id FROM knowledge_collections c JOIN knowledge_documents d ON d.collection_id = c.id
+          WHERE d.id = ? AND c.project_id = ? FOR NO KEY UPDATE OF c`).get(documentId, project);
+        if (!collection) return null;
+      }
       const row = this.knowledgeDocumentMetadataRow(documentId, project, true);
       if (!row) return null;
       const report = parseJson<KnowledgeExtractionReport | null>(row.extraction_report_json, null);

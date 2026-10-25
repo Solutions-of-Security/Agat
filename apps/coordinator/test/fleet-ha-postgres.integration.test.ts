@@ -441,8 +441,8 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         const waitForDocumentLock = (index: number) => eventually(async () => {
           await barrier.query("SELECT pg_stat_clear_snapshot()");
           const rows = await barrier.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [`agat-pack-${suffix}-${index}-tenant`]);
-          return rows.rows.some(row => /knowledge_documents/.test(String(row.query)));
-        }, "independent replica must reach the document barrier");
+          return rows.rows.some(row => /knowledge_documents|knowledge_collections/.test(String(row.query)));
+        }, "independent replica must reach the document or parent collection barrier");
         const accepting = reviewRequest(0, project, fixtureExtractionReview(current));
         await waitForDocumentLock(0);
         const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
@@ -462,6 +462,38 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           assert.equal((latest.extraction as { revision: string }).revision, (current.extraction as { revision: string }).revision);
         }
       } finally { await barrier.query("ROLLBACK").catch(() => {}); await barrier.end(); }
+      const fresh = (await first.reindexKnowledgeDocument(String(document.id), project))!;
+      first.reviewKnowledgeExtraction(String(document.id), fixtureExtractionReview(fresh), project, "fixture-reviewer");
+      const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [],
+        embeddingModels: [project], region: cellRegion, residencyDomain: cellResidencyDomain });
+      const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document.id);
+      const collectionBarrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
+      try {
+        await collectionBarrier.connect(); await collectionBarrier.query("BEGIN");
+        await collectionBarrier.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+        await collectionBarrier.query("SELECT id FROM knowledge_collections WHERE id = $1 FOR NO KEY UPDATE", [fileCollection]);
+        const waitForLock = (name: string) => eventually(async () => {
+          await collectionBarrier.query("SELECT pg_stat_clear_snapshot()");
+          const result = await collectionBarrier.query(`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE a.application_name = $1 AND NOT l.granted`, [name]);
+          return result.rows.length > 0;
+        }, "both completion and reindex must wait at the collection barrier");
+        const completing = fetch(`http://127.0.0.1:${children[0]!.port}/api/v1/workers/knowledge/leases/${lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ embeddings: lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })) }), signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-0-system`);
+        const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
+          method: "POST", headers: { "x-agat-admin-token": token, "x-agat-project-id": project }, signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-1-tenant`);
+        await collectionBarrier.query("COMMIT");
+        const completed = await completing;
+        assert.equal(completed.status, 200, await completed.text());
+        const stale = await reindexing;
+        assert.equal(stale.status, 400); assert.match(await stale.text(), /Документ изменился/);
+        assert.equal(first.getKnowledgeDocument(String(document.id), project)!.status, "ready");
+      } finally { await collectionBarrier.query("ROLLBACK").catch(() => {}); await collectionBarrier.end(); }
       enterPostgresTenantScope(foreign);
       assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
       assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);
