@@ -421,7 +421,11 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
       assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);
     } finally {
-      await Promise.all(children.map(child => child.stop())); first.close(); fs.rmSync(artifacts, { recursive: true, force: true });
+      await Promise.all(children.map(child => child.stop()));
+      // The last assertions intentionally enter a tenant scope. Replica shutdown
+      // updates a global table and must release the migration gate as system.
+      runWithPostgresSystemScope(() => first.close());
+      fs.rmSync(artifacts, { recursive: true, force: true });
     }
   });
 

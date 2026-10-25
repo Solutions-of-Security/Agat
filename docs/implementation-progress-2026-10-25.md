@@ -13,30 +13,38 @@
 | SP-002, вход и effective prompt | Input до создания run; subprocess/replay/test-node; схема в pinned prompt и manifest | [#226](https://github.com/Solutions-of-Security/Agat/pull/226), `44aa72fd02c46feca4877508586fe89fbe00bac3` |
 | USE-003, таблицы | CSV/XLSX values-only, original bytes, точные ячейки и cell-aware chunks, preview/retry/provenance | [#227](https://github.com/Solutions-of-Security/Agat/pull/227), `ddc9af9b1fcc05ced887d74546f2b65c2d30097a` |
 | USE-004 / RUN-103, Markdown artifact | Детерминированный отчёт из JSON, повторная проверка evidence после approval wait, точные скачиваемые bytes | [#228](https://github.com/Solutions-of-Security/Agat/pull/228), `cb4cefe17acf5667608b9c4ea506fc9029b9a7e4` |
+| USE-004, чтение результата | Безопасный форматированный вид, точные source links, raw/download fallback при сбое renderer | [#229](https://github.com/Solutions-of-Security/Agat/pull/229), `a6122d39c594bb17eb4fc0cec70bb8ad4682d99f` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
 исправлена переносимым временным каталогом; исходный неуспешный прогон не
 считается PASS.
 
+Для [форматированного вида результата](./readable-report-view.md) выполнены 66 web
+tests, 19 Temporal/process tests, восемь desktop/mobile browser checks, typechecks
+и сборки. CodeQL обнаружил неточное сравнение hostname в network assertion теста;
+оно исправлено разбором URL, четыре затронутых UI checks повторно прошли.
+Изменение типов ScheduleSpec сохраняет runtime values.
+
 ## Следующий подготовленный этап
 
-Ветка `codex/readable-report-view` добавляет [форматированный вид результата](./readable-report-view.md),
-сохраняя raw text/download и точные citations. Выполнены 66 web tests,
-19 Temporal/process tests, восемь desktop/mobile browser checks, typechecks и
-сборки. Статус удалённого CI и merge нужно проверять в GitHub, а не выводить из
-этого локального evidence. Изменение типов ScheduleSpec сохраняет runtime values.
-
-Следующая ветка `codex/versioned-report-pack` добавляет
+[PR #230](https://github.com/Solutions-of-Security/Agat/pull/230), ветка
+`codex/versioned-report-pack`, добавляет
 [versioned report pack](./versioned-report-pack.md): v2 на коллекциях проекта,
 неизменную v1, exact manifests/history, install/diff/activate/rollback и schema v31.
 Пройдены 101 целевой тест, typechecks всех workspaces, coordinator build,
 docs links/catalog; настоящие PostgreSQL 17 и две coordinator replicas проверили
 четыре конкурентных install и tenant RLS. SQLite → PostgreSQL import/verify и
 rehearsal rollback прошли. Гонка HTTP 201, найденная реальным concurrent тестом,
-исправлена определением `created` под project lock. Полный docs replay запускается
-с сетью для исторических Git blobs partial clone; первоначальный sandbox-прогон
-с ошибками сети не считается PASS. UI v2 остаётся следующим этапом.
+исправлена определением `created` под project lock. Полный docs replay с сетью
+пройден: 1532 Python tests (4 штатных skips), Node checker tests, links и catalog.
+Первоначальный sandbox-прогон с ошибками сети не считается PASS.
+
+Полный CI HA нашёл оставленный fixture `ready` marker после tenant RLS assertions:
+cleanup пытался закрыть глобальную replica под tenant scope. Cleanup переведён в
+system scope; concurrent pack test вместе со следующим schema-upgrade test прошли
+на PostgreSQL. Production migration gate не ослаблялся. Повторный полный CI
+обязателен до merge. UI v2 реализуется отдельно следующим этапом.
 
 ## Границы и следующий остаток
 
