@@ -14,6 +14,7 @@
 | USE-003, таблицы | CSV/XLSX values-only, original bytes, точные ячейки и cell-aware chunks, preview/retry/provenance | [#227](https://github.com/Solutions-of-Security/Agat/pull/227), `ddc9af9b1fcc05ced887d74546f2b65c2d30097a` |
 | USE-004 / RUN-103, Markdown artifact | Детерминированный отчёт из JSON, повторная проверка evidence после approval wait, точные скачиваемые bytes | [#228](https://github.com/Solutions-of-Security/Agat/pull/228), `cb4cefe17acf5667608b9c4ea506fc9029b9a7e4` |
 | USE-004, чтение результата | Безопасный форматированный вид, точные source links, raw/download fallback при сбое renderer | [#229](https://github.com/Solutions-of-Security/Agat/pull/229), `a6122d39c594bb17eb4fc0cec70bb8ad4682d99f` |
+| SP-001/SP-005, backend v2 | Свои коллекции, versioned manifest, exact history, diff, install/activate/rollback и v1 compatibility | [#230](https://github.com/Solutions-of-Security/Agat/pull/230), `3d69bf5826fe2d03789e08ec864d66d10c289c48` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -28,8 +29,7 @@ tests, 19 Temporal/process tests, восемь desktop/mobile browser checks, ty
 
 ## Следующий подготовленный этап
 
-[PR #230](https://github.com/Solutions-of-Security/Agat/pull/230), ветка
-`codex/versioned-report-pack`, добавляет
+Поставленный [PR #230](https://github.com/Solutions-of-Security/Agat/pull/230) добавил
 [versioned report pack](./versioned-report-pack.md): v2 на коллекциях проекта,
 неизменную v1, exact manifests/history, install/diff/activate/rollback и schema v31.
 Пройдены 101 целевой тест, typechecks всех workspaces, coordinator build,
@@ -43,8 +43,20 @@ rehearsal rollback прошли. Гонка HTTP 201, найденная реа�
 Полный CI HA нашёл оставленный fixture `ready` marker после tenant RLS assertions:
 cleanup пытался закрыть глобальную replica под tenant scope. Cleanup переведён в
 system scope; concurrent pack test вместе со следующим schema-upgrade test прошли
-на PostgreSQL. Production migration gate не ослаблялся. Повторный полный CI
-обязателен до merge. UI v2 реализуется отдельно следующим этапом.
+на PostgreSQL. Production migration gate не ослаблялся. Полный локальный HA suite:
+114 tests passed. Повторный полный CI, все verify jobs и CodeQL прошли до merge.
+
+[PR #231](https://github.com/Solutions-of-Security/Agat/pull/231), ветка
+`codex/report-pack-installer-v2`, добавляет UI следующего этапа: выбор
+release/коллекций, exact diff, install/update/rollback/history, форму вопроса и
+периода. 68 web tests, все workspace typechecks и production builds прошли.
+Оба Chromium UI пути 1440×1100 и 390×844 прошли на настоящем coordinator:
+v1 compatibility → binary CSV → v2 → update/rollback → structured request →
+approval → Markdown → keyboard source highlight → reload bindings. Screenshots
+в системном temp просмотрены; console warnings/errors и overlay отсутствуют.
+Browser plugin not available — использован Playwright. Общая browser-регрессия:
+30 desktop/mobile checks прошли; удалённый CI фиксируется отдельно. Установка и synthetic worker не означают
+квалификацию модели или пилота.
 
 ## Границы и следующий остаток
 

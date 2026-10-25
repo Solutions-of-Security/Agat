@@ -1,4 +1,4 @@
-import type { ProcessPackInput, ProcessPackManifest, ProcessPackInstallation, ProcessPackPreview } from "../processPacks";
+import type { ProcessPackInput, ProcessPackCatalog, ProcessPackHistoryEntry, ProcessPackActivation, ProcessPackInstallation, ProcessPackPreview } from "../processPacks";
 import type {
   A2AEndpoint,
   A2AEndpointSecret,
@@ -385,9 +385,11 @@ export const api = {
       body: JSON.stringify({ enabled, reason }),
     }),
   processTemplates: () => request<ProcessTemplateCatalog>("/process-templates"),
-  processPacks: (signal?: AbortSignal) => request<{ packs: Array<ProcessPackManifest & { installation: ProcessPackInstallation | null }> }>("/process-packs", { signal }),
+  processPacks: (signal?: AbortSignal) => request<ProcessPackCatalog>("/process-packs", { signal }),
+  processPackHistory: (id: string, signal?: AbortSignal) => request<{ history: ProcessPackHistoryEntry[]; activeInstallation: ProcessPackInstallation | null }>(`/process-packs/${encodeURIComponent(id)}/history`, { signal }),
   previewProcessPack: (id: string, input: ProcessPackInput, signal?: AbortSignal) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(input), signal }),
   installProcessPack: (id: string, input: ProcessPackInput) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify(input) }),
+  activateProcessPack: (id: string, input: ProcessPackActivation) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/activate`, { method: "POST", body: JSON.stringify(input) }),
   createProcess: (payload: CreateProcessRequest) =>
     request<ProcessDefinition>("/processes", {
       method: "POST",

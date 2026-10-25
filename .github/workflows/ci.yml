@@ -74,6 +74,10 @@ jobs:
       - run: npm run build --workspace @agat/coordinator && npm run build --workspace @agat/web
       - name: Clean SQLite startup and first run on desktop and mobile
         run: npm run test:browser
+      - name: Report pack install, update, rollback and document report on desktop and mobile
+        env:
+          AGAT_PACK_UI_SCREENSHOTS: ${{ runner.temp }}/agat-pack-ui-evidence
+        run: npm run test:process-pack:ui
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
@@ -81,6 +85,7 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            ${{ runner.temp }}/agat-pack-ui-evidence/
           retention-days: 7
 
   integration:
