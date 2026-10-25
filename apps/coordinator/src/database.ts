@@ -46,6 +46,7 @@ import { BusinessInputValidationError, businessOutputContractDescriptor, busines
 import { BusinessReportRenderingError, normalizeBusinessReportFormat, renderValidatedBusinessReport } from "./business-report-markdown.js";
 import { renderBusinessReportOffice } from "./business-report-office.js";
 import { BUSINESS_REPORT_OFFICE_PROFILE, BUSINESS_REPORT_OFFICE_RENDERER_SHA256, BusinessReportOfficeError, normalizeOfficeFormat, normalizeOfficeOrigin } from "./business-report-office-document.js";
+import { BUSINESS_REPORT_DECISION_LIMIT, BUSINESS_REPORT_DECISION_PROFILE, BusinessReportDecisionError, normalizeBusinessReportDecision } from "./business-report-decisions.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -264,8 +265,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 34;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-business-report-office-v34";
+export const POSTGRES_SCHEMA_VERSION = 35;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-report-decisions-v35";
 
 const ARTIFACT_METADATA_FIELDS = ["id", "run_id", "stage_id", "name", "kind", "media_type", "relative_path", "size_bytes", "sha256",
   "storage_backend", "storage_state", "retention_until", "legal_hold", "deleted_at", "created_at", "rendering_json", "source_artifact_id", "export_key", "project_id"];
@@ -1521,6 +1522,34 @@ export class AgatStore {
         updated_at TEXT NOT NULL,
         published_at TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS business_report_decisions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+        artifact_sha256 TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision >= 1 AND revision <= 1000),
+        request_id TEXT NOT NULL,
+        actor_sha256 TEXT NOT NULL,
+        request_sha256 TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK(decision IN ('accepted', 'rework_requested')),
+        reason TEXT NOT NULL,
+        binding_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(artifact_id, revision),
+        UNIQUE(project_id, actor_sha256, request_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_decisions_run ON business_report_decisions(run_id);
+
+      CREATE TABLE IF NOT EXISTS business_report_rework_tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        decision_id TEXT NOT NULL UNIQUE REFERENCES business_report_decisions(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_rework_project ON business_report_rework_tasks(project_id, created_at);
 
       CREATE TABLE IF NOT EXISTS process_pack_installations (
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2980,7 +3009,24 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 34;");
+    if (this.stateStoreDriver === "sqlite") {
+      for (const table of ["business_report_decisions", "business_report_rework_tasks"]) this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${table}_immutable_update BEFORE UPDATE ON ${table}
+          BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+      `);
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS business_report_decisions_immutable_delete BEFORE DELETE ON business_report_decisions
+        WHEN EXISTS (SELECT 1 FROM projects WHERE id = OLD.project_id)
+          AND EXISTS (SELECT 1 FROM runs WHERE id = OLD.run_id)
+          AND EXISTS (SELECT 1 FROM artifacts WHERE id = OLD.artifact_id)
+        BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS business_report_rework_tasks_immutable_delete BEFORE DELETE ON business_report_rework_tasks
+        WHEN EXISTS (SELECT 1 FROM business_report_decisions d JOIN runs r ON r.id = d.run_id
+          JOIN artifacts a ON a.id = d.artifact_id JOIN projects p ON p.id = d.project_id WHERE d.id = OLD.decision_id)
+        BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+      `);
+    }
+    this.db.exec("PRAGMA user_version = 35;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -3122,10 +3168,20 @@ export class AgatStore {
             AND NOT (
               has_table_privilege(current_user, class_row.oid, 'SELECT')
               AND has_table_privilege(current_user, class_row.oid, 'INSERT')
-              AND has_table_privilege(current_user, class_row.oid, 'UPDATE')
-              AND has_table_privilege(current_user, class_row.oid, 'DELETE')
+              AND (class_row.relname IN ('business_report_decisions', 'business_report_rework_tasks')
+                OR (has_table_privilege(current_user, class_row.oid, 'UPDATE')
+                  AND has_table_privilege(current_user, class_row.oid, 'DELETE')))
             )
         ) AS missing_runtime_dml,
+        COUNT(*) FILTER (
+          WHERE class_row.relkind = 'r' AND class_row.relname IN ('business_report_decisions', 'business_report_rework_tasks')
+            AND (has_table_privilege(current_user, class_row.oid, 'UPDATE')
+              OR has_table_privilege(current_user, class_row.oid, 'DELETE')
+              OR has_table_privilege(?, class_row.oid, 'UPDATE')
+              OR has_table_privilege(?, class_row.oid, 'DELETE')
+              OR NOT has_table_privilege(?, class_row.oid, 'SELECT')
+              OR NOT has_table_privilege(?, class_row.oid, 'INSERT'))
+        ) AS invalid_report_history_privileges,
         COUNT(*) FILTER (
           WHERE class_row.relkind = 'r'
             AND (
@@ -3144,8 +3200,9 @@ export class AgatStore {
       FROM pg_class AS class_row
       JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
       WHERE namespace_row.nspname = current_schema() AND class_row.relkind IN ('r', 'S')
-    `).get() as Row | undefined;
+    `).get(this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!) as Row | undefined;
     if (Number(privileges?.missing_runtime_dml ?? 0) !== 0
+      || Number(privileges?.invalid_report_history_privileges ?? 0) !== 0
       || Number(privileges?.dangerous_runtime_table_privileges ?? 0) !== 0
       || Number(privileges?.missing_runtime_sequence_privileges ?? 0) !== 0) {
       throw new Error("PostgreSQL runtime grants не соответствуют DDL-free contract");
@@ -3291,6 +3348,8 @@ export class AgatStore {
       processes: "project_id = agat_current_project()",
       process_pack_installations: "project_id = agat_current_project()",
       process_pack_history: "project_id = agat_current_project()",
+      business_report_decisions: "project_id = agat_current_project()",
+      business_report_rework_tasks: "project_id = agat_current_project()",
       process_scheduled_start_receipts: "project_id = agat_current_project()",
       process_signal_waits: "project_id = agat_current_project()",
       process_webhooks: "project_id = agat_current_project()",
@@ -3406,6 +3465,9 @@ export class AgatStore {
       GRANT SELECT ON TABLE ${readOnly} TO ${tenantRole};
       GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${tenantRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${tenantRole};
+
+      REVOKE UPDATE, DELETE ON TABLE ${schema}.business_report_decisions, ${schema}.business_report_rework_tasks
+        FROM ${runtimeRole}, ${tenantRole};
 
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON TABLES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON SEQUENCES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
@@ -13795,11 +13857,114 @@ export class AgatStore {
       ${lock && this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF a" : ""}`).get(artifactId, projectId, projectId) as Row | undefined;
     if (!row) return undefined;
     if (row.run_status !== "completed" || row.storage_state !== "ready" || row.deleted_at || row.kind !== "process_artifact" || !row.stage_id) {
-      throw new BusinessReportOfficeError("report_not_ready", "Экспорт доступен для сохранённого проверенного отчёта завершённого запуска", 409);
+      throw new BusinessReportOfficeError("report_not_ready", "Действие доступно для сохранённого проверенного отчёта завершённого запуска", 409);
     }
     const receipt = parseJson<Record<string, unknown> | null>(row.rendering_json, null) ?? this.legacyBusinessReportReceipt(row);
     if (!receipt || !this.validBusinessReportReceipt(receipt, row)) throw new BusinessReportOfficeError("receipt_unavailable", "Для файла нет сохранённой квитанции проверки. Доступен исходный файл.", 409);
     return { ...row, rendering_json: JSON.stringify(receipt) };
+  }
+
+  private businessReportDecisionDto(row: Row) {
+    return { id: String(row.id), profile: BUSINESS_REPORT_DECISION_PROFILE, artifactId: String(row.artifact_id), sourceSha256: String(row.artifact_sha256),
+      runId: String(row.run_id), revision: Number(row.revision), decision: String(row.decision), reason: String(row.reason),
+      actor: String(row.actor_id), binding: parseJson<Record<string, unknown>>(row.binding_json, {}),
+      reworkTaskId: row.rework_task_id ? String(row.rework_task_id) : null, createdAt: String(row.created_at) };
+  }
+
+  getBusinessReportDecisions(artifactId: string, projectId = "default", beforeRevision: number | null = null) {
+    const project = this.requireProject(projectId);
+    const source = this.db.prepare(`SELECT a.sha256, a.storage_state, a.deleted_at FROM artifacts a JOIN runs r ON r.id = a.run_id
+      WHERE a.id = ? AND a.project_id = ? AND r.project_id = ?`).get(artifactId, project, project) as Row | undefined;
+    if (!source) return null;
+    if (beforeRevision !== null && (!Number.isInteger(beforeRevision) || beforeRevision < 1 || beforeRevision > BUSINESS_REPORT_DECISION_LIMIT + 1)) {
+      throw new BusinessReportDecisionError("invalid_cursor", "Некорректная ревизия истории");
+    }
+    const snapshot = this.db.prepare(`WITH latest AS (
+        SELECT MAX(revision) AS current_revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?
+      ), page AS (
+        SELECT * FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? AND revision < ? ORDER BY revision DESC LIMIT 51
+      ) SELECT p.*, t.id AS rework_task_id, l.current_revision FROM latest l LEFT JOIN page p ON 1 = 1
+      LEFT JOIN business_report_rework_tasks t ON t.decision_id = p.id AND t.project_id = p.project_id ORDER BY p.revision DESC`)
+      .all(artifactId, project, artifactId, project, beforeRevision ?? BUSINESS_REPORT_DECISION_LIMIT + 1) as Row[];
+    const revision = Number(snapshot[0]?.current_revision ?? 0);
+    // Stored human decisions remain readable after file retention removes bytes.
+    // A fresh/unreviewed resource still needs the canonical validation receipt.
+    if (!revision) this.businessReportArtifactSource(artifactId, project);
+    const rows = snapshot.filter(row => row.id !== null && row.id !== undefined);
+    return { artifactId, sourceSha256: String(source.sha256), sourceReady: source.storage_state === "ready" && !source.deleted_at, revision,
+      decisions: rows.slice(0, 50).map(row => this.businessReportDecisionDto(row)),
+      nextBeforeRevision: rows.length > 50 ? Number(rows[49]!.revision) : null };
+  }
+
+  getBusinessReportReworkTask(taskId: string, projectId = "default") {
+    const project = this.requireProject(projectId);
+    const row = this.db.prepare(`SELECT d.*, t.id AS task_id, a.storage_state, a.deleted_at, a.sha256 AS current_sha256
+      FROM business_report_rework_tasks t JOIN business_report_decisions d ON d.id = t.decision_id
+      JOIN artifacts a ON a.id = d.artifact_id JOIN runs r ON r.id = d.run_id
+      WHERE t.id = ? AND t.project_id = ? AND d.project_id = ? AND r.project_id = ?`)
+      .get(taskId, project, project, project) as Row | undefined;
+    if (!row) return null;
+    const latest = this.db.prepare("SELECT MAX(revision) AS revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?")
+      .get(String(row.artifact_id), project) as Row;
+    return { id: String(row.task_id), kind: "business_report_rework", execution: "manual", title: "Исправить отчёт",
+      state: Number(row.revision) === Number(latest.revision) ? "open" : "superseded", decisionId: String(row.id),
+      artifactId: String(row.artifact_id), sourceSha256: String(row.artifact_sha256), runId: String(row.run_id),
+      sourceAvailable: row.storage_state === "ready" && !row.deleted_at && row.current_sha256 === row.artifact_sha256,
+      reason: String(row.reason), requestedBy: String(row.actor_id), binding: parseJson<Record<string, unknown>>(row.binding_json, {}), createdAt: String(row.created_at) };
+  }
+
+  recordBusinessReportDecision(artifactId: string, raw: unknown, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId), input = normalizeBusinessReportDecision(raw), actorSha256 = sha256Text(actor);
+    const before = this.businessReportArtifactSource(artifactId, project);
+    if (!before) return null;
+    if (before.sha256 !== input.expectedSha256) throw new BusinessReportDecisionError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+    // Verify bytes before taking write locks. Recheck the authoritative source
+    // and review revision inside the commit, without network I/O under a lock.
+    try {
+      if (!this.getArtifactDownload(artifactId, project)) throw new Error("Source unavailable");
+    } catch { throw new BusinessReportDecisionError("source_unavailable", "Исходный файл недоступен или не прошёл проверку целостности", 503); }
+    return this.transaction(() => {
+      // Request IDs share an actor/project namespace even across artifacts.
+      if (this.stateStoreDriver === "postgresql") this.db.prepare("SELECT id FROM projects WHERE id = ? FOR NO KEY UPDATE").get(project);
+      const source = this.businessReportArtifactSource(artifactId, project, true);
+      if (!source) return null;
+      const prior = this.db.prepare(`SELECT d.*, t.id AS rework_task_id FROM business_report_decisions d
+        LEFT JOIN business_report_rework_tasks t ON t.decision_id = d.id AND t.project_id = d.project_id
+        WHERE d.project_id = ? AND d.actor_sha256 = ? AND d.request_id = ?`).get(project, actorSha256, input.requestId) as Row | undefined;
+      if (prior) {
+        if (prior.artifact_id !== artifactId || prior.request_sha256 !== input.requestSha256) {
+          throw new BusinessReportDecisionError("idempotency_conflict", "Этот request ID уже использован для другого решения", 409);
+        }
+        return { decision: this.businessReportDecisionDto(prior), reworkTask: prior.rework_task_id ? this.getBusinessReportReworkTask(String(prior.rework_task_id), project) : null, created: false };
+      }
+      if (source.sha256 !== input.expectedSha256) throw new BusinessReportDecisionError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+      const current = this.db.prepare("SELECT MAX(revision) AS revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?")
+        .get(artifactId, project) as Row;
+      const revision = Number(current.revision ?? 0);
+      if (input.expectedRevision !== revision) throw new BusinessReportDecisionError("decision_changed", "У отчёта уже есть новое решение. Прочитайте историю перед сохранением", 409);
+      if (revision >= BUSINESS_REPORT_DECISION_LIMIT) throw new BusinessReportDecisionError("history_limit", "Достигнут предел истории решений для этого файла", 409);
+      const instance = this.db.prepare("SELECT id, process_id, process_version, graph_json FROM process_instances WHERE run_id = ?")
+        .get(String(source.run_id)) as Row | undefined;
+      if (!instance) throw new BusinessReportDecisionError("binding_unavailable", "Не найдена сохранённая версия процесса отчёта", 409);
+      const receipt = parseJson<Record<string, unknown>>(source.rendering_json, {});
+      const binding = { artifactId, sourceSha256: input.expectedSha256, runId: String(source.run_id), stageId: String(source.stage_id),
+        processInstanceId: String(instance.id), processId: String(instance.process_id), processVersion: Number(instance.process_version),
+        graphSha256: sha256Text(String(instance.graph_json)), inputSha256: receipt.inputSha256, schemaSha256: receipt.schemaSha256 };
+      const id = randomUUID(), taskId = input.decision === "rework_requested" ? randomUUID() : null, timestamp = nowIso();
+      this.db.prepare(`INSERT INTO business_report_decisions(id, project_id, run_id, artifact_id, artifact_sha256, revision,
+        request_id, actor_sha256, request_sha256, actor_id, decision, reason, binding_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, project, String(source.run_id), artifactId, input.expectedSha256, revision + 1, input.requestId, actorSha256, input.requestSha256,
+          actor.slice(0, 200), input.decision, input.reason, JSON.stringify(binding), timestamp);
+      if (taskId) this.db.prepare("INSERT INTO business_report_rework_tasks(id, project_id, decision_id, created_at) VALUES (?, ?, ?, ?)").run(taskId, project, id, timestamp);
+      this.db.prepare("UPDATE artifacts SET rendering_json = ? WHERE id = ? AND rendering_json IS NULL").run(String(source.rendering_json), artifactId);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.decision.recorded", "Сохранено решение о версии отчёта", {
+        projectId: project, decisionId: id, artifactId, sourceSha256: input.expectedSha256, revision: revision + 1, decision: input.decision,
+        processId: binding.processId, processVersion: binding.processVersion, graphSha256: binding.graphSha256, actorSha256, reworkTaskId: taskId,
+      });
+      const saved = this.db.prepare("SELECT * FROM business_report_decisions WHERE id = ? AND project_id = ?").get(id, project) as Row;
+      return { decision: this.businessReportDecisionDto({ ...saved, rework_task_id: taskId }),
+        reworkTask: taskId ? this.getBusinessReportReworkTask(taskId, project) : null, created: true };
+    });
   }
 
   async exportBusinessReportArtifact(artifactId: string, input: { format: unknown; expectedSha256: unknown; origin: unknown }, projectId = "default", actor = "system") {

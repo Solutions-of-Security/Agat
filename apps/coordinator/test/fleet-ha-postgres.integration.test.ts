@@ -584,6 +584,73 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     }
   });
 
+  it("serializes report decisions and request IDs across replicas without duplicating rework tasks or granting ledger edits", async context => {
+    const suffix = randomUUID().slice(0, 8), project = `review-${suffix}`, foreign = `review-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-report-review-"));
+    const first = store(`review-store-${suffix}`, artifacts), workers: string[] = [];
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const reports = [completedOfficeReport(first, project), completedOfficeReport(first, project)];
+      workers.push(...reports.map(report => report.worker.id));
+      const token = `review-fixture-${suffix}`;
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`review-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const headers = (tenant = project) => ({ "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant });
+      const post = (index: number, body: Record<string, unknown>, report = reports[0]!, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${report.canonical.id}/decisions`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const input = { requestId: randomUUID(), expectedSha256: reports[0]!.canonical.sha256, expectedRevision: 0, decision: "rework_requested", reason: "Synthetic replica feedback" };
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index, input)));
+      const receipts = await Promise.all(responses.map(response => response.json() as Promise<{ decision: { id: string }; reworkTask: { id: string } }>));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(receipts));
+      assert.equal(new Set(receipts.map(receipt => receipt.decision.id)).size, 1);
+      assert.equal(new Set(receipts.map(receipt => receipt.reworkTask.id)).size, 1);
+      const competing = await Promise.all(["accepted", "rework_requested"].map((decision, index) => post(index, { ...input, requestId: randomUUID(), expectedRevision: 1, decision })));
+      const competingBodies = await Promise.all(competing.map(response => response.text()));
+      assert.deepEqual(competing.map(response => response.status).sort(), [201, 409], competingBodies.join("\n"));
+      const sharedRequest = randomUUID();
+      const acrossArtifacts = await Promise.all(reports.map((report, index) => post(index, { ...input, requestId: sharedRequest, expectedSha256: report.canonical.sha256,
+        expectedRevision: index === 0 ? 2 : 0, decision: "accepted" }, report)));
+      assert.deepEqual(acrossArtifacts.map(response => response.status).sort(), [201, 409], (await Promise.all(acrossArtifacts.map(response => response.text()))).join("\n"));
+      assert.equal((await post(1, input, reports[0], foreign)).status, 404);
+      const task = `http://127.0.0.1:${children[1]!.port}/api/v1/report-rework-tasks/${receipts[0]!.reworkTask.id}`;
+      assert.equal((await fetch(task, { headers: headers(foreign) })).status, 404);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.decision.recorded").length, 3);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_decisions WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_rework_tasks WHERE project_id = ?").all(project).length, 0);
+      enterPostgresTenantScope(project);
+      assert.throws(() => first.db.prepare("UPDATE business_report_decisions SET reason = reason WHERE project_id = ?").run(project), /permission denied/i);
+      assert.throws(() => first.db.prepare("DELETE FROM business_report_decisions WHERE project_id = ?").run(project), /permission denied/i);
+      for (const report of reports) assert.equal(first.db.prepare("DELETE FROM runs WHERE id = ?").run(report.runId).changes, 1);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_decisions WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_rework_tasks WHERE project_id = ?").all(project).length, 0);
+      await Promise.all(children.map(child => child.stop()));
+      const runtimeRole = runWithPostgresSystemScope(() => String(first.db.prepare("SELECT current_user AS role").get()!.role));
+      const tenantRole = decodeURIComponent(new URL(tenantUrl).username);
+      const migration = new pg.Client({ connectionString: migrationUrl, ssl: false });
+      await migration.connect();
+      try {
+        for (const role of [runtimeRole, tenantRole]) {
+          assert.match(role, /^[a-z_][a-z0-9_]*$/);
+          await migration.query(`GRANT UPDATE ON business_report_decisions TO "${role}"`);
+          let unexpected: AgatStore | undefined;
+          try {
+            assert.throws(() => { unexpected = runWithPostgresSystemScope(() => store(`review-grants-${randomUUID().slice(0, 8)}`, artifacts)); }, /runtime grants/);
+          } finally {
+            runWithPostgresSystemScope(() => unexpected?.close());
+            await migration.query(`REVOKE UPDATE ON business_report_decisions FROM "${role}"`);
+          }
+        }
+      } finally { await migration.end(); }
+      context.diagnostic("Concurrent retry 201/200; competing intents 201/409; request IDs across artifacts 201/409; immutable runtime grants, tenant isolation and authorized run purge");
+    } finally {
+      await Promise.all(children.map(child => child.stop()));
+      runWithPostgresSystemScope(() => { for (const id of workers) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(id); first.close(); });
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
   it("backfills scheduled workflow ownership from the schema 28 column layout with project isolation", async () => {
     await runWithPostgresSystemScope(async () => {
       const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-owner-upgrade-"));
