@@ -38,7 +38,7 @@ describe("SQLite to PostgreSQL migration integration", {
     let packProcessId = "";
     let reviewedDocumentId = "";
     let extractionRevision = "";
-    let officeSourceId = "", officeExportId = "", officeSha256 = "";
+    let officeSourceId = "", officeExportId = "", officeSha256 = "", reportDecisionId = "", reportReworkId = "";
     const source = new AgatStore(sourcePath, {
       temporalProcesses: true,
       region: "eu-migration-test",
@@ -57,6 +57,9 @@ describe("SQLite to PostgreSQL migration integration", {
       assert.equal(renamed.id, document.id); assert.equal(renamed.status, "pending");
       const office = completedOfficeReport(source);
       officeSourceId = String(office.canonical.id);
+      const decision = source.recordBusinessReportDecision(officeSourceId, { requestId: "11111111-1111-4111-8111-111111111111", expectedSha256: office.canonical.sha256,
+        expectedRevision: 0, decision: "rework_requested", reason: "Synthetic migration feedback; preserve exact binding" })!;
+      reportDecisionId = decision.decision.id; reportReworkId = decision.reworkTask!.id;
       const exported = (await source.exportBusinessReportArtifact(officeSourceId, { format: "docx", expectedSha256: office.canonical.sha256, origin: "https://migration.agat.example" }))!;
       officeExportId = String(exported.artifact.id); officeSha256 = String(exported.artifact.sha256);
       source.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(office.worker.id);
@@ -174,6 +177,11 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.match(office.rows[0].export_key, /^[a-f0-9]{64}$/);
         assert.equal(office.rows[0].sha256, officeSha256);
         assert.equal(createHash("sha256").update(office.rows[0].content_blob).digest("hex"), officeSha256);
+        const feedback = await client.query("SELECT d.artifact_id, d.revision, d.reason, d.binding_json, t.id AS task_id FROM business_report_decisions d JOIN business_report_rework_tasks t ON t.decision_id = d.id WHERE d.id = $1", [reportDecisionId]);
+        assert.equal(feedback.rowCount, 1); assert.equal(feedback.rows[0].artifact_id, officeSourceId);
+        assert.equal(feedback.rows[0].revision, 1); assert.equal(feedback.rows[0].task_id, reportReworkId);
+        assert.match(feedback.rows[0].reason, /Synthetic migration feedback/);
+        assert.equal(JSON.parse(feedback.rows[0].binding_json).artifactId, officeSourceId);
       } finally {
         await client.end();
       }

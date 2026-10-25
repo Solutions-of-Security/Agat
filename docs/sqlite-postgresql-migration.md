@@ -2,7 +2,7 @@
 
 ## Решение и граница
 
-`fleet:migrate-state` переносит одну остановленную Agat HA-cell с текущей schema v34 из SQLite в новую PostgreSQL database. Это canonical offline cutover: dual-write, online catch-up и автоматическое переключение трафика не входят в контракт.
+`fleet:migrate-state` переносит одну остановленную Agat HA-cell с текущей schema v35 из SQLite в новую PostgreSQL database. Это canonical offline cutover: dual-write, online catch-up и автоматическое переключение трафика не входят в контракт.
 
 Инструмент поддерживает три режима:
 
@@ -16,7 +16,7 @@
 
 ## Release TO-BE
 
-После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап вынес schema/admission в отдельную migration Job/role, а runtime сделал DDL-free; текущая schema v34 дополнительно содержит DR canaries, S3 lifecycle metadata/outbox, region-loss marker, worker attestation и SIEM DLQ/retention state, а также scheduled-start receipts и владельца запуска Temporal workflow: [contract](./postgresql-migration-job-runtime-role.md).
+После этапа оператор получает один versioned offline workflow для rehearsal, apply и read-only verify. SQLite остаётся единственным authority до успешного apply и явного переключения трафика; после первой PostgreSQL production write authority необратимо переходит в PostgreSQL в рамках этого workflow. Следующий этап вынес schema/admission в отдельную migration Job/role, а runtime сделал DDL-free; текущая schema v35 дополнительно содержит DR canaries, S3 lifecycle metadata/outbox, region-loss marker, worker attestation и SIEM DLQ/retention state, а также scheduled-start receipts и владельца запуска Temporal workflow: [contract](./postgresql-migration-job-runtime-role.md).
 
 ## Source register
 
@@ -32,7 +32,7 @@
 ## Неизменяемые условия
 
 - оператор обязан остановить coordinator, workers и все другие SQLite writers и явно передать `SOURCE_AND_WRITERS_STOPPED`;
-- source открывается через `BEGIN IMMEDIATE`, переводится в query-only и должен иметь текущую schema v34, исправные foreign keys и ровно одну `region/residencyDomain` cell;
+- source открывается через `BEGIN IMMEDIATE`, переводится в query-only и должен иметь текущую schema v35, исправные foreign keys и ровно одну `region/residencyDomain` cell;
 - активные stages, executing MCP calls, running embedding jobs и locked SIEM outbox запрещают cutover;
 - `apply` и `rehearse` принимают только target без Agat schema; повторный запуск требует новой database;
 - все durable tables импортируются в детерминированном foreign-key order; self-referencing rows идут parent-before-child, а cycle отклоняется; только `coordinator_replicas` сознательно сбрасывается как runtime liveness state;
@@ -43,7 +43,7 @@
 
 ## Подготовка SQLite schema
 
-Offline migrator проверяет точную версию и набор колонок; он не обновляет SQLite source. До rehearsal остановите все writers и Temporal workers, сохраните согласованный backup и откройте SQLite через `AgatStore` текущего release с `stateStoreDriver: "sqlite"` и `seedDemo: false`, затем закройте store. Это применяет штатную SQLite migration без HTTP server и scheduler. Проверьте `PRAGMA user_version = 34`, `PRAGMA integrity_check` и `PRAGMA foreign_key_check`, затем снимите новый согласованный source snapshot. Не изменяйте `user_version` вручную вместо migration.
+Offline migrator проверяет точную версию и набор колонок; он не обновляет SQLite source. До rehearsal остановите все writers и Temporal workers, сохраните согласованный backup и откройте SQLite через `AgatStore` текущего release с `stateStoreDriver: "sqlite"` и `seedDemo: false`, затем закройте store. Это применяет штатную SQLite migration без HTTP server и scheduler. Проверьте `PRAGMA user_version = 35`, `PRAGMA integrity_check` и `PRAGMA foreign_key_check`, затем снимите новый согласованный source snapshot. Не изменяйте `user_version` вручную вместо migration.
 
 Schema 29 переносит владельца scheduled child из receipts schema 28 с проверкой проекта; receipts и поле ownership импортируются вместе с остальным state. Schema 30 дополнительно сохраняет `cancel_requested_at` и JSON-null intent отмены до create: [контракт](./qualification/local-decisions/performance/temporal-scheduled-cancellation.md). Запуски до schema 28 без receipts требуют отдельной сверки history и завершения до обновления: [контракт восстановления](./qualification/local-decisions/performance/temporal-scheduled-ownership.md).
 
@@ -104,7 +104,7 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 ## Cutover runbook
 
 1. Зафиксировать maintenance window, владельца решения, свежий согласованный backup SQLite/WAL/artifacts и проверенный restore.
-2. Остановить coordinator, workers и внешние writers; подготовить schema 34 по разделу выше, снять source snapshot и убедиться, что lock файла получает только migrator.
+2. Остановить coordinator, workers и внешние writers; подготовить schema 35 по разделу выше, снять source snapshot и убедиться, что lock файла получает только migrator.
 3. Выполнить `rehearse` на disposable database, приложить report к change record и удалить rehearsal target.
 4. Создать новый production target и выполнить `apply`; при любом несовпадении transaction откатывается.
 5. Выполнить отдельный `verify`, выборочный artifact download и `fleet:migrate-schema`; только successful admission marker разрешает coordinator runtime role.
@@ -142,7 +142,7 @@ Report schema v1 содержит SHA-256 SQLite database/WAL snapshot, cell, fo
 | MIG-02 | filesystem artifact snapshot расходится с SQLite | immutable snapshot, size/SHA-256 fail-closed | zero mismatches / Data owner |
 | MIG-03 | неизвестен исход commit при потере соединения | apply не повторяется, verify read-only | verified report или восстановление target / Incident commander |
 | MIG-04 | migration credential имеет DDL | credential scoped offline/Job, runtime не owner и без CREATE | закрыто schema v21 boundary; short-lived secret остаётся hardening / Security+DBA |
-| MIG-05 | SQLite schema кроме v34 | exact-version fail-closed | отдельный source upgrade/rehearsal / Application owner |
+| MIG-05 | SQLite schema кроме v35 | exact-version fail-closed | отдельный source upgrade/rehearsal / Application owner |
 | MIG-06 | multi-cell source нельзя разделить автоматически | ровно одна cell в preflight | отдельный утверждённый migration plan / Data + Residency owner |
 
 ## Acceptance evidence
@@ -161,3 +161,5 @@ node --import tsx --test apps/coordinator/test/sqlite-postgres-migrator.integrat
 Integration test импортирует durable state и filesystem artifacts, затем выполняет verify-only. Отдельные `AGAT_TEST_REHEARSAL_POSTGRES_URL`, `AGAT_TEST_REHEARSAL_RUNTIME_URL` и `AGAT_TEST_REHEARSAL_POSTGRES_TENANT_URL` включают rollback scenario и доказывают, что добавленная source row отсутствует после rollback.
 
 Schema migration Job/role, DDL-free runtime, managed PostgreSQL resilience, S3 artifact authority, residency-aware region-loss DR, OCI/runtime attestation и SIEM retention/DLQ реализованы последующими этапами. Для production остаётся qualification конкретного deployment по [roadmap](./roadmap.md), а не ещё одна repository migration capability.
+
+Schema 35 переносит [append-only решения и связанные задачи исправления](./report-result-decisions.md) вместе с exact artifact/run/process bindings. SQLite guards не подменяют PostgreSQL grants: обе модели проверяются отдельно; owning purge сохраняет согласованность FK.

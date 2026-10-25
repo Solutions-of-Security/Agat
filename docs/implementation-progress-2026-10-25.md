@@ -18,6 +18,7 @@
 | SP-001/SP-005, UI v2 | Release/sources/diff/history, update/rollback и структурированный вопрос/период | [#231](https://github.com/Solutions-of-Security/Agat/pull/231), `3ad622ea61302445415af919419bc4f8bebbb67a` |
 | USE-003 / UX-206, проверка извлечения | Scope/gaps PDF/DOCX, exact review до индексации и model lease | [#232](https://github.com/Solutions-of-Security/Agat/pull/232), `0281c5e4288e3014dcbb157e9eeabf4b93fb1d0b` |
 | USE-003, dedupe | Original bytes identity одной коллекции, сохранение review/vectors, parser busy 503 | [#233](https://github.com/Solutions-of-Security/Agat/pull/233), `e9b1dad304a1100cb3ad125728f5dddfb2f157de` |
+| USE-004, DOCX/PDF | Одно проверенное содержание, frozen source/renderer identity, retry-safe files и UI download | [#234](https://github.com/Solutions-of-Security/Agat/pull/234), `43b0cf79d078d9c0da790ad7d3d21312c465ebd8` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -111,18 +112,26 @@ dedupe tests, включая добавленный reindex saturation case; 70 
 переполнения по ширине, console warnings/errors и overlay нет. Browser plugin
 недоступен, использован Playwright. Links/catalog прошли. Final head `80a18b4154e2534d9b4938be8b13b0d967aacbf2` прошёл required, все verify jobs и CodeQL; merge #233 — `e9b1dad304a1100cb3ad125728f5dddfb2f157de`, после #232.
 
-## Текущий этап USE-004: DOCX/PDF
+## Поставленный этап USE-004: DOCX/PDF
 
 Ветка `codex/business-report-office-export` добавляет [экспорт сохранённого проверенного отчёта](./business-report-office-export.md), schema 34, exact source/renderer identity и download из результата запуска. Оба формата используют одно дерево без model calls. Legacy receipt восстанавливается только по точному stage/graph/event; при отсутствии доказательств доступен исходный файл.
 
 Проверены 381 coordinator tests / 28 opt-in skips, 70 web tests, 32 browser checks, typechecks/builds, четыре concurrent requests двух PostgreSQL replicas и offline apply/verify/rehearsal. Перепроверка выявила и исправила PDF footer с лишними страницами и неверную pre-transform checksum сверку self-referenced artifacts при migration. На финальных samples просмотрены все 19 страниц (DOCX 2/8, PDF 2/7); exact source URI, все 25 table IDs и 50 source lines подтверждены. [QA manifest](./qualification/internal-report/office-export-2026-10-25.json) фиксирует bytes/hashes/pages. Настоящий desktop/mobile UI скачивает оба формата и повтор использует тот же artifact.
 
-Локальный Docker image дошёл до export layers, затем storage Docker Desktop отказал с input/output и read-only filesystem; на host осталось 244 МиБ. S3 replay прерван средой. Эти попытки не считаются PASS. В required CI добавлен production image/renderer smoke; полный S3 gate уже входит в integration matrix. CI/merge будут зафиксированы после проверки final head.
+Локальный Docker image дошёл до export layers, затем storage Docker Desktop отказал с input/output и read-only filesystem; на host осталось 244 МиБ. S3 replay прерван средой. Эти попытки не считаются PASS. В required CI добавлен production image/renderer smoke; полный S3 gate уже входит в integration matrix. Final head `7cb293c5c16e681e4310d8bc8f5e7c2880f21727` прошёл required, все verify jobs (включая production image/renderer и полный S3) и CodeQL. Merge #234 — `43b0cf79d078d9c0da790ad7d3d21312c465ebd8`.
+
+## Текущий этап USE-004: backend решения о результате
+
+Ветка `codex/report-result-decisions` от merge #234 добавляет [append-only решение и связанную ручную задачу](./report-result-decisions.md): exact artifact SHA/run/process version, actor-bound request ID, optimistic revision, atomic decision/task/audit, metadata-only event и права admin/operator. История переживает file/event retention; physical owning purge удаляет её согласованно. SQLite guards и PostgreSQL SELECT/INSERT-only grants защищают от изменения записей. Source bytes проверяются до SQL locks; project → artifact сериализует общий namespace request IDs даже между разными файлами.
+
+Выключение ноутбука прервало сборку/регрессию при заполненном диске; незакоммиченные исходники сохранены. Старые неуспешные прогоны не считаются PASS. После восстановления: 389 coordinator tests passed / 28 штатных opt-in skips, семь final API/OIDC/retention/upgrade tests, все typechecks/builds. Две настоящие PostgreSQL replicas проверили retry 201/200, competing intent 201/409, общий request ID разных artifacts, tenant RLS, запреты правки и owning purge; отдельный startup probe отвергает выдачу UPDATE runtime или tenant role. Offline apply/verify/rehearsal переносит decision/task/binding и DOCX bytes.
+
+Проверка выявила прежнее требование CRUD на каждой runtime table, несовместимое с append-only ledger. Для двух новых таблиц введён явный строгий SELECT/INSERT contract с запретом UPDATE/DELETE; остальные DML и все DDL запреты сохранены. Индекс FK run_id имеет ведущий run_id. Final CI/PR/merge будут зафиксированы после поставки; UI и Golden handoff — следующие этапы, задача metadata не считается выполненным исправлением.
 
 ## Границы и следующий остаток
 
 - USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: завершить CI/поставку DOCX/PDF; затем append-only accept/rework на exact artifact/run.
+- USE-004: поставить backend решений; затем UI принятия/задачи исправления и Golden eval handoff. DOCX/PDF уже в main.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением

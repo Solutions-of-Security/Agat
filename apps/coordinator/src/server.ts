@@ -9,6 +9,7 @@ import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, t
 import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
 import { KnowledgeParserBusyError } from "./knowledge-files.js";
 import { BusinessReportOfficeError, normalizeOfficeOrigin } from "./business-report-office-document.js";
+import { BusinessReportDecisionError, normalizeDecisionHistoryCursor } from "./business-report-decisions.js";
 
 import {
   loadConfig,
@@ -2308,6 +2309,26 @@ export function createCoordinatorServer(
         return;
       }
 
+      const reportDecisionArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/decisions$/);
+      if ((request.method === "GET" || request.method === "POST") && reportDecisionArtifactId) {
+        const writing = request.method === "POST";
+        const auth = await authorize(request, config, oidcVerifier, writing ? ["admin", "operator"] : READ_ROLES, true);
+        const result = writing ? store.recordBusinessReportDecision(reportDecisionArtifactId, await readJson<unknown>(request), auth.projectId, auth.subject)
+          : store.getBusinessReportDecisions(reportDecisionArtifactId, auth.projectId, normalizeDecisionHistoryCursor(url.searchParams.get("beforeRevision")));
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        json(response, writing && "created" in result && result.created ? 201 : 200, result);
+        return;
+      }
+
+      const reworkTaskId = routeParam(pathname, /^\/api\/v1\/report-rework-tasks\/([^/]+)$/);
+      if (request.method === "GET" && reworkTaskId) {
+        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const result = store.getBusinessReportReworkTask(reworkTaskId, auth.projectId);
+        if (!result) throw new HttpError(404, "Задача исправления не найдена");
+        json(response, 200, result);
+        return;
+      }
+
       const exportArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/export$/);
       if (request.method === "POST" && exportArtifactId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
@@ -2842,6 +2863,7 @@ export function createCoordinatorServer(
       const status = error instanceof HttpError
         || error instanceof KnowledgeParserBusyError
         || error instanceof BusinessReportOfficeError
+        || error instanceof BusinessReportDecisionError
         || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError

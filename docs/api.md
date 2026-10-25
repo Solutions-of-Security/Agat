@@ -106,6 +106,9 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/runs` | Создать запуск |
 | `GET` | `/artifacts/:id/download` | Скачать authenticated артефакт по ID |
 | `POST` | `/artifacts/:id/export` | DOCX/PDF из сохранённого проверенного Markdown; `{ format, expectedSha256, origin }`, 201 новый / 200 существующий файл; read-roles и legacy admin token, [контракт](./business-report-office-export.md) |
+| `GET` | `/artifacts/:id/decisions` | История решений о точной версии отчёта; cursor `beforeRevision`, read-roles |
+| `POST` | `/artifacts/:id/decisions` | Append-only accept/rework, `admin/operator`; expected SHA/revision и caller request ID, 201 новый / 200 повтор, [контракт](./report-result-decisions.md) |
+| `GET` | `/report-rework-tasks/:id` | Project-scoped ручная задача исправления с frozen source binding |
 | `PATCH` | `/settings/scheduler` | Изменить глобальный режим |
 | `PATCH` | `/settings/model-router` | Изменить глобальную Model Router policy (`admin`) |
 | `POST` | `/approvals/:stageId` | `approve` с ответами формы или `reject` с причиной |
