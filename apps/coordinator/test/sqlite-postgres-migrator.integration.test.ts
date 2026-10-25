@@ -9,6 +9,7 @@ import pg from "pg";
 
 import { AgatStore } from "../src/database.js";
 import { migrateSqliteToPostgres } from "../src/sqlite-postgres-migrator.js";
+import { getInternalReportPack } from "../src/process-packs.js";
 
 const systemUrl = process.env.AGAT_TEST_MIGRATION_POSTGRES_URL ?? "";
 const runtimeUrl = process.env.AGAT_TEST_MIGRATION_RUNTIME_URL ?? "";
@@ -31,6 +32,7 @@ describe("SQLite to PostgreSQL migration integration", {
     const verifyReportPath = path.join(root, "verify-report.json");
     const scheduledKey = `agat-scheduled-v1:${"d".repeat(64)}`;
     let scheduledReceipt: ReturnType<AgatStore["startScheduledProcess"]> = null;
+    let packProcessId = "";
     const source = new AgatStore(sourcePath, {
       temporalProcesses: true,
       region: "eu-migration-test",
@@ -39,6 +41,8 @@ describe("SQLite to PostgreSQL migration integration", {
       coordinatorInstanceId: "sqlite-source",
     });
     try {
+      const release = getInternalReportPack();
+      packProcessId = source.installProcessPack(release.id, { version: release.version, manifestSha256: release.manifestSha256, model: release.defaults.model }).installation!.processId;
       const node = source.registerNode({
         enrollmentToken: "test",
         name: "migration-node",
@@ -138,6 +142,10 @@ describe("SQLite to PostgreSQL migration integration", {
         const cancellation = await client.query("SELECT response_json, cancel_requested_at FROM process_scheduled_start_receipts WHERE project_id = 'default' AND idempotency_key = $1", [`agat-scheduled-v1:${"b".repeat(64)}`]);
         assert.equal(cancellation.rowCount, 1); assert.equal(cancellation.rows[0].response_json, "null");
         assert.equal(typeof cancellation.rows[0].cancel_requested_at, "string");
+        const history = await client.query("SELECT manifest_json, installation_json FROM process_pack_history WHERE project_id = 'default' AND pack_id = 'internal-report' AND version = 1");
+        assert.equal(history.rowCount, 1);
+        assert.equal(JSON.parse(history.rows[0].manifest_json).manifestSha256, getInternalReportPack().manifestSha256);
+        assert.equal(JSON.parse(history.rows[0].installation_json).processId, packProcessId);
       } finally {
         await client.end();
       }
