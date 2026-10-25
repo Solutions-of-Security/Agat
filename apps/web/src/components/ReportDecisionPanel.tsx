@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "../lib/api";
 import { correctionTaskBrief, normalizeReviewReason, reportDecisionRequest, verifiedDecisionHistory, verifiedDecisionReceipt, verifiedReworkTask } from "../reportDecisions";
 import type { Artifact, ReportDecisionHistory, ReportDecisionKind, ReportReworkTask, RecordReportDecisionRequest } from "../types";
 import { ModalLayer } from "./ModalLayer";
+import { ReportDecisionBoundary } from "./ReportDecisionBoundary";
+import type { ReportEvalBasis } from "../reportEval";
+
+const ReportEvalHandoffDialog = lazy(() => import("./ReportEvalHandoffDialog").then(module => ({ default: module.ReportEvalHandoffDialog })));
 
 type Draft = { kind: ReportDecisionKind; reason: string; revision: number };
 const copy: Record<ReportDecisionKind, string> = { accepted: "Отчёт принят", rework_requested: "Нужны исправления" };
@@ -11,8 +15,8 @@ const stamp = (value: string) => new Date(value).toLocaleString("ru-RU", { dateS
 const sameIntent = (a: RecordReportDecisionRequest, b: RecordReportDecisionRequest) => a.expectedSha256 === b.expectedSha256
   && a.expectedRevision === b.expectedRevision && a.decision === b.decision && a.reason === b.reason;
 
-export function ReportDecisionPanel({ artifact, canReview, onDownloadSource }: {
-  artifact: Artifact; canReview: boolean; onDownloadSource: () => Promise<void>;
+export function ReportDecisionPanel({ artifact, projectId, canReview, canPrepareEval, onDownloadSource }: {
+  artifact: Artifact; projectId: string; canReview: boolean; canPrepareEval: boolean; onDownloadSource: () => Promise<void>;
 }) {
   const titleId = useId(), reasonId = useId(), taskTitleId = useId();
   const live = useRef(true), pending = useRef<RecordReportDecisionRequest | null>(null);
@@ -27,6 +31,7 @@ export function ReportDecisionPanel({ artifact, canReview, onDownloadSource }: {
   const [taskError, setTaskError] = useState<string | null>(null), [downloadBusy, setDownloadBusy] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string | null>(null), [briefOpen, setBriefOpen] = useState(false);
   const briefRef = useRef<HTMLTextAreaElement>(null);
+  const [evalBasis, setEvalBasis] = useState<ReportEvalBasis | null>(null), [evalOpen, setEvalOpen] = useState(false);
 
   useEffect(() => { live.current = true; return () => { live.current = false; pageRequest.current?.abort(); }; }, []);
   useEffect(() => {
@@ -135,6 +140,9 @@ export function ReportDecisionPanel({ artifact, canReview, onDownloadSource }: {
       <button className="button button--secondary" type="button" disabled={!canChoose} onClick={() => choose("accepted")}>Принять отчёт</button>
       <button className="button button--secondary" type="button" disabled={!canChoose} onClick={() => choose("rework_requested")}>Нужны исправления</button>
     </div> : <p className="report-review__hint">Решение может записать оператор или администратор.</p>}
+    {canPrepareEval ? <p><button className="button button--secondary" type="button" disabled={!latest || !history?.sourceReady || loading || busy || Boolean(draft) || Boolean(readError)}
+      onClick={() => { if (latest) { setEvalBasis(current => current ?? { revision: latest.revision, decisionId: latest.id }); setEvalOpen(true); } }}>В Golden eval</button>
+      {!latest && !loading && !readError ? <span className="report-review__hint"> Сначала сохраните решение о результате.</span> : draft ? <span className="report-review__hint"> Сохраните или отмените решение перед передачей примера.</span> : null}</p> : null}
     {draft ? <form className="report-review__form" aria-label={draft.kind === "accepted" ? "Принять отчёт" : "Запрос исправлений"} onSubmit={event => void submit(event)}>
       <strong>{draft.kind === "accepted" ? "Принять сохранённую версию отчёта" : "Что нужно исправить"}</strong>
       <p>{draft.kind === "accepted" ? `Решение относится к файлу ${artifact.name}.` : "Будет создана связанная ручная задача с вашим комментарием."}</p>
@@ -155,6 +163,10 @@ export function ReportDecisionPanel({ artifact, canReview, onDownloadSource }: {
       {history.nextBeforeRevision !== null ? <button className="button button--secondary" type="button" disabled={paging || loading || busy} onClick={() => void older()}>{paging ? "Загружаем…" : "Показать предыдущие решения"}</button> : null}
       {pageError ? <p role="alert">{pageError}</p> : null}
     </details> : null}
+    {evalBasis && canPrepareEval ? <ReportDecisionBoundary message="Не удалось загрузить форму Golden eval. История решений и экспорт доступны."><Suspense fallback={<p role="status">Загружаем форму Golden eval…</p>}>
+      <ReportEvalHandoffDialog artifact={artifact} projectId={projectId} initialBasis={evalBasis} open={evalOpen} onClose={() => setEvalOpen(false)}
+        onSaved={() => setNotice("Пример сохранён в Golden dataset v1.")} onHistoryRefresh={refresh} />
+    </Suspense></ReportDecisionBoundary> : null}
     {taskId ? createPortal(<div className="report-task-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeTask(); }}>
       <ModalLayer className="report-task-dialog" labelledBy={taskTitleId} onClose={closeTask}>
         <header><h2 id={taskTitleId}>Задача исправления</h2><button className="button button--secondary" type="button" onClick={closeTask}>Закрыть</button></header>

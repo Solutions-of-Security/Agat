@@ -14057,7 +14057,13 @@ export class AgatStore {
     if (candidate.contentSha256 !== input.expectedCandidateSha256) throw new BusinessReportEvalError("candidate_changed", "Контекст примера изменился. Подготовьте и проверьте его заново", 409);
     const referenceValidation = validateBusinessReportOutput(input.referenceOutput, this.businessOutputContext(candidate.source.runId, project).context);
     if (referenceValidation.schemaSha256 !== candidate.source.schemaSha256) throw new BusinessReportEvalError("schema_changed", "Контракт reference изменился; подготовьте пример для актуального профиля вручную", 409);
-    if (referenceValidation.status === "invalid") throw new BusinessReportEvalError("invalid_reference", `Reference не прошёл проверку схемы, источников или расчётов: ${referenceValidation.codes.join(", ")}`);
+    if (referenceValidation.status === "invalid") {
+      const code = referenceValidation.codes[0];
+      const message = code === "calculation_mismatch" || code === "undefined_calculation" ? "Проверьте расчёты в эталонном JSON"
+        : code === "source_out_of_scope" || code === "artifact_unavailable_or_mismatched" ? "Проверьте ссылки эталона на доступные источники этого запуска"
+          : "Проверьте структуру эталонного JSON по контракту business-report.v1";
+      throw new BusinessReportEvalError("invalid_reference", message);
+    }
     if (rubric.some(criterion => criterion.weight <= 0)) throw new BusinessReportEvalError("invalid_rubric", "Вес критерия должен оставаться положительным после округления");
     const normalized = this.normalizeEvalDatasetVersion(project, input.description, "Development пример из отчёта; reference и rubric проверены человеком", rubric,
       [{ ...candidate.example, referenceOutput: input.referenceOutput }]);

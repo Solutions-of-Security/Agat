@@ -22,6 +22,7 @@
 | USE-004, backend решения | Append-only history, exact source binding, retry/revision и связанная ручная задача | [#236](https://github.com/Solutions-of-Security/Agat/pull/236), `a8f3738757c4a585b0b902e69fcecfd5f8c06124` |
 | USE-004, интерфейс решения | Явное принятие/rework, безопасный retry, история и ручная передача задачи | [#237](https://github.com/Solutions-of-Security/Agat/pull/237), `536b7357d9026a2892af60e3d83b7a9ce5845657` |
 | USE-004, backend Golden candidate | Exact report/decision/agent/input/output provenance, blank reference, development-only preparation | [#238](https://github.com/Solutions-of-Security/Agat/pull/238), `3105c4b6b3af43e704feec7c12597c20a46836d4` |
+| USE-004, versioned Golden import | Human reference/rubric, atomic v1/lineage/event, durable actor-bound retry | [#239](https://github.com/Solutions-of-Security/Agat/pull/239), `64a5f239c7fc8078cc8ede7d8c6e183a16f468a9` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -149,16 +150,24 @@ dedupe tests, включая добавленный reindex saturation case; 70 
 
 Head #238 `196a1e9da6edd78ca941e4252f2bfec0ef1e82c5` прошёл все 15 required/verify/CodeQL checks. Merge — `3105c4b6b3af43e704feec7c12597c20a46836d4`.
 
-## Текущий этап USE-004: фиксация проверенного Golden-примера
+## Поставленный backend USE-004: фиксация Golden-примера
 
 Ветка `codex/report-eval-dataset-import` добавляет отдельный явный import endpoint: typed reference + human rubric/review, exact candidate SHA, dataset/v1 и metadata-only lineage/event. Повтор связан с полным verified subject/project/request ID, использует deterministic UUIDv8 и возвращает исходную версию после нового решения или source purge. Изменённое намерение — 409. Live source проверяется до записи и под общим project → artifact lock; весь Artifact Store I/O и fingerprint work происходят до write locks. Lineage хранится в существующем version JSON и входит в content SHA, schema 35 не меняется. Input/reference копируются в Golden dataset с отдельным сроком хранения; original-run purge не стирает явную копию. Импорт не запускает модель/процесс/experiment.
 
-14 целевых candidate/import API/OIDC tests прошли. Полный coordinator replay: 403 passed / 28 штатных opt-in skips. Отдельный interop replay подтвердил exact stage input в существующем Golden executor после явного создания experiment; первый fixture пытался создать второй agent registry, исправлен отдельным frozen prompt и повторно прошёл. Две настоящие PostgreSQL replicas проверили четыре imports с 201/200, один dataset/event, changed-intent 409, tenant 404 и durable receipt после source-run purge. Offline apply/verify/rehearsal перенёс dataset/v1, lineage JSON и content SHA; все три integration checks прошли. Typechecks и production builds всех workspaces, docs links/catalog прошли. UI — следующий этап; CI/PR/merge фиксируются после поставки.
+14 целевых candidate/import API/OIDC tests прошли. Полный coordinator replay: 403 passed / 28 штатных opt-in skips. Отдельный interop replay подтвердил exact stage input в существующем Golden executor после явного создания experiment; первый fixture пытался создать второй agent registry, исправлен отдельным frozen prompt и повторно прошёл. Две настоящие PostgreSQL replicas проверили четыре imports с 201/200, один dataset/event, changed-intent 409, tenant 404 и durable receipt после source-run purge. Offline apply/verify/rehearsal перенёс dataset/v1, lineage JSON и content SHA; все три integration checks прошли. Typechecks и production builds всех workspaces, docs links/catalog прошли. Поставка backend в #239 приведена ниже; UI описан следующим этапом.
+
+Head #239 `078669b1adedfd40105b089049dbc04f483449a6` прошёл все 15 required/verify/CodeQL checks. Merge — `64a5f239c7fc8078cc8ede7d8c6e183a16f468a9`.
+
+## Текущий этап USE-004: UI Golden handoff
+
+Ветка `codex/report-eval-handoff-ui` соединяет результат отчёта с versioned Golden dataset: admin/designer видят явный CTA, exact packet binding/digests проверяются до формы, reference изначально пустой, rubric/review задаёт человек. Контекст можно перечитать после 409 с сохранением текста; неизвестный POST outcome замораживает body/UUID даже после close/reopen окна. Success открывает exact dataset/v1 с lineage, reload и обратной ссылкой на run; query datasetVersion=1 сохраняет исходную версию и после появления v2. Код формы загружается отдельно; inner boundary сохраняет историю/чтение/экспорт при missing chunk. Ошибки API получают machine code для recovery; сообщения reference validation переведены на понятный текст. Общий focus trap учитывает summary.
+
+Локально прошли 79 web tests, 14 candidate/import API/OIDC checks, typechecks/builds всех workspaces и 32 общих Chromium checks. Настоящий coordinator + desktop/mobile Chromium прошли полный install/CSV/report/approval/office path, решения/ручную задачу, invalid reference, stale context/refresh, explicit rubric/review, lost response после commit, close/reopen и exact retry, один dataset/event, lineage/reload/source link; model completions/run/stages/approval не изменяются, experiment не создаётся. Визуальный replay выявил уход Close и ошибки за границу mobile viewport: header вынесен из scroll body, error авто-прокручивается, критерии многострочные; повторный flow и bounding-box assertions прошли. Все 13 Golden screenshots в `/private/tmp/agat-stage15-ui` просмотрены. Browser plugin not available; repo Playwright. Обычный путь без console warnings/errors; внедрённые HTTP/chunk ошибки изолированы. Черновик/pending через полную перезагрузку/смену отчёта/проекта не восстанавливается; это остаётся в UX-210. CI/PR/merge фиксируются после поставки.
 
 ## Границы и следующий остаток
 
 - USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: backend/UI решений, DOCX/PDF и candidate в main; поставить versioned import с lineage, затем UI Golden handoff.
+- USE-004: backend/UI решений, DOCX/PDF, candidate и versioned import в main; поставить UI Golden handoff и квалифицировать полный путь на разрешённых пользовательских данных.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением

@@ -4,7 +4,8 @@ Backend-контракт подготавливает **development candidate**,
 отчётом и решением человека. Подготовка не создаёт dataset, experiment, model
 call, tool approval или run. Отдельная явная операция сохраняет проверенный
 reference/rubric в первой версии dataset с lineage и durable retry receipt.
-Schema 35 не меняется. UI этих операций — следующий этап.
+Schema 35 не меняется. Интерфейс передачи описан ниже; техническая проверка
+workflow не заменяет квалификацию модели и реальный пользовательский trial.
 
 ## API и условия
 
@@ -132,6 +133,45 @@ holdoutEligible false и attestation. Комментарий решения и r
 сохраняет lineage JSON, reference и version SHA; новая DDL migration не нужна.
 
 ## Проверки и основания
+
+В результате отчёта admin/designer выбирает «В Golden eval» после сохранённого
+решения. Deferred dialog проверяет project/run/artifact/decision binding и
+SHA-256 packet/input/observed JSON через Web Crypto до показа формы. Наблюдаемый
+JSON раскрывается отдельно; reference пустой. Его можно явно взять как черновик,
+затем задать критерии и подтвердить проверку/хранение копии. Изменение полей
+сбрасывает attestation. Native source/schema/arithmetic checks остаются на сервере.
+
+409 context conflict сохраняет reference/rubric и требует перечитать контекст
+с повторной проверкой. Name conflict позволяет выбрать другое название. При
+неизвестном POST outcome поля заморожены, retry использует прежний UUID/body;
+закрытие/повторное открытие окна не отправляет запрос автоматически и сохраняет
+pending intent, пока смонтирован этот отчёт. После success показываются receipt
+и ссылка на exact dataset ID/version; datasetVersion=1 фокусирует исходную
+версию даже после появления v2. Reload страницы качества сохраняет выбранный
+dataset/version, а карточка v1 показывает lineage и ссылку на исходный run. Import не
+создаёт experiment. Source/hash details находятся в disclosure.
+
+Header/Close находятся вне прокручиваемого body формы; ошибка автоматически
+попадает в видимую область. Tab/Escape и возврат фокуса используют общий
+ModalLayer, включая collapsed summary. Сбой отдельного UI chunk локализуется:
+история решений, форматированный отчёт и office exports остаются доступны.
+Без Web Crypto показывается отказ проверки целостности с recovery через
+HTTPS/localhost. Полная перезагрузка, смена отчёта или проекта размонтирует
+несохранённую форму: перенос pending/draft через эти границы остаётся в UX-210.
+Серверный dataset/receipt после commit сохраняется независимо от окна браузера.
+
+Frontend QA: 79 web tests, 14 targeted API/OIDC checks и 32 общих Chromium checks;
+настоящий coordinator и Chromium 1440×1100 / 390×844 прошли invalid reference →
+stale context/refresh с сохранением текста → explicit review → response loss
+после server commit → close/reopen frozen intent → same-body retry → один
+dataset/event → lineage/reload/source link. В обоих cold chunk failure checks
+чтение/история/PDF остаются доступны. Browser plugin not available — использован
+repo Playwright. Все 13 Golden UI screenshots в `/private/tmp/agat-stage15-ui`
+просмотрены; ошибки/close доступны в mobile viewport, link/criteria читаемы.
+Обычный путь без console warnings/errors; ожидаемые HTTP 400/409/ERR_FAILED,
+missing chunks и предупреждение Playwright service-worker блокировки строго
+изолированы. Реальные устройства, другие движки и пользовательская квалификация
+этой проверкой не покрыты. Временные screenshots не включены в Git.
 
 Целевые SQLite/API/OIDC tests проверяют frozen bindings и hashes, точный JSON
 агента вместо Markdown, blank reference для обоих решений, повтор, отсутствие

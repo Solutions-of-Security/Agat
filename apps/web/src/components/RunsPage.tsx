@@ -5,6 +5,7 @@ import { RunDetail } from "./RunDetail";
 import { RunQueue } from "./RunQueue";
 
 interface RunsPageProps {
+  projectId?: string;
   mode: "runs" | "approvals";
   roles: AgatRole[];
   overview: Overview;
@@ -23,6 +24,7 @@ interface RunsPageProps {
 }
 
 export function RunsPage({
+  projectId = "default",
   mode,
   roles,
   overview,
@@ -64,6 +66,8 @@ export function RunsPage({
           onSelect={onSelect}
         />
         <RunDetail
+          projectId={projectId}
+          canPrepareEval={roles.some(role => role === "admin" || role === "designer")}
           run={selectedRun}
           events={overview.events as AgatEvent[]}
           schedulerMode={overview.scheduler.mode}

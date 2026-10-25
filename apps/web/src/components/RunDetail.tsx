@@ -496,6 +496,8 @@ function EvaluationPanel({ run, trace, models, busy, canReplayRuns, onReplay }: 
 }
 
 interface RunDetailProps {
+  projectId?: string;
+  canPrepareEval?: boolean;
   run: Run | null;
   events: AgatEvent[];
   schedulerMode: SchedulerMode;
@@ -514,6 +516,8 @@ interface RunDetailProps {
 }
 
 export function RunDetail({
+  projectId = "default",
+  canPrepareEval = false,
   run,
   events,
   schedulerMode,
@@ -857,8 +861,8 @@ export function RunDetail({
             onClick={() => void exportOffice(reportArtifact, format)}>{currentOfficeAction?.busy && currentOfficeAction.key === `${reportArtifact.id}:${format}` ? "Готовим файл…" : `Скачать ${format.toUpperCase()}`}</button>)}</div>
           {currentOfficeAction?.error ? <p role="alert">{currentOfficeAction.error}</p> : null}
         </div> : officeEligible && officeFiles?.runId === run.id && officeFiles.error ? <p role="alert">Не удалось загрузить форматы отчёта. <button className="button button--secondary" type="button" onClick={() => setOfficeRetry(value => value + 1)}>Повторить загрузку файлов</button></p> : null}
-        {reportArtifact ? <ReportDecisionBoundary key={`${reportArtifact.id}:${reportArtifact.sha256}`}><Suspense fallback={<p role="status">Загружаем действия с отчётом…</p>}>
-          <ReportDecisionPanel artifact={reportArtifact} canReview={canDecideApproval} onDownloadSource={async () => triggerDownload(await api.downloadArtifact(reportArtifact.id), reportArtifact.name)} />
+        {reportArtifact ? <ReportDecisionBoundary key={`${projectId}:${reportArtifact.id}:${reportArtifact.sha256}`}><Suspense fallback={<p role="status">Загружаем действия с отчётом…</p>}>
+          <ReportDecisionPanel artifact={reportArtifact} projectId={projectId} canPrepareEval={canPrepareEval} canReview={canDecideApproval} onDownloadSource={async () => triggerDownload(await api.downloadArtifact(reportArtifact.id), reportArtifact.name)} />
         </Suspense></ReportDecisionBoundary> : null}
         {result ? <>
           <div className="run-result__view" role="group" aria-label="Представление результата">
