@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { api } from "../lib/api";
 import type {
@@ -18,6 +18,7 @@ import { AccessibleTabList, TabPanel, type TabDefinition } from "./AccessibleTab
 import { useActionDialog } from "./ActionDialog";
 import { Icon } from "./Icon";
 import { ModalLayer } from "./ModalLayer";
+import { ReportDatasetOrigin } from "./ReportDatasetOrigin";
 
 type EvalTab = "experiments" | "datasets" | "prompts";
 
@@ -121,12 +122,17 @@ function Gate({ name, value }: { name: string; value: "pass" | "fail" | "pending
 
 export function EvalsPage({ projectId, agents, models, collections, roles, onChanged }: EvalsPageProps) {
   const requestAction = useActionDialog();
-  const [tab, setTab] = useState<EvalTab>("experiments");
+  const requestedDataset = new URLSearchParams(window.location.hash.split("?")[1]).get("datasetId");
+  const datasetTarget = requestedDataset && /^[a-zA-Z0-9_-]{1,100}$/.test(requestedDataset) ? requestedDataset : null;
+  const requestedVersion = new URLSearchParams(window.location.hash.split("?")[1]).get("datasetVersion");
+  const datasetVersionTarget = requestedVersion && /^[1-9][0-9]{0,6}$/.test(requestedVersion) ? Number(requestedVersion) : null;
+  const datasetVersionRef = useRef<HTMLElement>(null);
+  const [tab, setTab] = useState<EvalTab>(() => datasetTarget ? "datasets" : "experiments");
   const [snapshot, setSnapshot] = useState<EvalSnapshot | null>(null);
   const [detail, setDetail] = useState<GoldenEvalExperiment | null>(null);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(datasetTarget);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +239,11 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
 
   const selectedPrompt = snapshot?.prompts.find((prompt) => prompt.id === selectedPromptId) ?? null;
   const selectedDataset = snapshot?.datasets.find((dataset) => dataset.id === selectedDatasetId) ?? null;
+  useEffect(() => {
+    if (!loading && tab === "datasets" && selectedDataset?.id === datasetTarget && datasetVersionTarget && datasetVersionRef.current) {
+      datasetVersionRef.current.scrollIntoView({ block: "start" }); datasetVersionRef.current.focus({ preventScroll: true });
+    }
+  }, [loading, tab, selectedDataset?.id, datasetTarget, datasetVersionTarget]);
   const detailDataset = snapshot?.datasets.find((dataset) => dataset.id === detail?.datasetId) ?? null;
   const detailDatasetVersion = detailDataset?.versions.find((version) => version.version === detail?.datasetVersion) ?? null;
 
@@ -480,7 +491,7 @@ export function EvalsPage({ projectId, agents, models, collections, roles, onCha
           <div className="registry-detail">
             {selectedDataset ? <>
               <header><div><span>GOLDEN DATASET</span><h2>{selectedDataset.name}</h2><p>{selectedDataset.description || "Без описания"}</p></div><button className="button button--secondary" type="button" onClick={() => openDatasetVersion(selectedDataset)} disabled={!canDesign}><Icon name="plus" size={15} />Новая версия</button></header>
-              <div className="registry-versions">{selectedDataset.versions.map((version) => <article key={version.version}><div className="registry-version__head"><strong>v{version.version}{version.active ? " · CURRENT" : ""}</strong><code>{version.contentSha256.slice(0, 12)}</code><time>{formatDate(version.createdAt)}</time></div><p>{version.changeNote || "Без комментария"}</p><div className="dataset-version__stats"><span>{version.examples.length} examples</span><span>{version.rubric.length} rubric criteria</span><span>{version.knowledgeSnapshot.collectionIds?.length ?? 0} knowledge collections</span></div><details><summary>Примеры и rubric</summary>{version.rubric.map((criterion) => <p key={criterion.id}><strong>{criterion.label}</strong> · weight {criterion.weight} · {criterion.description}</p>)}{version.examples.map((example) => <p key={example.id}><strong>{example.position + 1}. {example.name}</strong> · {example.input}</p>)}</details></article>)}</div>
+              <div className="registry-versions">{selectedDataset.versions.map((version) => <article key={version.version} ref={selectedDataset.id === datasetTarget && version.version === datasetVersionTarget ? datasetVersionRef : undefined} data-dataset-version={version.version} data-requested-version={selectedDataset.id === datasetTarget && version.version === datasetVersionTarget ? "true" : undefined} tabIndex={selectedDataset.id === datasetTarget && version.version === datasetVersionTarget ? -1 : undefined}><div className="registry-version__head"><strong>v{version.version}{version.active ? " · CURRENT" : ""}</strong><code>{version.contentSha256.slice(0, 12)}</code><time>{formatDate(version.createdAt)}</time></div><p>{version.changeNote || "Без комментария"}</p><ReportDatasetOrigin value={version.knowledgeSnapshot.reportImport} /><div className="dataset-version__stats"><span>{version.examples.length} examples</span><span>{version.rubric.length} rubric criteria</span><span>{version.knowledgeSnapshot.collectionIds?.length ?? 0} knowledge collections</span></div><details><summary>Примеры и rubric</summary>{version.rubric.map((criterion) => <p key={criterion.id}><strong>{criterion.label}</strong> · weight {criterion.weight} · {criterion.description}</p>)}{version.examples.map((example) => <p key={example.id}><strong>{example.position + 1}. {example.name}</strong> · {example.input}</p>)}</details></article>)}</div>
             </> : <div className="eval-empty"><strong>Dataset не выбран</strong></div>}
           </div>
       </TabPanel>

@@ -2896,7 +2896,7 @@ export function createCoordinatorServer(
         : error instanceof Error && "code" in error && error.code === "AGAT_COMMIT_UNKNOWN"
           ? 503
         : 400;
-      json(response, status, { error: safeMessage(error) });
+      json(response, status, { error: safeMessage(error), ...(error instanceof BusinessReportEvalError ? { code: error.code } : {}) });
     }
     });
     void requestTask.catch((error) => {

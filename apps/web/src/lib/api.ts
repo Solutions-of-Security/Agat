@@ -72,6 +72,9 @@ import type {
   ReportReworkTask,
   RecordReportDecisionRequest,
   RecordReportDecisionResponse,
+  ReportEvalCandidate,
+  ReportEvalImportRequest,
+  ReportEvalImportReceipt,
 } from "../types";
 import { accessToken, activeProjectId, oidcEnabled } from "./auth";
 import type { ScenarioPreflight, ScenarioPreflightInput } from "../scenarioPreflight";
@@ -88,6 +91,7 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly preflight: ScenarioPreflight | null = null,
+    readonly code: string | null = null,
   ) {
     super(message);
   }
@@ -98,8 +102,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
-  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string; preflight?: ScenarioPreflight };
-  throw new ApiError(response.status, body.error ?? "Ошибка запроса", body.preflight ?? null);
+  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string; preflight?: ScenarioPreflight; code?: unknown };
+  throw new ApiError(response.status, body.error ?? "Ошибка запроса", body.preflight ?? null, typeof body.code === "string" ? body.code : null);
 }
 
 function notifyAdminTokenListeners(required: boolean) {
@@ -320,6 +324,10 @@ export const api = {
   recordReportDecision: (artifactId: string, payload: RecordReportDecisionRequest) =>
     request<RecordReportDecisionResponse>(`/artifacts/${encodeURIComponent(artifactId)}/decisions`, { method: "POST", body: JSON.stringify(payload) }),
   reportReworkTask: (taskId: string, signal?: AbortSignal) => request<ReportReworkTask>(`/report-rework-tasks/${encodeURIComponent(taskId)}`, { signal }),
+  prepareReportEvalCandidate: (artifactId: string, expectedSha256: string, expectedRevision: number, signal?: AbortSignal) =>
+    request<ReportEvalCandidate>(`/artifacts/${encodeURIComponent(artifactId)}/eval-candidate`, { method: "POST", body: JSON.stringify({ expectedSha256, expectedRevision }), signal }),
+  importReportEvalDataset: (artifactId: string, payload: ReportEvalImportRequest) =>
+    request<ReportEvalImportReceipt>(`/artifacts/${encodeURIComponent(artifactId)}/eval-dataset`, { method: "POST", body: JSON.stringify(payload) }),
   exportArtifact: (artifactId: string, payload: { format: "docx" | "pdf"; expectedSha256: string; origin: string }) =>
     request<{ artifact: import("../types").Artifact; created: boolean }>(`/artifacts/${encodeURIComponent(artifactId)}/export`, { method: "POST", body: JSON.stringify(payload) }),
   localWorkers: (signal?: AbortSignal) =>

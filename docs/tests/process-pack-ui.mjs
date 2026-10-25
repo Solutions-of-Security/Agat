@@ -10,6 +10,7 @@ import { loadConfig } from "../../apps/coordinator/src/config.ts";
 import { createCoordinatorServer } from "../../apps/coordinator/src/server.ts";
 import { getInternalReportPack } from "../../apps/coordinator/src/process-packs.ts";
 import { exerciseReportDecision, exerciseDecisionChunkFailure } from "./report-decision-ui-steps.mjs";
+import { exerciseReportEvalHandoff, exerciseEvalChunkFailure } from "./report-eval-ui-steps.mjs";
 
 const { chromium } = await import(process.env.AGAT_PLAYWRIGHT_MODULE || "playwright");
 const artifactsDir = mkdtempSync(path.join(tmpdir(), "agat-pack-ui-"));
@@ -193,7 +194,9 @@ try {
     await result.locator(".report-markdown").scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-report.png`), fullPage: false });
     await exerciseReportDecision({ page, context, base, headers, store, artifact: ownArtifact, projectId, screenshotDir, errors });
+    await exerciseReportEvalHandoff({ page, context, base, headers, store, artifact: ownArtifact, projectId, screenshotDir, errors });
     if (projectId === "desktop") await exerciseDecisionChunkFailure({ browser, base, token, projectId, runId: ownRunId, screenshotDir });
+    if (projectId === "desktop") await exerciseEvalChunkFailure({ browser, base, token, projectId, runId: ownRunId, screenshotDir });
     await result.getByRole("button", { name: "Форматированный", exact: true }).click();
     await result.locator(".report-markdown").getByRole("link", { name: `[${sourceMarker}]`, exact: true }).first().focus();
     await page.keyboard.press("Enter");
@@ -206,7 +209,7 @@ try {
     assert.equal(store.listProcesses(projectId).length, 2);
     assert.equal(await page.locator("vite-error-overlay").count(), 0);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${projectId}: ${base} · v1/v2 install/update/rollback -> CSV -> validated report -> exact DOCX/PDF -> decision/lost-response retry -> manual task/source -> stale conflict/history -> exact source; no unexpected console errors`);
+    console.log(`PASS ${projectId}: ${base} · v1/v2 install/update/rollback -> CSV -> validated report -> exact DOCX/PDF -> decision/manual task -> reviewed Golden import/stale-context refresh/lost-response retry -> dataset v1 lineage -> exact source; no unexpected console errors`);
     await context.close();
   }
 } catch (error) {

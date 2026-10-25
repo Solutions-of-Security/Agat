@@ -600,6 +600,7 @@ export default function App() {
           {activeView === "runs" ? (
             <RunsPage
               mode="runs"
+              projectId={currentProjectId}
               roles={roles}
               overview={overview}
               selectedRun={selectedRun}

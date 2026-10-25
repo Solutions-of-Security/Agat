@@ -1137,6 +1137,34 @@ export interface RecordReportDecisionResponse {
   decision: ReportDecisionRecord; reworkTask: ReportReworkTask | null; created: boolean;
 }
 
+export interface ReportEvalCandidateSource extends Omit<ReportDecisionBinding, "stageId"> {
+  projectId: string; reportStageId: string; decisionId: string; decisionRevision: number;
+  decision: ReportDecisionKind; reason: string; agentStageId: string; agentId: string;
+  promptSha256: string; definitionSha256: string; requestedModel: string | null;
+  runtime: string; runtimeProfile: string; observedOutputSha256: string;
+}
+export interface ReportEvalCandidate {
+  profile: "business-report-eval-candidate.v1"; purpose: "development"; holdoutEligible: false; referenceReviewRequired: true;
+  replay: { automatic: false; scope: "single_agent"; context: "requires_review" };
+  source: ReportEvalCandidateSource;
+  example: { name: string; input: string; referenceOutput: ""; requiredTerms: string[]; forbiddenTerms: string[]; knowledgeCollectionIds: string[] };
+  observedOutput: string;
+  currentKnowledgeSnapshot: { schemaVersion: number; collectionIds: string[]; missingCollectionIds: string[]; fingerprint: string };
+  contentSha256: string;
+}
+export interface ReportEvalImportRequest {
+  requestId: string; expectedSha256: string; expectedRevision: number; expectedCandidateSha256: string;
+  name: string; description: string; referenceOutput: string; rubric: EvalRubricCriterion[]; reviewConfirmed: true;
+}
+export interface ReportEvalImportReceipt {
+  datasetId: string; datasetVersion: 1; datasetContentSha256: string; candidateSha256: string; created: boolean;
+}
+export interface ReportEvalImportLineage {
+  profile: "business-report-eval-import.v1"; purpose: "development"; holdoutEligible: false; reviewConfirmed: true;
+  source: Omit<ReportEvalCandidateSource, "reason">; candidateSha256: string; referenceSha256: string;
+  actorSha256: string; requestSha256: string;
+}
+
 export interface RunDecisionObservation {
   stageId: string;
   profileSha256: string | null;
@@ -1376,6 +1404,7 @@ export interface GoldenDatasetVersion {
     collectionIds?: string[];
     missingCollectionIds?: string[];
     fingerprint?: string;
+    reportImport?: ReportEvalImportLineage;
   };
   contentSha256: string;
   createdBy: string;

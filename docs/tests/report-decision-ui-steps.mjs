@@ -72,6 +72,9 @@ export async function exerciseReportDecision({ page, context, base, headers, sto
   const taskBounds = await task.boundingBox();
   assert.ok(taskBounds.x >= 0 && taskBounds.x + taskBounds.width <= page.viewportSize().width);
   assert.equal(await task.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
+  await task.getByRole("link", { name: "Исходный запуск", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName === "SUMMARY" && document.activeElement.textContent === "Текст задания для передачи"), true, "the final collapsed summary remains reachable inside the focus trap");
   // Force the supported clipboard-denied path, rather than relying on host permissions.
   await page.evaluate(() => { Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: () => Promise.reject(new Error("clipboard denied in QA")) }); });
   await task.getByRole("button", { name: "Скопировать задание", exact: true }).click();
