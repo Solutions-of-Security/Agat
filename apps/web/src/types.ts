@@ -1109,6 +1109,34 @@ export interface Artifact {
   sourceArtifactId?: string | null;
 }
 
+export type ReportDecisionKind = "accepted" | "rework_requested";
+export interface ReportDecisionBinding {
+  artifactId: string; sourceSha256: string; runId: string; stageId: string;
+  processInstanceId: string; processId: string; processVersion: number;
+  graphSha256: string; inputSha256: string; schemaSha256: string;
+}
+export interface ReportDecisionRecord {
+  id: string; profile: "business-report-decision.v1"; artifactId: string; sourceSha256: string;
+  runId: string; revision: number; decision: ReportDecisionKind; reason: string; actor: string;
+  binding: ReportDecisionBinding; reworkTaskId: string | null; createdAt: string;
+}
+export interface ReportDecisionHistory {
+  artifactId: string; sourceSha256: string; sourceReady: boolean; revision: number;
+  decisions: ReportDecisionRecord[]; nextBeforeRevision: number | null;
+}
+export interface ReportReworkTask {
+  id: string; kind: "business_report_rework"; execution: "manual"; title: string;
+  state: "open" | "superseded"; decisionId: string; artifactId: string; sourceSha256: string;
+  runId: string; sourceAvailable: boolean; reason: string; requestedBy: string;
+  binding: ReportDecisionBinding; createdAt: string;
+}
+export interface RecordReportDecisionRequest {
+  requestId: string; expectedSha256: string; expectedRevision: number; decision: ReportDecisionKind; reason: string;
+}
+export interface RecordReportDecisionResponse {
+  decision: ReportDecisionRecord; reworkTask: ReportReworkTask | null; created: boolean;
+}
+
 export interface RunDecisionObservation {
   stageId: string;
   profileSha256: string | null;

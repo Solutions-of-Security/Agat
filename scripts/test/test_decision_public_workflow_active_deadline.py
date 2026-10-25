@@ -169,7 +169,11 @@ class ActiveDeadlineOfflineTest(unittest.TestCase):
         names=subprocess.check_output(['git','ls-files','--',*sorted(set(workflow.SOURCE_PATHS+deadline.SOURCE_PATHS+CONTEXT_PATHS))],cwd=ROOT,text=True).splitlines()
         for name in names:
             path=cls.root/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes((ROOT/name).read_bytes())
-        for args in (['init','--quiet'],['add','.'],['-c','user.name=Synthetic fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','Synthetic deadline sources']): subprocess.run(['git',*args],cwd=cls.root,check=True)
+        # This repository is deleted as soon as verification ends. Detached Git
+        # maintenance can still write .git while TemporaryDirectory removes it.
+        for args in (['init','--quiet'],['config','maintenance.auto','false'],['config','gc.auto','0'],['add','.'],
+                     ['-c','user.name=Synthetic fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','Synthetic deadline sources']):
+            subprocess.run(['git',*args],cwd=cls.root,check=True)
         cls.commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=cls.root,text=True).strip()
     @classmethod
     def tearDownClass(cls): cls.temporary.cleanup()
