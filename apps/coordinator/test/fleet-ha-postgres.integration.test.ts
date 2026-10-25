@@ -393,6 +393,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-pack-history-"));
     const first = store(`pack-history-${suffix}`, artifacts);
     const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    let fixtureWorkerId: string | undefined;
     try {
       first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
       const pack = getInternalReportPack(2), legacy = getInternalReportPack();
@@ -464,8 +465,9 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       } finally { await barrier.query("ROLLBACK").catch(() => {}); await barrier.end(); }
       const fresh = (await first.reindexKnowledgeDocument(String(document.id), project))!;
       first.reviewKnowledgeExtraction(String(document.id), fixtureExtractionReview(fresh), project, "fixture-reviewer");
-      const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [],
+      const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
         embeddingModels: [project], region: cellRegion, residencyDomain: cellResidencyDomain });
+      fixtureWorkerId = worker.id;
       const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document.id);
       const collectionBarrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
       try {
@@ -501,7 +503,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       await Promise.all(children.map(child => child.stop()));
       // The last assertions intentionally enter a tenant scope. Replica shutdown
       // updates a global table and must release the migration gate as system.
-      runWithPostgresSystemScope(() => first.close());
+      runWithPostgresSystemScope(() => {
+        // Empty model advertisements are a legacy wildcard in the router. This
+        // synthetic embedder must never attract another fixture's pinned model.
+        if (fixtureWorkerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(fixtureWorkerId);
+        first.close();
+      });
       fs.rmSync(artifacts, { recursive: true, force: true });
     }
   });
