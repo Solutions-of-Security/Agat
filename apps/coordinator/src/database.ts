@@ -36,7 +36,7 @@ import { getProcessTemplateCatalog, instantiateCatalogTemplate } from "./process
 import { recoveryLink, scenarioTrigger, ScenarioPreflightError, type ScenarioBlocker, type ScenarioPreflight, type ScenarioPreflightInput, type ScenarioPreflightContext } from "./scenario-preflight.js";
 import { getInternalReportPack, internalReportGraph, validateProcessPackInput, processPackChanges, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview, type ProcessPackActivation, type ProcessPackHistoryEntry } from "./process-packs.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
-import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
+import { normalizeKnowledgeUpload, parseKnowledgeFile, KnowledgeParserBusyError } from "./knowledge-files.js";
 import { extractionReport, extractionReportSha256, validateExtractionReview, type KnowledgeExtractionReport, type KnowledgeExtractionReview, type KnowledgeExtractionReviewInput, type KnowledgeExtractionProvenance } from "./knowledge-extraction.js";
 import { chunkTabularKnowledgeText, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
@@ -262,8 +262,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 32;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-document-extraction-review-v32";
+export const POSTGRES_SCHEMA_VERSION = 33;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-knowledge-file-dedupe-v33";
 
 export class ScheduledStartConflictError extends Error {}
 export class ScheduledStartCancelledError extends Error {}
@@ -2336,6 +2336,8 @@ export class AgatStore {
         this.db.exec(`ALTER TABLE knowledge_documents ADD COLUMN ${name} ${definition};`);
       }
     }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_documents_original_file
+      ON knowledge_documents(collection_id, original_sha256) WHERE original_sha256 IS NOT NULL;`);
     // Older file ingests have no coverage/review evidence. Invalidate embedding
     // leases but preserve extracted text/chunks and historical citation snapshots.
     this.db.exec(`DELETE FROM knowledge_embedding_jobs WHERE document_id IN (
@@ -2969,7 +2971,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 32;");
+    this.db.exec("PRAGMA user_version = 33;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -8666,13 +8668,31 @@ export class AgatStore {
       throw new Error("Knowledge collection не найдена");
     }
     const file = normalizeKnowledgeUpload(input);
+    const existing = this.existingKnowledgeUpload(collectionId, file, projectId);
+    if (existing) return existing;
     let content = "";
     let pages: KnowledgePageLocation[] = [];
     let parseError: string | null = null;
     let extraction: KnowledgeExtractionReport | null = null;
     try { ({ content, pages, extraction } = await parseKnowledgeFile(file.bytes, file.mediaType)); }
-    catch (error) { parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`; }
-    return this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError, extraction }, projectId);
+    catch (error) {
+      if (error instanceof KnowledgeParserBusyError) throw error;
+      parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`;
+    }
+    const document = this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError, extraction }, projectId);
+    return document.upload ? document : { ...document, upload: { disposition: "created", requestedName: file.name } };
+  }
+
+  private existingKnowledgeUpload(collectionId: string, file: { originalSha256: string; mediaType: string; sourceUri: string; name: string }, projectId: string) {
+    const match = this.db.prepare(`SELECT d.id FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
+      WHERE c.id = ? AND c.project_id = ? AND d.original_sha256 = ? ORDER BY d.created_at, d.id LIMIT 1`)
+      .get(collectionId, projectId, file.originalSha256) as Row | undefined;
+    if (!match) return null;
+    const row = this.knowledgeDocumentMetadataRow(String(match.id), projectId);
+    if (!row) return null;
+    if (file.mediaType !== row.media_type) throw new Error(`Этот файл уже загружен как «${row.name}» с другим форматом. Откройте существующий документ и проверьте формат файла.`);
+    if (file.sourceUri && file.sourceUri !== row.source_uri) throw new Error(`Этот файл уже загружен как «${row.name}», но указан другой источник. Используйте сохранённый источник или откройте существующий документ.`);
+    return { ...this.knowledgeDocumentDto(row), upload: { disposition: "existing", requestedName: file.name } };
   }
 
   async reindexKnowledgeDocument(documentId: string, projectId = "default") {
@@ -8688,6 +8708,7 @@ export class AgatStore {
     if (typeof row.original_base64 === "string") {
       try { ({ content, pages, extraction } = await parseKnowledgeFile(Buffer.from(row.original_base64, "base64"), String(row.media_type))); }
       catch (error) {
+        if (error instanceof KnowledgeParserBusyError) throw error;
         content = "";
         extraction = null;
         parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`;
@@ -8745,11 +8766,18 @@ export class AgatStore {
     const timestamp = nowIso();
     const extractionRevision = randomUUID();
     const requiresReview = !document.parseError && Boolean(document.extraction?.reviewRequired);
+    let duplicate: Record<string, unknown> | null = null;
     try {
       this.transaction(() => {
         const collection = this.db.prepare(`SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`)
           .get(collectionId, project) as Row | undefined;
         if (!collection) throw new Error("Knowledge collection не найдена");
+        if (!previous && document.originalSha256) {
+          // The collection write lock serializes cold uploads across replicas.
+          // Recheck after parsing: another request may have stored these bytes.
+          duplicate = this.existingKnowledgeUpload(collectionId, { ...document, originalSha256: document.originalSha256 }, project);
+          if (duplicate) return;
+        }
         if (previous) {
           // Embedding completion already locks job before document. Preserve
           // that order so reindex cannot form a job/document deadlock with it.
@@ -8807,6 +8835,7 @@ export class AgatStore {
       }
       throw error;
     }
+    if (duplicate) return duplicate;
     this.addEvent(null, null, null, document.parseError ? "error" : "info",
       document.parseError ? "knowledge.document.parse_failed" : requiresReview ? "knowledge.document.review_required" : "knowledge.document.queued",
       document.parseError ? `Ошибка разбора «${document.name}»` : requiresReview ? `Проверьте извлечённый текст «${document.name}»` : `Документ «${document.name}» поставлен на локальную индексацию`,

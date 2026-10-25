@@ -7,6 +7,7 @@ import { getProcessTemplateCatalog } from "./process-catalog.js";
 import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
 import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
 import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
+import { KnowledgeParserBusyError } from "./knowledge-files.js";
 
 import {
   loadConfig,
@@ -1750,7 +1751,9 @@ export function createCoordinatorServer(
       if (request.method === "POST" && uploadKnowledgeId) {
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         const body = await readJson<UploadKnowledgeDocumentInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
-        json(response, 201, await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId));
+        const document = await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId);
+        const upload = document.upload as { disposition: string };
+        json(response, upload.disposition === "existing" ? 200 : 201, document);
         return;
       }
 
@@ -2812,6 +2815,7 @@ export function createCoordinatorServer(
         return;
       }
       const status = error instanceof HttpError
+        || error instanceof KnowledgeParserBusyError
         || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError

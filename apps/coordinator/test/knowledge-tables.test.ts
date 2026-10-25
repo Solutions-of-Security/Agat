@@ -129,7 +129,7 @@ test("table ingestion preserves originals, indexes cell references, records prov
     assert.equal(hit.provenance.originalSha256, document.originalSha256);
     store.completeLease(node, stage.leaseId, "Stored value 120.50 [K1]");
     assert.equal(store.getRunKnowledgeSources(run.id)![0]!.provenance.chunkId, hit.provenance.chunkId);
-    await assert.rejects(store.uploadKnowledgeDocument(String(collection.id), { name: "Table.xlsx", mediaType: XLSX, contentBase64: bytes.toString("base64") }), /уже существует/);
+    assert.equal((await store.uploadKnowledgeDocument(String(collection.id), { name: "Renamed.xlsx", mediaType: XLSX, contentBase64: bytes.toString("base64") })).id, document.id);
     store.createProject({ id: "other", name: "Other" });
     assert.equal(store.getKnowledgeDocument(String(document.id), "other"), null);
     const bad = await store.uploadKnowledgeDocument(String(collection.id), { name: "Formula.xlsx", mediaType: XLSX,

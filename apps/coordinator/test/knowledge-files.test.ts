@@ -69,7 +69,7 @@ test("upload, failed parse, preview, reindex leases and project boundaries persi
     assert.equal(store.getKnowledgeDocumentFile(id, "other"), null);
     assert.equal(await store.reindexKnowledgeDocument(id, "other"), null);
     await assert.rejects(store.uploadKnowledgeDocument(collectionId, { name: "Foreign.pdf", mediaType: "application/pdf", contentBase64: bytes.toString("base64") }, "other"), /не найдена/);
-    await assert.rejects(store.uploadKnowledgeDocument(collectionId, { name: "Policy.pdf", mediaType: "application/pdf", contentBase64: bytes.toString("base64") }), /уже существует/);
+    assert.equal((await store.uploadKnowledgeDocument(collectionId, { name: "Policy.pdf", mediaType: "application/pdf", contentBase64: bytes.toString("base64") })).id, id);
     const failed = await store.uploadKnowledgeDocument(collectionId, { name: "Corrupt.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("broken").toString("base64") });
     assert.equal(failed.status, "failed");
     assert.match(String(failed.parseError), /Ошибка разбора/);
@@ -165,6 +165,7 @@ test("existing text-only SQLite databases migrate without losing document conten
     const document = store.ingestKnowledgeDocument(String(collection.id), { name: "Legacy text", content: "Keep this content." });
     store.close();
     const db = new DatabaseSync(filename);
+    db.exec("DROP INDEX idx_knowledge_documents_original_file");
     for (const column of ["original_base64", "original_sha256", "pages_json", "parse_error"]) db.exec(`ALTER TABLE knowledge_documents DROP COLUMN ${column}`);
     db.exec("ALTER TABLE knowledge_chunks DROP COLUMN page_number");
     db.close();

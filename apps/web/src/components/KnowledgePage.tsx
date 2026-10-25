@@ -67,6 +67,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [ingestCollectionId, setIngestCollectionId] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -117,6 +118,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
   async function mutate(action: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
     setError(null);
+    setUploadNotice(null);
     try {
       await action();
       after?.();
@@ -159,6 +161,9 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
       const document = documentBase64 !== null
         ? await api.uploadKnowledgeDocument(ingestCollectionId, { ...metadata, contentBase64: documentBase64 })
         : await api.ingestKnowledgeDocument(ingestCollectionId, { ...metadata, content: documentContent });
+      if ("upload" in document && (document.upload as { disposition: string }).disposition === "existing") {
+        setUploadNotice({ projectId, message: `Файл «${documentName}» уже загружен как «${document.name}». Открыт сохранённый документ с текущим состоянием проверки и индексации.` });
+      }
       window.location.hash = knowledgeDocumentHref(projectId, document.id);
     }, () => {
       setIngestCollectionId(null);
@@ -296,6 +301,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
       </section>
 
       {error ? <button className="connection-toast knowledge-page__error" type="button" onClick={() => setError(null)}>{error}</button> : null}
+      {uploadNotice?.projectId === projectId ? <p role="status">{uploadNotice.message}</p> : null}
 
       {recovery.get("documentId") ? <KnowledgeDocumentPreview
         key={`${projectId}:${recovery.get("documentId")}`} documentId={recovery.get("documentId")!} projectId={projectId}

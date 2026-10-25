@@ -26,8 +26,13 @@ export function normalizeKnowledgeUpload(input: UploadKnowledgeDocumentInput) {
 
 let activeParsers = 0;
 
+export class KnowledgeParserBusyError extends Error {
+  readonly status = 503;
+  constructor() { super("Разбор документов занят. Повторите загрузку или индексацию позже"); }
+}
+
 export async function parseKnowledgeFile(bytes: Uint8Array, mediaType: string): Promise<ExtractedKnowledgeFile> {
-  if (activeParsers >= 2) throw new Error("Разбор документов занят. Повторите индексацию позже");
+  if (activeParsers >= 2) throw new KnowledgeParserBusyError();
   activeParsers += 1;
   try {
     return await new Promise<ExtractedKnowledgeFile>((resolve, reject) => {

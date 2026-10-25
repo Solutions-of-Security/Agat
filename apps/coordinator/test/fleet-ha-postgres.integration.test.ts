@@ -496,6 +496,16 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.equal(stale.status, 400); assert.match(await stale.text(), /Документ изменился/);
         assert.equal(first.getKnowledgeDocument(String(document.id), project)!.status, "ready");
       } finally { await collectionBarrier.query("ROLLBACK").catch(() => {}); await collectionBarrier.end(); }
+      const csv = Buffer.from("period,total\n2026-09,240\n").toString("base64");
+      const uploads = await Promise.all([0, 1, 0, 1].map((index, attempt) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/knowledge/collections/${fileCollection}/documents/upload`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": project },
+        body: JSON.stringify({ name: `Renamed ${attempt}.csv`, mediaType: "text/csv", contentBase64: csv }), signal: AbortSignal.timeout(20_000),
+      })));
+      assert.deepEqual(uploads.map(response => response.status).sort(), [200, 200, 200, 201]);
+      const reused = await Promise.all(uploads.map(response => response.json() as Promise<Record<string, unknown>>));
+      assert.equal(new Set(reused.map(document => document.id)).size, 1);
+      assert.equal(Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(reused[0]!.id))!.count), 1);
+      assert.equal(first.listEvents(0, 200, project).filter(event => event.type === "knowledge.document.queued" && JSON.stringify(event.data).includes(String(reused[0]!.id))).length, 1);
       enterPostgresTenantScope(foreign);
       assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
       assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);

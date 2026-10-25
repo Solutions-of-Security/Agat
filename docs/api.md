@@ -63,7 +63,7 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/knowledge/collections` | Создать project-scoped collection (`admin/designer`) |
 | `DELETE` | `/knowledge/collections/:id` | Каскадно удалить collection (`admin/designer`) |
 | `POST` | `/knowledge/collections/:id/documents` | Добавить `text/*` document (`admin/designer`) |
-| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX в `contentBase64` до 5 МиБ (`admin/designer`); parse error возвращается в сохранённом документе |
+| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX/CSV/XLSX в `contentBase64` до 5 МиБ (`admin/designer`); 201 новый / 200 существующий файл, parser busy 503; [контракт повторной загрузки](./knowledge-file-deduplication.md) |
 | `GET` | `/knowledge/documents/:id` | Предпросмотр: текст, страницы, chunks, hashes и parse error |
 | `GET` | `/knowledge/documents/:id/file` | Исходный PDF/DOCX (attachment, no-store) |
 | `POST` | `/knowledge/documents/:id/reindex` | Повторный разбор/индексация сохранённого документа (`admin/designer`) |
