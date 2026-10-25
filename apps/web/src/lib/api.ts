@@ -278,6 +278,9 @@ export const api = {
   knowledgeDocument: (documentId: string, signal?: AbortSignal) =>
     request<KnowledgeDocumentPreview>(`/knowledge/documents/${encodeURIComponent(documentId)}`, { signal }),
   knowledgeDocumentFile: (documentId: string) => requestBlob(`/knowledge/documents/${encodeURIComponent(documentId)}/file`),
+  reviewKnowledgeExtraction: (documentId: string, payload: { originalSha256: string; contentSha256: string; reportSha256: string;
+    extractionRevision: string; decision: "use_extracted_text_only"; reason: string }) =>
+    request<KnowledgeDocument>(`/knowledge/documents/${encodeURIComponent(documentId)}/review-extraction`, { method: "POST", body: JSON.stringify(payload) }),
   reindexKnowledgeDocument: (documentId: string) =>
     request<KnowledgeDocument>(`/knowledge/documents/${encodeURIComponent(documentId)}/reindex`, { method: "POST" }),
   runKnowledgeSources: (runId: string, signal?: AbortSignal) =>

@@ -67,6 +67,7 @@ Node token возвращается один раз при регистраци�
 | `GET` | `/knowledge/documents/:id` | Предпросмотр: текст, страницы, chunks, hashes и parse error |
 | `GET` | `/knowledge/documents/:id/file` | Исходный PDF/DOCX (attachment, no-store) |
 | `POST` | `/knowledge/documents/:id/reindex` | Повторный разбор/индексация сохранённого документа (`admin/designer`) |
+| `POST` | `/knowledge/documents/:id/review-extraction` | Решение об использовании только текущего извлечённого текста; exact hashes/revision и причина (`admin/designer`), [контракт](./document-extraction-review.md) |
 | `GET` | `/runs/:id/knowledge` | Сохранённые цитаты/provenance результата, project-scoped `{ sources: [...] }` |
 | `DELETE` | `/knowledge/documents/:id` | Удалить document/chunks (`admin/designer`) |
 | `POST` | `/knowledge/memory` | Явно сохранить working/episodic memory (`admin/designer/operator`) |

@@ -10,6 +10,7 @@ import pg from "pg";
 import { AgatStore } from "../src/database.js";
 import { migrateSqliteToPostgres } from "../src/sqlite-postgres-migrator.js";
 import { getInternalReportPack } from "../src/process-packs.js";
+import { pdfFile, acceptFixtureExtraction } from "./knowledge-file-fixtures.js";
 
 const systemUrl = process.env.AGAT_TEST_MIGRATION_POSTGRES_URL ?? "";
 const runtimeUrl = process.env.AGAT_TEST_MIGRATION_RUNTIME_URL ?? "";
@@ -33,6 +34,8 @@ describe("SQLite to PostgreSQL migration integration", {
     const scheduledKey = `agat-scheduled-v1:${"d".repeat(64)}`;
     let scheduledReceipt: ReturnType<AgatStore["startScheduledProcess"]> = null;
     let packProcessId = "";
+    let reviewedDocumentId = "";
+    let extractionRevision = "";
     const source = new AgatStore(sourcePath, {
       temporalProcesses: true,
       region: "eu-migration-test",
@@ -43,6 +46,10 @@ describe("SQLite to PostgreSQL migration integration", {
     try {
       const release = getInternalReportPack();
       packProcessId = source.installProcessPack(release.id, { version: release.version, manifestSha256: release.manifestSha256, model: release.defaults.model }).installation!.processId;
+      const fileCollection = source.createKnowledgeCollection({ name: "Reviewed file", embeddingModel: "migration-fixture" });
+      const document = await source.uploadKnowledgeDocument(String(fileCollection.id), { name: "Evidence.pdf", mediaType: "application/pdf", contentBase64: pdfFile().toString("base64") });
+      reviewedDocumentId = String(document.id); extractionRevision = String((document.extraction as { revision: string }).revision);
+      acceptFixtureExtraction(source, document);
       const node = source.registerNode({
         enrollmentToken: "test",
         name: "migration-node",
@@ -146,6 +153,11 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.equal(history.rowCount, 1);
         assert.equal(JSON.parse(history.rows[0].manifest_json).manifestSha256, getInternalReportPack().manifestSha256);
         assert.equal(JSON.parse(history.rows[0].installation_json).processId, packProcessId);
+        const reviewed = await client.query("SELECT extraction_state, extraction_revision, extraction_report_json, extraction_review_json FROM knowledge_documents WHERE id = $1", [reviewedDocumentId]);
+        assert.equal(reviewed.rows[0].extraction_state, "accepted_text");
+        assert.equal(reviewed.rows[0].extraction_revision, extractionRevision);
+        assert.equal(JSON.parse(reviewed.rows[0].extraction_review_json).extractionRevision, extractionRevision);
+        assert.equal(JSON.parse(reviewed.rows[0].extraction_report_json).profile, "pdf-text-layer.v1");
       } finally {
         await client.end();
       }

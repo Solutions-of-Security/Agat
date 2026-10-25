@@ -37,6 +37,7 @@ import { recoveryLink, scenarioTrigger, ScenarioPreflightError, type ScenarioBlo
 import { getInternalReportPack, internalReportGraph, validateProcessPackInput, processPackChanges, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview, type ProcessPackActivation, type ProcessPackHistoryEntry } from "./process-packs.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
 import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
+import { extractionReport, extractionReportSha256, validateExtractionReview, type KnowledgeExtractionReport, type KnowledgeExtractionReview, type KnowledgeExtractionReviewInput, type KnowledgeExtractionProvenance } from "./knowledge-extraction.js";
 import { chunkTabularKnowledgeText, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
@@ -261,8 +262,8 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 31;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-process-pack-history-v31";
+export const POSTGRES_SCHEMA_VERSION = 32;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-document-extraction-review-v32";
 
 export class ScheduledStartConflictError extends Error {}
 export class ScheduledStartCancelledError extends Error {}
@@ -2328,11 +2329,20 @@ export class AgatStore {
     for (const [name, definition] of [
       ["original_base64", "TEXT"], ["original_sha256", "TEXT"],
       ["pages_json", "TEXT NOT NULL DEFAULT '[]'"], ["parse_error", "TEXT"],
+      ["extraction_state", "TEXT NOT NULL DEFAULT 'legacy_unknown'"], ["extraction_report_json", "TEXT"],
+      ["extraction_review_json", "TEXT"], ["extraction_revision", "TEXT"],
     ]) {
       if (!knowledgeDocumentColumns.some((column) => column.name === name)) {
         this.db.exec(`ALTER TABLE knowledge_documents ADD COLUMN ${name} ${definition};`);
       }
     }
+    // Older file ingests have no coverage/review evidence. Invalidate embedding
+    // leases but preserve extracted text/chunks and historical citation snapshots.
+    this.db.exec(`DELETE FROM knowledge_embedding_jobs WHERE document_id IN (
+      SELECT id FROM knowledge_documents WHERE original_sha256 IS NOT NULL AND extraction_state = 'legacy_unknown'
+    );
+    UPDATE knowledge_documents SET status = 'review_required', error = 'История извлечения неизвестна. Переиндексируйте файл и проверьте текст перед использованием.'
+      WHERE original_sha256 IS NOT NULL AND extraction_state = 'legacy_unknown';`);
     const knowledgeChunkColumns = this.db.prepare("PRAGMA table_info(knowledge_chunks)").all() as Array<{ name: string }>;
     if (!knowledgeChunkColumns.some((column) => column.name === "page_number")) {
       this.db.exec("ALTER TABLE knowledge_chunks ADD COLUMN page_number INTEGER;");
@@ -2959,7 +2969,7 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 31;");
+    this.db.exec("PRAGMA user_version = 32;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -7676,7 +7686,8 @@ export class AgatStore {
       `).get(collectionId, projectId) as Row | undefined;
       if (!collection) return null;
       const documents = (this.db.prepare(`
-        SELECT id, name, content_sha256, status, chunk_count, embedded_count
+        SELECT id, name, content_sha256, status, chunk_count, embedded_count, original_sha256,
+          extraction_state, extraction_report_json, extraction_review_json, extraction_revision
         FROM knowledge_documents WHERE collection_id = ? ORDER BY id
       `).all(collectionId) as Row[]).map((document) => ({
         id: String(document.id),
@@ -7685,6 +7696,7 @@ export class AgatStore {
         status: String(document.status),
         chunkCount: Number(document.chunk_count),
         embeddedCount: Number(document.embedded_count),
+        ...(document.original_sha256 ? { extraction: this.knowledgeExtractionFingerprint(document) } : {}),
         chunkHashes: (this.db.prepare(`
           SELECT content_sha256 FROM knowledge_chunks WHERE document_id = ? ORDER BY ordinal
         `).all(String(document.id)) as Row[]).map((chunk) => String(chunk.content_sha256)),
@@ -8557,6 +8569,7 @@ export class AgatStore {
     const documents = (this.db.prepare(`
       SELECT d.id, d.collection_id, d.name, d.source_uri, d.media_type, d.content_sha256,
         d.status, d.error, d.parse_error, d.original_sha256, d.pages_json,
+        d.extraction_state, d.extraction_report_json, d.extraction_review_json, d.extraction_revision,
         d.chunk_count, d.embedded_count, d.created_at, d.updated_at, c.name AS collection_name, c.embedding_model
       FROM knowledge_documents d
       JOIN knowledge_collections c ON c.id = d.collection_id
@@ -8640,8 +8653,9 @@ export class AgatStore {
     input: IngestKnowledgeDocumentInput,
     projectId = "default",
   ): Record<string, unknown> {
+    const document = normalizeKnowledgeDocumentInput(input);
     return this.persistKnowledgeDocument(collectionId, {
-      ...normalizeKnowledgeDocumentInput(input), pages: [], parseError: null,
+      ...document, pages: [], parseError: null, extraction: extractionReport("provided-text.v1", document.content),
       originalBase64: null, originalSha256: null,
     }, projectId);
   }
@@ -8655,9 +8669,10 @@ export class AgatStore {
     let content = "";
     let pages: KnowledgePageLocation[] = [];
     let parseError: string | null = null;
-    try { ({ content, pages } = await parseKnowledgeFile(file.bytes, file.mediaType)); }
+    let extraction: KnowledgeExtractionReport | null = null;
+    try { ({ content, pages, extraction } = await parseKnowledgeFile(file.bytes, file.mediaType)); }
     catch (error) { parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`; }
-    return this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError }, projectId);
+    return this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError, extraction }, projectId);
   }
 
   async reindexKnowledgeDocument(documentId: string, projectId = "default") {
@@ -8669,25 +8684,35 @@ export class AgatStore {
     let content = String(row.content);
     let pages: KnowledgePageLocation[] = [];
     let parseError: string | null = null;
+    let extraction: KnowledgeExtractionReport | null = extractionReport("provided-text.v1", content);
     if (typeof row.original_base64 === "string") {
-      try { ({ content, pages } = await parseKnowledgeFile(Buffer.from(row.original_base64, "base64"), String(row.media_type))); }
+      try { ({ content, pages, extraction } = await parseKnowledgeFile(Buffer.from(row.original_base64, "base64"), String(row.media_type))); }
       catch (error) {
         content = "";
+        extraction = null;
         parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`;
       }
     }
     return this.persistKnowledgeDocument(String(row.collection_id), {
       name: String(row.name), sourceUri: String(row.source_uri), mediaType: String(row.media_type),
-      content, pages, parseError,
+      content, pages, parseError, extraction,
       originalBase64: typeof row.original_base64 === "string" ? row.original_base64 : null,
       originalSha256: typeof row.original_sha256 === "string" ? row.original_sha256 : null,
-    }, projectId, { id: documentId, updatedAt: String(row.updated_at) });
+    }, projectId, { id: documentId, updatedAt: String(row.updated_at), extractionRevision: typeof row.extraction_revision === "string" ? row.extraction_revision : null });
   }
 
   private knowledgeDocumentRow(documentId: string, projectId: string): Row | undefined {
     return this.db.prepare(`SELECT d.*, c.name AS collection_name, c.embedding_model
       FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
       WHERE d.id = ? AND c.project_id = ?`).get(documentId, projectId) as Row | undefined;
+  }
+
+  private knowledgeDocumentMetadataRow(documentId: string, projectId: string, lock = false): Row | undefined {
+    return this.db.prepare(`SELECT d.id, d.collection_id, d.name, d.source_uri, d.media_type, d.content_sha256,
+      d.status, d.error, d.parse_error, d.original_sha256, d.pages_json, d.chunk_count, d.embedded_count,
+      d.extraction_state, d.extraction_report_json, d.extraction_review_json, d.extraction_revision, d.created_at, d.updated_at,
+      c.name AS collection_name, c.embedding_model FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
+      WHERE d.id = ? AND c.project_id = ?${lock && this.stateStoreDriver === "postgresql" ? " FOR UPDATE OF d" : ""}`).get(documentId, projectId) as Row | undefined;
   }
 
   getKnowledgeDocument(documentId: string, projectId = "default"): Record<string, unknown> | null {
@@ -8713,18 +8738,26 @@ export class AgatStore {
     name: string; sourceUri: string; mediaType: string; content: string;
     pages: KnowledgePageLocation[]; parseError: string | null;
     originalBase64: string | null; originalSha256: string | null;
-  }, projectId: string, previous?: { id: string; updatedAt: string }): Record<string, unknown> {
+    extraction: KnowledgeExtractionReport | null;
+  }, projectId: string, previous?: { id: string; updatedAt: string; extractionRevision: string | null }): Record<string, unknown> {
     const project = this.requireProject(projectId);
     const documentId = previous?.id ?? randomUUID();
     const timestamp = nowIso();
+    const extractionRevision = randomUUID();
+    const requiresReview = !document.parseError && Boolean(document.extraction?.reviewRequired);
     try {
       this.transaction(() => {
-        const collection = this.db.prepare("SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?")
+        const collection = this.db.prepare(`SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`)
           .get(collectionId, project) as Row | undefined;
         if (!collection) throw new Error("Knowledge collection не найдена");
         if (previous) {
-          const current = this.knowledgeDocumentRow(documentId, project);
-          if (!current || current.updated_at !== previous.updatedAt) throw new Error("Документ изменился. Обновите страницу и повторите индексацию");
+          // Embedding completion already locks job before document. Preserve
+          // that order so reindex cannot form a job/document deadlock with it.
+          if (this.stateStoreDriver === "postgresql") this.db.prepare("SELECT id FROM knowledge_embedding_jobs WHERE document_id = ? FOR UPDATE").all(documentId);
+          // Review and reindex share this lock before touching jobs/chunks. A
+          // concurrent acknowledgement must not queue work for the new revision.
+          const current = this.knowledgeDocumentMetadataRow(documentId, project, true);
+          if (!current || current.updated_at !== previous.updatedAt || (current.extraction_revision ?? null) !== previous.extractionRevision) throw new Error("Документ изменился. Обновите страницу и повторите индексацию");
           if (this.knowledgeCollectionUsedByActiveRun(project, collectionId)) {
             throw new Error("Нельзя переиндексировать документ, пока коллекцию использует активный запуск");
           }
@@ -8745,10 +8778,14 @@ export class AgatStore {
         if (!document.parseError && !chunks.length) throw new Error("Документ не содержит индексируемого текста");
         this.db.prepare(`UPDATE knowledge_documents SET name = ?, source_uri = ?, media_type = ?, content_sha256 = ?, content = ?,
           original_base64 = ?, original_sha256 = ?, pages_json = ?, parse_error = ?, status = ?, error = ?,
+          extraction_state = ?, extraction_report_json = ?, extraction_review_json = NULL, extraction_revision = ?,
           chunk_count = ?, embedded_count = 0, updated_at = ? WHERE id = ?`).run(
           document.name, document.sourceUri, document.mediaType, sha256Text(document.content), document.content,
           document.originalBase64, document.originalSha256, JSON.stringify(document.pages), document.parseError,
-          document.parseError ? "failed" : "pending", document.parseError, chunks.length, timestamp, documentId,
+          document.parseError ? "failed" : requiresReview ? "review_required" : "pending",
+          document.parseError ?? (requiresReview ? "Сверьте извлечённый текст с оригиналом перед индексацией." : null),
+          document.parseError ? "unavailable" : requiresReview ? "review_required" : "scope_recorded",
+          document.extraction ? JSON.stringify(document.extraction) : null, extractionRevision, chunks.length, timestamp, documentId,
         );
         const insertChunk = this.db.prepare(`INSERT INTO knowledge_chunks(id, collection_id, document_id, ordinal, content,
           content_sha256, char_start, char_end, page_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -8758,7 +8795,7 @@ export class AgatStore {
           insertChunk.run(id, collectionId, documentId, ordinal, chunk.content, sha256Text(chunk.content),
             chunk.charStart, chunk.charEnd, chunk.pageNumber, timestamp);
         });
-        if (!document.parseError) this.db.prepare(`INSERT INTO knowledge_embedding_jobs(
+        if (!document.parseError && !requiresReview) this.db.prepare(`INSERT INTO knowledge_embedding_jobs(
           id, project_id, collection_id, document_id, status, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'pending', ?, ?)`)
           .run(randomUUID(), project, collectionId, documentId, timestamp, timestamp);
@@ -8771,10 +8808,48 @@ export class AgatStore {
       throw error;
     }
     this.addEvent(null, null, null, document.parseError ? "error" : "info",
-      document.parseError ? "knowledge.document.parse_failed" : "knowledge.document.queued",
-      document.parseError ? `Ошибка разбора «${document.name}»` : `Документ «${document.name}» поставлен на локальную индексацию`,
-      { projectId: project, collectionId, documentId, reindex: Boolean(previous), error: document.parseError });
+      document.parseError ? "knowledge.document.parse_failed" : requiresReview ? "knowledge.document.review_required" : "knowledge.document.queued",
+      document.parseError ? `Ошибка разбора «${document.name}»` : requiresReview ? `Проверьте извлечённый текст «${document.name}»` : `Документ «${document.name}» поставлен на локальную индексацию`,
+      { projectId: project, collectionId, documentId, reindex: Boolean(previous), error: document.parseError,
+        extractionRevision, extractionReportSha256: document.extraction ? extractionReportSha256(document.extraction) : null });
     return this.knowledgeDocumentDto(this.knowledgeDocumentRow(documentId, project)!);
+  }
+
+  reviewKnowledgeExtraction(documentId: string, raw: KnowledgeExtractionReviewInput, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId);
+    const input = validateExtractionReview(raw);
+    return this.transaction(() => {
+      if (this.stateStoreDriver === "postgresql") {
+        // Parent -> job -> document is also the embedding completion order.
+        // NO KEY UPDATE lets unrelated FK inserts continue using the collection.
+        const collection = this.db.prepare(`SELECT c.id FROM knowledge_collections c JOIN knowledge_documents d ON d.collection_id = c.id
+          WHERE d.id = ? AND c.project_id = ? FOR NO KEY UPDATE OF c`).get(documentId, project);
+        if (!collection) return null;
+      }
+      const row = this.knowledgeDocumentMetadataRow(documentId, project, true);
+      if (!row) return null;
+      const report = parseJson<KnowledgeExtractionReport | null>(row.extraction_report_json, null);
+      if (!report || !report.reviewRequired || row.parse_error || !report.textCharacters || !Number(row.chunk_count)) {
+        throw new Error("Этот разбор нельзя подтвердить. Для неизвестного или ошибочного разбора повторно загрузите/переиндексируйте файл.");
+      }
+      if (input.originalSha256 !== row.original_sha256 || input.contentSha256 !== row.content_sha256
+        || input.reportSha256 !== extractionReportSha256(report) || input.extractionRevision !== row.extraction_revision) throw new Error("Разбор изменился. Откройте текущий текст и оригинал перед подтверждением.");
+      if (row.extraction_review_json) return this.knowledgeDocumentDto(this.knowledgeDocumentMetadataRow(documentId, project)!);
+      if (row.status !== "review_required" || row.extraction_state !== "review_required") throw new Error("Состояние разбора изменилось. Обновите предпросмотр.");
+      const timestamp = nowIso();
+      const review: KnowledgeExtractionReview = { schemaVersion: "document-extraction-review.v1", ...input, documentId, actor: actor.slice(0, 200), reviewedAt: timestamp };
+      this.db.prepare(`UPDATE knowledge_documents SET extraction_state = 'accepted_text', extraction_review_json = ?, status = 'pending', error = NULL, updated_at = ? WHERE id = ?`)
+        .run(JSON.stringify(review), timestamp, documentId);
+      this.db.prepare(`INSERT INTO knowledge_embedding_jobs(id, project_id, collection_id, document_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)`).run(randomUUID(), project, String(row.collection_id), documentId, timestamp, timestamp);
+      this.db.prepare("UPDATE knowledge_collections SET updated_at = ? WHERE id = ?").run(timestamp, String(row.collection_id));
+      this.addEvent(null, null, null, "info", "knowledge.extraction.reviewed", "Подтверждено использование только извлечённого текста", {
+        projectId: project, collectionId: String(row.collection_id), documentId, actor: review.actor, originalSha256: input.originalSha256,
+        contentSha256: input.contentSha256, extractionReportSha256: input.reportSha256, extractionRevision: input.extractionRevision,
+        decision: input.decision, reasonSha256: sha256Text(input.reason),
+      });
+      return this.knowledgeDocumentDto(this.knowledgeDocumentMetadataRow(documentId, project)!);
+    });
   }
 
   deleteKnowledgeDocument(documentId: string, projectId = "default"): boolean {
@@ -8889,6 +8964,7 @@ export class AgatStore {
           originalSha256: typeof document.original_sha256 === "string" ? document.original_sha256 : null,
           pages: parseJson<KnowledgePageLocation[]>(document.pages_json, []),
           parseError: typeof document.parse_error === "string" ? document.parse_error : null,
+          extraction: this.knowledgeExtractionDto(document),
           status: String(document.status),
           chunks: (this.db.prepare(`
             SELECT id, ordinal, content, content_sha256, char_start, char_end, page_number,
@@ -8967,6 +9043,7 @@ export class AgatStore {
         JOIN knowledge_documents d ON d.id = j.document_id
         JOIN projects p ON p.id = j.project_id
         WHERE j.status = 'pending' AND j.failures < j.max_failures
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
           AND p.home_region = ? AND p.residency_domain = ?
           AND (
             (SELECT COUNT(*) FROM stages active_stage
@@ -9218,6 +9295,7 @@ export class AgatStore {
         SELECT DISTINCT ch.embedding_model, ch.embedding_dimensions
         FROM knowledge_chunks ch JOIN knowledge_documents d ON d.id = ch.document_id
         WHERE ch.collection_id IN (${placeholders}) AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
       `).all(...collectionIds) as Row[];
       for (const indexed of indexedDimensions) {
         const dimensions = Number(indexed.embedding_dimensions);
@@ -9233,6 +9311,7 @@ export class AgatStore {
         JOIN knowledge_collections c ON c.id = ch.collection_id
         WHERE c.project_id = ? AND c.id IN (${placeholders})
           AND c.embedding_model = ? AND ch.embedding_model = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
         ORDER BY ch.embedded_at DESC
         LIMIT ?
       `);
@@ -9245,6 +9324,17 @@ export class AgatStore {
         ? statement.rankKnowledgeCandidates(ranking, ...params)
         : rankKnowledgeCandidates(statement.iterate(...params), ranking);
       for (const { candidate, score } of ranked) {
+        // Fetch small coverage metadata only for selected binary-file hits; never
+        // send original_base64 or full document text through the ranking bridge.
+        let extraction: KnowledgeExtractionProvenance | undefined;
+        if (candidate.original_sha256) {
+          const coverage = this.db.prepare(`SELECT d.id, d.content_sha256, d.original_sha256, d.extraction_state,
+            d.extraction_report_json, d.extraction_review_json, d.extraction_revision
+            FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE d.id = ? AND c.project_id = ?`)
+            .get(String(candidate.document_id), project) as Row | undefined;
+          if (!coverage) throw new Error("Источник изменился во время поиска");
+          extraction = this.knowledgeExtractionProvenance(coverage);
+        }
         const hit: Omit<KnowledgeSearchHit, "marker"> = {
           score,
           content: String(candidate.content),
@@ -9263,6 +9353,7 @@ export class AgatStore {
             chunkSha256: String(candidate.content_sha256),
             pageNumber: candidate.page_number === null ? null : Number(candidate.page_number),
             originalSha256: typeof candidate.original_sha256 === "string" ? candidate.original_sha256 : null,
+            ...(extraction ? { extraction } : {}),
           },
         };
         const current = bestByChunk.get(hit.provenance.chunkId);
@@ -9454,6 +9545,32 @@ export class AgatStore {
     this.db.prepare("DELETE FROM edge_enrollment_challenges WHERE expires_at < ?").run(retentionCutoff);
   }
 
+  private knowledgeExtractionDto(row: Row) {
+    const report = parseJson<KnowledgeExtractionReport | null>(row.extraction_report_json, null);
+    const reportSha256 = report ? extractionReportSha256(report) : null;
+    const review = parseJson<KnowledgeExtractionReview | null>(row.extraction_review_json, null);
+    const validReview = review && review.originalSha256 === row.original_sha256 && review.contentSha256 === row.content_sha256
+      && review.reportSha256 === reportSha256 && review.extractionRevision === row.extraction_revision && review.documentId === row.id ? review : null;
+    return { state: String(row.extraction_state ?? "legacy_unknown"), revision: typeof row.extraction_revision === "string" ? row.extraction_revision : null,
+      report, reportSha256, review: validReview };
+  }
+
+  private knowledgeExtractionProvenance(row: Row) {
+    const result = this.knowledgeExtractionDto(row);
+    if (!result.report || !result.revision || !result.reportSha256 || (result.report.reviewRequired && !result.review)) throw new Error("Разбор источника не подтверждён. Проверьте оригинал и текущий извлечённый текст.");
+    return { profile: result.report.profile, reportSha256: result.reportSha256, extractionRevision: result.revision,
+      reviewSha256: result.review ? sha256Text(JSON.stringify(result.review)) : null, decision: result.review?.decision ?? null,
+      emptyPageCount: result.report.totalPages === null ? null : result.report.emptyPages.length,
+      omittedPartsCount: result.report.profile === "docx-main-document.v1" ? result.report.omittedParts.length : null,
+      features: result.report.features, fidelity: result.report.fidelity };
+  }
+
+  private knowledgeExtractionFingerprint(row: Row) {
+    const result = this.knowledgeExtractionDto(row);
+    return { state: result.state, revision: result.revision, reportSha256: result.reportSha256,
+      reviewSha256: result.review ? sha256Text(JSON.stringify(result.review)) : null };
+  }
+
   private knowledgeDocumentDto(row: Row): Record<string, unknown> {
     return {
       id: String(row.id),
@@ -9465,6 +9582,7 @@ export class AgatStore {
       mediaType: String(row.media_type),
       contentSha256: String(row.content_sha256),
       status: String(row.status),
+      extraction: this.knowledgeExtractionDto(row),
       originalSha256: typeof row.original_sha256 === "string" ? row.original_sha256 : null,
       hasOriginal: typeof row.original_sha256 === "string",
       pageCount: parseJson<KnowledgePageLocation[]>(row.pages_json, []).length,
@@ -9996,6 +10114,7 @@ export class AgatStore {
       SELECT c.*,
         (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id) AS documents,
         (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id AND d.status <> 'ready') AS unready,
+        (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id AND (d.status = 'review_required' OR (d.original_sha256 IS NOT NULL AND d.extraction_state IN ('legacy_unknown', 'review_required', 'unavailable')))) AS extraction_review,
         (SELECT COUNT(*) FROM knowledge_chunks ch WHERE ch.collection_id = c.id) AS chunks,
         (SELECT COUNT(*) FROM knowledge_chunks ch WHERE ch.collection_id = c.id AND ch.embedding_json IS NOT NULL AND ch.embedding_model = c.embedding_model) AS embedded
       FROM knowledge_collections c WHERE c.project_id = ? AND c.id IN (${ids.map(() => "?").join(",")}) ORDER BY c.id
@@ -10255,6 +10374,7 @@ export class AgatStore {
         if (owner) add(`knowledge_missing:${id}`, "knowledge", "queue", `Обязательная коллекция ${id} недоступна. Создайте и индексируйте замену в разделе «Знания», выберите её в требованиях процесса и опубликуйте новую версию.`, "processes", { processId: owner.processId!, tab: "readiness", field: "requiredKnowledge" }, "Заменить обязательную коллекцию и опубликовать версию");
         else add(`knowledge_missing:${id}`, "knowledge", "queue", `Выбранная коллекция ${id} недоступна в проекте.`, "knowledge", { collectionId: id }, "Выбрать доступную коллекцию");
       }
+      else if (Number(collection.extraction_review)) add(`knowledge_extraction:${id}`, "knowledge", "queue", `«${collection.name}»: для ${collection.extraction_review} документов нужно исправить ошибки разбора или проверить извлечённый текст перед использованием.`, "knowledge", { collectionId: id }, "Проверить разбор и ограничения документов");
       else if (!Number(collection.documents) || !Number(collection.chunks)) add(`knowledge_empty:${id}`, "knowledge", "run", `«${collection.name}»: нет индексированных документов.`, "knowledge", { collectionId: id }, "Добавить документы");
       else if (Number(collection.unready) || Number(collection.embedded) !== Number(collection.chunks)) add(`knowledge_embeddings:${id}`, "embeddings", "run", `«${collection.name}»: embeddings готовы для ${collection.embedded} из ${collection.chunks} фрагментов; неготовых документов: ${collection.unready}.`, "knowledge", { collectionId: id }, "Завершить индексацию коллекции");
     }
@@ -10355,7 +10475,7 @@ export class AgatStore {
     if (processId && version !== null && trigger.kind !== "manual" && Number(this.getProcess(processId, project)?.publishedVersion) !== version) {
       add("trigger_version", "version", "queue", "Этот trigger запускает последнюю опубликованную версию. Выбранный pin отличается от неё.", "processes", { ...processTarget, tab: "readiness" }, "Проверить текущую версию trigger");
     }
-    const documents = ids.length ? this.db.prepare(`SELECT d.id, d.collection_id, d.content_sha256, d.updated_at FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE c.project_id = ? AND d.collection_id IN (${ids.map(() => "?").join(",")}) ORDER BY d.id`).all(project, ...ids) : [];
+    const documents = ids.length ? this.db.prepare(`SELECT d.id, d.collection_id, d.content_sha256, d.updated_at, d.extraction_revision FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE c.project_id = ? AND d.collection_id IN (${ids.map(() => "?").join(",")}) ORDER BY d.id`).all(project, ...ids) : [];
     const fingerprint = sha256Text(JSON.stringify({ processId, version, graphs, trigger: context.executionTrigger ?? trigger, ids,
       agents: snapshots.map(({ capturedAt: _captured, source: _source, ...snapshot }) => snapshot),
       knowledge: knowledge.map((row) => ({ id: row.id, model: row.embedding_model, updatedAt: row.updated_at })), documents, tools: tools.signatures, httpCredentials }));
@@ -12076,13 +12196,14 @@ export class AgatStore {
       const nodeRegion = String(node.region ?? this.region);
       const candidate = candidates.find((row) => {
         if (!parseJson<string[]>(row.allowed_regions_json, []).includes(nodeRegion)) return false;
+        const ids = row.stage_kind === "agent" ? normalizeKnowledgeCollectionIds(parseJson<unknown>(row.knowledge_collection_ids_json, [])) : [];
+        const knowledge = this.scenarioKnowledge(String(row.project_id), ids);
+        if (knowledge.some(collection => Number(collection.extraction_review) > 0)) return false;
         if (!this.workerEligibleForRollout(node, String(row.project_id))) return false;
         if (row.process_graph_json) {
           const graph = parseJson<ProcessGraph>(row.process_graph_json, { nodes: [], edges: [] });
           if (this.scenarioTools(graph.requiredTools ?? [], String(row.project_id), true).blockers.length) return false;
           if (row.stage_kind === "agent") {
-            const ids = normalizeKnowledgeCollectionIds(parseJson<unknown>(row.knowledge_collection_ids_json, []));
-            const knowledge = this.scenarioKnowledge(String(row.project_id), ids);
             const embeddings = parseJson<string[]>(node.embedding_models_json, []);
             if (knowledge.length !== ids.length || knowledge.some((collection) => !Number(collection.documents) || !Number(collection.chunks)
               || Number(collection.unready) > 0 || Number(collection.embedded) !== Number(collection.chunks)
@@ -12575,14 +12696,22 @@ export class AgatStore {
 
   private businessOutputContext(runId: string, projectId: string) {
     const currentSource = this.db.prepare(`
-      SELECT k.id FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
+      SELECT d.id, d.content_sha256, d.original_sha256, d.extraction_state,
+        d.extraction_report_json, d.extraction_review_json, d.extraction_revision
+      FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
       JOIN knowledge_collections c ON c.id = k.collection_id
       WHERE c.project_id = ? AND c.id = ? AND d.id = ? AND k.id = ?
         AND d.content_sha256 = ? AND k.content_sha256 = ?
+        AND (d.original_sha256 IS NULL OR (d.status = 'ready' AND d.extraction_state IN ('scope_recorded', 'accepted_text')))
     `);
-    const sources = (this.getRunKnowledgeSources(runId, projectId) ?? []).filter((source) => currentSource.get(
-      projectId, source.provenance.collectionId, source.provenance.documentId, source.provenance.chunkId,
-      source.provenance.documentSha256, source.provenance.chunkSha256));
+    const sources = (this.getRunKnowledgeSources(runId, projectId) ?? []).filter((source) => {
+      const row = currentSource.get(projectId, source.provenance.collectionId, source.provenance.documentId, source.provenance.chunkId,
+        source.provenance.documentSha256, source.provenance.chunkSha256) as Row | undefined;
+      if (!row) return false;
+      if (!row.original_sha256) return true;
+      try { return JSON.stringify(source.provenance.extraction) === JSON.stringify(this.knowledgeExtractionProvenance(row)); }
+      catch { return false; }
+    });
     const markerCounts = new Map<string, number>();
     for (const source of sources) markerCounts.set(source.marker, (markerCounts.get(source.marker) ?? 0) + 1);
     return { sources, context: {

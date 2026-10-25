@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { getProcessTemplateCatalog } from "./process-catalog.js";
 import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
 import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
+import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
 
 import {
   loadConfig,
@@ -1750,6 +1751,15 @@ export function createCoordinatorServer(
         const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
         const body = await readJson<UploadKnowledgeDocumentInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
         json(response, 201, await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId));
+        return;
+      }
+
+      const reviewExtractionId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/review-extraction$/);
+      if (request.method === "POST" && reviewExtractionId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const document = store.reviewKnowledgeExtraction(reviewExtractionId, await readJson<KnowledgeExtractionReviewInput>(request), auth.projectId, auth.subject);
+        if (!document) throw new HttpError(404, "Документ не найден");
+        json(response, 200, document);
         return;
       }
 

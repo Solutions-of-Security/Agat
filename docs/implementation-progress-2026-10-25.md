@@ -15,6 +15,7 @@
 | USE-004 / RUN-103, Markdown artifact | Детерминированный отчёт из JSON, повторная проверка evidence после approval wait, точные скачиваемые bytes | [#228](https://github.com/Solutions-of-Security/Agat/pull/228), `cb4cefe17acf5667608b9c4ea506fc9029b9a7e4` |
 | USE-004, чтение результата | Безопасный форматированный вид, точные source links, raw/download fallback при сбое renderer | [#229](https://github.com/Solutions-of-Security/Agat/pull/229), `a6122d39c594bb17eb4fc0cec70bb8ad4682d99f` |
 | SP-001/SP-005, backend v2 | Свои коллекции, versioned manifest, exact history, diff, install/activate/rollback и v1 compatibility | [#230](https://github.com/Solutions-of-Security/Agat/pull/230), `3d69bf5826fe2d03789e08ec864d66d10c289c48` |
+| SP-001/SP-005, UI v2 | Release/sources/diff/history, update/rollback и структурированный вопрос/период | [#231](https://github.com/Solutions-of-Security/Agat/pull/231), `3ad622ea61302445415af919419bc4f8bebbb67a` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -27,7 +28,7 @@ tests, 19 Temporal/process tests, восемь desktop/mobile browser checks, ty
 оно исправлено разбором URL, четыре затронутых UI checks повторно прошли.
 Изменение типов ScheduleSpec сохраняет runtime values.
 
-## Следующий подготовленный этап
+## Проверки versioned pack
 
 Поставленный [PR #230](https://github.com/Solutions-of-Security/Agat/pull/230) добавил
 [versioned report pack](./versioned-report-pack.md): v2 на коллекциях проекта,
@@ -55,16 +56,34 @@ v1 compatibility → binary CSV → v2 → update/rollback → structured reques
 approval → Markdown → keyboard source highlight → reload bindings. Screenshots
 в системном temp просмотрены; console warnings/errors и overlay отсутствуют.
 Browser plugin not available — использован Playwright. Общая browser-регрессия:
-30 desktop/mobile checks прошли; удалённый CI фиксируется отдельно. Установка и synthetic worker не означают
+30 desktop/mobile checks прошли. После retarget на main повторный полный CI,
+обязательный required gate и CodeQL прошли до merge. Установка и synthetic worker не означают
 квалификацию модели или пилота.
+
+## Текущий этап USE-003 / UX-206
+
+[Проверка извлечённого текста](./document-extraction-review.md) добавляет
+schema v32, отчёт scope/gaps PDF/DOCX, явное решение до индексации и model lease,
+exact hashes + уникальную revision, idempotent review под row lock и сохранение
+ограничений в provenance, worker context и Markdown. Старые файлы без отчёта
+остаются неизвестными до повторного разбора. CSV/XLSX сохраняют values-only path.
+
+Локально прошли 370 coordinator tests (28 отдельных opt-in checks пропущены),
+70 web tests, 170 worker tests (3 штатных skips), 32 desktop/mobile browser checks,
+две проверки PostgreSQL HA, offline apply/verify + rehearsal rollback, typechecks
+и production build. PostgreSQL barrier test проверяет конкуренцию review/reindex
+до изменения jobs/chunks: допустимы новая ревизия без job или отказ stale reindex
+с сохранением принятой ревизии. Повторная проверка исправила общий document lock;
+embedding lease отдельно проверяет разрешённый scope. Скриншоты просмотрены; страница PDF без текста дополнительно
+сверена через Poppler. UI показывает ограничения, checkbox выключен, причина
+обязательна, download bytes совпадают, reindex сбрасывает решение. Нет console
+warnings/errors и overlay. Финальные CI результаты фиксируются перед
+merge; синтетический материал не считается бизнес-приёмкой или квалификацией.
 
 ## Границы и следующий остаток
 
-- SP-001/SP-005: завершить поставку versioned pack и UI выбора release,
-  пользовательских sources, diff, update/rollback и структурированного запуска;
-  сохранить exact историю и v1 compatibility.
-- USE-003: общий knowledge → pack path, completeness для частично извлекаемых
-  документов, dedupe переименованных файлов и квалификация на пользовательских данных.
+- USE-003: завершить поставку проверки частичного извлечения; затем dedupe
+  переименованных файлов и квалификация на пользовательских данных.
 - USE-004: DOCX/PDF из canonical content; append-only accept/rework на exact artifact/run.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.

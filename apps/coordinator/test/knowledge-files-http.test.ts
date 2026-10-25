@@ -4,7 +4,7 @@ import { AgatStore } from "../src/database.js";
 import { loadConfig } from "../src/config.js";
 import { createCoordinatorServer } from "../src/server.js";
 import { KNOWLEDGE_DOCX_MEDIA_TYPE } from "../src/knowledge-files.js";
-import { docxFile } from "./knowledge-file-fixtures.js";
+import { docxFile, fixtureExtractionReview } from "./knowledge-file-fixtures.js";
 
 test("knowledge HTTP uploads and previews DOCX, persists parse errors, authorizes reindex and isolates files/sources", async () => {
   const store = new AgatStore(":memory:", { seedDemo: false });
@@ -24,9 +24,12 @@ test("knowledge HTTP uploads and previews DOCX, persists parse errors, authorize
     assert.equal((await request(uploadUrl, "POST", input, { "x-agat-admin-token": "wrong" })).status, 401);
     const response = await request(uploadUrl, "POST", input);
     assert.equal(response.status, 201);
-    const document = await response.json() as { id: string; status: string };
-    assert.equal(document.status, "pending");
+    const document = await response.json() as { id: string; status: string } & Record<string, unknown>;
+    assert.equal(document.status, "review_required");
     const documentUrl = `/knowledge/documents/${document.id}`;
+    assert.equal((await request(`${documentUrl}/review-extraction`, "POST", fixtureExtractionReview(document), { "x-agat-admin-token": "wrong" })).status, 401);
+    assert.equal((await request(`${documentUrl}/review-extraction`, "POST", fixtureExtractionReview(document), { "x-agat-project-id": "default" })).status, 404);
+    assert.equal((await request(`${documentUrl}/review-extraction`, "POST", fixtureExtractionReview(document))).status, 200);
     const preview = await (await request(documentUrl)).json() as { content: string; chunks: unknown[]; originalBase64?: string };
     assert.match(preview.content, /Проверенный факт/);
     assert.equal(preview.chunks.length, 1);

@@ -1,4 +1,16 @@
 import { zipSync, strToU8 } from "fflate";
+import type { AgatStore } from "../src/database.js";
+import type { KnowledgeExtractionReviewInput } from "../src/knowledge-extraction.js";
+
+export function fixtureExtractionReview(document: Record<string, unknown>): KnowledgeExtractionReviewInput {
+  const extraction = document.extraction as { revision: string; reportSha256: string };
+  return { originalSha256: String(document.originalSha256), contentSha256: String(document.contentSha256),
+    reportSha256: extraction.reportSha256, extractionRevision: extraction.revision, decision: "use_extracted_text_only",
+    reason: "Synthetic test fixture: intentionally use only the extracted text, not model qualification" };
+}
+export function acceptFixtureExtraction(store: AgatStore, document: Record<string, unknown>, project = "default") {
+  return store.reviewKnowledgeExtraction(String(document.id), fixtureExtractionReview(document), project, "fixture-reviewer");
+}
 
 export function pdfFile(pages: string[] = ["First page facts.", "Second page evidence."]): Buffer {
   const objects = ["<< /Type /Catalog /Pages 2 0 R >>", `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,

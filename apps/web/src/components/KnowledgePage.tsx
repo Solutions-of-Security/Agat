@@ -30,6 +30,7 @@ const documentStatusCopy: Record<KnowledgeDocument["status"], string> = {
   indexing: "Индексируется",
   ready: "Готов",
   failed: "Ошибка",
+  review_required: "Проверьте текст",
 };
 
 function formatDate(value: string | null): string {
@@ -299,7 +300,8 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
       {recovery.get("documentId") ? <KnowledgeDocumentPreview
         key={`${projectId}:${recovery.get("documentId")}`} documentId={recovery.get("documentId")!} projectId={projectId}
         requestedProjectId={recovery.get("projectId")} chunkId={recovery.get("chunkId")} expectedSha256={recovery.get("sha256")}
-        pageNumber={Number(recovery.get("page") || 1)} revision={revision}
+        pageNumber={Number(recovery.get("page") || 1)} revision={revision} canReview={canManage}
+        onReviewed={async () => { await Promise.all([refreshDetailed(), onChanged()]); }}
         onClose={() => { window.location.hash = "#knowledge"; }} /> : null}
 
       {createOpen ? (
@@ -375,7 +377,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                       <label className="field knowledge-file"><span>PDF, DOCX, CSV, XLSX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/*,.pdf,.docx,.xlsx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
                     </div>
                     {documentBase64 !== null ? <p>Файл выбран. После загрузки откроется предпросмотр извлечённого текста.</p> : <label className="field"><span>Текст</span><textarea required rows={7} maxLength={2_000_000} value={documentContent} onChange={(event) => setDocumentContent(event.target.value)} placeholder="Вставьте текст или выберите файл" /></label>}
-                    <footer><small>Разбор выполняется локально. Для CSV нужен UTF-8, для XLSX — копия без формул и макросов. Даты и форматирование ячеек не интерпретируются. PDF-сканы требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и индексировать"}</button></footer>
+                    <footer><small>Разбор выполняется локально. PDF/DOCX требуют проверки извлечённого текста перед индексацией. Для CSV нужен UTF-8, для XLSX — копия без формул и макросов. Даты и форматирование ячеек не интерпретируются. PDF-сканы требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и разобрать"}</button></footer>
                   </form>
                 ) : null}
 

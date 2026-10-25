@@ -2,6 +2,7 @@ import { unzipSync } from "fflate";
 import { SaxesParser } from "saxes";
 import type { KnowledgePageLocation } from "./types.js";
 import { extractCsv, extractXlsx, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
+import { extractionReport, type KnowledgeExtractionReport } from "./knowledge-extraction.js";
 
 const MAX_TEXT = 2_000_000;
 const MAX_XML_BYTES = 8 * 1024 * 1024;
@@ -9,13 +10,16 @@ const MAX_XML_BYTES = 8 * 1024 * 1024;
 export interface ExtractedKnowledgeFile {
   content: string;
   pages: KnowledgePageLocation[];
+  extraction: KnowledgeExtractionReport;
 }
 
 // Called in a bounded worker thread. No URLs, relationships or embedded objects
 // from the document are fetched or executed.
 export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string): Promise<ExtractedKnowledgeFile> {
-  if (mediaType === KNOWLEDGE_CSV_MEDIA_TYPE) return extractCsv(bytes);
-  if (mediaType === KNOWLEDGE_XLSX_MEDIA_TYPE) return extractXlsx(bytes);
+  if (mediaType === KNOWLEDGE_CSV_MEDIA_TYPE || mediaType === KNOWLEDGE_XLSX_MEDIA_TYPE) {
+    const result = mediaType === KNOWLEDGE_CSV_MEDIA_TYPE ? extractCsv(bytes) : extractXlsx(bytes);
+    return { ...result, extraction: extractionReport(mediaType === KNOWLEDGE_CSV_MEDIA_TYPE ? "csv-values.v1" : "xlsx-values.v1", result.content) };
+  }
   if (!["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(mediaType)) {
     throw new Error("Неподдерживаемый формат документа");
   }
@@ -41,7 +45,9 @@ export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string)
         page.cleanup();
       }
       if (!content.trim()) throw new Error("PDF не содержит извлекаемого текста. Для сканов нужен OCR; загрузите документ с текстовым слоем");
-      return { content, pages };
+      return { content, pages, extraction: extractionReport("pdf-text-layer.v1", content, {
+        totalPages: pdf.numPages, emptyPages: pages.filter(page => page.charEnd === page.charStart).map(page => page.pageNumber),
+      }) };
     } catch (error) {
       if (error instanceof Error && error.name === "PasswordException") throw new Error("PDF защищён паролем. Загрузите копию без пароля");
       throw error;
@@ -51,8 +57,17 @@ export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string)
   }
 
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error("Некорректная сигнатура DOCX");
+  const omittedParts: string[] = [];
+  let entries = 0;
+  let mainParts = 0;
   const files = unzipSync(bytes, { filter: (file) => {
+    if (++entries > 2000) throw new Error("DOCX содержит больше 2000 ZIP-записей");
+    if (/^word\/(?:header[^/]*|footer[^/]*|footnotes|endnotes|comments|glossary\/document)\.xml$/.test(file.name)) {
+      if (file.name.length > 180 || omittedParts.length >= 100) throw new Error("DOCX содержит слишком много дополнительных текстовых частей");
+      omittedParts.push(file.name);
+    }
     if (file.name !== "word/document.xml") return false;
+    if (++mainParts !== 1) throw new Error("DOCX содержит повтор word/document.xml");
     if (file.originalSize > MAX_XML_BYTES) throw new Error("Текстовая часть DOCX превышает 8 МиБ");
     return true;
   } });
@@ -67,13 +82,19 @@ export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string)
   let content = "";
   let inText = false;
   let documentFound = false;
+  const features = new Set<string>();
   const append = (text: string) => {
     content += text;
     if (content.length > MAX_TEXT) throw new Error("Извлечённый текст превышает 2 000 000 символов");
   };
   parser.on("doctype", () => { throw new Error("DTD в DOCX не поддерживается"); });
   parser.on("opentag", (tag) => {
+    if (tag.uri === "http://schemas.openxmlformats.org/officeDocument/2006/math" || tag.uri === "http://purl.oclc.org/ooxml/officeDocument/math") features.add("math");
     if (!wordNamespaces.has(tag.uri)) return;
+    if (["drawing", "pict", "object", "altChunk"].includes(tag.local)) features.add("embedded_content");
+    if (["ins", "del", "moveFrom", "moveTo"].includes(tag.local)) features.add("tracked_changes");
+    if (["fldSimple", "fldChar", "instrText"].includes(tag.local)) features.add("fields");
+    if (tag.local === "tbl") features.add("table_layout_not_preserved");
     if (tag.local === "document") documentFound = true;
     if (tag.local === "t") inText = true;
     if (tag.local === "tab") append("\t");
@@ -89,5 +110,7 @@ export async function extractKnowledgeFile(bytes: Uint8Array, mediaType: string)
   if (!documentFound) throw new Error("Некорректная структура DOCX");
   if (!content.trim()) throw new Error("DOCX не содержит извлекаемого текста");
   // DOCX has no reliable page numbers without a layout engine. Cite chunks.
-  return { content: content.trim(), pages: [] };
+  return { content: content.trim(), pages: [], extraction: extractionReport("docx-main-document.v1", content.trim(), {
+    omittedParts: omittedParts.sort(), features: [...features].sort(),
+  }) };
 }

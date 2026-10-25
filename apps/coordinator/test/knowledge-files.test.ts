@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { AgatStore } from "../src/database.js";
 import { KNOWLEDGE_DOCX_MEDIA_TYPE, KNOWLEDGE_MAX_FILE_BYTES, normalizeKnowledgeUpload, parseKnowledgeFile } from "../src/knowledge-files.js";
 import { appendKnowledgeSources } from "../src/knowledge-citations.js";
-import { pdfFile, docxFile } from "./knowledge-file-fixtures.js";
+import { pdfFile, docxFile, acceptFixtureExtraction } from "./knowledge-file-fixtures.js";
 
 function setup() {
   const store = new AgatStore(":memory:", { seedDemo: false });
@@ -44,7 +44,9 @@ test("upload, failed parse, preview, reindex leases and project boundaries persi
     const bytes = pdfFile();
     const document = await store.uploadKnowledgeDocument(collectionId, { name: "Policy.pdf", mediaType: "application/pdf", contentBase64: bytes.toString("base64") });
     const id = String(document.id);
-    assert.equal(document.status, "pending");
+    assert.equal(document.status, "review_required");
+    assert.equal(store.leaseKnowledgeEmbedding(nodeId), null, "file text needs an explicit review before model indexing");
+    acceptFixtureExtraction(store, document);
     assert.equal(document.pageCount, 2);
     const preview = store.getKnowledgeDocument(id)!;
     const chunks = preview.chunks as Array<{ id: string; pageNumber: number; content: string; charStart: number; charEnd: number }>;
@@ -56,6 +58,7 @@ test("upload, failed parse, preview, reindex leases and project boundaries persi
     const reindexed = await store.reindexKnowledgeDocument(id);
     assert.equal(reindexed!.id, id);
     assert.equal(reindexed!.embeddedCount, 0);
+    acceptFixtureExtraction(store, reindexed!);
     assert.deepEqual((store.getKnowledgeDocument(id)!.chunks as Array<{ id: string }>).map((chunk) => chunk.id), chunks.map((chunk) => chunk.id));
     assert.throws(() => store.completeKnowledgeEmbedding(nodeId, oldLease.leaseId, oldLease.chunks.map((chunk) => ({ chunkId: chunk.id, embedding: [1, 0] }))), /аренда/);
     const lease = store.leaseKnowledgeEmbedding(nodeId)!;
@@ -80,6 +83,7 @@ test("retrieval and reports preserve auditable page/fragment snapshots through r
   const { store, collectionId, nodeId } = setup();
   try {
     const document = await store.uploadKnowledgeDocument(collectionId, { name: "Evidence.pdf", mediaType: "application/pdf", contentBase64: pdfFile().toString("base64") });
+    acceptFixtureExtraction(store, document);
     const lease = store.leaseKnowledgeEmbedding(nodeId)!;
     store.completeKnowledgeEmbedding(nodeId, lease.leaseId, lease.chunks.map((chunk, i) => ({ chunkId: chunk.id, embedding: i === 1 ? [1, 0] : [0, 1] })));
     const run = store.createRun({ name: "Report", input: "Evidence", approvalRequired: false, agentIds: ["collector"], knowledgeCollectionIds: [collectionId] });
@@ -114,6 +118,7 @@ test("process result artifacts contain sources and failed embedding jobs can be 
   try {
     const collection = store.createKnowledgeCollection({ name: "Process sources", embeddingModel: "embeddinggemma" });
     const document = await store.uploadKnowledgeDocument(String(collection.id), { name: "Input.docx", mediaType: KNOWLEDGE_DOCX_MEDIA_TYPE, contentBase64: docxFile().toString("base64") });
+    acceptFixtureExtraction(store, document);
     const worker = store.registerNode({ enrollmentToken: "unused", name: "local", platform: "test", models: ["test-model"], embeddingModels: ["embeddinggemma"], maxConcurrency: 1 });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const lease = store.leaseKnowledgeEmbedding(worker.id)!;
@@ -121,8 +126,9 @@ test("process result artifacts contain sources and failed embedding jobs can be 
     }
     assert.equal(store.getKnowledgeDocument(String(document.id))!.status, "failed");
     const reset = await store.reindexKnowledgeDocument(String(document.id));
-    assert.equal(reset!.status, "pending");
-    assert.equal(reset!.error, null);
+    assert.equal(reset!.status, "review_required");
+    acceptFixtureExtraction(store, reset!);
+    assert.equal(store.getKnowledgeDocument(String(document.id))!.error, null);
     const embeddingLease = store.leaseKnowledgeEmbedding(worker.id)!;
     store.completeKnowledgeEmbedding(worker.id, embeddingLease.leaseId, embeddingLease.chunks.map((chunk) => ({ chunkId: chunk.id, embedding: [1, 0] })));
     const nodes = [

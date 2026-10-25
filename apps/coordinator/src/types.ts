@@ -1,4 +1,5 @@
 import type { DecisionShadowConfig, DecisionShadowLease } from "./local-decisions.js";
+import type { KnowledgeExtractionProvenance } from "./knowledge-extraction.js";
 
 export type SchedulerMode = "sequential" | "parallel" | "auto";
 export type ResultDestination = "history" | "artifacts";
@@ -1218,7 +1219,7 @@ export interface KnowledgePageLocation {
   charEnd: number;
 }
 
-export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed";
+export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed" | "review_required";
 export type MemoryKind = "working" | "episodic";
 
 export interface SaveMemoryInput {
@@ -1279,6 +1280,7 @@ export interface KnowledgeProvenance {
   chunkSha256: string;
   pageNumber: number | null;
   originalSha256: string | null;
+  extraction?: KnowledgeExtractionProvenance;
 }
 
 export interface KnowledgeSearchHit {

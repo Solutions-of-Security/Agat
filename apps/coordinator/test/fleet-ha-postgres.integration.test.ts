@@ -20,6 +20,7 @@ import type { ProcessGraph } from "../src/types.js";
 import { interceptCallerAccountingCommit, interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
 import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
 import { getInternalReportPack, type ProcessPackPreview } from "../src/process-packs.js";
+import { pdfFile, fixtureExtractionReview } from "./knowledge-file-fixtures.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -387,11 +388,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     await migratePostgresSchemaAndAdmit();
   });
 
-  it("serializes report pack installs across real coordinator replicas and preserves version history with tenant RLS", async () => {
+  it("serializes report pack installs and extraction reviews across real coordinator replicas with tenant RLS", async () => {
     const suffix = randomUUID().slice(0, 8), project = `pack-${suffix}`, foreign = `pack-other-${suffix}`;
     const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-pack-history-"));
     const first = store(`pack-history-${suffix}`, artifacts);
     const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    let fixtureWorkerId: string | undefined;
     try {
       first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
       const pack = getInternalReportPack(2), legacy = getInternalReportPack();
@@ -417,6 +419,83 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       assert.equal(rollback.status, 200); await rollback.arrayBuffer();
       assert.equal(first.getProcessPackInstallation(pack.id, project)!.version, 1);
       assert.equal(first.getProcessPackHistory(pack.id, project).length, 2);
+      const fileCollection = String(first.createKnowledgeCollection({ name: "Coverage", embeddingModel: project }, project).id);
+      const document = await first.uploadKnowledgeDocument(fileCollection, { name: "Mixed.pdf", mediaType: "application/pdf", contentBase64: pdfFile(["Evidence", "", "Other evidence"]).toString("base64") }, project);
+      assert.equal(document.status, "review_required");
+      const review = fixtureExtractionReview(document);
+      const reviewRequest = (index: number, tenant = project, body = review) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/knowledge/documents/${document.id}/review-extraction`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      assert.equal((await reviewRequest(0, foreign)).status, 404);
+      const acknowledgements = await Promise.all([0, 1, 0, 1].map(index => reviewRequest(index)));
+      for (const response of acknowledgements) { assert.equal(response.status, 200); await response.arrayBuffer(); }
+      assert.equal(Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(document.id))!.count), 1);
+      assert.equal(first.listEvents(0, 200, project).filter(event => event.type === "knowledge.extraction.reviewed").length, 1);
+      assert.equal((first.getKnowledgeDocument(String(document.id), project)!.extraction as { state: string }).state, "accepted_text");
+      const current = (await first.reindexKnowledgeDocument(String(document.id), project))!;
+      assert.equal((await reviewRequest(1)).status, 400, "same bytes with a new extraction revision cannot reuse a prior review");
+      const barrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
+      try {
+        await barrier.connect(); await barrier.query("BEGIN");
+        await barrier.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+        await barrier.query("SELECT id FROM knowledge_documents WHERE id = $1 FOR UPDATE", [document.id]);
+        const waitForDocumentLock = (index: number) => eventually(async () => {
+          await barrier.query("SELECT pg_stat_clear_snapshot()");
+          const rows = await barrier.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [`agat-pack-${suffix}-${index}-tenant`]);
+          return rows.rows.some(row => /knowledge_documents|knowledge_collections/.test(String(row.query)));
+        }, "independent replica must reach the document or parent collection barrier");
+        const accepting = reviewRequest(0, project, fixtureExtractionReview(current));
+        await waitForDocumentLock(0);
+        const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
+          method: "POST", headers: { "x-agat-admin-token": token, "x-agat-project-id": project }, signal: AbortSignal.timeout(20_000),
+        });
+        await waitForDocumentLock(1);
+        await barrier.query("COMMIT");
+        const [accepted, reindexed] = await Promise.all([accepting, reindexing]);
+        assert.equal(accepted.status, 200); await accepted.arrayBuffer();
+        const latest = first.getKnowledgeDocument(String(document.id), project)!;
+        const jobCount = Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(document.id))!.count);
+        if (reindexed.status === 200) {
+          assert.equal(latest.status, "review_required"); assert.equal(jobCount, 0, "no review from an older revision may queue a new one");
+        } else {
+          assert.equal(reindexed.status, 400, await reindexed.text());
+          assert.equal(latest.status, "pending"); assert.equal(jobCount, 1, "a stale reindex must preserve the reviewed revision");
+          assert.equal((latest.extraction as { revision: string }).revision, (current.extraction as { revision: string }).revision);
+        }
+      } finally { await barrier.query("ROLLBACK").catch(() => {}); await barrier.end(); }
+      const fresh = (await first.reindexKnowledgeDocument(String(document.id), project))!;
+      first.reviewKnowledgeExtraction(String(document.id), fixtureExtractionReview(fresh), project, "fixture-reviewer");
+      const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
+        embeddingModels: [project], region: cellRegion, residencyDomain: cellResidencyDomain });
+      fixtureWorkerId = worker.id;
+      const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document.id);
+      const collectionBarrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
+      try {
+        await collectionBarrier.connect(); await collectionBarrier.query("BEGIN");
+        await collectionBarrier.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+        await collectionBarrier.query("SELECT id FROM knowledge_collections WHERE id = $1 FOR NO KEY UPDATE", [fileCollection]);
+        const waitForLock = (name: string) => eventually(async () => {
+          await collectionBarrier.query("SELECT pg_stat_clear_snapshot()");
+          const result = await collectionBarrier.query(`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE a.application_name = $1 AND NOT l.granted`, [name]);
+          return result.rows.length > 0;
+        }, "both completion and reindex must wait at the collection barrier");
+        const completing = fetch(`http://127.0.0.1:${children[0]!.port}/api/v1/workers/knowledge/leases/${lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ embeddings: lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })) }), signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-0-system`);
+        const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
+          method: "POST", headers: { "x-agat-admin-token": token, "x-agat-project-id": project }, signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-1-tenant`);
+        await collectionBarrier.query("COMMIT");
+        const completed = await completing;
+        assert.equal(completed.status, 200, await completed.text());
+        const stale = await reindexing;
+        assert.equal(stale.status, 400); assert.match(await stale.text(), /Документ изменился/);
+        assert.equal(first.getKnowledgeDocument(String(document.id), project)!.status, "ready");
+      } finally { await collectionBarrier.query("ROLLBACK").catch(() => {}); await collectionBarrier.end(); }
       enterPostgresTenantScope(foreign);
       assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
       assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);
@@ -424,7 +503,12 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       await Promise.all(children.map(child => child.stop()));
       // The last assertions intentionally enter a tenant scope. Replica shutdown
       // updates a global table and must release the migration gate as system.
-      runWithPostgresSystemScope(() => first.close());
+      runWithPostgresSystemScope(() => {
+        // Empty model advertisements are a legacy wildcard in the router. This
+        // synthetic embedder must never attract another fixture's pinned model.
+        if (fixtureWorkerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(fixtureWorkerId);
+        first.close();
+      });
       fs.rmSync(artifacts, { recursive: true, force: true });
     }
   });

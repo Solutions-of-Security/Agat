@@ -4,6 +4,7 @@ import { AgatStore } from "../src/database.js";
 import { normalizeCatalogTools } from "../src/mcp.js";
 import { ScenarioPreflightError, type ScenarioPreflightContext } from "../src/scenario-preflight.js";
 import type { ProcessGraph, WorkerRegistration } from "../src/types.js";
+import { pdfFile, acceptFixtureExtraction } from "./knowledge-file-fixtures.js";
 
 const stores: AgatStore[] = [];
 afterEach(() => { mock.timers.reset(); for (const store of stores.splice(0)) store.close(); });
@@ -143,6 +144,28 @@ test("selected knowledge waits for complete embeddings and retrieval support on 
   store.createProject({ id: "other", name: "Other" });
   const foreign = store.createKnowledgeCollection({ name: "Private", embeddingModel: "embeddinggemma" }, "other");
   assert.equal(check(store, id, { knowledgeCollectionIds: [String(foreign.id)] }).queueable, false);
+});
+
+test("extraction review has an actionable queue blocker before embeddings and rejects failed file parses", async () => {
+  const store = fixture(), id = published(store);
+  const node = worker(store, { embeddingModels: ["fixture-embedding"] });
+  const collection = String(store.createKnowledgeCollection({ name: "Review sources", embeddingModel: "fixture-embedding" }).id);
+  const document = await store.uploadKnowledgeDocument(collection, { name: "Mixed.pdf", mediaType: "application/pdf", contentBase64: pdfFile(["Evidence", ""]).toString("base64") });
+  const before = check(store, id, { knowledgeCollectionIds: [collection] });
+  assert.equal(before.queueable, false);
+  const blocker = before.blockers.find(item => item.code === `knowledge_extraction:${collection}`)!;
+  assert.ok(blocker); assert.match(blocker.recovery.href, /#knowledge/);
+  assert.match(blocker.message, /проверить извлечённый текст/);
+  assert.throws(() => store.startProcess(id, { input: "test", knowledgeCollectionIds: [collection] }), ScenarioPreflightError);
+  acceptFixtureExtraction(store, document);
+  assert.equal(check(store, id, { knowledgeCollectionIds: [collection] }).queueable, true);
+  const lease = store.leaseKnowledgeEmbedding(node)!;
+  store.completeKnowledgeEmbedding(node, lease.leaseId, lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })));
+  assert.equal(check(store, id, { knowledgeCollectionIds: [collection] }).runnableNow, true);
+  await store.uploadKnowledgeDocument(collection, { name: "Scanned.pdf", mediaType: "application/pdf", contentBase64: pdfFile([""]).toString("base64") });
+  assert.equal(check(store, id, { knowledgeCollectionIds: [collection] }).queueable, false);
+  store.createRun({ name: "Ordinary run", input: "test", agentIds: ["collector"], knowledgeCollectionIds: [collection], approvalRequired: false });
+  assert.equal(store.leaseNext(node), null, "a ready sibling document cannot hide an unusable file before the model");
 });
 
 test("required tool catalog, gateway, policies and credential scopes are checked without exposing secrets", () => {
