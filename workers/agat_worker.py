@@ -738,7 +738,18 @@ class LocalModelClient:
                 document_name = str(provenance.get("documentName") or "Локальный документ")
                 source_uri = provenance.get("sourceUri")
                 source = f" · {source_uri}" if isinstance(source_uri, str) and source_uri else ""
-                snippet = f"[{marker}] {document_name}{source}\n{content[:8_000]}".strip()
+                coverage = provenance.get("extraction")
+                extraction_notice = ""
+                if isinstance(coverage, dict):
+                    empty_pages = coverage.get("emptyPageCount")
+                    omitted_parts = coverage.get("omittedPartsCount")
+                    extraction_notice = (
+                        "\nОграничения источника: это только извлечённый текст; визуальная полнота не подтверждена. "
+                        f"Страниц без текста: {empty_pages if empty_pages is not None else 'не оценивалось'}; "
+                        f"дополнительных текстовых частей вне извлечения: {omitted_parts if omitted_parts is not None else 'не оценивалось'}. "
+                        "Не делай выводов о пропущенных страницах, изображениях или частях документа."
+                    )
+                snippet = f"[{marker}] {document_name}{source}{extraction_notice}\n{content[:8_000]}".strip()
                 if total_characters + len(snippet) > 50_000:
                     break
                 formatted_hits.append(snippet)

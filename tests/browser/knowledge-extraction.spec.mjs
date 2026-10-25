@@ -1,0 +1,78 @@
+import { test, expect } from "@playwright/test";
+import { mkdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { pdfFile } from "../../apps/coordinator/test/knowledge-file-fixtures.ts";
+
+// Browser plugin unavailable; exercise the real HTTP/parser/UI with repository Playwright.
+// Synthetic PDF is technical coverage, not a reviewed business document or model qualification.
+test("PDF extraction needs an explicit review of the current revision before indexing", async ({ page, request }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
+  const name = `Extraction QA ${testInfo.project.name}`;
+  const response = await request.post("/api/v1/knowledge/collections", { data: { name, embeddingModel: "fixture-embedding" } });
+  expect(response.ok(), await response.text()).toBe(true);
+  const collection = await response.json();
+  const bytes = pdfFile(["100 requests", "", "120 requests"]);
+  const screenshots = path.join(tmpdir(), "agat-extraction-qa");
+  await mkdir(screenshots, { recursive: true });
+  await page.goto("/#knowledge");
+  await expect(page).toHaveTitle(/АГАТ|Agat/i);
+  await expect(page).toHaveURL(/#knowledge$/);
+  const article = page.locator("article.knowledge-collection").filter({ has: page.getByRole("heading", { name, exact: true }) });
+  await article.getByRole("button", { name: "Документ", exact: true }).click();
+  const form = article.locator("form.knowledge-ingest");
+  await form.locator('input[type="file"]').setInputFiles({ name: "Mixed-pages.pdf", mimeType: "application/pdf", buffer: bytes });
+  const uploaded = page.waitForResponse(result => result.url().endsWith(`/collections/${collection.id}/documents/upload`) && result.request().method() === "POST");
+  await form.getByRole("button", { name: "Загрузить и разобрать" }).click();
+  const document = await (await uploaded).json();
+  expect(document.status).toBe("review_required");
+  const preview = page.getByRole("region", { name: "Предпросмотр документа", exact: true });
+  const coverage = preview.getByRole("region", { name: "Полнота извлечения", exact: true });
+  await expect(preview.getByRole("heading", { name: "Mixed-pages.pdf", exact: true })).toBeVisible();
+  await expect(coverage).toContainText("Страницы без извлечённого текста: 2");
+  await expect(coverage).toContainText("До подтверждения документ не индексируется и не передаётся модели");
+  const confirmation = coverage.getByRole("checkbox");
+  const accept = coverage.getByRole("button", { name: "Подтвердить текст и индексировать", exact: true });
+  await expect(confirmation).not.toBeChecked();
+  await expect(accept).toBeDisabled();
+  await preview.getByRole("combobox", { name: "Страница PDF", exact: true }).selectOption("2");
+  await expect(preview.locator(".knowledge-preview__text")).toHaveText("На этой странице нет извлекаемого текста.");
+  const download = page.waitForEvent("download");
+  await preview.getByRole("button", { name: "Скачать исходный файл", exact: true }).click();
+  expect(await readFile(await (await download).path())).toEqual(bytes);
+  await coverage.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: path.join(screenshots, `${testInfo.project.name}-review.png`), fullPage: false });
+  await coverage.getByRole("textbox", { name: "Причина использования этого текста", exact: true }).fill("Synthetic QA: use only the extracted text; no business acceptance.");
+  await expect(accept).toBeDisabled();
+  await confirmation.check();
+  await expect(accept).toBeEnabled();
+  const reviewed = page.waitForResponse(result => result.url().endsWith(`/documents/${document.id}/review-extraction`) && result.request().method() === "POST");
+  await accept.click();
+  const receipt = await (await reviewed).json();
+  expect(receipt.status).toBe("pending");
+  expect(receipt.extraction.state).toBe("accepted_text");
+  await expect(coverage.getByRole("status")).toContainText("Разрешено использование только извлечённого текста");
+  await expect(coverage.getByRole("checkbox")).toHaveCount(0);
+  await page.reload();
+  await expect(coverage.getByRole("status")).toContainText("Ограничения разбора сохраняются");
+  const repeated = await request.post(`/api/v1/knowledge/documents/${document.id}/review-extraction`, { data: {
+    originalSha256: document.originalSha256, contentSha256: document.contentSha256,
+    reportSha256: document.extraction.reportSha256, extractionRevision: document.extraction.revision,
+    decision: "use_extracted_text_only", reason: "Repeated synthetic QA request",
+  } });
+  expect(repeated.ok(), await repeated.text()).toBe(true);
+  expect((await repeated.json()).extraction.review).toEqual(receipt.extraction.review);
+  const reindexed = page.waitForResponse(result => result.url().endsWith(`/documents/${document.id}/reindex`) && result.request().method() === "POST");
+  await article.getByRole("button", { name: "Переиндексировать Mixed-pages.pdf", exact: true }).click();
+  const next = await (await reindexed).json();
+  expect(next.status).toBe("review_required");
+  expect(next.extraction.revision).not.toBe(document.extraction.revision);
+  await expect(coverage.getByRole("checkbox")).not.toBeChecked();
+  await expect(coverage.getByRole("textbox", { name: "Причина использования этого текста", exact: true })).toHaveValue("");
+  await expect(coverage.getByRole("button", { name: "Подтвердить текст и индексировать", exact: true })).toBeDisabled();
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

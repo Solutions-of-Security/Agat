@@ -39,7 +39,7 @@ test("tabular file upload preserves cells in preview and exposes unsupported for
     await expect(form.getByLabel("Название", { exact: true })).toHaveValue(name);
     await expect(form.getByText(/Файл выбран/)).toBeVisible();
     const uploaded = page.waitForResponse(response => response.url().endsWith(`/collections/${collection.id}/documents/upload`) && response.request().method() === "POST");
-    await form.getByRole("button", { name: "Загрузить и индексировать" }).click();
+    await form.getByRole("button", { name: "Загрузить и разобрать" }).click();
     expect((await uploaded).ok()).toBe(true);
     const preview = page.getByRole("region", { name: "Предпросмотр документа" });
     await expect(preview.getByRole("heading", { name, exact: true })).toBeVisible();

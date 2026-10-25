@@ -411,7 +411,13 @@ export interface KnowledgeDocument {
   sourceUri: string | null;
   mediaType: string;
   contentSha256: string;
-  status: "pending" | "indexing" | "ready" | "failed";
+  status: "pending" | "indexing" | "ready" | "failed" | "review_required";
+  extraction?: {
+    state: string; revision: string | null; reportSha256: string | null;
+    report: { schemaVersion: "document-extraction.v1"; profile: string; textCharacters: number; totalPages: number | null;
+      emptyPages: number[]; omittedParts: string[]; features: string[]; reviewRequired: boolean; fidelity: "not_assessed" } | null;
+    review: { actor: string; reviewedAt: string; decision: "use_extracted_text_only"; reason: string } | null;
+  };
   error: string | null;
   parseError?: string | null;
   originalSha256?: string | null;
@@ -443,6 +449,8 @@ export interface KnowledgeSource {
     sourceUri: string | null; originalSha256?: string | null;
     chunkId: string; chunkOrdinal: number; charStart: number; charEnd: number; chunkSha256: string;
     pageNumber?: number | null;
+    extraction?: { profile: string; reportSha256: string; extractionRevision: string; reviewSha256: string | null;
+      decision: "use_extracted_text_only" | null; emptyPageCount: number | null; omittedPartsCount: number | null; features: string[]; fidelity: "not_assessed" };
   };
 }
 
