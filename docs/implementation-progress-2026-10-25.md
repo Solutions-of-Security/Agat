@@ -158,16 +158,24 @@ Head #238 `196a1e9da6edd78ca941e4252f2bfec0ef1e82c5` прошёл все 15 requ
 
 Head #239 `078669b1adedfd40105b089049dbc04f483449a6` прошёл все 15 required/verify/CodeQL checks. Merge — `64a5f239c7fc8078cc8ede7d8c6e183a16f468a9`.
 
-## Текущий этап USE-004: UI Golden handoff
+## Поставленный интерфейс USE-004: UI Golden handoff
 
 Ветка `codex/report-eval-handoff-ui` соединяет результат отчёта с versioned Golden dataset: admin/designer видят явный CTA, exact packet binding/digests проверяются до формы, reference изначально пустой, rubric/review задаёт человек. Контекст можно перечитать после 409 с сохранением текста; неизвестный POST outcome замораживает body/UUID даже после close/reopen окна. Success открывает exact dataset/v1 с lineage, reload и обратной ссылкой на run; query datasetVersion=1 сохраняет исходную версию и после появления v2. Код формы загружается отдельно; inner boundary сохраняет историю/чтение/экспорт при missing chunk. Ошибки API получают machine code для recovery; сообщения reference validation переведены на понятный текст. Общий focus trap учитывает summary.
 
 Локально прошли 79 web tests, 14 candidate/import API/OIDC checks, typechecks/builds всех workspaces и 32 общих Chromium checks. Настоящий coordinator + desktop/mobile Chromium прошли полный install/CSV/report/approval/office path, решения/ручную задачу, invalid reference, stale context/refresh, explicit rubric/review, lost response после commit, close/reopen и exact retry, один dataset/event, lineage/reload/source link; model completions/run/stages/approval не изменяются, experiment не создаётся. Визуальный replay выявил уход Close и ошибки за границу mobile viewport: header вынесен из scroll body, error авто-прокручивается, критерии многострочные; повторный flow и bounding-box assertions прошли. Все 13 Golden screenshots в `/private/tmp/agat-stage15-ui` просмотрены. Browser plugin not available; repo Playwright. Обычный путь без console warnings/errors; внедрённые HTTP/chunk ошибки изолированы. Черновик/pending через полную перезагрузку/смену отчёта/проекта не восстанавливается; это остаётся в UX-210. CI/PR/merge фиксируются после поставки.
 
+Head #240 `0d5a16d7cccddc1b8742bb6771b686fb827473b4` прошёл все 15 required/verify/CodeQL checks. Merge — `785a963f97d00b25cc9ffa9df58cd2405d1e30b5`.
+
+## Текущий этап UX-306: контракт событий
+
+Ветка `codex/product-usage-contract` фиксирует [metadata-only v1](./product-usage-events.md): семь checkpoint kinds, task identity через retry/replay, раздельные client observations/server facts, project/cohort/sample/version и явные null. Нормализатор отвергает произвольные поля и не отражает значения в errors. Дедупликация проверяет event ID, semantic fact, неизменность task/run/artifact bindings и decision revision; конфликт не превращается в «последняя запись победила». Participant — HMAC project-scoped индивидуального verified subject, shared token остаётся unknown. Новых endpoints, storage/DDL, tracking, metrics claims и collector export пока нет; instrumentation и расчёт — следующие этапы.
+
+Локально прошли 413 coordinator tests / 28 штатных opt-in skips, включая десять новых contract tests и row/byte limits; typechecks всех workspaces, production build coordinator, docs links/catalog и diff whitespace check. При перепроверке убрано приведение enum values к строке: произвольный объект не может пройти через toString. Результаты относятся к контракту, не к реальному пилоту. Remote CI и merge этого этапа ещё не выполнялись.
+
 ## Границы и следующий остаток
 
 - USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: backend/UI решений, DOCX/PDF, candidate и versioned import в main; поставить UI Golden handoff и квалифицировать полный путь на разрешённых пользовательских данных.
+- USE-004: backend/UI решений, DOCX/PDF, candidate, versioned import и UI Golden handoff в main; квалифицировать полный путь на разрешённых пользовательских данных.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением
