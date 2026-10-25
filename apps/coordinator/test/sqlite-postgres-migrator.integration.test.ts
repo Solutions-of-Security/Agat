@@ -39,6 +39,7 @@ describe("SQLite to PostgreSQL migration integration", {
     let reviewedDocumentId = "";
     let extractionRevision = "";
     let officeSourceId = "", officeExportId = "", officeSha256 = "", reportDecisionId = "", reportReworkId = "";
+    let reportDatasetId = "", reportDatasetSha256 = "";
     const source = new AgatStore(sourcePath, {
       temporalProcesses: true,
       region: "eu-migration-test",
@@ -60,6 +61,11 @@ describe("SQLite to PostgreSQL migration integration", {
       const decision = source.recordBusinessReportDecision(officeSourceId, { requestId: "11111111-1111-4111-8111-111111111111", expectedSha256: office.canonical.sha256,
         expectedRevision: 0, decision: "rework_requested", reason: "Synthetic migration feedback; preserve exact binding" })!;
       reportDecisionId = decision.decision.id; reportReworkId = decision.reworkTask!.id;
+      const candidate = source.prepareBusinessReportEvalCandidate(officeSourceId, { expectedSha256: office.canonical.sha256, expectedRevision: 1 })!;
+      const imported = source.createBusinessReportEvalDataset(officeSourceId, { requestId: "22222222-2222-4222-8222-222222222222", expectedSha256: office.canonical.sha256,
+        expectedRevision: 1, expectedCandidateSha256: candidate.contentSha256, name: "Migration development example", referenceOutput: candidate.observedOutput,
+        rubric: [{ label: "Источники и числа", weight: 1 }], reviewConfirmed: true })!;
+      reportDatasetId = imported.datasetId; reportDatasetSha256 = imported.datasetContentSha256;
       const exported = (await source.exportBusinessReportArtifact(officeSourceId, { format: "docx", expectedSha256: office.canonical.sha256, origin: "https://migration.agat.example" }))!;
       officeExportId = String(exported.artifact.id); officeSha256 = String(exported.artifact.sha256);
       source.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(office.worker.id);
@@ -182,6 +188,15 @@ describe("SQLite to PostgreSQL migration integration", {
         assert.equal(feedback.rows[0].revision, 1); assert.equal(feedback.rows[0].task_id, reportReworkId);
         assert.match(feedback.rows[0].reason, /Synthetic migration feedback/);
         assert.equal(JSON.parse(feedback.rows[0].binding_json).artifactId, officeSourceId);
+        const dataset = await client.query("SELECT content_sha256, knowledge_snapshot_json FROM eval_dataset_versions WHERE dataset_id = $1 AND version = 1", [reportDatasetId]);
+        assert.equal(dataset.rowCount, 1); assert.equal(dataset.rows[0].content_sha256, reportDatasetSha256);
+        const lineage = JSON.parse(dataset.rows[0].knowledge_snapshot_json).reportImport;
+        assert.equal(lineage.source.artifactId, officeSourceId); assert.equal(lineage.source.decisionId, reportDecisionId);
+        assert.equal(lineage.holdoutEligible, false); assert.equal(lineage.reviewConfirmed, true);
+        const example = await client.query("SELECT reference_output FROM eval_examples WHERE dataset_id = $1 AND dataset_version = 1", [reportDatasetId]);
+        assert.equal(example.rowCount, 1);
+        assert.equal(createHash("sha256").update(example.rows[0].reference_output).digest("hex"), lineage.referenceSha256);
+        assert.equal(lineage.referenceSha256, lineage.source.observedOutputSha256);
       } finally {
         await client.end();
       }

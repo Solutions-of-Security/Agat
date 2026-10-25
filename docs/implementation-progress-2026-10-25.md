@@ -21,6 +21,7 @@
 | USE-004, DOCX/PDF | Одно проверенное содержание, frozen source/renderer identity, retry-safe files и UI download | [#234](https://github.com/Solutions-of-Security/Agat/pull/234), `43b0cf79d078d9c0da790ad7d3d21312c465ebd8` |
 | USE-004, backend решения | Append-only history, exact source binding, retry/revision и связанная ручная задача | [#236](https://github.com/Solutions-of-Security/Agat/pull/236), `a8f3738757c4a585b0b902e69fcecfd5f8c06124` |
 | USE-004, интерфейс решения | Явное принятие/rework, безопасный retry, история и ручная передача задачи | [#237](https://github.com/Solutions-of-Security/Agat/pull/237), `536b7357d9026a2892af60e3d83b7a9ce5845657` |
+| USE-004, backend Golden candidate | Exact report/decision/agent/input/output provenance, blank reference, development-only preparation | [#238](https://github.com/Solutions-of-Security/Agat/pull/238), `3105c4b6b3af43e704feec7c12597c20a46836d4` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -140,16 +141,24 @@ dedupe tests, включая добавленный reindex saturation case; 70 
 
 Обязательный test job первого CI #237 прошёл assertions, но docs replay завершился ошибкой tearDownClass: временный `sources/.git` оказался непустым во время удаления. Только для ActiveDeadlineOfflineTest отключены автоматические Git maintenance/gc, которые могут пережить subprocess и продолжить запись в fixture. Строгий cleanup сохранён; ignore_errors/retry masking не вводились. Все восемь checks модуля, включая настоящий model-free coordinator/worker deadline HTTP flow, прошли. Повторный полный локальный docs replay: 1532 Python tests, 4 штатных skips, Node checkers и links/catalog прошли. Исправленный head `009bf61fe9daae615244dd879fed6e812a4a9930` прошёл все 15 checks required/verify/CodeQL до merge #237; исходный отказ не считается PASS. Основание изоляции: [Git maintenance](https://git-scm.com/docs/git-maintenance), [Git gc](https://git-scm.com/docs/git-gc).
 
-## Текущий этап USE-004: backend передачи примера в Golden eval
+## Поставленный backend USE-004: подготовка Golden candidate
 
 Ветка `codex/report-eval-candidate` добавляет [read-only development candidate](./report-eval-handoff.md) с exact artifact/decision/process/agent/input/output hashes. Pinned schema и однозначный JSON-producing agent сверяются с renderer receipt и сохранённым human decision. Reference остаётся пустым, observed JSON хранится отдельно; current corpus fingerprint не объявляется историческим retrieval snapshot. Packet не даёт holdout eligibility, qualification или разрешения process replay. Авторизация соответствует созданию datasets (admin/designer), ответ no-store. Новых таблиц, datasets, events, runs и model calls подготовка не создаёт.
 
 Семь целевых SQLite/API/OIDC tests прошли, включая graph drift, ambiguous context, missing snapshot, corrupt source, 10000-chunk bound, роли и foreign project. Полный coordinator replay: 396 passed / 28 штатных opt-in skips; typecheck/build coordinator прошли. Две настоящие PostgreSQL replicas вернули одинаковый candidate, source/tenant binding и пустой reference; прежние concurrent decision/grants/purge assertions также прошли. UI передачи и фиксация versioned dataset остаются следующими этапами. CI/PR/merge будут зафиксированы после поставки.
 
+Head #238 `196a1e9da6edd78ca941e4252f2bfec0ef1e82c5` прошёл все 15 required/verify/CodeQL checks. Merge — `3105c4b6b3af43e704feec7c12597c20a46836d4`.
+
+## Текущий этап USE-004: фиксация проверенного Golden-примера
+
+Ветка `codex/report-eval-dataset-import` добавляет отдельный явный import endpoint: typed reference + human rubric/review, exact candidate SHA, dataset/v1 и metadata-only lineage/event. Повтор связан с полным verified subject/project/request ID, использует deterministic UUIDv8 и возвращает исходную версию после нового решения или source purge. Изменённое намерение — 409. Live source проверяется до записи и под общим project → artifact lock; весь Artifact Store I/O и fingerprint work происходят до write locks. Lineage хранится в существующем version JSON и входит в content SHA, schema 35 не меняется. Input/reference копируются в Golden dataset с отдельным сроком хранения; original-run purge не стирает явную копию. Импорт не запускает модель/процесс/experiment.
+
+14 целевых candidate/import API/OIDC tests прошли. Полный coordinator replay: 403 passed / 28 штатных opt-in skips. Отдельный interop replay подтвердил exact stage input в существующем Golden executor после явного создания experiment; первый fixture пытался создать второй agent registry, исправлен отдельным frozen prompt и повторно прошёл. Две настоящие PostgreSQL replicas проверили четыре imports с 201/200, один dataset/event, changed-intent 409, tenant 404 и durable receipt после source-run purge. Offline apply/verify/rehearsal перенёс dataset/v1, lineage JSON и content SHA; все три integration checks прошли. Typechecks и production builds всех workspaces, docs links/catalog прошли. UI — следующий этап; CI/PR/merge фиксируются после поставки.
+
 ## Границы и следующий остаток
 
 - USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: backend/UI решений и DOCX/PDF в main; поставить backend candidate, затем UI Golden eval handoff и фиксацию lineage versioned dataset.
+- USE-004: backend/UI решений, DOCX/PDF и candidate в main; поставить versioned import с lineage, затем UI Golden handoff.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением

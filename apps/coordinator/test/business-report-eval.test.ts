@@ -9,6 +9,7 @@ import { AgatStore } from "../src/database.js";
 import { loadConfig } from "../src/config.js";
 import { createCoordinatorServer } from "../src/server.js";
 import { BusinessReportEvalError, normalizeReportEvalRequest } from "../src/business-report-eval.js";
+import { reportEvalDatasetId } from "../src/business-report-eval-import.js";
 import { completedOfficeReport } from "./business-report-office-fixtures.js";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -131,7 +132,7 @@ test("oversized knowledge context fails before building or exporting a duplicate
   } finally { f.cleanup(); }
 });
 
-test("OIDC handoff requires dataset-author roles and project scope; it is a no-store read without model or dataset writes", async () => {
+test("OIDC candidate/import require dataset-author roles and project scope, with imports bound to the verified subject", async () => {
   const f = fixture(), keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "report-eval-test", alg: "RS256", use: "sig" };
   const identity = http.createServer((_request, response) => { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ keys: [jwk] })); });
@@ -165,6 +166,22 @@ test("OIDC handoff requires dataset-author roles and project scope; it is a no-s
     f.store.createProject({ id: "foreign", name: "Foreign" });
     assert.equal((await post("designer", { "x-agat-project-id": "foreign" })).status, 404);
     assert.equal(f.store.listEvalDatasets().length, 0); assert.equal(f.store.listEvents(0, 1000).length, before, "candidate preparation is read-only");
+    const candidate = f.prepare(), importUrl = url.replace(/eval-candidate$/, "eval-dataset");
+    const body = { ...f.request, requestId: randomUUID(), expectedCandidateSha256: candidate.contentSha256, name: "OIDC development import",
+      referenceOutput: candidate.observedOutput, rubric: [{ label: "Источники и числа", weight: 1 }], reviewConfirmed: true };
+    const importExample = (role: string, extra = {}, data = body) => fetch(importUrl, { method: "POST", headers: {
+      authorization: `Bearer ${token(role)}`, "content-type": "application/json", ...extra }, body: JSON.stringify(data) });
+    assert.equal((await fetch(importUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).status, 401);
+    for (const role of ["viewer", "auditor", "operator"]) assert.equal((await importExample(role)).status, 403);
+    const created = await importExample("designer"); assert.equal(created.status, 201, await created.clone().text());
+    assert.equal(created.headers.get("cache-control"), "no-store");
+    const receipt = await created.json() as { datasetId: string };
+    assert.equal(receipt.datasetId, reportEvalDatasetId("default", "subject-designer", body.requestId));
+    assert.equal((await importExample("designer")).status, 200);
+    assert.equal((await importExample("designer", {}, { ...body, name: "Different intent" })).status, 409);
+    assert.equal((await importExample("designer", { "x-agat-project-id": "foreign" })).status, 404);
+    assert.equal((await importExample("admin", {}, { ...body, name: "Admin import" })).status, 201);
+    assert.equal(f.store.listEvalDatasets().length, 2);
   } finally {
     if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server!.close(() => resolve())); }
     identity.closeAllConnections(); await new Promise<void>(resolve => identity.close(() => resolve())); f.cleanup();

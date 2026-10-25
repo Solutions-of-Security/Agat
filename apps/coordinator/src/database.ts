@@ -48,6 +48,7 @@ import { renderBusinessReportOffice } from "./business-report-office.js";
 import { BUSINESS_REPORT_OFFICE_PROFILE, BUSINESS_REPORT_OFFICE_RENDERER_SHA256, BusinessReportOfficeError, normalizeOfficeFormat, normalizeOfficeOrigin } from "./business-report-office-document.js";
 import { BUSINESS_REPORT_DECISION_LIMIT, BUSINESS_REPORT_DECISION_PROFILE, BusinessReportDecisionError, normalizeBusinessReportDecision } from "./business-report-decisions.js";
 import { BUSINESS_REPORT_EVAL_PROFILE, BusinessReportEvalError, normalizeReportEvalRequest, type BusinessReportEvalCandidate } from "./business-report-eval.js";
+import { BUSINESS_REPORT_EVAL_IMPORT_PROFILE, normalizeReportEvalImport, reportEvalDatasetId, type BusinessReportEvalImportReceipt } from "./business-report-eval-import.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -14034,6 +14035,68 @@ export class AgatStore {
       observedOutput, currentKnowledgeSnapshot,
     };
     return { ...packet, contentSha256: sha256Text(JSON.stringify(packet)) };
+  }
+
+  createBusinessReportEvalDataset(artifactId: string, raw: unknown, projectId = "default", actor = "system"): BusinessReportEvalImportReceipt | null {
+    const project = this.requireProject(projectId), input = normalizeReportEvalImport(raw), rubric = normalizeEvalRubric(input.rubric);
+    const datasetId = reportEvalDatasetId(project, actor, input.requestId), actorSha256 = sha256Text(actor);
+    const requestSha256 = sha256Text(JSON.stringify({ profile: BUSINESS_REPORT_EVAL_IMPORT_PROFILE, artifactId, ...input, rubric }));
+    const cached = (): BusinessReportEvalImportReceipt | null => {
+      const row = this.db.prepare(`SELECT v.knowledge_snapshot_json, v.content_sha256 FROM eval_datasets d
+        JOIN eval_dataset_versions v ON v.dataset_id = d.id AND v.version = 1 WHERE d.id = ? AND d.project_id = ?`).get(datasetId, project) as Row | undefined;
+      if (!row) return null;
+      const metadata = parseJson<Record<string, unknown>>(row.knowledge_snapshot_json, {}).reportImport as Record<string, unknown> | undefined;
+      if (metadata?.profile !== BUSINESS_REPORT_EVAL_IMPORT_PROFILE || metadata.actorSha256 !== actorSha256 || metadata.requestSha256 !== requestSha256) {
+        throw new BusinessReportEvalError("idempotency_conflict", "Этот request ID уже использован для другого примера", 409);
+      }
+      return { datasetId, datasetVersion: 1, datasetContentSha256: String(row.content_sha256), candidateSha256: String(metadata.candidateSha256), created: false };
+    };
+    const prior = cached(); if (prior) return prior;
+    const candidate = this.prepareBusinessReportEvalCandidate(artifactId, { expectedSha256: input.expectedSha256, expectedRevision: input.expectedRevision }, project);
+    if (!candidate) return null;
+    if (candidate.contentSha256 !== input.expectedCandidateSha256) throw new BusinessReportEvalError("candidate_changed", "Контекст примера изменился. Подготовьте и проверьте его заново", 409);
+    const referenceValidation = validateBusinessReportOutput(input.referenceOutput, this.businessOutputContext(candidate.source.runId, project).context);
+    if (referenceValidation.schemaSha256 !== candidate.source.schemaSha256) throw new BusinessReportEvalError("schema_changed", "Контракт reference изменился; подготовьте пример для актуального профиля вручную", 409);
+    if (referenceValidation.status === "invalid") throw new BusinessReportEvalError("invalid_reference", `Reference не прошёл проверку схемы, источников или расчётов: ${referenceValidation.codes.join(", ")}`);
+    if (rubric.some(criterion => criterion.weight <= 0)) throw new BusinessReportEvalError("invalid_rubric", "Вес критерия должен оставаться положительным после округления");
+    const normalized = this.normalizeEvalDatasetVersion(project, input.description, "Development пример из отчёта; reference и rubric проверены человеком", rubric,
+      [{ ...candidate.example, referenceOutput: input.referenceOutput }]);
+    // The existing experiment executor accepts the stored example verbatim.
+    // Preserve a process-stage input even when it has significant outer whitespace.
+    normalized.examples[0]!.input = candidate.example.input;
+    if (normalized.knowledgeSnapshot.fingerprint !== candidate.currentKnowledgeSnapshot.fingerprint) throw new BusinessReportEvalError("candidate_changed", "Корпус изменился во время подготовки примера", 409);
+    const { reason: _reason, ...origin } = candidate.source;
+    const reportImport = { profile: BUSINESS_REPORT_EVAL_IMPORT_PROFILE, purpose: "development", holdoutEligible: false, reviewConfirmed: true,
+      requestSha256, actorSha256, candidateSha256: candidate.contentSha256, source: origin,
+      referenceSha256: sha256Text(input.referenceOutput), referenceValidation };
+    normalized.knowledgeSnapshot = { ...normalized.knowledgeSnapshot, reportImport };
+    normalized.contentSha256 = sha256Text(JSON.stringify({ description: normalized.description, rubric: normalized.rubric,
+      examples: normalized.examples.map(({ id: _id, ...example }) => example), knowledgeFingerprint: normalized.knowledgeSnapshot.fingerprint, reportImport }));
+    // All Artifact Store I/O and corpus fingerprint work is complete before the
+    // shared project -> artifact lock order used by report decision writers.
+    return this.transaction(() => {
+      const projectRow = this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`).get(project);
+      if (!projectRow) throw new BusinessReportEvalError("source_changed", "Проект недоступен", 409);
+      const existing = cached(); if (existing) return existing;
+      const source = this.businessReportArtifactSource(artifactId, project, true);
+      const latest = this.db.prepare("SELECT id FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? ORDER BY revision DESC LIMIT 1").get(artifactId, project) as Row | undefined;
+      if (!source || source.sha256 !== input.expectedSha256 || latest?.id !== candidate.source.decisionId) throw new BusinessReportEvalError("decision_changed", "Отчёт или решение изменились перед фиксацией примера", 409);
+      const timestamp = nowIso();
+      try {
+        this.db.prepare(`INSERT INTO eval_datasets(id, project_id, name, description, current_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 1, ?, ?)`).run(datasetId, project, input.name, input.description, timestamp, timestamp);
+      } catch (error) {
+        if (error instanceof Error && /unique|duplicate key/i.test(error.message)) throw new BusinessReportEvalError("dataset_name_conflict", "Dataset с таким названием уже существует. Выберите другое название", 409);
+        throw error;
+      }
+      this.insertEvalDatasetVersion(datasetId, 1, normalized, actor, timestamp);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.eval.dataset.created", "Сохранён development пример отчёта", {
+        projectId: project, datasetId, datasetVersion: 1, datasetContentSha256: normalized.contentSha256, candidateSha256: candidate.contentSha256,
+        artifactId, sourceSha256: input.expectedSha256, decisionId: candidate.source.decisionId, decisionRevision: candidate.source.decisionRevision,
+        agentStageId: candidate.source.agentStageId, inputSha256: candidate.source.inputSha256, referenceSha256: reportImport.referenceSha256, actorSha256,
+      });
+      return { datasetId, datasetVersion: 1, datasetContentSha256: normalized.contentSha256, candidateSha256: candidate.contentSha256, created: true };
+    });
   }
 
   async exportBusinessReportArtifact(artifactId: string, input: { format: unknown; expectedSha256: unknown; origin: unknown }, projectId = "default", actor = "system") {

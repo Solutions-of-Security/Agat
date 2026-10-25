@@ -1,9 +1,10 @@
 # Передача отчёта в подготовку Golden eval
 
 Backend-контракт подготавливает **development candidate**, связанный с точным
-отчётом и решением человека. Dataset, experiment, model call, tool approval и
-новый run при этом не создаются. Schema 35 не меняется. UI передачи и фиксация
-проверенного примера в versioned dataset — следующие этапы.
+отчётом и решением человека. Подготовка не создаёт dataset, experiment, model
+call, tool approval или run. Отдельная явная операция сохраняет проверенный
+reference/rubric в первой версии dataset с lineage и durable retry receipt.
+Schema 35 не меняется. UI этих операций — следующий этап.
 
 ## API и условия
 
@@ -70,11 +71,65 @@ artifact ограничен 800000 bytes. Fingerprint собирается дл�
 отдельной подготовки. Artifact Store проверяет целостность фактических bytes
 до выдачи. После проверки повторно читаются source и latest decision.
 
-Это подготовка исторически связанного материала, не атомарная публикация
-dataset: новое решение после выдачи не изменит уже выданный packet. Фиксация
-примера должна снова проверять исходную связь и сохранять lineage версии.
+Это подготовка исторически связанного материала: новое решение после выдачи
+не изменит уже выданный packet. Операция фиксации ниже снова проверяет исходную
+связь и сохраняет lineage версии.
 Повторный просмотр/корректировка development примера исключают его использование
 как независимого holdout без отдельного протокола.
+
+## Явная фиксация versioned dataset
+
+`POST /api/v1/artifacts/:id/eval-dataset`, admin/designer, требует:
+
+- `requestId`: новый UUID v4, неизменный для retry одного намерения;
+- `expectedSha256`, `expectedRevision`, `expectedCandidateSha256` из просмотренного
+  packet — exact report/decision/context;
+- `name` (1–120 units), необязательный `description` (до 2000), непустой
+  `referenceOutput` (до 100000 UTF-16 units / 200000 UTF-8 bytes);
+- `rubric`: 1–20 критериев существующего Golden contract;
+- `reviewConfirmed: true`: явное подтверждение проверки reference, rubric,
+  контекста и хранения копии примера в dataset проекта.
+
+Input/collection IDs сервер берёт из свежего candidate. Поля actor, purpose,
+input и произвольный source не принимаются. Проверяются schema, расчёты и
+run-scoped sources reference; typed `insufficient` с ограничениями допустим как
+ожидаемый отказ. Эти проверки и human attestation не объявляют факты доказанными.
+Пустой reference, неверные источники/числа или отсутствующий review не записывают
+dataset. Значимые внешние пробелы stage input сохраняются для Golden executor.
+
+Операция atomic создаёт dataset/v1, example, rubric и один metadata-only event
+`business.report.eval.dataset.created`. Ответ содержит `datasetId`,
+`datasetVersion: 1`, `datasetContentSha256`, `candidateSha256`, `created`;
+201 для создания, 200 для повтора, `Cache-Control: no-store`.
+В event нет reference, rubric, комментария или названия dataset.
+
+Namespace повтора включает project, полный verified subject и request UUID.
+Dataset ID — детерминированный UUIDv8 из первых 128 bits SHA-256 канонического
+JSON массива `[profile, project, subject, requestId]` с version/variant bits по
+[RFC 9562 §5.8 / Appendix B.2](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.8).
+Project/RLS и проверка payload hash защищают доступ и intent. Такой receipt
+помещается в существующий indexed dataset ID без новой lookup-таблицы.
+
+Exact retry возвращает исходную v1 даже после следующего решения, новой версии
+dataset или удаления source run; изменённый payload того же request ID — 409.
+Новое намерение повторно проверяет живой source/candidate. Повторы после purge
+исходника не создают его заново. Одинаковое название другого dataset — 409.
+Все Artifact Store обращения, reference checks и corpus fingerprints выполняются
+до короткой transaction. В ней блокировки project → artifact совпадают с
+decision writer, затем повторно проверяются source SHA и latest decision.
+
+Происхождение хранится в `eval_dataset_versions.knowledge_snapshot_json.reportImport`
+и включается в version content SHA: source IDs/hashes/версия/решение, candidate
+hash, actor hash, request hash, reference hash/validation, purpose development,
+holdoutEligible false и attestation. Комментарий решения и runtime config не
+дублируются. Неизменная v1 остаётся источником lineage в истории dataset;
+последующие версии общего редактора не получают новое source attestation
+автоматически. Подготовка experiment/prompt — отдельное явное действие.
+
+Копия input/reference в Golden dataset хранится независимо от source run.
+Удаление source не удаляет ранее явно сохранённый пример: к нему отдельно
+применяются правила хранения Golden данных проекта. SQLite → PostgreSQL
+сохраняет lineage JSON, reference и version SHA; новая DDL migration не нужна.
 
 ## Проверки и основания
 
@@ -82,8 +137,12 @@ dataset: новое решение после выдачи не изменит �
 агента вместо Markdown, blank reference для обоих решений, повтор, отсутствие
 run/stage/artifact/event/dataset/experiment writes, 401/403/404/409, no-store,
 corrupt bytes, missing snapshot, graph drift, неоднозначные stages и лимит
-10000 chunks. Репличный PostgreSQL replay проверяет одинаковый packet на двух
-coordinators и tenant isolation. Итоговые результаты фиксируются в
+10000 chunks. Import tests дополнительно проверяют atomic rollback при отказе
+example insert, intent/actor/project namespaces, durable retry после source
+purge, typed reference и совместимость с явным Golden experiment. Репличный
+PostgreSQL replay проверяет одинаковый packet и четыре concurrent imports
+(201/200), один dataset/event, 409 и tenant isolation. Offline migration
+переносит dataset/v1, lineage и reference SHA. Итоговые результаты фиксируются в
 [журнале реализации](./implementation-progress-2026-10-25.md).
 
 Основания дизайна: [MLflow dataset lineage/digest/source](https://mlflow.org/docs/latest/ml/dataset/)
