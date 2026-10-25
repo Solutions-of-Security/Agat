@@ -9,6 +9,7 @@ import { AgatStore } from "../../apps/coordinator/src/database.ts";
 import { loadConfig } from "../../apps/coordinator/src/config.ts";
 import { createCoordinatorServer } from "../../apps/coordinator/src/server.ts";
 import { getInternalReportPack } from "../../apps/coordinator/src/process-packs.ts";
+import { exerciseReportDecision, exerciseDecisionChunkFailure } from "./report-decision-ui-steps.mjs";
 
 const { chromium } = await import(process.env.AGAT_PLAYWRIGHT_MODULE || "playwright");
 const artifactsDir = mkdtempSync(path.join(tmpdir(), "agat-pack-ui-"));
@@ -40,8 +41,8 @@ try {
     const page = await context.newPage();
     lastPage = page;
     const errors = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
+    page.on("pageerror", (error) => errors.push({ text: error.message, url: null }));
+    page.on("console", (message) => { if (["error", "warning"].includes(message.type())) errors.push({ text: message.text(), url: message.location().url }); });
     await page.goto(`${base}#processes`);
     assert.match(await page.title(), /Агат|Agat/i);
     await page.getByRole("button", { name: "Новый процесс", exact: true }).click();
@@ -191,6 +192,9 @@ try {
     await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-office.png`), fullPage: false });
     await result.locator(".report-markdown").scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshotDir, `agat-pack-v2-${projectId}-report.png`), fullPage: false });
+    await exerciseReportDecision({ page, context, base, headers, store, artifact: ownArtifact, projectId, screenshotDir, errors });
+    if (projectId === "desktop") await exerciseDecisionChunkFailure({ browser, base, token, projectId, runId: ownRunId, screenshotDir });
+    await result.getByRole("button", { name: "Форматированный", exact: true }).click();
     await result.locator(".report-markdown").getByRole("link", { name: `[${sourceMarker}]`, exact: true }).first().focus();
     await page.keyboard.press("Enter");
     await page.waitForURL(new RegExp(`documentId=${ownDocument.id}`));
@@ -202,7 +206,7 @@ try {
     assert.equal(store.listProcesses(projectId).length, 2);
     assert.equal(await page.locator("vite-error-overlay").count(), 0);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${projectId}: ${base} · v1 compatibility; binary CSV -> v2 selection/diff/install -> update/rollback -> structured request -> validated report -> exact DOCX/PDF downloads and retry reuse -> exact source; no console errors`);
+    console.log(`PASS ${projectId}: ${base} · v1/v2 install/update/rollback -> CSV -> validated report -> exact DOCX/PDF -> decision/lost-response retry -> manual task/source -> stale conflict/history -> exact source; no unexpected console errors`);
     await context.close();
   }
 } catch (error) {

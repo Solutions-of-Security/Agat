@@ -68,6 +68,10 @@ import type {
   SaveProcessScheduleRequest,
   TestProcessNodeResult,
   UpdateProcessRequest,
+  ReportDecisionHistory,
+  ReportReworkTask,
+  RecordReportDecisionRequest,
+  RecordReportDecisionResponse,
 } from "../types";
 import { accessToken, activeProjectId, oidcEnabled } from "./auth";
 import type { ScenarioPreflight, ScenarioPreflightInput } from "../scenarioPreflight";
@@ -311,6 +315,11 @@ export const api = {
   downloadArtifact: (artifactId: string) =>
     requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/download`),
   runArtifacts: (runId: string, signal?: AbortSignal) => request<{ artifacts: import("../types").Artifact[] }>(`/runs/${encodeURIComponent(runId)}/artifacts`, { signal }),
+  reportDecisions: (artifactId: string, beforeRevision: number | null = null, signal?: AbortSignal) =>
+    request<ReportDecisionHistory>(`/artifacts/${encodeURIComponent(artifactId)}/decisions${beforeRevision === null ? "" : `?beforeRevision=${beforeRevision}`}`, { signal }),
+  recordReportDecision: (artifactId: string, payload: RecordReportDecisionRequest) =>
+    request<RecordReportDecisionResponse>(`/artifacts/${encodeURIComponent(artifactId)}/decisions`, { method: "POST", body: JSON.stringify(payload) }),
+  reportReworkTask: (taskId: string, signal?: AbortSignal) => request<ReportReworkTask>(`/report-rework-tasks/${encodeURIComponent(taskId)}`, { signal }),
   exportArtifact: (artifactId: string, payload: { format: "docx" | "pdf"; expectedSha256: string; origin: string }) =>
     request<{ artifact: import("../types").Artifact; created: boolean }>(`/artifacts/${encodeURIComponent(artifactId)}/export`, { method: "POST", body: JSON.stringify(payload) }),
   localWorkers: (signal?: AbortSignal) =>

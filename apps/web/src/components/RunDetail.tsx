@@ -24,8 +24,10 @@ import { Icon } from "./Icon";
 import { PolicyControl } from "./PolicyControl";
 import { DecisionObservations } from "./DecisionObservations";
 import { ReportFormatBoundary } from "./ReportFormatBoundary";
+import { ReportDecisionBoundary } from "./ReportDecisionBoundary";
 
 const ReportMarkdown = lazy(() => import("./ReportMarkdown").then((module) => ({ default: module.ReportMarkdown })));
+const ReportDecisionPanel = lazy(() => import("./ReportDecisionPanel").then(module => ({ default: module.ReportDecisionPanel })));
 
 const stageStatusCopy: Record<StageStatus, string> = {
   pending: "Ожидает",
@@ -855,6 +857,9 @@ export function RunDetail({
             onClick={() => void exportOffice(reportArtifact, format)}>{currentOfficeAction?.busy && currentOfficeAction.key === `${reportArtifact.id}:${format}` ? "Готовим файл…" : `Скачать ${format.toUpperCase()}`}</button>)}</div>
           {currentOfficeAction?.error ? <p role="alert">{currentOfficeAction.error}</p> : null}
         </div> : officeEligible && officeFiles?.runId === run.id && officeFiles.error ? <p role="alert">Не удалось загрузить форматы отчёта. <button className="button button--secondary" type="button" onClick={() => setOfficeRetry(value => value + 1)}>Повторить загрузку файлов</button></p> : null}
+        {reportArtifact ? <ReportDecisionBoundary key={`${reportArtifact.id}:${reportArtifact.sha256}`}><Suspense fallback={<p role="status">Загружаем действия с отчётом…</p>}>
+          <ReportDecisionPanel artifact={reportArtifact} canReview={canDecideApproval} onDownloadSource={async () => triggerDownload(await api.downloadArtifact(reportArtifact.id), reportArtifact.name)} />
+        </Suspense></ReportDecisionBoundary> : null}
         {result ? <>
           <div className="run-result__view" role="group" aria-label="Представление результата">
             <button className="button button--secondary" type="button" aria-pressed={outputView === "source"} onClick={() => setOutputView("source")}>Исходный текст</button>

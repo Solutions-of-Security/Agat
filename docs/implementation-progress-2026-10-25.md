@@ -19,6 +19,7 @@
 | USE-003 / UX-206, проверка извлечения | Scope/gaps PDF/DOCX, exact review до индексации и model lease | [#232](https://github.com/Solutions-of-Security/Agat/pull/232), `0281c5e4288e3014dcbb157e9eeabf4b93fb1d0b` |
 | USE-003, dedupe | Original bytes identity одной коллекции, сохранение review/vectors, parser busy 503 | [#233](https://github.com/Solutions-of-Security/Agat/pull/233), `e9b1dad304a1100cb3ad125728f5dddfb2f157de` |
 | USE-004, DOCX/PDF | Одно проверенное содержание, frozen source/renderer identity, retry-safe files и UI download | [#234](https://github.com/Solutions-of-Security/Agat/pull/234), `43b0cf79d078d9c0da790ad7d3d21312c465ebd8` |
+| USE-004, backend решения | Append-only history, exact source binding, retry/revision и связанная ручная задача | [#236](https://github.com/Solutions-of-Security/Agat/pull/236), `a8f3738757c4a585b0b902e69fcecfd5f8c06124` |
 
 Каждый merge выше выполнен после успешного обязательного `required` gate,
 всех verify jobs и CodeQL. Историческая ошибка Linux browser fixture в #227
@@ -120,18 +121,26 @@ dedupe tests, включая добавленный reindex saturation case; 70 
 
 Локальный Docker image дошёл до export layers, затем storage Docker Desktop отказал с input/output и read-only filesystem; на host осталось 244 МиБ. S3 replay прерван средой. Эти попытки не считаются PASS. В required CI добавлен production image/renderer smoke; полный S3 gate уже входит в integration matrix. Final head `7cb293c5c16e681e4310d8bc8f5e7c2880f21727` прошёл required, все verify jobs (включая production image/renderer и полный S3) и CodeQL. Merge #234 — `43b0cf79d078d9c0da790ad7d3d21312c465ebd8`.
 
-## Текущий этап USE-004: backend решения о результате
+## Поставленный backend USE-004: решение о результате
 
 Ветка `codex/report-result-decisions` от merge #234 добавляет [append-only решение и связанную ручную задачу](./report-result-decisions.md): exact artifact SHA/run/process version, actor-bound request ID, optimistic revision, atomic decision/task/audit, metadata-only event и права admin/operator. История переживает file/event retention; physical owning purge удаляет её согласованно. SQLite guards и PostgreSQL SELECT/INSERT-only grants защищают от изменения записей. Source bytes проверяются до SQL locks; project → artifact сериализует общий namespace request IDs даже между разными файлами.
 
 Выключение ноутбука прервало сборку/регрессию при заполненном диске; незакоммиченные исходники сохранены. Старые неуспешные прогоны не считаются PASS. После восстановления: 389 coordinator tests passed / 28 штатных opt-in skips, семь final API/OIDC/retention/upgrade tests, все typechecks/builds. Две настоящие PostgreSQL replicas проверили retry 201/200, competing intent 201/409, общий request ID разных artifacts, tenant RLS, запреты правки и owning purge; отдельный startup probe отвергает выдачу UPDATE runtime или tenant role. Offline apply/verify/rehearsal переносит decision/task/binding и DOCX bytes.
 
-Проверка выявила прежнее требование CRUD на каждой runtime table, несовместимое с append-only ledger. Для двух новых таблиц введён явный строгий SELECT/INSERT contract с запретом UPDATE/DELETE; остальные DML и все DDL запреты сохранены. Индекс FK run_id имеет ведущий run_id. Final CI/PR/merge будут зафиксированы после поставки; UI и Golden handoff — следующие этапы, задача metadata не считается выполненным исправлением.
+Проверка выявила прежнее требование CRUD на каждой runtime table, несовместимое с append-only ledger. Для двух новых таблиц введён явный строгий SELECT/INSERT contract с запретом UPDATE/DELETE; остальные DML и все DDL запреты сохранены. Индекс FK run_id имеет ведущий run_id. Head `b327a6f8346ff5f0071810e548ad606836b34709` прошёл все 15 checks: required, verify jobs и CodeQL. Merge #236 — `a8f3738757c4a585b0b902e69fcecfd5f8c06124`.
+
+## Текущий этап USE-004: интерфейс решения и ручная передача
+
+Ветка `codex/report-result-review-ui` добавляет явный выбор «Принять / Нужны исправления», обязательный комментарий к исправлению, историю и карточку задачи в результате completed run. Чтение доступно ролям проекта; запись — admin/operator. Retry после неизвестного ответа повторяет тот же UUID и неизменный payload; 409 закрывает форму и перечитывает историю. Source SHA и frozen revision проверяются сервером. Отдельный deferred chunk и boundary сохраняют чтение/экспорт при сбое панели.
+
+Карточка ручной задачи показывает исходный файл, комментарий, версию процесса и состояние open/superseded; скачивание сверено по SHA-256. Передача копирует текст с exact source binding; при отказе clipboard открывается выделенный текст для ручного копирования. Созданная задача не объявляется выполненным исправлением, новый run не запускается.
+
+Локально прошли 75 web tests, typechecks и production builds всех workspaces, docs links/catalog и 32 общих Chromium checks. Настоящий coordinator + Chromium 1440×1100 и 390×844 прошли install/CSV/report/approval/export → 503 history/retry → lost response после server commit → тот же decision/task ID → manual handoff/download → stale 409 → reload/superseded history → все 52 записи через cursor. Run/stages/approval и число model completions не изменяются. Отдельный cold context проверил missing chunk fallback и PDF download. Browser plugin not available — использован repo Playwright. Console warnings/errors обычного пути отсутствуют; ожидаемые 503/409/net::ERR_FAILED относятся только к внедрённым запросам, missing chunk и предупреждение service-worker блокировки изолированы. Все 11 screenshots панели/задачи desktop/mobile просмотрены в `/private/tmp/agat-stage12-ui`; временные изображения не включены в Git. Первые прогоны с преждевременной проверкой RAF focus restore и сброшенным после reload formatted view исправлены и не считаются PASS. CI/PR/merge фиксируются после поставки.
 
 ## Границы и следующий остаток
 
 - USE-003: extraction review и dedupe поставлены; квалификация на пользовательских данных остаётся отдельным gate.
-- USE-004: поставить backend решений; затем UI принятия/задачи исправления и Golden eval handoff. DOCX/PDF уже в main.
+- USE-004: backend решений и DOCX/PDF в main; поставить UI принятия/задачи исправления, затем Golden eval handoff.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.
 - RUN-101 и SAFE-101 остаются обязательными применимыми gates перед расширением
