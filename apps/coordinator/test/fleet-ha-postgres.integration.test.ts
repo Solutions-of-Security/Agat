@@ -615,6 +615,19 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       assert.equal(packets[0]!.purpose, "development"); assert.equal(packets[0]!.holdoutEligible, false);
       assert.equal((packets[0]!.example as { referenceOutput: string }).referenceOutput, "");
       assert.equal((await candidate(1, foreign)).status, 404);
+      const importBody = { requestId: randomUUID(), expectedSha256: input.expectedSha256, expectedRevision: 1,
+        expectedCandidateSha256: packets[0]!.contentSha256, name: `Development import ${suffix}`, referenceOutput: packets[0]!.observedOutput,
+        rubric: [{ label: "Источники и числа", weight: 1 }], reviewConfirmed: true };
+      const importExample = (index: number, body = importBody, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${reports[0]!.canonical.id}/eval-dataset`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const imports = await Promise.all([0, 1, 0, 1].map(index => importExample(index)));
+      const imported = await Promise.all(imports.map(response => response.json() as Promise<{ datasetId: string; datasetContentSha256: string }>));
+      assert.deepEqual(imports.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(imported));
+      assert.equal(new Set(imported.map(receipt => receipt.datasetId)).size, 1); assert.equal(new Set(imported.map(receipt => receipt.datasetContentSha256)).size, 1);
+      assert.equal((await importExample(1, { ...importBody, name: "Changed import intent" })).status, 409);
+      assert.equal((await importExample(1, importBody, foreign)).status, 404);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.eval.dataset.created").length, 1);
       const competing = await Promise.all(["accepted", "rework_requested"].map((decision, index) => post(index, { ...input, requestId: randomUUID(), expectedRevision: 1, decision })));
       const competingBodies = await Promise.all(competing.map(response => response.text()));
       assert.deepEqual(competing.map(response => response.status).sort(), [201, 409], competingBodies.join("\n"));
@@ -629,6 +642,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       enterPostgresTenantScope(foreign);
       assert.equal(first.db.prepare("SELECT id FROM business_report_decisions WHERE project_id = ?").all(project).length, 0);
       assert.equal(first.db.prepare("SELECT id FROM business_report_rework_tasks WHERE project_id = ?").all(project).length, 0);
+      assert.equal((await importExample(1)).status, 200, "a durable dataset receipt survives source-run purge");
       enterPostgresTenantScope(project);
       assert.throws(() => first.db.prepare("UPDATE business_report_decisions SET reason = reason WHERE project_id = ?").run(project), /permission denied/i);
       assert.throws(() => first.db.prepare("DELETE FROM business_report_decisions WHERE project_id = ?").run(project), /permission denied/i);
@@ -653,7 +667,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           }
         }
       } finally { await migration.end(); }
-      context.diagnostic("Concurrent retry 201/200; competing intents 201/409; request IDs across artifacts 201/409; identical read-only eval candidate across replicas; immutable runtime grants, tenant isolation and authorized run purge");
+      context.diagnostic("Concurrent decisions/imports retry 201/200; changed intents 409; identical candidate and one versioned dataset across replicas; immutable grants, tenant isolation and authorized source purge with durable import receipt");
     } finally {
       await Promise.all(children.map(child => child.stop()));
       runWithPostgresSystemScope(() => { for (const id of workers) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(id); first.close(); });

@@ -2331,6 +2331,16 @@ export function createCoordinatorServer(
         return;
       }
 
+      const reportDatasetArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/eval-dataset$/);
+      if (request.method === "POST" && reportDatasetArtifactId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const result = store.createBusinessReportEvalDataset(reportDatasetArtifactId, await readJson<unknown>(request, KNOWLEDGE_JSON_LIMIT_BYTES), auth.projectId, auth.subject);
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        response.setHeader("Cache-Control", "no-store");
+        json(response, result.created ? 201 : 200, result);
+        return;
+      }
+
       const reworkTaskId = routeParam(pathname, /^\/api\/v1\/report-rework-tasks\/([^/]+)$/);
       if (request.method === "GET" && reworkTaskId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
