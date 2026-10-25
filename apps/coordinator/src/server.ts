@@ -10,6 +10,7 @@ import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
 import { KnowledgeParserBusyError } from "./knowledge-files.js";
 import { BusinessReportOfficeError, normalizeOfficeOrigin } from "./business-report-office-document.js";
 import { BusinessReportDecisionError, normalizeDecisionHistoryCursor } from "./business-report-decisions.js";
+import { BusinessReportEvalError } from "./business-report-eval.js";
 
 import {
   loadConfig,
@@ -2320,6 +2321,16 @@ export function createCoordinatorServer(
         return;
       }
 
+      const reportEvalArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/eval-candidate$/);
+      if (request.method === "POST" && reportEvalArtifactId) {
+        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const result = store.prepareBusinessReportEvalCandidate(reportEvalArtifactId, await readJson<unknown>(request), auth.projectId);
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        response.setHeader("Cache-Control", "no-store");
+        json(response, 200, result);
+        return;
+      }
+
       const reworkTaskId = routeParam(pathname, /^\/api\/v1\/report-rework-tasks\/([^/]+)$/);
       if (request.method === "GET" && reworkTaskId) {
         const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
@@ -2864,6 +2875,7 @@ export function createCoordinatorServer(
         || error instanceof KnowledgeParserBusyError
         || error instanceof BusinessReportOfficeError
         || error instanceof BusinessReportDecisionError
+        || error instanceof BusinessReportEvalError
         || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError

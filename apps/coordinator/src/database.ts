@@ -47,6 +47,7 @@ import { BusinessReportRenderingError, normalizeBusinessReportFormat, renderVali
 import { renderBusinessReportOffice } from "./business-report-office.js";
 import { BUSINESS_REPORT_OFFICE_PROFILE, BUSINESS_REPORT_OFFICE_RENDERER_SHA256, BusinessReportOfficeError, normalizeOfficeFormat, normalizeOfficeOrigin } from "./business-report-office-document.js";
 import { BUSINESS_REPORT_DECISION_LIMIT, BUSINESS_REPORT_DECISION_PROFILE, BusinessReportDecisionError, normalizeBusinessReportDecision } from "./business-report-decisions.js";
+import { BUSINESS_REPORT_EVAL_PROFILE, BusinessReportEvalError, normalizeReportEvalRequest, type BusinessReportEvalCandidate } from "./business-report-eval.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -13965,6 +13966,74 @@ export class AgatStore {
       return { decision: this.businessReportDecisionDto({ ...saved, rework_task_id: taskId }),
         reworkTask: taskId ? this.getBusinessReportReworkTask(taskId, project) : null, created: true };
     });
+  }
+
+  prepareBusinessReportEvalCandidate(artifactId: string, raw: unknown, projectId = "default"): BusinessReportEvalCandidate | null {
+    const project = this.requireProject(projectId), input = normalizeReportEvalRequest(raw);
+    const source = this.businessReportArtifactSource(artifactId, project);
+    if (!source) return null;
+    if (source.sha256 !== input.expectedSha256) throw new BusinessReportEvalError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+    const latest = () => this.db.prepare(`SELECT * FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? ORDER BY revision DESC LIMIT 1`).get(artifactId, project) as Row | undefined;
+    const decision = latest();
+    if (!decision || Number(decision.revision) !== input.expectedRevision) throw new BusinessReportEvalError("decision_changed", "Прочитайте актуальное решение перед передачей примера", 409);
+    const report = this.db.prepare(`SELECT s.stage_input, s.output, s.position, pi.id AS instance_id, pi.process_id, pi.process_version, pi.graph_json,
+        r.input AS run_input, r.knowledge_collection_ids_json FROM stages s JOIN runs r ON r.id = s.run_id
+        JOIN process_instances pi ON pi.run_id = r.id WHERE s.id = ? AND s.run_id = ? AND r.project_id = ?
+        AND s.stage_kind = 'artifact' AND s.status = 'completed'`).get(String(source.stage_id), String(source.run_id), project) as Row | undefined;
+    const receipt = parseJson<Record<string, unknown>>(source.rendering_json, {});
+    const binding = parseJson<Record<string, unknown>>(decision.binding_json, {});
+    if (!report || typeof report.stage_input !== "string" || sha256Text(report.stage_input) !== receipt.inputSha256
+      || typeof report.output !== "string" || sha256Text(report.output) !== source.sha256
+      || binding.artifactId !== artifactId || binding.sourceSha256 !== source.sha256 || binding.runId !== source.run_id || binding.stageId !== source.stage_id
+      || binding.processInstanceId !== report.instance_id || binding.processId !== report.process_id || binding.processVersion !== Number(report.process_version)
+      || binding.graphSha256 !== sha256Text(String(report.graph_json)) || binding.inputSha256 !== receipt.inputSha256 || binding.schemaSha256 !== receipt.schemaSha256) {
+      throw new BusinessReportEvalError("context_unavailable", "Не удалось подтвердить сохранённый вход и выход отчёта", 409);
+    }
+    // A formatter is not the model under evaluation. Locate a unique preceding
+    // agent that actually produced the exact validated JSON, never the Markdown.
+    const agents = this.db.prepare(`SELECT id, stage_input, output, agent_snapshot_json, activity_json FROM stages
+      WHERE run_id = ? AND stage_kind = 'agent' AND status = 'completed' AND output = ? AND position < ? ORDER BY position DESC LIMIT 2`)
+      .all(String(source.run_id), report.stage_input, Number(report.position)) as Row[];
+    const stage = agents.length === 1 ? agents[0] : undefined;
+    const snapshot = stage ? parseAgentSnapshot(stage.agent_snapshot_json) : null;
+    const activity = stage ? parseJson<Record<string, unknown>>(stage.activity_json, {}) : {};
+    const contract = activity.businessOutputContract as { id?: unknown; schemaSha256?: unknown } | undefined;
+    if (!stage || !snapshot || snapshot.source === "migration_backfill" || snapshot.promptVersion !== sha256Text(snapshot.systemPrompt)
+      || !/^[a-f0-9]{64}$/.test(snapshot.definitionVersion) || contract?.id !== "business-report.v1" || contract.schemaSha256 !== receipt.schemaSha256) {
+      throw new BusinessReportEvalError("context_unavailable", "Нужен однозначный агентный этап с сохранённым контрактом; соберите пример вручную", 409);
+    }
+    const exampleInput = typeof stage.stage_input === "string" ? stage.stage_input : String(report.run_input);
+    const observedOutput = String(stage.output);
+    if (!exampleInput.trim() || exampleInput.length > 100_000 || observedOutput.length > 100_000) throw new BusinessReportEvalError("example_too_large", "Вход или результат превышает лимит Golden eval; подготовьте отдельный пример без автоматического усечения", 409);
+    const collectionIds = this.requireKnowledgeCollectionIds(project, parseJson<unknown>(report.knowledge_collection_ids_json, []));
+    let chunkCount = 0, documentCount = 0;
+    for (const collectionId of collectionIds) {
+      const sizes = this.db.prepare(`SELECT COUNT(DISTINCT d.id) AS documents, COUNT(c.id) AS chunks FROM knowledge_documents d
+        LEFT JOIN knowledge_chunks c ON c.document_id = d.id WHERE d.collection_id = ?`).get(collectionId) as Row;
+      documentCount += Number(sizes.documents); chunkCount += Number(sizes.chunks);
+      if (documentCount > 1000 || chunkCount > 10_000) throw new BusinessReportEvalError("context_too_large", "Корпус слишком велик для передачи примера; подготовьте отдельный evaluation dataset", 409);
+    }
+    const knowledge = this.evalKnowledgeSnapshot(project, collectionIds);
+    const currentKnowledgeSnapshot = { schemaVersion: knowledge.schemaVersion, collectionIds, missingCollectionIds: knowledge.missingCollectionIds, fingerprint: knowledge.fingerprint };
+    if (Number(source.size_bytes) > 800_000) throw new BusinessReportEvalError("source_too_large", "Отчёт превышает лимит передачи примера", 409);
+    try {
+      if (!this.getArtifactDownload(artifactId, project)) throw new Error("Source unavailable");
+    } catch { throw new BusinessReportEvalError("source_unavailable", "Не удалось проверить исходный файл в Artifact Store", 503); }
+    const finalSource = this.businessReportArtifactSource(artifactId, project), finalDecision = latest();
+    if (!finalSource || finalSource.sha256 !== source.sha256 || finalDecision?.id !== decision.id) throw new BusinessReportEvalError("decision_changed", "Результат или решение изменились во время подготовки; перечитайте историю", 409);
+    const packet: Omit<BusinessReportEvalCandidate, "contentSha256"> = {
+      profile: BUSINESS_REPORT_EVAL_PROFILE, purpose: "development", holdoutEligible: false, referenceReviewRequired: true,
+      replay: { automatic: false, scope: "single_agent", context: "requires_review" },
+      source: { projectId: project, artifactId, sourceSha256: input.expectedSha256, runId: String(source.run_id), reportStageId: String(source.stage_id),
+        processInstanceId: String(report.instance_id), processId: String(report.process_id), processVersion: Number(report.process_version), graphSha256: sha256Text(String(report.graph_json)),
+        decisionId: String(decision.id), decisionRevision: Number(decision.revision), decision: String(decision.decision) as "accepted" | "rework_requested", reason: String(decision.reason),
+        agentStageId: String(stage.id), agentId: snapshot.id, promptSha256: snapshot.promptVersion, definitionSha256: snapshot.definitionVersion,
+        requestedModel: snapshot.model, runtime: snapshot.runtime, runtimeProfile: snapshot.runtimeConfig.profile,
+        inputSha256: sha256Text(exampleInput), observedOutputSha256: sha256Text(observedOutput), schemaSha256: String(receipt.schemaSha256) },
+      example: { name: "Пример из проверенного отчёта", input: exampleInput, referenceOutput: "", requiredTerms: [], forbiddenTerms: [], knowledgeCollectionIds: collectionIds },
+      observedOutput, currentKnowledgeSnapshot,
+    };
+    return { ...packet, contentSha256: sha256Text(JSON.stringify(packet)) };
   }
 
   async exportBusinessReportArtifact(artifactId: string, input: { format: unknown; expectedSha256: unknown; origin: unknown }, projectId = "default", actor = "system") {

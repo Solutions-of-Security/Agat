@@ -605,6 +605,16 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(receipts));
       assert.equal(new Set(receipts.map(receipt => receipt.decision.id)).size, 1);
       assert.equal(new Set(receipts.map(receipt => receipt.reworkTask.id)).size, 1);
+      const candidate = (index: number, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${reports[0]!.canonical.id}/eval-candidate`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify({ expectedSha256: input.expectedSha256, expectedRevision: 1 }), signal: AbortSignal.timeout(20_000),
+      });
+      const candidates = await Promise.all([candidate(0), candidate(1)]);
+      const packets = await Promise.all(candidates.map(response => response.json() as Promise<Record<string, unknown>>));
+      assert.deepEqual(candidates.map(response => response.status), [200, 200], JSON.stringify(packets));
+      assert.deepEqual(packets[0], packets[1], "both replicas prepare the same read-only development candidate");
+      assert.equal(packets[0]!.purpose, "development"); assert.equal(packets[0]!.holdoutEligible, false);
+      assert.equal((packets[0]!.example as { referenceOutput: string }).referenceOutput, "");
+      assert.equal((await candidate(1, foreign)).status, 404);
       const competing = await Promise.all(["accepted", "rework_requested"].map((decision, index) => post(index, { ...input, requestId: randomUUID(), expectedRevision: 1, decision })));
       const competingBodies = await Promise.all(competing.map(response => response.text()));
       assert.deepEqual(competing.map(response => response.status).sort(), [201, 409], competingBodies.join("\n"));
@@ -643,7 +653,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
           }
         }
       } finally { await migration.end(); }
-      context.diagnostic("Concurrent retry 201/200; competing intents 201/409; request IDs across artifacts 201/409; immutable runtime grants, tenant isolation and authorized run purge");
+      context.diagnostic("Concurrent retry 201/200; competing intents 201/409; request IDs across artifacts 201/409; identical read-only eval candidate across replicas; immutable runtime grants, tenant isolation and authorized run purge");
     } finally {
       await Promise.all(children.map(child => child.stop()));
       runWithPostgresSystemScope(() => { for (const id of workers) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(id); first.close(); });
