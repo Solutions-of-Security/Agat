@@ -80,10 +80,41 @@ embedding lease отдельно проверяет разрешённый scope
 warnings/errors и overlay. Финальные CI результаты фиксируются перед
 merge; синтетический материал не считается бизнес-приёмкой или квалификацией.
 
+Полный локальный HA replay: 114 checks passed. После заключительной правки
+порядка collection → job → document отдельно прошли пять PostgreSQL checks,
+включая принудительную конкуренцию с embedding completion. Полный docs replay:
+1532 Python tests (4 штатных skips), Node tests, local links и catalog passed.
+Поставка — [PR #232](https://github.com/Solutions-of-Security/Agat/pull/232),
+CI на `850f37f468616889fee70257228f19ac1c4eee6e` выявил wildcard fixture worker,
+влиявший на последующие retrieval tests. Отказ воспроизведён; модель fixture
+ограничена и worker выключается при cleanup. Пять последовательных PostgreSQL
+checks с budget/lease/isolation passed. Новый head
+`55e69df1de70467dccfe0899988c242093641c79` проходит полный CI перед merge.
+
+## Подготовленная дедупликация USE-003
+
+Ветка `codex/knowledge-file-dedupe` реализует
+[повторную загрузку исходных bytes](./knowledge-file-deduplication.md):
+имя не меняет file identity одной коллекции, canonical source/review/vectors
+сохраняются; MIME и явно несовместимый source URI отклоняются. Schema 33 добавляет
+non-unique index и сохраняет прежние копии. Parser busy становится временным
+503 и не записывает failed document или новую extraction revision.
+
+Локально прошли 374 coordinator tests (28 opt-in skips), затем все пять
+dedupe tests, включая добавленный reindex saturation case; 70 web tests,
+32 desktop/mobile browser checks, все workspace typechecks/builds, пять
+последовательных HA checks и две offline migration checks. Настоящие две coordinator replicas
+вернули один 201 и три 200 с одним document/job/queued event. Скриншоты desktop
+и mobile просмотрены: notice показывает сохранённое имя, review сохраняется,
+переполнения по ширине, console warnings/errors и overlay нет. Browser plugin
+недоступен, использован Playwright. Links/catalog прошли. CI и merge этапа
+будут записаны после завершения поставки предыдущего этапа. Дедупликация включает
+исправление изоляции fixture из #232; её merge выполняется после merge #232.
+
 ## Границы и следующий остаток
 
-- USE-003: завершить поставку проверки частичного извлечения; затем dedupe
-  переименованных файлов и квалификация на пользовательских данных.
+- USE-003: завершить поставку проверки частичного извлечения и dedupe;
+  квалификация на пользовательских данных остаётся отдельным gate.
 - USE-004: DOCX/PDF из canonical content; append-only accept/rework на exact artifact/run.
 - Подготовка UX-306/USE-008/EVAL-101: metadata-only события, разрешённый corpus,
   human owner/baseline, отдельные development/holdout и настоящие повторные trials.

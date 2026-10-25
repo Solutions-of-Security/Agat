@@ -50,6 +50,8 @@ describe("SQLite to PostgreSQL migration integration", {
       const document = await source.uploadKnowledgeDocument(String(fileCollection.id), { name: "Evidence.pdf", mediaType: "application/pdf", contentBase64: pdfFile().toString("base64") });
       reviewedDocumentId = String(document.id); extractionRevision = String((document.extraction as { revision: string }).revision);
       acceptFixtureExtraction(source, document);
+      const renamed = await source.uploadKnowledgeDocument(String(fileCollection.id), { name: "Renamed.pdf", mediaType: "application/pdf", contentBase64: pdfFile().toString("base64") });
+      assert.equal(renamed.id, document.id); assert.equal(renamed.status, "pending");
       const node = source.registerNode({
         enrollmentToken: "test",
         name: "migration-node",

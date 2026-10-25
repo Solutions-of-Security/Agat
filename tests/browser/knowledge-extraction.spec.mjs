@@ -56,6 +56,24 @@ test("PDF extraction needs an explicit review of the current revision before ind
   expect(receipt.extraction.state).toBe("accepted_text");
   await expect(coverage.getByRole("status")).toContainText("Разрешено использование только извлечённого текста");
   await expect(coverage.getByRole("checkbox")).toHaveCount(0);
+  await article.getByRole("button", { name: "Документ", exact: true }).click();
+  const duplicateForm = article.locator("form.knowledge-ingest");
+  await duplicateForm.locator('input[type="file"]').setInputFiles({ name: "Renamed-copy.pdf", mimeType: "application/pdf", buffer: bytes });
+  const duplicateResponse = page.waitForResponse(result => result.url().endsWith(`/collections/${collection.id}/documents/upload`) && result.request().method() === "POST");
+  await duplicateForm.getByRole("button", { name: "Загрузить и разобрать" }).click();
+  const existingResponse = await duplicateResponse;
+  expect(existingResponse.status()).toBe(200);
+  const existing = await existingResponse.json();
+  expect(existing.id).toBe(document.id); expect(existing.upload.disposition).toBe("existing");
+  expect(existing.updatedAt).toBe(receipt.updatedAt); expect(existing.extraction.review).toEqual(receipt.extraction.review);
+  const notice = page.getByText(/^Файл «Renamed-copy.pdf» уже загружен как «Mixed-pages.pdf»/);
+  await expect(notice).toBeVisible();
+  await expect(preview.getByRole("heading", { name: "Mixed-pages.pdf", exact: true })).toBeVisible();
+  const snapshot = await (await request.get("/api/v1/knowledge")).json();
+  expect(snapshot.documents.filter(item => item.collectionId === collection.id)).toHaveLength(1);
+  await notice.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: path.join(screenshots, `${testInfo.project.name}-reused.png`), fullPage: testInfo.project.name === "chromium" });
   await page.reload();
   await expect(coverage.getByRole("status")).toContainText("Ограничения разбора сохраняются");
   const repeated = await request.post(`/api/v1/knowledge/documents/${document.id}/review-extraction`, { data: {

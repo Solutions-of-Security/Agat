@@ -26,6 +26,12 @@ test("knowledge HTTP uploads and previews DOCX, persists parse errors, authorize
     assert.equal(response.status, 201);
     const document = await response.json() as { id: string; status: string } & Record<string, unknown>;
     assert.equal(document.status, "review_required");
+    const repeated = await request(uploadUrl, "POST", { ...input, name: "Renamed.docx" });
+    assert.equal(repeated.status, 200);
+    const reused = await repeated.json() as Record<string, unknown>;
+    assert.equal(reused.id, document.id); assert.equal(reused.name, "Policy.docx");
+    assert.deepEqual(reused.upload, { disposition: "existing", requestedName: "Renamed.docx" });
+    assert.equal((await request(uploadUrl, "POST", { ...input, name: "Foreign.docx" }, { "x-agat-project-id": "default" })).status, 400);
     const documentUrl = `/knowledge/documents/${document.id}`;
     assert.equal((await request(`${documentUrl}/review-extraction`, "POST", fixtureExtractionReview(document), { "x-agat-admin-token": "wrong" })).status, 401);
     assert.equal((await request(`${documentUrl}/review-extraction`, "POST", fixtureExtractionReview(document), { "x-agat-project-id": "default" })).status, 404);

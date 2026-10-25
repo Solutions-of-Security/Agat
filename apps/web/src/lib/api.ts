@@ -272,7 +272,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   uploadKnowledgeDocument: (collectionId: string, payload: UploadKnowledgeDocumentRequest) =>
-    request<KnowledgeDocument>(`/knowledge/collections/${encodeURIComponent(collectionId)}/documents/upload`, {
+    request<KnowledgeDocument & { upload: { disposition: "created" | "existing"; requestedName: string } }>(`/knowledge/collections/${encodeURIComponent(collectionId)}/documents/upload`, {
       method: "POST", body: JSON.stringify(payload),
     }),
   knowledgeDocument: (documentId: string, signal?: AbortSignal) =>
