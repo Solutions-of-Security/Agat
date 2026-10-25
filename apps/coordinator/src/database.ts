@@ -8751,6 +8751,9 @@ export class AgatStore {
           .get(collectionId, project) as Row | undefined;
         if (!collection) throw new Error("Knowledge collection не найдена");
         if (previous) {
+          // Embedding completion already locks job before document. Preserve
+          // that order so reindex cannot form a job/document deadlock with it.
+          if (this.stateStoreDriver === "postgresql") this.db.prepare("SELECT id FROM knowledge_embedding_jobs WHERE document_id = ? FOR UPDATE").all(documentId);
           // Review and reindex share this lock before touching jobs/chunks. A
           // concurrent acknowledgement must not queue work for the new revision.
           const current = this.knowledgeDocumentMetadataRow(documentId, project, true);
