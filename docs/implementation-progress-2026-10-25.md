@@ -166,11 +166,11 @@ Head #239 `078669b1adedfd40105b089049dbc04f483449a6` прошёл все 15 requ
 
 Head #240 `0d5a16d7cccddc1b8742bb6771b686fb827473b4` прошёл все 15 required/verify/CodeQL checks. Merge — `785a963f97d00b25cc9ffa9df58cd2405d1e30b5`.
 
-## Текущий этап UX-306: контракт событий
+## Этап UX-306: контракт событий
 
 Ветка `codex/product-usage-contract` фиксирует [metadata-only v1](./product-usage-events.md): семь checkpoint kinds, task identity через retry/replay, раздельные client observations/server facts, project/cohort/sample/version и явные null. Нормализатор отвергает произвольные поля и не отражает значения в errors. Дедупликация проверяет event ID, semantic fact, неизменность task/run/artifact bindings и decision revision; конфликт не превращается в «последняя запись победила». Participant — HMAC project-scoped индивидуального verified subject, shared token остаётся unknown. Новых endpoints, storage/DDL, tracking, metrics claims и collector export пока нет; instrumentation и расчёт — следующие этапы.
 
-Локально прошли 413 coordinator tests / 28 штатных opt-in skips, включая десять новых contract tests и row/byte limits; typechecks всех workspaces, production build coordinator, docs links/catalog и diff whitespace check. При перепроверке убрано приведение enum values к строке: произвольный объект не может пройти через toString. Результаты относятся к контракту, не к реальному пилоту. Remote CI и merge этого этапа ещё не выполнялись.
+Локально прошли 413 coordinator tests / 28 штатных opt-in skips, включая десять новых contract tests и row/byte limits; typechecks всех workspaces, production build coordinator, docs links/catalog и diff whitespace check. При перепроверке убрано приведение enum values к строке: произвольный объект не может пройти через toString. Результаты относятся к контракту, не к реальному пилоту. Фактические remote CI и merge фиксируются в GitHub PR ветки `codex/product-usage-contract`; весь UX-306 не объявляется завершённым только по поставке контракта.
 
 ## Границы и следующий остаток
 
