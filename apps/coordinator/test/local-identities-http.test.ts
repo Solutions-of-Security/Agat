@@ -35,14 +35,15 @@ async function setup() {
     async callTool(_server, _tool, _input, assertAllowed) { assertAllowed?.(); effects++; return { content: [] }; },
   };
   const gateway = new McpGateway(store, new CoordinatorTelemetry({ enabled: false, serviceName: "test", exporterEndpoint: "" }), { enabled: true, requestTimeoutSeconds: 5, maxResponseBytes: 100000, approvalTtlSeconds: 300 }, upstream);
+  const shutdown = new AbortController();
   const server = createCoordinatorServer({ ...loadConfig(), host: "127.0.0.1", port: 0, serveWeb: false, authMode: "local", deploymentProfile: "lite", localAuthOrigin: origin,
-    adminToken: "unused-legacy-token", oidcEnabled: false, temporalEnabled: false, mcpEnabled: true, sandboxEnabled: false, a2aEnabled: false, localWorkerLauncherEnabled: false, allowedOrigins: [origin] }, store, undefined, undefined, gateway);
+    adminToken: "unused-legacy-token", oidcEnabled: false, temporalEnabled: false, mcpEnabled: true, sandboxEnabled: false, a2aEnabled: false, localWorkerLauncherEnabled: false, allowedOrigins: [origin] }, store, undefined, undefined, gateway, undefined, undefined, shutdown.signal);
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address !== "string"); const base = `http://127.0.0.1:${address.port}/api/v1`;
   const api = async (route: string, token?: string, project = "default", method = "GET", body?: unknown, headers: Record<string, string> = {}) => fetch(`${base}${route}`, {
     method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "x-agat-project-id": project, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { directory, store, identities, server, base, api, principals, keys, owner, issue, agents, gateway, effects: () => effects };
+  return { directory, store, identities, server, shutdown, base, api, principals, keys, owner, issue, agents, gateway, effects: () => effects };
 }
 
 test("SQLite lite isolates two users/projects across runs, history, artifacts, credentials, approvals and bindings", async () => fixture(async f => {
@@ -187,4 +188,23 @@ test("local preflight and API keep unqualified endpoint/schedule identities bloc
   assert.equal((await f.api("/process-webhooks/unknown", "unknown-endpoint-token", "alpha", "POST", {})).status, 503);
   const response = await fetch(f.base.replace("/api/v1", "/a2a/unknown"), { method: "POST", body: "{}" }); assert.equal(response.status, 503);
   const started = await f.api(`/processes/${process.id}/start`, f.keys[0]!.token, "alpha", "POST", { input: "Manual synthetic" }); assert.equal(started.status, 201);
+}));
+
+test("shutdown drains an authenticated SSE socket instead of leaving reusable keep-alive traffic", async () => fixture(async f => {
+  const agent = new http.Agent({ keepAlive: true });
+  let connectionClosed!: Promise<void>;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const request = http.get(`${f.base}/events`, { agent, headers: { authorization: `Bearer ${f.owner.token}` } }, response => {
+        assert.equal(response.statusCode, 200);
+        connectionClosed = new Promise(done => response.socket!.once("close", () => done()));
+        response.once("data", () => resolve()); response.resume();
+      });
+      request.on("error", reject);
+    });
+    f.shutdown.abort();
+    const closed = await Promise.race([connectionClosed.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 1000))]);
+    assert.equal(closed, true);
+    const stopped = await f.api("/overview", f.owner.token); assert.equal(stopped.status, 503); assert.equal(stopped.headers.get("connection"), "close");
+  } finally { agent.destroy(); }
 }));

@@ -50,7 +50,8 @@ test("local identity login, access management, restart and logout on desktop/mob
     await page.reload(); await expect(page.getByLabel("Активный проект")).toBeVisible();
     const cookies = await context.cookies(origin); const cookie = cookies.find(item => item.name === "agat-local-session");
     expect(cookie?.httpOnly).toBe(true); expect(cookie?.sameSite).toBe("Strict");
-    await stop(); await start(); await page.reload(); await expect(page.getByLabel("Активный проект")).toBeVisible();
+    await test.step("restart the authority with an active authenticated SSE client", async () => { await stop(); await start(); });
+    await page.reload(); await expect(page.getByLabel("Активный проект")).toBeVisible();
     await page.getByLabel("Открыть меню профиля").click(); await page.getByRole("button", { name: "Пользователи и доступ", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Пользователи и доступ" }); await expect(dialog).toBeVisible();
     const bootstrapToken = owner.token;

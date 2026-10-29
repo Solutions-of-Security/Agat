@@ -686,7 +686,13 @@ export function createCoordinatorServer(
     response.once("close", () => { eventStreams.delete(response); localEventStreams.delete(response); });
   };
   const closeEventStreams = (): void => {
-    for (const response of eventStreams) response.end();
+    for (const response of eventStreams) {
+      const socket = response.socket;
+      response.shouldKeepAlive = false;
+      // SSE headers have already advertised keep-alive. Finish the body before
+      // closing its socket so a retrying client cannot prevent HTTP draining.
+      response.end(() => socket?.end());
+    }
     eventStreams.clear();
   };
   shutdownSignal?.addEventListener("abort", closeEventStreams, { once: true });
@@ -731,6 +737,8 @@ export function createCoordinatorServer(
 
     try {
       if (shutdownSignal?.aborted) {
+        response.shouldKeepAlive = false;
+        response.setHeader("connection", "close");
         if (pathname.startsWith("/a2a/")) throw a2aShutdownError();
         throw new HttpError(503, "Coordinator останавливается");
       }

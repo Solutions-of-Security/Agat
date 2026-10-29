@@ -17,13 +17,13 @@
 
 | Проверка | Результат |
 |---|---|
-| Local identity unit/HTTP | 18 PASS: bootstrap/hash/expiry/revoke/rotation/CSRF, две identity и два проекта, service deny, admin audit isolation, critical deny, медленный body после revoke, restart/backup/schema/migration |
+| Local identity unit/HTTP | 19 PASS: bootstrap/hash/expiry/revoke/rotation/CSRF, две identity и два проекта, service deny, admin audit isolation, critical deny, медленный body после revoke, restart/backup/schema/migration |
 | MCP effect admission | Для revoke/expiry/permissions: 0 upstream effects, renewal/completion отклонены |
 | Process ownership | Subprocess сохраняет исходный credential; отзыв останавливает armed compensation без нового stage |
-| Полная coordinator regression | 442 PASS, 28 infrastructure SKIP; финальные identity changes дополнительно проверены targeted suite |
+| Полная coordinator regression | 443 PASS, 28 infrastructure SKIP; финальные identity changes дополнительно проверены targeted suite |
 | Web/worker/decision/Temporal/process pack | `npm test` PASS; web 79 PASS; Python worker 170 cases / 3 SKIP; decision и сохранённые Temporal histories replay PASS; pack 3 PASS |
 | Typecheck / production build | Coordinator/web/Temporal PASS |
-| Browser regression | 36 PASS на desktop и Pixel 7, включая local login, неверный ключ, restart, self-rotation, создание scoped user, logout и отсутствие bearer в storage |
+| Browser regression | Полный локальный набор 36 PASS; после исправления Linux shutdown 10 повторов active-SSE restart PASS на desktop/Pixel 7, включая self-rotation, создание scoped user и logout |
 | Visual QA | `local-access.png` обоих viewports просмотрены; sticky close/header, читаемые поля, нет horizontal overflow; screenshots без показанного ключа приложены к Playwright report |
 
 Последние targeted проверки дополняют полный прогон; обязательный Linux `required` повторяет docs/scripts, unit, browser и все infrastructure integration jobs до merge. Локальные SKIP не считаются PASS. Полный docs/scripts Python набор на Darwin имеет ранее воспроизведённый process-group cleanup `PermissionError`; scripts не изменялись и этот результат не используется вместо Linux gate.
@@ -33,3 +33,7 @@
 Поддерживаемый новый срез — local auth + SQLite lite и индивидуальный REST/UI вход. Endpoint-token webhooks/A2A push и автоматические schedule identities остаются blocked до отдельной квалификации service binding; chat delivery появится в FB-003–FB-005. Temporal/HA, реальные messenger/model calls, реальные данные и qualification critical assurance не объявляются принятыми.
 
 Старые run IDs и `local-admin` audit не переписываются. Исторические активные задачи без owner binding останавливаются при включении local auth; terminal history остаётся доступной по прежним project permissions. Rollback сохраняет local mode либо останавливает сервис; переключение multiuser authority на общего администратора не разрешено. Уже допущенный внешний effect не отменяется задним числом. Практический runbook — [локальные идентичности](../local-identities.md).
+
+## Исправление, найденное Linux CI
+
+В первой попытке [PR 243](https://github.com/Solutions-of-Security/Agat/pull/243) основной test job прошёл, browser получил 35 PASS и один timeout мобильного restart. Trace показал завершённый SSE body, но переиспользуемый keep-alive socket с повторными 503, удерживавший `server.close()`. Shutdown теперь завершает socket после записи body и отвечает новым запросам с `Connection: close`. Новый HTTP regression воспроизвёл отказ до исправления и прошёл после; затем 10 browser повторов с активным SSE и полная coordinator suite прошли. Timeout и assertions не ослаблялись. Обязательный pipeline пересчитывается для исправленного commit перед merge.
