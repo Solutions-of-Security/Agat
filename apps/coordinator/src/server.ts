@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getProcessTemplateCatalog } from "./process-catalog.js";
 import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
+import { authenticationMode, deploymentPreflight, deploymentSnapshot } from "./deployment.js";
 import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
 import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
 import { KnowledgeParserBusyError } from "./knowledge-files.js";
@@ -26,7 +27,7 @@ import {
 } from "./approval-decisions.js";
 import {
   AuthenticationError,
-  localAdminContext,
+  authenticateLegacyRequest,
   OidcVerifier,
   selectProject,
   type AgatRole,
@@ -253,7 +254,7 @@ async function readA2AJson(request: IncomingMessage): Promise<unknown> {
 
 function setSecurityHeaders(response: ServerResponse, config: CoordinatorConfig): void {
   const connectSources = ["'self'"];
-  if (config.oidcEnabled && config.oidcIssuer) {
+  if (authenticationMode(config) === "oidc" && config.oidcIssuer) {
     try {
       const issuer = new URL(config.oidcIssuer);
       if (issuer.protocol === "http:" || issuer.protocol === "https:") connectSources.push(issuer.origin);
@@ -293,7 +294,9 @@ async function authorize(
   allowProjectFallback = false,
 ): Promise<AuthContext & { projectId: string }> {
   let context: AuthContext;
-  if (config.oidcEnabled) {
+  const mode = authenticationMode(config);
+  if (mode === "local") throw new HttpError(503, "Локальная аутентификация ещё недоступна; переход к local-admin запрещён");
+  if (mode === "oidc") {
     const token = bearerToken(request.headers.authorization);
     if (!token || !verifier) throw new AuthenticationError(401, "Нужен OIDC access token");
     context = await verifier.verify(token);
@@ -301,13 +304,8 @@ async function authorize(
       throw new AuthenticationError(403, "Недостаточно прав для операции");
     }
   } else {
-    if (requireLegacyAdmin && config.adminToken) {
-      const supplied = request.headers["x-agat-admin-token"];
-      if (typeof supplied !== "string" || !tokensEqual(supplied, config.adminToken)) {
-        throw new HttpError(401, "Нужен токен администратора");
-      }
-    }
-    context = localAdminContext();
+    context = authenticateLegacyRequest({ adminToken: config.adminToken, adminHeader: request.headers["x-agat-admin-token"],
+      authorizationHeader: request.headers.authorization, remoteAddress: request.socket.remoteAddress, requireAdmin: requireLegacyAdmin });
   }
   const projectHeader = request.headers["x-agat-project-id"];
   let projectId: string;
@@ -608,7 +606,7 @@ function validateRemoteBinding(config: CoordinatorConfig): void {
   if (config.enrollmentToken === "agat-local-enrollment") {
     throw new Error("Замените стандартный AGAT_ENROLLMENT_TOKEN перед удалённым запуском");
   }
-  if (config.oidcEnabled && (!config.oidcIssuer || !config.oidcClientId)) {
+  if (authenticationMode(config) === "oidc" && (!config.oidcIssuer || !config.oidcClientId)) {
     throw new Error("AGAT_OIDC_ISSUER и AGAT_OIDC_CLIENT_ID обязательны при включённом OIDC");
   }
   if (config.credentialsKey === "agat-local-credentials-key") {
@@ -658,7 +656,9 @@ export function createCoordinatorServer(
     eventStreams.clear();
   };
   shutdownSignal?.addEventListener("abort", closeEventStreams, { once: true });
+  const deploymentStatus = () => deploymentSnapshot(config, { runtime: processRuntime.snapshot(), sandbox: mcpGateway.sandboxSnapshot() });
   const scenarioContext = (projectId?: string): ScenarioPreflightContext => ({
+    deployment: deploymentStatus(),
     runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
     ...(projectId ? { fleet: runWithPostgresSystemScope(() => store.scenarioFleetReadiness(projectId)) } : {}),
   });
@@ -666,7 +666,7 @@ export function createCoordinatorServer(
     config.a2aPublicBaseUrl,
     `http://127.0.0.1:${config.port}`,
   );
-  const oidcVerifier = config.oidcEnabled
+  const oidcVerifier = authenticationMode(config) === "oidc"
     ? new OidcVerifier({
       issuer: config.oidcIssuer,
       clientId: config.oidcClientId,
@@ -699,14 +699,22 @@ export function createCoordinatorServer(
         if (pathname.startsWith("/a2a/")) throw a2aShutdownError();
         throw new HttpError(503, "Coordinator останавливается");
       }
+      const deployment = deploymentStatus();
+      if (!deployment.controlPlaneAvailable && (pathname.startsWith("/api/") || pathname.startsWith("/a2a/")) && pathname !== "/api/v1/health" && pathname !== "/api/v1/auth/config") {
+        const blocker = deployment.blockers.find((issue) => issue.code !== "temporal_required")!;
+        if (pathname.startsWith("/a2a/")) throw new A2AProtocolError(503, "UNAVAILABLE", "DEPLOYMENT_UNAVAILABLE", blocker.message);
+        json(response, 503, { error: blocker.message, code: blocker.code, deployment });
+        return;
+      }
       if (request.method === "GET" && pathname === "/api/v1/health") {
         const retrieval = knowledgeSearch?.snapshot();
-        const ready = retrieval?.accepting !== false;
+        const ready = retrieval?.accepting !== false && deployment.ready;
         json(response, ready ? 200 : 503, {
           status: ready ? "ok" : "degraded",
           knowledgeSearch: retrieval ? { execution: "isolated", ...retrieval } : { execution: "sync" },
           time: new Date().toISOString(),
           version: "1.7.0",
+          deployment,
           stateStore: runWithPostgresSystemScope(() => store.stateStoreSnapshot()),
           processRuntime: processRuntime.snapshot(),
           sandbox: mcpGateway.sandboxSnapshot(),
@@ -1029,9 +1037,11 @@ export function createCoordinatorServer(
         const realmMarker = "/realms/";
         const realmIndex = config.oidcIssuer.lastIndexOf(realmMarker);
         json(response, 200, {
-          enabled: config.oidcEnabled,
-          url: config.oidcEnabled && realmIndex > 0 ? config.oidcIssuer.slice(0, realmIndex) : "",
-          realm: config.oidcEnabled && realmIndex > 0 ? config.oidcIssuer.slice(realmIndex + realmMarker.length) : "",
+          enabled: authenticationMode(config) === "oidc",
+          mode: authenticationMode(config),
+          deployment,
+          url: authenticationMode(config) === "oidc" && realmIndex > 0 ? config.oidcIssuer.slice(0, realmIndex) : "",
+          realm: authenticationMode(config) === "oidc" && realmIndex > 0 ? config.oidcIssuer.slice(realmIndex + realmMarker.length) : "",
           clientId: config.oidcClientId,
         });
         return;
@@ -1052,7 +1062,18 @@ export function createCoordinatorServer(
           projectIds: [...auth.projectIds],
           activeProjectId,
           local: auth.local,
+          authenticationMode: authenticationMode(config),
         });
+        return;
+      }
+
+      if (pathname === "/api/v1/deployment" || pathname === "/api/v1/deployment/preflight") {
+        await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        if (request.method === "GET" && pathname === "/api/v1/deployment") json(response, 200, deployment);
+        else if (request.method === "POST" && pathname === "/api/v1/deployment/preflight") {
+          const body = await readJson<{ operations?: unknown }>(request);
+          json(response, 200, deploymentPreflight(deployment, body.operations));
+        } else throw new HttpError(405, "Метод не поддерживается");
         return;
       }
 
@@ -1068,6 +1089,7 @@ export function createCoordinatorServer(
           approvals,
           mcp: { ...mcp, enabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot() },
           processRuntime: processRuntime.snapshot(),
+          deployment,
         });
         return;
       }

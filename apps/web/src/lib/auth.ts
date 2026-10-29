@@ -1,6 +1,8 @@
 import Keycloak from "keycloak-js";
 
 export interface AuthConfig {
+  mode?: "legacy" | "oidc" | "local";
+  deployment?: { controlPlaneAvailable: boolean; blockers: Array<{ code: string; message: string }> };
   enabled: boolean;
   url: string;
   realm: string;
@@ -15,6 +17,7 @@ export async function initializeAuth(): Promise<void> {
   const response = await fetch("/api/v1/auth/config", { headers: { accept: "application/json" } });
   if (!response.ok) throw new Error("Не удалось загрузить конфигурацию входа");
   config = await response.json() as AuthConfig;
+  if (config.deployment?.controlPlaneAvailable === false) throw new Error(config.deployment.blockers.find((issue) => issue.code !== "temporal_required")?.message ?? "Профиль развёртывания недоступен");
   if (!config.enabled) return;
   if (!config.url || !config.realm || !config.clientId) throw new Error("OIDC настроен неполностью");
   keycloak = new Keycloak({ url: config.url, realm: config.realm, clientId: config.clientId });

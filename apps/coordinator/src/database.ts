@@ -10447,6 +10447,7 @@ export class AgatStore {
     };
     if (version === null) add("version_unavailable", "version", "queue", processId ? "Выберите существующую опубликованную версию процесса." : "Шаблон ещё не сохранён и не опубликован.", "processes", { ...processTarget, tab: "versions" }, "Сохранить и опубликовать версию");
     if (!context.runtime.connected) add("runtime_disconnected", "runtime", "queue", "Runtime процессов недоступен; запуск не может быть принят.", "fleet", { section: "runtime" }, "Проверить runtime процессов");
+    for (const issue of context.deployment?.blockers ?? []) add(`deployment:${issue.code}`, "runtime", "queue", issue.message, "fleet", { section: "deployment" }, "Проверить профиль развёртывания");
     const knowledge = this.scenarioKnowledge(project, ids);
     if (trigger.kind === "schedule" && context.schedule && JSON.stringify(ids) !== JSON.stringify(selectedIds)) {
       const names = ids.map((id) => String(knowledge.find((row) => row.id === id)?.name ?? id));
@@ -10579,6 +10580,8 @@ export class AgatStore {
     }
     const documents = ids.length ? this.db.prepare(`SELECT d.id, d.collection_id, d.content_sha256, d.updated_at, d.extraction_revision FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE c.project_id = ? AND d.collection_id IN (${ids.map(() => "?").join(",")}) ORDER BY d.id`).all(project, ...ids) : [];
     const fingerprint = sha256Text(JSON.stringify({ processId, version, graphs, trigger: context.executionTrigger ?? trigger, ids,
+      deployment: context.deployment ? { contractVersion: context.deployment.contractVersion, profile: context.deployment.profile,
+        authenticationMode: context.deployment.authentication.mode, stateStore: context.deployment.stateStore } : undefined,
       agents: snapshots.map(({ capturedAt: _captured, source: _source, ...snapshot }) => snapshot),
       knowledge: knowledge.map((row) => ({ id: row.id, model: row.embedding_model, updatedAt: row.updated_at })), documents, tools: tools.signatures, httpCredentials }));
     const evidence = processId && version !== null ? (this.db.prepare(`SELECT e.data_json, pi.id, pi.run_id, pi.completed_at FROM events e JOIN process_instances pi ON pi.run_id = e.run_id
@@ -10588,7 +10591,8 @@ export class AgatStore {
     if (hasShadow) notices.push("Доступность модели и точное совпадение профиля проверяются при вызове. Успешный основной сценарий не подтверждает качество локальных проверок.");
     const queueable = processId !== null && !blockers.some((item) => item.blocks === "queue");
     return { checkedAt: nowIso(), processId, version, saved: processId !== null, queueable, runnableNow: queueable && blockers.length === 0,
-      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)] };
+      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)],
+      ...(context.deployment ? { deployment: context.deployment } : {}) };
   }
 
   startScheduledProcess(

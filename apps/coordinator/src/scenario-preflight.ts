@@ -1,3 +1,5 @@
+import type { DeploymentSnapshot } from "./deployment-contract.js";
+
 export type ScenarioTrigger = { kind: "manual" } | { kind: "schedule" } | { kind: "webhook"; webhookId: string };
 
 export interface ScenarioPreflightInput {
@@ -7,6 +9,7 @@ export interface ScenarioPreflightInput {
 }
 
 export interface ScenarioPreflightContext {
+  deployment?: DeploymentSnapshot;
   runtime: { mode: "database" | "temporal"; connected: boolean };
   mcpEnabled: boolean;
   sandbox?: { available: boolean; networkPolicyEnforced: boolean } | null;
@@ -28,6 +31,7 @@ export interface ScenarioBlocker {
 }
 
 export interface ScenarioPreflight {
+  deployment?: DeploymentSnapshot;
   checkedAt: string;
   processId: string | null;
   version: number | null;

@@ -169,7 +169,7 @@ export const api = {
   scenarioPreflight: (kind: "processes" | "process-templates", id: string, payload: ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }, signal?: AbortSignal) =>
     request<ScenarioPreflight>(`/${kind}/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(payload), signal }),
   me: () => request<AuthUser>("/auth/me", undefined, false),
-  projects: () => request<{ projects: ProjectSummary[]; activeProjectId: string }>("/projects", undefined, false),
+  projects: () => request<{ projects: ProjectSummary[]; activeProjectId: string }>("/projects"),
   createProject: (name: string, id?: string) => request<ProjectSummary>("/projects", {
     method: "POST",
     body: JSON.stringify({ name, id }),

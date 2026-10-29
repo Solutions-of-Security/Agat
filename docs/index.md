@@ -47,6 +47,9 @@
 ## Архитектура и эксплуатация
 
 - [Архитектура и модель выполнения](./architecture.md)
+- [ADR 023 Профили развёртывания и контракты новых входов](./adr-023-deployment-identity-and-integration-contracts.md)
+- [Приёмка FB-001](./status/fb-001-validation-2026-10-30.md)
+- [ADR-022: проверяемый результат и выбор агентного профиля](./adr-022-evidence-led-agent-evolution.md)
 - [Fleet и HA 1.7](./fleet-ha-1.7.md)
 - [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md)
 - [PostgreSQL migration Job и DDL-free runtime](./postgresql-migration-job-runtime-role.md)
@@ -80,7 +83,12 @@
 ## Продукт, исследования и интерфейс
 
 - [История публичных поставок](./CHANGELOG.md)
-- [Roadmap: приоритеты, облачные агенты и SaaS-подключения](./roadmap.md)
+- [Roadmap и ближайшие приоритеты](./roadmap.md)
+- [Анализ обратной связи о чатах, tools, моделях и лёгком режиме](./feedback-analysis-2026-10-30.md)
+- [Ближайшие задачи по обратной связи от 30 октября 2026](./feedback-priority-backlog-2026-10-30.md)
+- [Рынок агентных продуктов и исследования: сравнение от 17 октября 2026](./agent-market-and-research-2026-10-17.md)
+- [Восемь новых задач и изменения агентных фич](./agent-evolution-backlog-2026-10-17.md)
+- [Проверка исследования и согласованности плана](./agent-market-research-validation-2026-10-17.md)
 - [Сравнение Агата с Perplexity Portable Computer](./agat-vs-perplexity-portable-computer-2026-09-18.md)
 - [Использование Агата: сценарии, барьеры и приоритеты — 8 сентября 2026](./product-usage-research-2026-09-08.md)
 - [Приоритеты агентов и процессов: сентябрь 2026 — август 2027](./agent-process-priorities-2026.md)
