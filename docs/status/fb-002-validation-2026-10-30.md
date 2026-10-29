@@ -1,6 +1,6 @@
 # Приёмка FB 002
 
-Дата: 30 октября 2026 года. Scope: индивидуальные local users/service principals на SQLite, общий RBAC, cookie UI session и отзыв исполнения. Статус: **техническая реализация проверена**; merge допускается только после обязательного GitHub check `required`. Установка и реальные данные пилота по-прежнему проходят FB-009/OPS gates.
+Дата: 30 октября 2026 года. Scope: индивидуальные local users/service principals на SQLite, общий RBAC, cookie UI session и отзыв исполнения. Статус: **техническая реализация проверена**; merge допускается после обязательного GitHub check `required` и security gates репозитория. Установка и реальные данные пилота по-прежнему проходят FB-009/OPS gates.
 
 ## Реализовано
 
@@ -37,3 +37,7 @@
 ## Исправление, найденное Linux CI
 
 В первой попытке [PR 243](https://github.com/Solutions-of-Security/Agat/pull/243) основной test job прошёл, browser получил 35 PASS и один timeout мобильного restart. Trace показал завершённый SSE body, но переиспользуемый keep-alive socket с повторными 503, удерживавший `server.close()`. Shutdown теперь завершает socket после записи body и отвечает новым запросам с `Connection: close`. Новый HTTP regression воспроизвёл отказ до исправления и прошёл после; затем 10 browser повторов с активным SSE и полная coordinator suite прошли. Timeout и assertions не ослаблялись. Обязательный pipeline пересчитывается для исправленного commit перед merge.
+
+## Контракт cookie и CodeQL
+
+После функционально зелёного CI GitHub дополнительно заблокировал merge тремя CodeQL findings о clear-text storage. Проверка source-to-sink показала случайный session lookup handle, а не персональный/API credential; helper принимал произвольную строку с именем `secret`. Cookie builder сделан private и принимает отдельный branded `SessionHandle` с runtime-проверкой 43 base64url символов. Нормальные credentials с префиксом `agat_personal_`/`agat_api_` не подходят этому контракту. Тест явно подтверждает случайный cookie handle, его отличие от personal key и хранение только SHA-256 в SQLite. Findings не dismiss/suppress; CodeQL и обязательный pipeline пересчитываются для нового commit.

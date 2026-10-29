@@ -7,6 +7,8 @@ import { LOCAL_ROLES, LOCAL_SCOPES, scopesForRoles, type ChannelBinding, type Cr
 import type { SyncDatabase } from "./sync-database.js";
 
 type Row = Record<string, unknown>;
+// A random lookup handle for a hashed session row, never a personal/API credential.
+type SessionHandle = string & { readonly sessionHandle: unique symbol };
 type Audit = (type: string, data: Record<string, unknown>) => void;
 const MAX_LIFETIME = 90 * 24 * 60 * 60 * 1000;
 const SESSION_LIFETIME = 8 * 60 * 60 * 1000;
@@ -234,40 +236,41 @@ export class LocalIdentityProvider {
   assertOrigin(request: IncomingMessage): void {
     if (!this.origin || request.headers.origin !== this.origin) throw new AuthenticationError(403, "Origin локального входа не разрешён");
   }
-  private sessionSecret(request: IncomingMessage): string | null {
+  private sessionHandle(request: IncomingMessage): SessionHandle | null {
     const cookies = (request.headers.cookie ?? "").split(";").map(value => value.trim()).filter(value => value.startsWith(`${this.cookieName}=`));
     if (cookies.length !== 1) return null;
     const value = cookies[0]!.slice(this.cookieName.length + 1);
-    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value as SessionHandle : null;
   }
-  private csrf(secret: string): string { return createHmac("sha256", secret).update("agat-local-csrf-v1").digest("base64url"); }
-  cookie(secret: string, maxAge = SESSION_LIFETIME / 1000): string {
-    return `${this.cookieName}=${secret}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${this.origin?.startsWith("https:") ? "; Secure" : ""}`;
+  private csrf(handle: SessionHandle): string { return createHmac("sha256", handle).update("agat-local-csrf-v1").digest("base64url"); }
+  private sessionCookie(handle: SessionHandle | "", maxAge = SESSION_LIFETIME / 1000): string {
+    if (handle !== "" && !/^[A-Za-z0-9_-]{43}$/.test(handle)) throw new Error("Некорректный session handle");
+    return `${this.cookieName}=${handle}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${this.origin?.startsWith("https:") ? "; Secure" : ""}`;
   }
   login(request: IncomingMessage, token: string): { cookie: string; csrfToken: string; auth: AuthContext } {
     this.assertOrigin(request);
     const auth = this.verify(token);
     const key = this.db.prepare("SELECT purpose, expires_at FROM local_identity_credentials WHERE id = ?").get(auth.credentialId!);
     if (auth.principalKind !== "user" || key?.purpose !== "personal") throw new AuthenticationError(403, "API/service ключ не подходит для входа в интерфейс");
-    const secret = randomBytes(32).toString("base64url");
+    const handle = randomBytes(32).toString("base64url") as SessionHandle;
     const expires = Math.min(this.clock() + SESSION_LIFETIME, Number(key.expires_at));
     this.transaction(() => {
       this.db.prepare("DELETE FROM local_identity_sessions WHERE expires_at <= ?").run(this.clock());
-      this.db.prepare("INSERT INTO local_identity_sessions(session_hash, credential_id, expires_at) VALUES (?, ?, ?)").run(hash(secret), auth.credentialId!, expires);
+      this.db.prepare("INSERT INTO local_identity_sessions(session_hash, credential_id, expires_at) VALUES (?, ?, ?)").run(hash(handle), auth.credentialId!, expires);
       this.db.prepare(`DELETE FROM local_identity_sessions WHERE session_hash IN
         (SELECT session_hash FROM local_identity_sessions WHERE credential_id = ? ORDER BY expires_at DESC, rowid DESC LIMIT -1 OFFSET 20)`).run(auth.credentialId!);
       this.audit("identity.session.created", { actor: { ...identityAudit(auth), source: "local-session" } });
     });
-    return { cookie: this.cookie(secret, Math.floor((expires - this.clock()) / 1000)), csrfToken: this.csrf(secret), auth };
+    return { cookie: this.sessionCookie(handle, Math.floor((expires - this.clock()) / 1000)), csrfToken: this.csrf(handle), auth };
   }
   session(request: IncomingMessage): { auth: AuthContext; csrfToken: string } {
-    const secret = this.sessionSecret(request);
-    if (!secret) return deny();
-    const row = this.db.prepare("SELECT credential_id FROM local_identity_sessions WHERE session_hash = ? AND expires_at > ?").get(hash(secret), this.clock());
+    const handle = this.sessionHandle(request);
+    if (!handle) return deny();
+    const row = this.db.prepare("SELECT credential_id FROM local_identity_sessions WHERE session_hash = ? AND expires_at > ?").get(hash(handle), this.clock());
     if (!row) return deny();
     const auth = this.verifyId(String(row.credential_id), "local-session");
     if (auth.principalKind !== "user") return deny();
-    return { auth, csrfToken: this.csrf(secret) };
+    return { auth, csrfToken: this.csrf(handle) };
   }
   authenticate(request: IncomingMessage): AuthContext {
     if (request.headers["x-agat-admin-token"] !== undefined) return deny();
@@ -305,10 +308,10 @@ export class LocalIdentityProvider {
   }
   logout(request: IncomingMessage): string {
     const auth = this.authenticate(request);
-    const secret = this.sessionSecret(request);
-    if (secret) this.db.prepare("DELETE FROM local_identity_sessions WHERE session_hash = ?").run(hash(secret));
+    const handle = this.sessionHandle(request);
+    if (handle) this.db.prepare("DELETE FROM local_identity_sessions WHERE session_hash = ?").run(hash(handle));
     this.audit("identity.session.closed", { actor: identityAudit(auth) });
-    return this.cookie("", 0);
+    return this.sessionCookie("", 0);
   }
   bindRun(runId: string, projectId: string, parentRunId?: string): void {
     const inherited = parentRunId ? this.db.prepare("SELECT * FROM local_run_identities WHERE run_id = ?").get(parentRunId) : undefined;
