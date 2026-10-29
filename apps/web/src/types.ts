@@ -1546,6 +1546,7 @@ export interface CreateEvalExperimentRequest {
 }
 
 export interface Overview {
+  deployment?: import("../../coordinator/src/deployment-contract").DeploymentSnapshot;
   generatedAt: string;
   project: ProjectSummary | null;
   processRuntime: {

@@ -9,6 +9,7 @@ import { AgentsDirectory } from "./components/AgentsDirectory";
 import { BottomNav } from "./components/BottomNav";
 import { Breadcrumbs } from "./components/Breadcrumbs";
 import { CredentialsDialog } from "./components/CredentialsDialog";
+import { DeploymentStatus } from "./components/DeploymentStatus";
 import { NewRunDialog } from "./components/NewRunDialog";
 import { NodeRail } from "./components/NodeRail";
 import { NodesPage } from "./components/NodesPage";
@@ -588,6 +589,7 @@ export default function App() {
           onLogout={() => void logout()}
         />
         {activeView !== "processes" ? <Breadcrumbs activeView={activeView} onNavigate={navigate} /> : null}
+        <DeploymentStatus deployment={overview?.deployment} />
         <div className={`workspace__body${showNodeRail ? "" : " workspace__body--full"}`} id="main-content" tabIndex={-1}>
           {activeView === "overview" ? (
             <OverviewPage

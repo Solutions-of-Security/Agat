@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeKnowledgeSearchMaxCandidates } from "./knowledge.js";
+import { parseAuthenticationMode, parseDeploymentProfile, type AuthenticationMode, type DeploymentProfile } from "./deployment.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -137,6 +138,9 @@ function optionalResolvedPath(value: string | undefined, field: string): string 
 }
 
 export interface CoordinatorConfig {
+  deploymentProfile?: DeploymentProfile;
+  authMode?: AuthenticationMode;
+  deploymentIngress?: "direct" | "gateway";
   host: string;
   port: number;
   dbPath: string;
@@ -282,6 +286,13 @@ export function loadConfig(): CoordinatorConfig {
   const artifactStoreDriver = artifactStoreDriverFromEnv(process.env.AGAT_ARTIFACT_STORE_DRIVER, stateStoreDriver);
   const region = optionalSafeText(process.env.AGAT_REGION ?? "local", "AGAT_REGION", 63).toLowerCase();
   return {
+    deploymentProfile: parseDeploymentProfile(process.env.AGAT_DEPLOYMENT_PROFILE),
+    authMode: parseAuthenticationMode(process.env.AGAT_AUTH_MODE),
+    deploymentIngress: (() => {
+      const value = (process.env.AGAT_DEPLOYMENT_INGRESS ?? "direct").trim().toLowerCase();
+      if (value !== "direct" && value !== "gateway") throw new Error("AGAT_DEPLOYMENT_INGRESS должен быть direct или gateway");
+      return value;
+    })(),
     host: process.env.AGAT_HOST ?? "127.0.0.1",
     port,
     dbPath: path.resolve(process.env.AGAT_DB_PATH ?? "./data/agat.db"),

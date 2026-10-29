@@ -198,6 +198,25 @@ export function localAdminContext(): AuthContext {
   };
 }
 
+/** Legacy identity is a trusted local operator, never an anonymous remote user. */
+export function authenticateLegacyRequest(input: {
+  adminToken: string;
+  adminHeader: unknown;
+  authorizationHeader: unknown;
+  remoteAddress: string | undefined;
+  requireAdmin: boolean;
+}): AuthContext {
+  if (input.authorizationHeader !== undefined) throw new AuthenticationError(401, "Bearer token не поддерживается в single-user режиме");
+  if (input.adminHeader !== undefined && (typeof input.adminHeader !== "string" || !input.adminToken || !tokenEquals(input.adminHeader, input.adminToken))) {
+    throw new AuthenticationError(401, "Токен администратора недействителен");
+  }
+  const local = input.remoteAddress === "::1" || input.remoteAddress?.startsWith("127.") === true || input.remoteAddress?.startsWith("::ffff:127.") === true;
+  if ((!local || input.requireAdmin && Boolean(input.adminToken)) && (typeof input.adminHeader !== "string" || !input.adminToken || !tokenEquals(input.adminHeader, input.adminToken))) {
+    throw new AuthenticationError(401, "Нужен токен администратора");
+  }
+  return localAdminContext();
+}
+
 export function selectProject(context: AuthContext, requested: string | undefined): string {
   const projectId = (requested || "default").trim().toLowerCase();
   if (!PROJECT_ID.test(projectId)) throw new AuthenticationError(403, "Некорректный проект");
