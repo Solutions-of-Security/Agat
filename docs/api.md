@@ -4,14 +4,17 @@
 
 ## Авторизация
 
+- SQLite lite: индивидуальный `Authorization: Bearer <personal/API credential>` либо защищённая UI cookie session; roles/projects/scopes проверяются по актуальному principal. Bootstrap, CSRF, rotation/revoke и auth API описаны в [локальных идентичностях](./local-identities.md).
 - Kubernetes dashboard: `Authorization: Bearer <Keycloak access token>`; поддерживается только проверенный RS256 JWT для issuer/client АГАТ.
-- Активный проект: `X-Agat-Project-Id`; backend проверяет роль и claim `agat_projects`.
+- Активный проект: `X-Agat-Project-Id`; backend проверяет роль и OIDC claim `agat_projects` либо local membership/credential scope.
 - Legacy local mode без OIDC: чувствительные/mutating запросы используют `X-Agat-Admin-Token`.
 - Обычная worker registration: `enrollmentToken` в JSON body.
 - Native edge enrollment: тот же bootstrap token только для одноразового challenge, затем Play Integrity/App Attest evidence; raw evidence не сохраняется.
 - Worker calls: `Authorization: Bearer <node token>`.
 - Public process webhook: отдельный `Authorization: Bearer <webhook token>`; start также требует `Idempotency-Key`.
 - Temporal Activity: отдельный `X-Agat-Temporal-Token` только внутри ClusterIP-контура.
+
+В local identity режиме общий admin header не принимается; endpoint-token process webhooks/A2A и автоматические schedule identities остаются blocked до квалификации service binding. Индивидуальные UI/REST runs доступны. Неверные credentials не переключаются на local-admin. Административный identity audit доступен global admin через `/auth/audit`.
 
 Node token возвращается один раз при регистрации и хранится worker локально. В базе хранится только SHA-256 hash.
 

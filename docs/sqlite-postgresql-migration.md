@@ -4,6 +4,8 @@
 
 `fleet:migrate-state` переносит одну остановленную Agat HA-cell с текущей schema v35 из SQLite в новую PostgreSQL database. Это canonical offline cutover: dual-write, online catch-up и автоматическое переключение трафика не входят в контракт.
 
+База с local identity schema FB-002 требует отдельного квалифицированного mapping subjects/credentials и этим migrator не переносится: preflight отказывает до подключения к target, данные не отбрасываются. Для нового SQLite lite среза используйте согласованный backup/restore из [runbook локальных идентичностей](./local-identities.md).
+
 Инструмент поддерживает три режима:
 
 - `rehearse` создаёт schema и выполняет полный import/reconciliation в одной PostgreSQL transaction, затем делает `ROLLBACK` и доказывает возврат к baseline;

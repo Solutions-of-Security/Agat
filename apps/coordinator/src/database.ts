@@ -2,6 +2,8 @@ import { createHash, createPublicKey, randomUUID, verify as verifySignature } fr
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { AuthenticationError } from "./auth.js";
+import { currentLocalIdentity, identityAudit } from "./local-identity-context.js";
 
 import { PostgresDatabaseSync, type PostgresDatabaseOptions } from "./postgres-database.js";
 import type { SyncDatabase } from "./sync-database.js";
@@ -1120,6 +1122,11 @@ export class AgatStore {
   private readonly artifactObjectLockMode: "none" | "GOVERNANCE" | "COMPLIANCE";
   private artifactObjectStore: ArtifactObjectStore | null;
   private transactionDepth = 0;
+  private runIdentityGuard?: {
+    bindRun(runId: string, projectId: string, parentRunId?: string): void;
+    assertRunAllowed(runId: string, projectId?: string): void;
+    runAudit(runId: string): Record<string, unknown> | undefined;
+  };
   private readonly transactionProcessSpans = new Set<string>();
 
   constructor(dbPath: string, options: StoreOptions = {}) {
@@ -1322,6 +1329,7 @@ export class AgatStore {
   }
 
   maintenanceTick(): void {
+    this.enforceRunIdentities();
     this.heartbeatCoordinatorReplica();
     this.completeAutomaticWaitStages();
     // Preserve the side-effect guard while expiring a lost lease: executing MCP calls
@@ -1332,6 +1340,30 @@ export class AgatStore {
     this.cleanupExpiredMemory();
     this.cleanupEdgeEnrollmentChallenges();
     this.cleanupWorkerRuntimeAttestationChallenges();
+  }
+
+  setRunIdentityGuard(guard: AgatStore["runIdentityGuard"]): void { this.runIdentityGuard = guard; }
+
+  enforceRunIdentities(): void {
+    if (!this.runIdentityGuard) return;
+    for (const run of this.db.prepare("SELECT id, project_id FROM runs WHERE status NOT IN ('completed', 'failed', 'cancelled')").all()) {
+      try { this.runIdentityGuard.assertRunAllowed(String(run.id), String(run.project_id)); }
+      catch (error) {
+        if (!(error instanceof AuthenticationError)) throw error;
+        this.transaction(() => {
+          const instance = this.db.prepare("SELECT id FROM process_instances WHERE run_id = ?").get(String(run.id));
+          if (instance) {
+            const timestamp = nowIso();
+            // Revocation cannot authorize new compensation side effects.
+            this.quiesceProcessExecution(String(instance.id), error.message, timestamp);
+            this.db.prepare("UPDATE process_compensations SET status = 'cancelled', completed_at = ? WHERE instance_id = ? AND status IN ('armed', 'queued')").run(timestamp, String(instance.id));
+            this.finalizeProcessTerminal(String(instance.id), String(run.id), "cancelled", "Индивидуальные полномочия отозваны или истекли");
+            this.db.prepare("UPDATE stages SET node_id = NULL, lease_id = NULL, lease_expires_at = NULL WHERE run_id = ? AND status = 'cancelled'").run(String(run.id));
+          } else this.cancelRun(String(run.id), String(run.project_id));
+          this.addEvent(String(run.id), null, null, "warn", "identity.run.blocked", "Запуск остановлен: индивидуальные полномочия недействительны", { reason: error.message });
+        });
+      }
+    }
   }
 
   private configure(): void {
@@ -5562,6 +5594,7 @@ export class AgatStore {
       WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at >= ?
     `).get(nodeId, leaseId, nowIso()) as Row | undefined;
     if (!stage) return null;
+    this.runIdentityGuard?.assertRunAllowed(String(stage.run_id), String(stage.project_id));
     const graph = parseJson<ProcessGraph>(stage.process_graph_json, { nodes: [], edges: [] });
     if (graph.mcpToolAllowlist !== undefined && !graph.mcpToolAllowlist.includes(publicName)) return null;
     const project = String(stage.project_id);
@@ -7922,6 +7955,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(runId, project);
           insertStage.run(randomUUID(), runId, String(input.agentId), JSON.stringify(snapshot), timestamp, timestamp);
           insertItem.run(randomUUID(), experimentId, String(example.id), runId, timestamp, timestamp);
           this.addEvent(runId, null, null, "info", "eval.candidate.queued", "Golden eval пример добавлен в batch", {
@@ -8177,6 +8211,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(judgeRunId, project);
           insertStage.run(randomUUID(), judgeRunId, JSON.stringify(snapshot), timestamp, timestamp);
           this.db.prepare(`
             UPDATE eval_experiment_items
@@ -10448,6 +10483,9 @@ export class AgatStore {
     if (version === null) add("version_unavailable", "version", "queue", processId ? "Выберите существующую опубликованную версию процесса." : "Шаблон ещё не сохранён и не опубликован.", "processes", { ...processTarget, tab: "versions" }, "Сохранить и опубликовать версию");
     if (!context.runtime.connected) add("runtime_disconnected", "runtime", "queue", "Runtime процессов недоступен; запуск не может быть принят.", "fleet", { section: "runtime" }, "Проверить runtime процессов");
     for (const issue of context.deployment?.blockers ?? []) add(`deployment:${issue.code}`, "runtime", "queue", issue.message, "fleet", { section: "deployment" }, "Проверить профиль развёртывания");
+    const deploymentOperation = context.deployment?.capabilities.find(capability => capability.operation === (trigger.kind === "schedule" ? "schedules" : "processes"));
+    if (deploymentOperation && !deploymentOperation.available && !blockers.some(issue => issue.code === `deployment:${deploymentOperation.code}`)) add(`deployment:${deploymentOperation.code}`, "runtime", "queue", deploymentOperation.message, "fleet", { section: "deployment" }, "Проверить профиль развёртывания");
+    if (trigger.kind === "webhook" && context.deployment?.authentication.mode === "local") add("deployment:service_binding_unqualified", "trigger", "queue", "Process webhook требует квалифицированной индивидуальной service binding; используйте REST запуск.", "processes", { ...processTarget, tab: "readiness" }, "Выбрать ручной запуск");
     const knowledge = this.scenarioKnowledge(project, ids);
     if (trigger.kind === "schedule" && context.schedule && JSON.stringify(ids) !== JSON.stringify(selectedIds)) {
       const names = ids.map((id) => String(knowledge.find((row) => row.id === id)?.name ?? id));
@@ -10701,6 +10739,7 @@ export class AgatStore {
       runtime?: "database" | "temporal" | "embedded";
       replayOfInstanceId?: string | null;
       replayMode?: "safe" | "live";
+      parentRunId?: string;
     },
   ): Record<string, unknown> | null {
       if (typeof input.input !== "string") throw new Error("Входные данные процесса должны быть строкой");
@@ -10762,6 +10801,7 @@ export class AgatStore {
           runTrace.traceId,
           runTrace.spanId,
         );
+      this.runIdentityGuard?.bindRun(runId, project, options.parentRunId);
       this.db
         .prepare(`
           INSERT INTO process_instances(
@@ -11305,6 +11345,7 @@ export class AgatStore {
             timestamp,
           );
 
+        this.runIdentityGuard?.bindRun(runId, project);
         const insertStage = this.db.prepare(`
           INSERT INTO stages(
             id, run_id, agent_id, position, status, requires_approval,
@@ -12182,6 +12223,7 @@ export class AgatStore {
   }
 
   leaseNext(nodeId: string, workerVersion = "unknown"): LeasePayload | null {
+    this.enforceRunIdentities();
     let startedLeaseId: string | null = null;
     try {
       return this.transaction(() => {
@@ -12752,6 +12794,7 @@ export class AgatStore {
   }
 
   private renewWorkerLease(table: "stages" | "knowledge_embedding_jobs", nodeId: string, leaseId: string): boolean {
+    if (table === "stages") this.enforceRunIdentities();
     const expiredDuringWrite = new Error("Аренда истекла во время продления");
     try {
       return this.transaction(() => {
@@ -12836,6 +12879,7 @@ export class AgatStore {
     workerArtifacts: WorkerArtifactInput[] = [],
     executionMetrics: WorkerExecutionMetrics = {},
   ): { runCompleted: boolean; processInstanceId: string | null } {
+    this.enforceRunIdentities();
     const metrics = normalizeExecutionMetrics(executionMetrics);
     let completedRunId: string | null = null;
     let outputRejected = false;
@@ -13650,6 +13694,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(replayId, project);
           snapshots.forEach((snapshot, index) => {
             const replaySnapshot = agentSnapshot({
               id: snapshot.id,
@@ -14569,6 +14614,11 @@ export class AgatStore {
         ORDER BY e.id ASC LIMIT ?
       `)
       .all(afterId, normalizeProjectId(projectId), clampInteger(limit, 1, 1_000, 200)) as Row[]).map((row) => this.eventDto(row));
+  }
+
+  listIdentityAudit(afterId = 0, limit = 200): EventRecord[] {
+    return this.db.prepare("SELECT * FROM events WHERE type LIKE 'identity.%' AND id > ? ORDER BY id LIMIT ?")
+      .all(afterId, clampInteger(limit, 1, 1000, 200)).map(row => this.eventDto(row as Row));
   }
 
   claimAuditExportBatch(limit = 100): Array<Record<string, unknown>> {
@@ -16520,6 +16570,7 @@ export class AgatStore {
           knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
           version: childVersion,
           runtime: "embedded",
+          parentRunId: runId,
         },
       );
     } catch (error) {
@@ -17275,6 +17326,9 @@ export class AgatStore {
     message: string,
     data: Record<string, unknown> | null,
   ): EventRecord {
+    const actor = identityAudit(currentLocalIdentity());
+    const initiator = runId ? this.runIdentityGuard?.runAudit(runId) : undefined;
+    if (actor || initiator) data = { ...data, ...(actor ? { identityActor: actor } : {}), ...(initiator ? { initiator } : {}) };
     const createdAt = nowIso();
     let projectId = "global";
     if (runId) {
@@ -17292,6 +17346,7 @@ export class AgatStore {
       const credential = this.db.prepare("SELECT project_id FROM credentials WHERE id = ?").get(data.credentialId) as Row | undefined;
       if (typeof credential?.project_id === "string") projectId = credential.project_id;
     }
+    if (!runId && type.startsWith("identity.") && !data?.projectId) projectId = "__identity__";
     const result = this.db
       .prepare(`
         INSERT INTO events(run_id, stage_id, node_id, level, type, message, data_json, project_id, created_at)

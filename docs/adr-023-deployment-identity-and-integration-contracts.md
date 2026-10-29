@@ -11,7 +11,7 @@
 | Профиль | Identity и state | Runtime и ingress | Граница |
 |---|---|---|---|
 | single-user | Один local-admin; SQLite по умолчанию | Database process runtime; прямой ingress или proxy | Без credentials доверяется только loopback-оператор; удалённый клиент всегда предъявляет admin-token. Некорректные credentials не игнорируются |
-| lite | Индивидуальный OIDC либо local identity из FB-002; SQLite | Обычные runs/database processes; Kong и Temporal не обязательны | До FB-002 local provider сообщает unavailable и блокирует API. Critical four-eyes требует отдельно квалифицированной identity |
+| lite | Индивидуальный OIDC либо local identity из FB-002; SQLite | Обычные runs/database processes; Kong и Temporal не обязательны | Local provider готов после offline bootstrap и настройки origin; missing provider блокирует API. Critical four-eyes требует отдельно квалифицированной identity |
 | durable | Индивидуальные субъекты; SQLite либо PostgreSQL | Подключённый Temporal; ingress независим от RBAC | При потере runtime блокируются durable процессы/расписания; ordinary runs и диагностика остаются доступны. Database runtime не подставляется молча |
 | production-ha | Индивидуальные субъекты и PostgreSQL | Подключённый Temporal; ingress выбирает оператор | Снимок конфигурации не выдаёт production qualification. OPS gates, backup/restore и topology проверяются отдельно |
 
@@ -50,3 +50,5 @@ Code/release review направляется существующему CODEOWNE
 Матрица тестирует отсутствие identity/Temporal/PostgreSQL/sandbox и смену ingress независимо; неподдержанные operation IDs отклоняются. HTTP и UI показывают одинаковые reason codes. Включение lite не принимает legacy token; missing/invalid identity не становится local-admin. Production HA всегда сохраняет `productionQualified=false` до отдельного qualification contract.
 
 Откат на single-user разрешает только прежнюю модель одного оператора и закрывает новые multiuser/chat/developer входы. Старые runs/manifests/audit сохраняются. Отключение обязательной зависимости блокирует связанную возможность; снятие ограничения не считается способом исправить провал тестов. Доказательства — [приёмка FB-001](./status/fb-001-validation-2026-10-30.md).
+
+Реализация FB-002 и операционные ограничения описаны в [runbook local identities](./local-identities.md), evidence — в [протоколе приёмки](./status/fb-002-validation-2026-10-30.md).

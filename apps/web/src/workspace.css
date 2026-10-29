@@ -617,3 +617,25 @@ dialog::backdrop { background: rgb(24 43 44 / 32%); backdrop-filter: blur(3px); 
 .deployment-status ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; padding: 0; list-style: none; }
 .deployment-status li { display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
 .deployment-status li span { color: var(--text-muted, #5b6575); }
+.local-login { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg, #f5f7fa); }
+.local-login__card { width: min(100%, 440px); padding: 32px; background: var(--surface, #fff); border: 1px solid var(--border, #dfe5ed); border-radius: 16px; box-shadow: 0 12px 50px #243c6010; }
+.local-login__card h1 { margin: 24px 0 12px; font-size: 26px; }
+.local-login__card p { line-height: 1.5; }
+.local-login__card .field { margin: 24px 0 12px; }
+.local-login__card .button { margin-top: 12px; width: 100%; }
+.local-access-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; box-sizing: border-box; }
+.local-access-dialog > .dialog-head { position: sticky; top: 0; z-index: 1; padding: 12px 0; margin-bottom: 20px; background: var(--surface, #f7faf9); border-bottom: 1px solid var(--border, #dfe5ed); }
+.local-access__columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 32px; }
+.local-access__columns form { display: grid; gap: 14px; padding: 0; }
+.local-access__columns fieldset { display: grid; gap: 8px; min-width: 0; border: 1px solid var(--border, #dfe5ed); padding: 12px; border-radius: 8px; }
+.local-access__columns fieldset label { display: flex; gap: 6px; align-items: center; }
+.local-access__columns input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 auto; }
+.local-access__subject, .local-access__credentials small { overflow-wrap: anywhere; }
+.local-access__secret { padding: 20px; margin: 24px 0; border: 1px solid var(--border, #dfe5ed); border-radius: 8px; }
+.local-access__secret textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: monospace; }
+.local-access__credentials { padding: 0; list-style: none; }
+.local-access__credentials li { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border, #dfe5ed); }
+.local-access__credentials li > div { min-width: 0; }
+.local-access__credentials li > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+.local-access__credentials p { margin: 6px 0; }
+@media (max-width: 700px) { .local-access-dialog { padding: 16px; } .local-access__columns { grid-template-columns: minmax(0, 1fr); gap: 20px; } .local-access__credentials li { flex-direction: column; } .local-login { padding: 16px; } .local-login__card { padding: 24px; box-sizing: border-box; } }
