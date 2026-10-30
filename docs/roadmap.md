@@ -2,7 +2,7 @@
 
 Публичные версии и инструкции обновления: [CHANGELOG](./CHANGELOG.md). Исторические этапы ниже не означают существование отдельных опубликованных GitHub Releases.
 
-Актуализировано **30 октября 2026 года** по обратной связи о мессенджерах, tools, моделях и лёгком режиме. [Анализ](./feedback-analysis-2026-10-30.md) уточняет фактические ограничения; [карточки FB-001–FB-011](./feedback-priority-backlog-2026-10-30.md) задают scope, зависимости и приёмку. Источник истины для приоритетов и последовательности — этот roadmap. Сохранены [сравнение от 17 октября](./agent-market-and-research-2026-10-17.md), его [backlog](./agent-evolution-backlog-2026-10-17.md) и предложение [ADR-022](./adr-022-evidence-led-agent-evolution.md). Срез: HEAD `78d4cfba1387cf41f59c2965cefbaec3f0c3820e` и выбранные файлы рабочего дерева; package version 1.7.0. FB-001 реализован и технически проверен; остальные новые задачи запланированы. Workspace не приписывается опубликованному release; исторические проверки не объявляются свежими.
+Актуализировано **30 октября 2026 года** по обратной связи о мессенджерах, tools, моделях и лёгком режиме. [Анализ](./feedback-analysis-2026-10-30.md) уточняет фактические ограничения; [карточки FB-001–FB-011](./feedback-priority-backlog-2026-10-30.md) задают scope, зависимости и приёмку. Источник истины для приоритетов и последовательности — этот roadmap. Сохранены [сравнение от 17 октября](./agent-market-and-research-2026-10-17.md), его [backlog](./agent-evolution-backlog-2026-10-17.md) и предложение [ADR-022](./adr-022-evidence-led-agent-evolution.md). Исходный аналитический срез: HEAD `78d4cfba1387cf41f59c2965cefbaec3f0c3820e` и выбранные файлы рабочего дерева; package version 1.7.0. FB-001 и FB-002 реализованы и технически проверены; FB-003–FB-011 запланированы. Workspace не приписывается опубликованному release; исторические проверки не объявляются свежими.
 
 ## Текущее состояние и решение о приоритетах
 
@@ -22,7 +22,7 @@
 | Cloud | OpenAI-compatible worker и A2A foundation есть; общий cloud product flow этим исследованием не квалифицирован | CLD-001–CLD-005/P0 UX-207; CLD-006/RUN-104 — P1 |
 | Внешний чат и диалог | API runs/start, webhook и A2A уже есть; chat adapter и conversational history не подтверждены, A2A contextId не задаёт историю реплик | FB-003–FB-005: session/inbox/outbox и один текстовый личный канал; FB-002 до внешних пользователей |
 | Developer tools | HTTP MCP и isolated WASI/OCI существуют; STDIO/workspace/Git пути агента нет в проверенном scope | FB-006–FB-008: изолированные команды, patch/test evidence и managed STDIO; полный Software Delivery pack SP-201 остаётся P2 |
-| Лёгкий режим и права | OIDC RBAC проверяет coordinator; legacy admin-token запросы становятся одним local-admin. Kong/Temporal/PostgreSQL не являются логической зависимостью RBAC | FB-001/FB-002: явная capability matrix и индивидуальные local/service subjects; FB-009 проверяет установку/восстановление |
+| Лёгкий режим и права | OIDC и SQLite local users/service principals проходят общий RBAC; legacy admin-token остаётся одним local-admin. FB-001/FB-002 технически приняты | FB-009 проверяет поставляемую установку/восстановление; service binding внешних входов и critical assurance квалифицируются отдельно |
 | Память и долгие задачи | Working/episodic memory и durable process есть; graph внутри lease не имеет durable checkpointer | RUN-102/MEM-101/RUN-105 по потребности, без второго authority plane |
 | Production Fleet / DR | Механизмы и старые протоколы не доказывают qualification выбранного контура | OPS-101–OPS-105 перед соответствующим production cutover |
 
@@ -51,12 +51,12 @@
 
 ### Задачи по обратной связи от 30 октября
 
-FB-001 **реализован и технически проверен** 30 октября; FB-002–FB-011 запланированы. [Приёмка FB-001](./status/fb-001-validation-2026-10-30.md). Подробные критерии, failure paths, размеры и откат — в [карточках](./feedback-priority-backlog-2026-10-30.md). Обоснование и источники — в [анализе](./feedback-analysis-2026-10-30.md).
+FB-001 и FB-002 **реализованы и технически проверены** 30 октября; FB-003–FB-011 запланированы. [Приёмка FB-001](./status/fb-001-validation-2026-10-30.md), [приёмка FB-002](./status/fb-002-validation-2026-10-30.md). Подробные критерии, failure paths, размеры и откат — в [карточках](./feedback-priority-backlog-2026-10-30.md). Обоснование и источники — в [анализе](./feedback-analysis-2026-10-30.md).
 
 | ID | Приоритет / размер | Проверяемый результат | Зависимости | Ответственные роли |
 | --- | --- | --- | --- | --- |
-| FB-001 | P0 / M; реализовано, техническая приёмка пройдена | Явные single-user/lite/full/HA profiles и общий capability preflight; missing dependency не расширяет права | Текущие config/auth/preflight; scope ADR на G0 | Backend + DevOps + Product + QA |
-| FB-002 | P0 / L | Локальные users/service principals и RBAC без обязательных Keycloak/Kong/Temporal/PostgreSQL; два субъекта/проекта, revoke и audit | FB-001, текущие AuthContext/roles/credentials | Backend + frontend + security + QA |
+| FB-001 | P0 / M; реализовано, техническая приёмка пройдена | Явные single-user/lite/durable/production-ha profiles и общий capability preflight; missing dependency не расширяет права | Текущие config/auth/preflight; scope ADR на G0 | Backend + DevOps + Product + QA |
+| FB-002 | P0 / L; реализовано, техническая приёмка пройдена | Локальные users/service principals и RBAC без обязательных Keycloak/Kong/Temporal/PostgreSQL; два субъекта/проекта, revoke и audit | FB-001, текущие AuthContext/roles/credentials | Backend + frontend + security + QA |
 | FB-003 | P0 / L | Conversation/turn/session history и durable inbox; один run на событие, порядок реплик и lifecycle | FB-001/FB-002; CLD-002 context contract | Backend/runtime + QA |
 | FB-004 | P0 / L | Transactional outbox и chat/HTTPS callback delivery; retry/DLQ/unknown/replay, проверенный recipient | FB-001/FB-002; FB-003 для chat correlation; существующие A2A/SIEM delivery primitives | Backend/integration + QA |
 | FB-005 | P0 / L | Один текстовый личный bot adapter; кандидат Telegram после выбора пилота на G0. Ack/status/final/new/cancel и real E2E | FB-002–FB-004, USE-002; CLD-005 только для cloud | Integration + backend/frontend + Product + QA |
@@ -735,7 +735,7 @@ SP-201–SP-206 перенесены из прежнего P1 в P2. В рабо
 | Приоритет / состояние | Задачи | Граница и причина |
 | --- | --- | --- |
 | Основной scope готов; проверки открыты | UX-101–UX-110, основной UX-205 | Gates 1.8; automation остаток USE-006/UX-201 |
-| P0 — лёгкий multiuser и профили | FB-001 реализован; FB-002 запланирован | Identity/scopes/audit до внешних входов; capability matrix вместо скрытого local-admin fallback |
+| P0 — лёгкий multiuser и профили | FB-001 и FB-002 реализованы | Identity/scopes/audit до внешних входов; capability matrix вместо скрытого local-admin fallback |
 | P0 — диалог и доставка | FB-003–FB-005 | Session/inbox/outbox и один bot adapter; статусы выполнения/доставки независимы |
 | P0 — developer tools | FB-006–FB-008 | Изолированные workspace/Git/STDIO, patch/test evidence; существующие WASI/OCI controls переиспользуются |
 | P0 — приёмка профилей | FB-009 | Installation/restore/rollback и repeated eval до пилота включаемой возможности |
@@ -755,7 +755,7 @@ SP-201–SP-206 перенесены из прежнего P1 в P2. В рабо
 
 ## Проверка актуализации от 30 октября 2026 года
 
-Плановая актуализация не меняла программный код; последующая реализация FB-001 проверена в [отдельном протоколе](./status/fb-001-validation-2026-10-30.md). Анализ связывает четыре замечания с существующими механизмами и карточками FB-001–FB-011; модельные CLD задачи сохраняют ID. Проверки источников, уникальности ID, таблиц, ссылок, зависимостей и сохранения прежней истории описаны в [анализе](./feedback-analysis-2026-10-30.md). Документационная приёмка не закрывает E2E, auth/isolation, stochastic eval или production gates.
+Плановая актуализация не меняла программный код; последующая реализация FB-001 и FB-002 проверена в [протоколе профилей](./status/fb-001-validation-2026-10-30.md) и [протоколе identity](./status/fb-002-validation-2026-10-30.md). Анализ связывает четыре замечания с существующими механизмами и карточками FB-001–FB-011; модельные CLD задачи сохраняют ID. Проверки источников, уникальности ID, таблиц, ссылок, зависимостей и сохранения прежней истории описаны в [анализе](./feedback-analysis-2026-10-30.md). Документационная приёмка не закрывает E2E, auth/isolation, stochastic eval или production gates.
 
 ## Проверка актуализации от 17 октября 2026 года
 

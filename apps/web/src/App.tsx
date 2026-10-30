@@ -10,6 +10,7 @@ import { BottomNav } from "./components/BottomNav";
 import { Breadcrumbs } from "./components/Breadcrumbs";
 import { CredentialsDialog } from "./components/CredentialsDialog";
 import { DeploymentStatus } from "./components/DeploymentStatus";
+const LocalAccessDialog = lazy(() => import("./components/LocalAccessDialog").then(module => ({ default: module.LocalAccessDialog })));
 import { NewRunDialog } from "./components/NewRunDialog";
 import { NodeRail } from "./components/NodeRail";
 import { NodesPage } from "./components/NodesPage";
@@ -87,6 +88,7 @@ export default function App() {
   const [mcpCreateRequest, setMcpCreateRequest] = useState(0);
   const [a2aCreateRequest, setA2ACreateRequest] = useState(0);
   const [credentialsError, setCredentialsError] = useState<string | null>(null);
+  const [localAccessOpen, setLocalAccessOpen] = useState(false);
   const refreshTimer = useRef<number | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -586,7 +588,8 @@ export default function App() {
           activeProjectId={currentProjectId}
           onProjectChange={(projectId) => void changeProject(projectId)}
           onCreateProject={() => { setProjectError(null); setProjectDialogOpen(true); }}
-          onLogout={() => void logout()}
+          onLogout={() => void logout().catch(failure => setError(failure instanceof Error ? failure.message : "Ошибка выхода"))}
+          onManageAccess={user?.authenticationMode === "local" && user.globalProjectAccess && user.scopes?.includes("admin") ? () => setLocalAccessOpen(true) : undefined}
         />
         {activeView !== "processes" ? <Breadcrumbs activeView={activeView} onNavigate={navigate} /> : null}
         <DeploymentStatus deployment={overview?.deployment} />
@@ -786,6 +789,7 @@ export default function App() {
         onSave={(id, payload) => void saveCredential(id, payload)}
         onDelete={(credential) => void deleteCredential(credential)}
       />
+      {localAccessOpen ? <Suspense fallback={null}><LocalAccessDialog projects={projects} onClose={() => setLocalAccessOpen(false)} /></Suspense> : null}
       <ProjectDialog
         open={projectDialogOpen}
         busy={busy}

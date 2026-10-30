@@ -1,4 +1,5 @@
 import { createPublicKey, createVerify, timingSafeEqual } from "node:crypto";
+import type { LocalScope, PrincipalKind } from "./local-identity-contract.js";
 
 export type AgatRole = "admin" | "designer" | "operator" | "viewer" | "auditor";
 
@@ -9,6 +10,11 @@ export interface AuthContext {
   roles: Set<AgatRole>;
   projectIds: Set<string>;
   local: boolean;
+  credentialId?: string;
+  principalKind?: PrincipalKind;
+  identitySource?: string;
+  application?: string;
+  scopes?: Set<LocalScope>;
 }
 
 export interface OidcVerifierOptions {
@@ -220,10 +226,18 @@ export function authenticateLegacyRequest(input: {
 export function selectProject(context: AuthContext, requested: string | undefined): string {
   const projectId = (requested || "default").trim().toLowerCase();
   if (!PROJECT_ID.test(projectId)) throw new AuthenticationError(403, "Некорректный проект");
-  if (!context.roles.has("admin") && !context.projectIds.has(projectId)) {
+  if (!hasGlobalProjectAccess(context) && !context.projectIds.has(projectId)) {
     throw new AuthenticationError(403, "Нет доступа к выбранному проекту");
   }
   return projectId;
+}
+
+export function hasGlobalProjectAccess(context: AuthContext): boolean {
+  return context.roles.has("admin") && (!context.credentialId || context.projectIds.has("*"));
+}
+
+export function hasInstallationAdminAccess(context: AuthContext): boolean {
+  return hasGlobalProjectAccess(context) && (!context.credentialId || context.scopes?.has("admin") === true);
 }
 
 export function tokenEquals(left: string, right: string): boolean {

@@ -7,6 +7,7 @@ export interface DeploymentDependencies {
   runtime: { mode: "database" | "temporal"; connected: boolean };
   sandbox?: { available: boolean; networkPolicyEnforced: boolean } | null;
   localIdentityAvailable?: boolean;
+  localIdentityInitialized?: boolean;
 }
 
 export function parseDeploymentProfile(value: string | undefined): DeploymentProfile | undefined {
@@ -33,7 +34,8 @@ export function deploymentSnapshot(config: CoordinatorConfig, dependencies: Depl
   const blockers: DeploymentSnapshot["blockers"] = [];
   const identityReady = mode === "oidc" ? Boolean(config.oidcIssuer && config.oidcClientId)
     : mode === "local" && dependencies.localIdentityAvailable === true;
-  if (mode === "local" && !dependencies.localIdentityAvailable) blockers.push({ code: "local_identity_unavailable", message: "Локальная аутентификация недоступна. Настройте поддерживаемый identity provider." });
+  if (mode === "local" && !dependencies.localIdentityAvailable) blockers.push({ code: "local_identity_unavailable", message: "Локальный вход не готов. Выполните offline bootstrap и задайте AGAT_LOCAL_AUTH_ORIGIN; переход к local-admin запрещён." });
+  if (mode !== "local" && dependencies.localIdentityInitialized) blockers.push({ code: "identity_migration_required", message: "В базе есть индивидуальные локальные субъекты. Сохраните local auth либо выполните явную миграцию идентичностей; fallback запрещён." });
   if (mode === "oidc" && !identityReady) blockers.push({ code: "oidc_configuration_missing", message: "Для OIDC нужны issuer и client ID. Переход к local-admin запрещён." });
   if (mode !== "oidc" && config.oidcEnabled) blockers.push({ code: "identity_configuration_conflict", message: "Выберите один источник входа: local, legacy или OIDC." });
   if (profile === "single-user" && mode !== "legacy") blockers.push({ code: "identity_profile_conflict", message: "Профиль single-user предназначен для legacy оператора. Для индивидуального входа выберите lite или durable." });
@@ -54,7 +56,8 @@ export function deploymentSnapshot(config: CoordinatorConfig, dependencies: Depl
   capability("runs", "Обычные запуски", true, "", "");
   const requiresTemporal = profile === "durable" || profile === "production-ha";
   capability("processes", "Процессы", dependencies.runtime.connected && (!requiresTemporal || config.temporalEnabled && dependencies.runtime.mode === "temporal"), "runtime_disconnected", "Нужный этому профилю runtime процессов недоступен.");
-  capability("schedules", "Durable процессы и расписания", config.temporalEnabled && dependencies.runtime.mode === "temporal" && dependencies.runtime.connected, "temporal_unavailable", "Нужен подключённый Temporal runtime. Обычные запуски не требуют Temporal.");
+  capability("schedules", "Durable процессы и расписания", mode !== "local" && config.temporalEnabled && dependencies.runtime.mode === "temporal" && dependencies.runtime.connected,
+    mode === "local" ? "schedule_identity_unqualified" : "temporal_unavailable", mode === "local" ? "Расписания требуют квалифицированной service binding. Используйте авторизованный REST запуск." : "Нужен подключённый Temporal runtime. Обычные запуски не требуют Temporal.");
   capability("multiuser", "Индивидуальные пользователи", identityReady, "individual_identity_required", "Single-user режим использует одного local-admin. Для нескольких пользователей настройте отдельные субъекты.");
   capability("mcpHttp", "HTTP MCP tools", config.mcpEnabled, "mcp_disabled", "MCP gateway выключен.");
   capability("wasi", "Изолированные WASI tools", config.mcpEnabled && dependencies.sandbox?.available === true, "sandbox_unavailable", "Нужны MCP gateway и доступный sandbox executor.");

@@ -49,6 +49,8 @@
 - [Архитектура и модель выполнения](./architecture.md)
 - [ADR 023 Профили развёртывания и контракты новых входов](./adr-023-deployment-identity-and-integration-contracts.md)
 - [Приёмка FB-001](./status/fb-001-validation-2026-10-30.md)
+- [Индивидуальный вход и RBAC на SQLite](./local-identities.md)
+- [Приёмка FB-002](./status/fb-002-validation-2026-10-30.md)
 - [ADR-022: проверяемый результат и выбор агентного профиля](./adr-022-evidence-led-agent-evolution.md)
 - [Fleet и HA 1.7](./fleet-ha-1.7.md)
 - [Offline SQLite → PostgreSQL migration](./sqlite-postgresql-migration.md)

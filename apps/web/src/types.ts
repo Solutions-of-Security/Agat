@@ -607,6 +607,10 @@ export interface AuthUser {
   projectIds: string[];
   activeProjectId: string;
   local: boolean;
+  authenticationMode?: "legacy" | "local" | "oidc";
+  principalKind?: "user" | "service";
+  globalProjectAccess?: boolean;
+  scopes?: string[];
 }
 
 export interface ProjectSummary {

@@ -1,6 +1,6 @@
 # Приёмка FB 001
 
-Дата: 30 октября 2026 года. Статус: **техническая реализация проверена**; merge допускается только после обязательного GitHub check `required`. Scope — deployment contract v1, общий preflight/UI и запрет неявного identity fallback. Реальные cloud/chat/workspace функции этим статусом не объявляются реализованными.
+Дата: 30 октября 2026 года. Статус: **техническая реализация проверена**; обязательный Linux check `required` пройден, [PR 242](https://github.com/Solutions-of-Security/Agat/pull/242) смержен в main (`f6451ff83442767c3071d58f9fb62dfc61b7270b`). Scope — deployment contract v1, общий preflight/UI и запрет неявного identity fallback. Реальные cloud/chat/workspace функции этим статусом не объявляются реализованными.
 
 ## Реализовано
 
@@ -30,3 +30,7 @@
 ## Совместимость и восстановление
 
 State schema не меняется. Существующие OIDC и database runtime сохраняются; новые поля response additive. Неизвестные profile/auth значения не принимаются. При несовместимом профиле health/control API дают явный отказ. Rollback не удаляет старые результаты; multiuser по legacy token не включается.
+
+## Подтверждение интеграции
+
+[Verify run, attempt 2](https://github.com/Solutions-of-Security/Agat/actions/runs/40965504144/attempts/2): `test`, `browser`, все шесть integration suites и `required` — PASS. В первой попытке неизменённый active HTTP cancellation test не дождался fixture за одну секунду; изолированный набор 14/14 и повторный полный Linux job прошли без ослабления assertions или веточной защиты.

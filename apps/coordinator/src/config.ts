@@ -165,6 +165,7 @@ export interface CoordinatorConfig {
   enrollmentToken: string;
   adminToken: string;
   credentialsKey: string;
+  localAuthOrigin?: string;
   oidcEnabled: boolean;
   oidcIssuer: string;
   oidcClientId: string;
@@ -317,6 +318,7 @@ export function loadConfig(): CoordinatorConfig {
     enrollmentToken: process.env.AGAT_ENROLLMENT_TOKEN ?? "agat-local-enrollment",
     adminToken: process.env.AGAT_ADMIN_TOKEN ?? "",
     credentialsKey: process.env.AGAT_CREDENTIALS_KEY ?? process.env.AGAT_ADMIN_TOKEN ?? "agat-local-credentials-key",
+    localAuthOrigin: process.env.AGAT_LOCAL_AUTH_ORIGIN?.trim() || undefined,
     oidcEnabled: booleanFromEnv(process.env.AGAT_OIDC_ENABLED, false),
     oidcIssuer: (process.env.AGAT_OIDC_ISSUER ?? "").replace(/\/+$/, ""),
     oidcClientId: process.env.AGAT_OIDC_CLIENT_ID ?? "agat-web",
