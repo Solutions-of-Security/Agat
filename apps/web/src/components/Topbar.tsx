@@ -19,6 +19,7 @@ interface TopbarProps {
   onProjectChange: (projectId: string) => void;
   onCreateProject: () => void;
   onLogout: () => void;
+  onManageAccess?: () => void;
 }
 
 const actionCopy: Record<Exclude<PrimaryAction, null>, string> = {
@@ -41,8 +42,9 @@ export function Topbar({
   onProjectChange,
   onCreateProject,
   onLogout,
+  onManageAccess,
 }: TopbarProps) {
-  const canCreateProject = user?.roles.includes("admin") ?? false;
+  const canCreateProject = Boolean(user?.roles.includes("admin") && (user.authenticationMode !== "local" || user.globalProjectAccess && user.scopes?.includes("admin")));
   const initials = (user?.username || "A").slice(0, 1).toLocaleUpperCase("ru");
 
   return (
@@ -86,6 +88,7 @@ export function Topbar({
               <span>{user?.email ?? getRoleLabel(user?.roles ?? [])}</span>
               {user?.email ? <small>{getRoleLabel(user.roles)}</small> : null}
             </div>
+            {onManageAccess ? <button type="button" onClick={onManageAccess}><Icon name="shield" size={17} />Пользователи и доступ</button> : null}
             <button type="button" onClick={onLogout}>
               <Icon name="back" size={17} />Выйти
             </button>

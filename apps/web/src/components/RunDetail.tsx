@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { buildApprovalInboxItems } from "../approvalInbox";
 import { api } from "../lib/api";
@@ -23,6 +23,11 @@ import { ApprovalPanel } from "./ApprovalPanel";
 import { Icon } from "./Icon";
 import { PolicyControl } from "./PolicyControl";
 import { DecisionObservations } from "./DecisionObservations";
+import { ReportFormatBoundary } from "./ReportFormatBoundary";
+import { ReportDecisionBoundary } from "./ReportDecisionBoundary";
+
+const ReportMarkdown = lazy(() => import("./ReportMarkdown").then((module) => ({ default: module.ReportMarkdown })));
+const ReportDecisionPanel = lazy(() => import("./ReportDecisionPanel").then(module => ({ default: module.ReportDecisionPanel })));
 
 const stageStatusCopy: Record<StageStatus, string> = {
   pending: "Ожидает",
@@ -491,6 +496,8 @@ function EvaluationPanel({ run, trace, models, busy, canReplayRuns, onReplay }: 
 }
 
 interface RunDetailProps {
+  projectId?: string;
+  canPrepareEval?: boolean;
   run: Run | null;
   events: AgatEvent[];
   schedulerMode: SchedulerMode;
@@ -509,6 +516,8 @@ interface RunDetailProps {
 }
 
 export function RunDetail({
+  projectId = "default",
+  canPrepareEval = false,
   run,
   events,
   schedulerMode,
@@ -534,9 +543,24 @@ export function RunDetail({
   const [traceError, setTraceError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [outputView, setOutputView] = useState<"source" | "formatted">("source");
+  const [officeFiles, setOfficeFiles] = useState<{ runId: string; artifacts: Artifact[]; error: string | null } | null>(null);
+  const [officeRetry, setOfficeRetry] = useState(0);
+  const [officeAction, setOfficeAction] = useState<{ runId: string; key: string; busy: boolean; error: string | null } | null>(null);
   const runId = run?.id ?? null;
   const runUpdatedAt = run?.updatedAt ?? null;
   const eventRevision = events.at(-1)?.id ?? 0;
+  const officeEligible = run?.status === "completed";
+  useEffect(() => {
+    if (!runId || !officeEligible) return;
+    const controller = new AbortController();
+    void api.runArtifacts(runId, controller.signal).then(value => {
+      if (!controller.signal.aborted) setOfficeFiles({ runId, artifacts: value.artifacts, error: null });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setOfficeFiles({ runId, artifacts: [], error: error instanceof Error ? error.message : "Не удалось загрузить файлы отчёта" });
+    });
+    return () => controller.abort();
+  }, [runId, runUpdatedAt, officeEligible, officeRetry]);
   const [sourceState, setSourceState] = useState<{ runId: string; sources: KnowledgeSource[]; error: string | null } | null>(null);
   const [sourceLoading, setSourceLoading] = useState(true);
   const [sourceRetry, setSourceRetry] = useState(0);
@@ -560,6 +584,7 @@ export function RunDetail({
     setTrace(null);
     setTraceError(null);
     setDownloadError(null);
+    setOutputView("source");
   }, [runId]);
 
   useEffect(() => {
@@ -579,13 +604,18 @@ export function RunDetail({
         if (!controller.signal.aborted) setTraceLoading(false);
       });
     return () => controller.abort();
-  }, [eventRevision, runId, runUpdatedAt, technicalOpen]);
+  }, [eventRevision, runId, runUpdatedAt, technicalOpen, officeRetry]);
 
   if (!run) {
     return <section className="run-detail empty-state" id="active-run">Выберите запуск, чтобы увидеть цепочку агентов.</section>;
   }
 
   const detailedRun = trace?.run.id === run.id ? trace.run : run;
+  const reportFiles = officeFiles?.runId === run.id ? officeFiles.artifacts.filter(artifact => artifact.rendering?.format === "business-report-markdown.v1"
+    && artifact.rendering.contentSha256 === artifact.sha256) : [];
+  const reportArtifact = [...reportFiles].sort((a, b) => (detailedRun.stages.find(stage => stage.id === a.stageId)?.position ?? 0)
+    - (detailedRun.stages.find(stage => stage.id === b.stageId)?.position ?? 0)).at(-1);
+  const currentOfficeAction = officeAction?.runId === run.id ? officeAction : null;
   const sources = sourceState?.runId === run.id ? sourceState.sources : [];
   const sourcesReady = sourceState?.runId === run.id && !sourceState.error && !sourceLoading;
   const fallbackEvents = events.filter((event) => event.runId === run.id);
@@ -634,7 +664,7 @@ export function RunDetail({
           : detailedRun.status === "compensating"
             ? "Система безопасно отменяет уже выполненные изменения."
             : detailedRun.status === "completed"
-              ? "Все этапы завершены, результат готов к использованию."
+              ? "Этапы завершены. Проверьте результат и источники перед использованием."
               : detailedRun.status === "failed"
                 ? "Проверьте ошибку и технические детали перед повтором."
                 : "Выполнение остановлено; завершённые данные сохранены.";
@@ -670,6 +700,20 @@ export function RunDetail({
       setDownloadError(requestError instanceof Error ? requestError.message : "Не удалось скачать артефакт");
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function exportOffice(artifact: Artifact, format: "docx" | "pdf") {
+    const selectedRun = detailedRun.id, key = `${artifact.id}:${format}`;
+    setOfficeAction({ runId: selectedRun, key, busy: true, error: null });
+    try {
+      const result = await api.exportArtifact(artifact.id, { format, expectedSha256: artifact.sha256, origin: window.location.origin });
+      triggerDownload(await api.downloadArtifact(result.artifact.id), result.artifact.name);
+      setOfficeRetry(value => value + 1);
+    } catch (error) {
+      setOfficeAction(current => current?.key === key ? { ...current, error: error instanceof Error ? error.message : "Не удалось подготовить файл" } : current);
+    } finally {
+      setOfficeAction(current => current?.key === key ? { ...current, busy: false } : current);
     }
   }
 
@@ -811,7 +855,26 @@ export function RunDetail({
           ) : null}
         </header>
         {latestError && detailedRun.status === "failed" ? <p className="run-result__error" role="alert">{latestError}</p> : null}
-        {result ? <KnowledgeLinkedOutput text={result} sources={sources} /> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
+        {reportArtifact ? <div className="report-export" role="group" aria-label="Экспорт сохранённого отчёта">
+          <p><strong>{reportArtifact.name}</strong><span>DOCX и PDF сохраняют содержание этого файла и ссылки на источники.</span></p>
+          <div>{(["docx", "pdf"] as const).map(format => <button key={format} className="button button--secondary" type="button" disabled={Boolean(currentOfficeAction?.busy)}
+            onClick={() => void exportOffice(reportArtifact, format)}>{currentOfficeAction?.busy && currentOfficeAction.key === `${reportArtifact.id}:${format}` ? "Готовим файл…" : `Скачать ${format.toUpperCase()}`}</button>)}</div>
+          {currentOfficeAction?.error ? <p role="alert">{currentOfficeAction.error}</p> : null}
+        </div> : officeEligible && officeFiles?.runId === run.id && officeFiles.error ? <p role="alert">Не удалось загрузить форматы отчёта. <button className="button button--secondary" type="button" onClick={() => setOfficeRetry(value => value + 1)}>Повторить загрузку файлов</button></p> : null}
+        {reportArtifact ? <ReportDecisionBoundary key={`${projectId}:${reportArtifact.id}:${reportArtifact.sha256}`}><Suspense fallback={<p role="status">Загружаем действия с отчётом…</p>}>
+          <ReportDecisionPanel artifact={reportArtifact} projectId={projectId} canPrepareEval={canPrepareEval} canReview={canDecideApproval} onDownloadSource={async () => triggerDownload(await api.downloadArtifact(reportArtifact.id), reportArtifact.name)} />
+        </Suspense></ReportDecisionBoundary> : null}
+        {result ? <>
+          <div className="run-result__view" role="group" aria-label="Представление результата">
+            <button className="button button--secondary" type="button" aria-pressed={outputView === "source"} onClick={() => setOutputView("source")}>Исходный текст</button>
+            <button className="button button--secondary" type="button" aria-pressed={outputView === "formatted"} onClick={() => setOutputView("formatted")}>Форматированный</button>
+          </div>
+          {outputView === "formatted" ? <ReportFormatBoundary key={run.id} text={result} sources={sources}>
+            <Suspense fallback={<p role="status">Готовим форматированный результат…</p>}>
+              <ReportMarkdown text={result} sources={sources} />
+            </Suspense>
+          </ReportFormatBoundary> : <KnowledgeLinkedOutput text={result} sources={sources} />}
+        </> : <div className="run-result__empty"><Icon name="box" size={25} /><span>Результат пока не сформирован.</span></div>}
         {sourceLoading ? <p role="status">Загружаем источники…</p> : null}
         {sourceState?.runId === run.id && sourceState.error ? <p role="alert">Источники недоступны: {sourceState.error} <button type="button" onClick={() => setSourceRetry((value) => value + 1)}>Повторить загрузку источников</button></p> : null}
         <KnowledgeSources sources={sources} stages={detailedRun.stages} />

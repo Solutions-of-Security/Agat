@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Review a pinned blank/partial package in a terminal without model predictions."""
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from decision_runtime.artifacts import sealed
+from decision_runtime.contracts import parse_json
+from scripts.lib.decision_blind_review import interact, terminal_text, validate_progress
+from scripts.lib.decision_public_sources import pinned_input, private_directory, write_json_new
+from scripts.lib.decision_review_io import checkpoint, source_identity as committed_source_identity
+from scripts.lib.decision_shadow_pilot import require, utc_now
+
+SOURCES = ("scripts/review-decision-pool.py", "scripts/lib/decision_blind_review.py", "scripts/lib/decision_review_io.py",
+           "scripts/lib/decision_public_sources.py", "scripts/lib/decision_shadow_pilot.py",
+           "scripts/lib/decision_shadow_sli.py", "scripts/lib/decision_stage_inventory.py",
+           "scripts/lib/decision_caller_inventory.py", "decision_runtime/__init__.py",
+           "decision_runtime/annotations.py", "decision_runtime/artifacts.py", "decision_runtime/contracts.py",
+           "decision_runtime/evaluation.py", "decision_runtime/engine.py", "decision_runtime/calibration.py")
+MAX_REVIEW_BYTES = 32 * 1024 * 1024
+SESSION_SCHEMA = "agat.decision.blind-review-session.v2"
+
+
+def source_identity(root):
+    return committed_source_identity(root, SOURCES)
+
+
+def main(argv=None, *, input_stream=None, output_stream=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--review", type=Path, required=True)
+    parser.add_argument("--review-file-sha256", required=True)
+    parser.add_argument("--reviewer-id", required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    args = parser.parse_args(argv)
+    stream = input_stream if input_stream is not None else sys.stdin
+    output = output_stream if output_stream is not None else sys.stdout
+    directory = None; report = None
+    try:
+        require(stream.isatty() and output.isatty(), "Use interactive input and output terminals")
+        raw = pinned_input(args.review, args.review_file_sha256, MAX_REVIEW_BYTES)
+        review = validate_progress(parse_json(raw), args.reviewer_id)
+        initial_labels = copy.deepcopy(review["labels"])
+        identity = source_identity(ROOT)
+        started = utc_now()
+        directory = private_directory(ROOT, args.output_dir)
+        review["reviewerId"] = args.reviewer_id
+        report = {"schemaVersion": SESSION_SCHEMA, "status": "failed",
+                  "startedAt": started, "finishedAt": None, "endReason": None,
+                  "sourceCommit": identity[0], "sourceFiles": identity[1],
+                  "inputReviewFileSha256": args.review_file_sha256, "poolSha256": review["poolSha256"],
+                  "reviewerId": args.reviewer_id, "existingAnswers": sum(x["expectedOptionId"] is not None for x in review["labels"]),
+                  "newAnswers": 0, "revisedAnswers": 0, "clearedAnswers": 0,
+                  "remainingAnswers": None, "submissionConfirmed": False, "outputReviewFileSha256": None,
+                  "reviewerIdentityVerified": False, "humanExecutionVerified": False,
+                  "independentReviewVerified": False, "expertQualificationsVerified": False,
+                  "modelCalls": 0, "routingEnabled": False, "qualification": "not_assessed", "failureType": None}
+        checkpoint(directory, review)
+
+        def save(candidate):
+            require(source_identity(ROOT)[1] == identity[1], "Review sources changed during the session")
+            checkpoint(directory, candidate)
+
+        review, reason = interact(review, stream, output, save)
+        require(source_identity(ROOT)[1] == identity[1], "Review sources changed during the session")
+        require(pinned_input(args.review, args.review_file_sha256, MAX_REVIEW_BYTES) == raw,
+                "Review input changed during the session")
+        remaining = sum(x["expectedOptionId"] is None for x in review["labels"])
+        # A complete draft remains editable until the reviewer explicitly submits it.
+        finished = utc_now()
+        submitted = reason == "submitted"
+        require(not submitted or remaining == 0, "Submission cannot contain blank answers")
+        if submitted:
+            review["reviewedAt"] = finished
+        checkpoint(directory, review)
+        changes = list(zip(initial_labels, review["labels"]))
+        report.update(status="completed" if submitted else "partial", finishedAt=finished, endReason=reason,
+                      newAnswers=sum(before["expectedOptionId"] is None and after["expectedOptionId"] is not None for before, after in changes),
+                      revisedAnswers=sum(before["expectedOptionId"] is not None and after["expectedOptionId"] is not None
+                                         and before != after for before, after in changes),
+                      clearedAnswers=sum(before["expectedOptionId"] is not None and after["expectedOptionId"] is None for before, after in changes),
+                      remainingAnswers=remaining, submissionConfirmed=submitted,
+                      outputReviewFileSha256=hashlib.sha256((directory / "review.json").read_bytes()).hexdigest())
+        write_json_new(directory / "session.json", sealed(report))
+        output.write(f"Review {report['status']}: {remaining} remaining. Output: {terminal_text(str(directory))}\n")
+        output.flush()
+        return 0 if submitted else 2
+    except Exception as error:
+        if directory is not None and report is not None:
+            report.update(status="failed", finishedAt=utc_now(), failureType=type(error).__name__)
+            if (directory / "review.json").is_file():
+                report["outputReviewFileSha256"] = hashlib.sha256((directory / "review.json").read_bytes()).hexdigest()
+            if not (directory / "session.json").exists():
+                write_json_new(directory / "session.json", sealed(report))
+        print(f"Cannot complete blind review: {terminal_text(str(error))[:1000]}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

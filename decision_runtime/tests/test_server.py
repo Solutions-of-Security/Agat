@@ -5,7 +5,7 @@ import unittest
 
 from decision_runtime.engine import DecisionEngine
 from decision_runtime.contracts import fingerprint, canonical_json
-from decision_runtime.server import make_server
+from decision_runtime.server import CANCEL_ON_DISCONNECT_HEADER, make_server
 from decision_runtime.tests.test_decisions import Backend, request
 
 
@@ -92,6 +92,45 @@ class ServerTest(unittest.TestCase):
             first.join(timeout=3)
         self.assertEqual(responses[0][0], 200)
         self.assertEqual(self.backend.calls, 1)
+
+    def assert_next_request_admitted_after_body(self, first_body, first_status, headers=None):
+        written, release = threading.Event(), threading.Event()
+        original = self.server.RequestHandlerClass.reply_bytes
+
+        def delayed(handler, status, encoded, content_type):
+            original(handler, status, encoded, content_type)
+            if handler.command == 'POST' and status == first_status and not written.is_set():
+                written.set()
+                release.wait(timeout=3)
+
+        self.server.RequestHandlerClass.reply_bytes = delayed
+        try:
+            self.assertEqual(self.call(first_body, headers=headers)[0], first_status)
+            self.assertTrue(written.wait(timeout=1))
+            status, result = self.call(json.dumps(request()), headers=headers)
+            self.assertEqual((status, result['reason']), (200, 'accepted'))
+        finally:
+            release.set()
+
+    def test_next_sequential_request_does_not_wait_for_previous_response_writer(self):
+        self.assert_next_request_admitted_after_body(json.dumps(request()), 200)
+        self.assertEqual(self.backend.calls, 2)
+
+    def test_invalid_body_response_releases_slot_before_transport_finishes(self):
+        self.assert_next_request_admitted_after_body('{', 400)
+        self.assertEqual(self.backend.calls, 1)
+
+    def test_completed_opted_in_peer_cannot_cancel_next_request_during_response_write(self):
+        cancellations = []
+        def score_with_cancellation(parsed, cancelled):
+            cancellations.append(cancelled)
+            return self.backend.score(parsed)
+        self.backend.score_with_cancellation = score_with_cancellation
+        self.assert_next_request_admitted_after_body(json.dumps(request()), 200,
+            headers={CANCEL_ON_DISCONNECT_HEADER: '1'})
+        self.assertEqual(len(cancellations), 2)
+        self.assertIsNot(cancellations[0], cancellations[1])
+        self.assertTrue(all(not event.is_set() for event in cancellations))
 
 
 if __name__ == "__main__":

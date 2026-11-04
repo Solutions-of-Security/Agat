@@ -35,6 +35,19 @@ test("file selection sends PDF/DOCX bytes losslessly and keeps plain text suppor
   await assert.rejects(readKnowledgeFile(new File([bytes], "app.exe")), /PDF, DOCX/);
 });
 
+test("CSV and XLSX use the bounded server parser and preserve file bytes", async () => {
+  for (const [name, type] of [["Values.csv", "text/csv"], ["Values.XLSX", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]]) {
+    const bytes = new Uint8Array([239, 187, 191, 65, 44, 66, 10]);
+    const selected = await readKnowledgeFile(new File([bytes], name!, { type: "application/octet-stream" }));
+    assert.equal(selected.mediaType, type);
+    assert.ok("contentBase64" in selected);
+    assert.deepEqual(new Uint8Array(Buffer.from(selected.contentBase64, "base64")), bytes);
+  }
+  await assert.rejects(readKnowledgeFile(new File(["data"], "macros.xlsm")), /только со значениями/);
+  await assert.rejects(readKnowledgeFile(new File(["data"], "old.xls")), /CSV UTF-8/);
+  await assert.rejects(readKnowledgeFile(new File([new Uint8Array(MAX_KNOWLEDGE_FILE_BYTES + 1)], "large.csv")), /5 МиБ/);
+});
+
 test("preview targets PDF page and exact fragment, exposes parsing and stale-source errors safely", () => {
   const html = renderToStaticMarkup(createElement(KnowledgePreviewContent, { document, chunkId: "chunk-2", expectedSha256: document.contentSha256 }));
   assert.match(html, /value="2" selected=""/);

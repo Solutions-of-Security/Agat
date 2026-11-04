@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 PROFILE = "local_decision_shadow_v2"
 SUPPORTED_PROFILES = ("local_decision_shadow_v1", PROFILE)
 MAX_RESPONSE = 64 * 1024
+CALLER_TIMING_VERSION = "agat.decision.caller-timing.v1"
 
 
 def validate_decision_url(url: str) -> str:
@@ -34,6 +35,18 @@ class LocalDecisionClient:
         self.url = validate_decision_url(url)
 
     def decide(self, shadow: dict, cancelled: threading.Event | None = None) -> dict:
+        """Measure the local HTTP call through response parsing and transport cleanup."""
+        # Older coordinators do not admit timing metadata. Emit only when negotiated.
+        if not isinstance(shadow, dict) or shadow.get("callerTimingVersion") != CALLER_TIMING_VERSION:
+            return self._decide(shadow, cancelled)
+        started = time.monotonic()
+        observation = self._decide(shadow, cancelled)
+        return {**observation, "callerTiming": {
+            "schemaVersion": CALLER_TIMING_VERSION, "clock": "monotonic", "boundary": "local_http_call",
+            "durationMs": round(max(0.0, time.monotonic()-started)*1000, 3),
+        }}
+
+    def _decide(self, shadow: dict, cancelled: threading.Event | None = None) -> dict:
         """A watchdog closes the transport at a wall-clock deadline, including slow reads.
 
         A timeout discards the response. Isolated runtimes supporting the explicit
@@ -63,6 +76,15 @@ class LocalDecisionClient:
         interrupted = threading.Event()
         transport: list[socket.socket] = []
 
+        def interruption_reason() -> str | None:
+            # A watchdog may not run between two fast operations. Check the
+            # caller's state synchronously before accepting any response.
+            if cancelled is not None and cancelled.is_set():
+                return "cancelled"
+            if interrupted.is_set() or time.monotonic() >= deadline:
+                return "timeout"
+            return None
+
         def guard():
             while not done.wait(min(0.02, max(0.001, deadline - time.monotonic()))):
                 if time.monotonic() >= deadline or (cancelled is not None and cancelled.is_set()):
@@ -81,8 +103,8 @@ class LocalDecisionClient:
             connection.connect()
             if connection.sock is not None:
                 transport.append(connection.sock)
-            if interrupted.is_set():
-                return unavailable("cancelled" if cancelled and cancelled.is_set() else "timeout")
+            if reason := interruption_reason():
+                return unavailable(reason)
             connection.request("POST", "/v1/decisions", body=payload, headers={
                 "Content-Type": "application/json", "Accept": "application/json",
                 "X-Agat-Decision-Profile": profile_sha,
@@ -91,13 +113,15 @@ class LocalDecisionClient:
                 "X-Agat-Decision-Cancel-On-Disconnect": "1",
             })
             response = connection.getresponse()
+            if reason := interruption_reason():
+                return unavailable(reason)
             if response.status in (409, 503):
                 return unavailable("profile_mismatch" if response.status == 409 else "busy")
             if response.status not in (200, 400, 422, 500, 504) or response.getheader("Content-Type", "").split(";")[0] != "application/json":
                 return unavailable("invalid_response")
             data = response.read(MAX_RESPONSE + 1)
-            if interrupted.is_set() or time.monotonic() >= deadline:
-                return unavailable("cancelled" if cancelled and cancelled.is_set() else "timeout")
+            if reason := interruption_reason():
+                return unavailable(reason)
             if len(data) > MAX_RESPONSE:
                 return unavailable("invalid_response")
 
@@ -117,13 +141,13 @@ class LocalDecisionClient:
 
             result = json.loads(data, object_pairs_hook=strict_pairs, parse_float=finite_float,
                                 parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Invalid constant")))
+            if reason := interruption_reason():
+                return unavailable(reason)
             if not isinstance(result, dict):
                 return unavailable("invalid_response")
-            if interrupted.is_set() or time.monotonic() >= deadline:
-                return unavailable("cancelled" if cancelled and cancelled.is_set() else "timeout")
             return {"result": result}
         except (socket.timeout, TimeoutError):
-            return unavailable("timeout")
+            return unavailable("cancelled" if cancelled is not None and cancelled.is_set() else "timeout")
         except (OSError, http.client.HTTPException):
             if cancelled and cancelled.is_set():
                 return unavailable("cancelled")

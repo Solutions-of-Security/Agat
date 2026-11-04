@@ -17,6 +17,7 @@ export function appendKnowledgeSources(output: string, sources: KnowledgeSource[
     return `- [${escape(source.marker)} · ${escape(p.documentName)} · ${location}](${knowledgeSourceHref(source)})\n`
       + `  Этап: ${escape(source.stageId)}; retrieval: ${escape(source.retrievalId)}; символы ${p.charStart}–${p.charEnd}.\n`
       + `  SHA-256 текста: ${p.documentSha256}; фрагмента: ${p.chunkSha256}${p.originalSha256 ? `; файла: ${p.originalSha256}` : ""}.\n\n`
+      + (p.extraction ? `  Извлечение: ${escape(p.extraction.profile)}; страниц без текста: ${p.extraction.emptyPageCount ?? "не оценивалось"}; дополнительных текстовых частей вне извлечения: ${p.extraction.omittedPartsCount ?? "не оценивалось"}. Визуальная полнота не подтверждена.${p.extraction.decision ? " Пользователь разрешил использовать только извлечённый текст." : ""} SHA-256 разбора: ${p.extraction.reportSha256}.\n\n` : "")
       + (source.content ?? source.excerpt).split("\n").map((line) => `  > ${escape(line)}`).join("\n");
   }).join("\n\n")}\n`;
 }

@@ -352,12 +352,16 @@ async function executeScoped(
   const normalized = postgresSql(sql);
   const transactionControl = /^(BEGIN|COMMIT|ROLLBACK)\b/i.exec(normalized.trim())?.[1]?.toUpperCase();
   if (transactionControl === "BEGIN") {
+    if (!/^BEGIN(?:\s+ISOLATION\s+LEVEL\s+REPEATABLE\s+READ\s+READ\s+ONLY)?\s*;?$/i.test(normalized.trim())) {
+      throw new Error("Unsupported PostgreSQL transaction mode");
+    }
     if (transactionClient) throw new Error("Nested PostgreSQL transaction запрещена");
     const pool = scope.kind === "tenant" ? tenantPool : systemPool;
     transactionClient = await pool.connect();
     transactionScope = scope;
     try {
-      const result = await transactionClient.query("BEGIN");
+      // Preserve snapshot mode before tenant/timeout setup performs its first SELECT.
+      const result = await transactionClient.query(normalized);
       await setRemainingTimeout(transactionClient, scope);
       await setTenantScope(transactionClient, scope);
       return result;

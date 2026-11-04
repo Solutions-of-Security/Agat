@@ -6,6 +6,8 @@
 
 Границы исходного анализа от 21.09.2026: локальное выполнение, архитектура модели, данные, обучение, калибровка, ресурсы и интеграция. На момент анализа рассматривались открытые исходники и model cards; модели ещё не скачивались и не запускались, оборудование не профилировалось. Исходные оценки не являются доказательством качества кандидатов.
 
+[Полный native benchmark на опубликованных русских references TERRa](./qualification/local-decisions/external/terra-native-baselines.md), **11.10.2026**, завершён: все 307 случаев / 282 группы, два зависимых порядка, четыре pinned candidate и 2456 forwards без backend/context errors. decider — 267/269 правильных argmax, Qwen Base — 265/271, GLiClass — 157/150, NanoJev — 153/153; у каждого раскрыты accepted errors, coverage, F1/NLL/Brier/ECE и order sensitivity. Новые веса, tuning и source prefilter не использовались. 72726 независимых арифметических checks, 6754 actual tokenizer arrays, 66 actual CLI refusals + 4 replays; 1494 scripts tests / 4 skip и 18 Node tests PASS. Evidence архив и исходные weight bundles перепроверены; четыре copied CLI в original workspace воспроизводят отчёты точно. Это внешний development diagnostic: внутренние human reviews, representative calibration/holdout, владельцы/SLO и routing остаются открытыми. [Русский Boolean corpus DaNetQA](./qualification/local-decisions/external/danetqa-development.md) импортирован отдельным этапом; числовой Score требует своего предметного эталона.
+
 ## Прогресс реализации на 26.09.2026
 
 | Блок | Выполнено | Остаток |
@@ -15,8 +17,8 @@
 | Предметная development-диагностика | Проверенный экспорт 15 approved-assistant примеров, сравнение decider/Qwen Base и [генеративного Qwen3 8B](./qualification/local-decisions/baselines/README.md), ошибки и порядок вариантов; [эвристика по заголовкам](./qualification/local-decisions/baselines/rules.md) дала 2/15 меток и 1/15 принятых решений, её покрытие недостаточно; девять holdout-примеров не запускались | Расширение независимых calibration-групп и access-класса |
 | Расчёт отчётных показателей | [Арифметический baseline](./qualification/local-decisions/performance/arithmetic.md), [CSV с закреплённым SHA](./qualification/local-decisions/performance/source-records.md), [отдельные заявки с проверкой дублей](./qualification/local-decisions/performance/request-records.md) и [новые снимки локального файла](./qualification/local-decisions/performance/source-snapshots.md); [подготовленный процесс](./qualification/local-decisions/performance/source-process.md) показывает отчёт владельцу и после подтверждения сохраняет Markdown/CSV/JSON; 47 Python-тестов, оба HTTP-сценария и desktop/mobile — pass | Реальные источники и бизнес-коннектор, фактическая проверка совокупности, единиц и смысла ID, полнота; большие отчёты вне лимита template |
 | Обучение и qualification | Технический pipeline проверен; синтетический smoke — `not_qualified`, новое сравнение — `diagnostic_only` | Выбор обучения по достаточным development-данным; новый calibration и независимый holdout |
-| Shadow-интеграция | Opt-in capability/profile в lease, coordinator validation и хранение, постоянный primary fallback, deadline и отказ поздних записей, retry/restart/safe replay; реальный MLX HTTP smoke `integration_pass`; PostgreSQL 17.6, два coordinator, restart и RLS — 6/6 pass; просмотр вопроса, распределения, порогов и профиля в UI, desktop/mobile — 2/2 pass; [опциональный процесс с серверным deadline](./qualification/local-decisions/shadow/isolation.md); [exit 75, сохранение ответа и foreground recovery](./qualification/local-decisions/shadow/service-recovery.md), генератор launchd; [opt-in отмена изолированного inference при уходе клиента](./qualification/local-decisions/shadow/cancellation.md), реальные MLX/worker/coordinator и сохранение primary; [отмена через измерительный прокси](./qualification/local-decisions/shadow/proxy-cancellation.md) также доведена до реального MLX; [readiness, метрики и примеры alerts](./qualification/local-decisions/shadow/observability/README.md), официальный parser и promtool — pass | Нативный restart после настройки доступа macOS (опыт остановлен на Documents/TCC); подключение постоянного мониторинга и согласование SLO и ограниченная маршрутизация после qualification |
-| Производительность | [180 локальных HTTP-попыток](./qualification/local-decisions/performance/README.md), конкурентность 1/2/4, задержки и busy отдельно; [8 процессов / 1200 вызовов](./qualification/local-decisions/performance/resources.md), cache 128/512 МиБ, снижение sampled active+cache с 7.933 до 3.635 ГиБ; [240 совместных вызовов с Qwen3 8B](./qualification/local-decisions/performance/shared-load.md), рост задержек при перекрытии; [81 синтетический вызов до 4096 токенов](./qualification/local-decisions/performance/context.md), точная граница отказа без усечения и память; [3086 HTTP-вызовов за 600 секунд](./qualification/local-decisions/performance/endurance.md), без ошибок/смены ответов, p95 289.099 мс и RSS по процессам | Многочасовая нагрузка, реальные длинные документы/конфликты, RAG на больших коллекциях, внешние бизнес-коннекторы и производственные SLO |
+| Shadow-интеграция | Opt-in capability/profile в lease, coordinator validation и хранение, постоянный primary fallback, deadline и отказ поздних записей, retry/restart/safe replay; реальный MLX HTTP smoke `integration_pass`; PostgreSQL 17.6, два coordinator, restart и RLS — 6/6 pass; просмотр вопроса, распределения, порогов и профиля в UI, desktop/mobile — 2/2 pass; [опциональный процесс с серверным deadline](./qualification/local-decisions/shadow/isolation.md); [exit 75, сохранение ответа и foreground recovery](./qualification/local-decisions/shadow/service-recovery.md), генератор launchd; [opt-in отмена изолированного inference при уходе клиента](./qualification/local-decisions/shadow/cancellation.md), реальные MLX/worker/coordinator и сохранение primary; [отмена через измерительный прокси](./qualification/local-decisions/shadow/proxy-cancellation.md) также доведена до реального MLX; [readiness, метрики и примеры alerts](./qualification/local-decisions/shadow/observability/README.md), официальный parser и promtool — pass | [Нативный restart 0.12.2 подтверждён](./qualification/local-decisions/shadow/native-launchd-0.12.2.md) вне Documents, [настоящий Prometheus scrape/recovery прошёл](./qualification/local-decisions/shadow/observability/native-prometheus.md); [resident package прошёл native gate](./qualification/local-decisions/shadow/observability/resident-deployment.md), [два постоянных user jobs установлены и проверены](./qualification/local-decisions/shadow/observability/resident-rollout.md), [480 совместных calls на 0.12.2 прошли](./qualification/local-decisions/performance/resident-shared-load-0.12.2.md); [полный 7200-секундный wired shared gate 0.12.3 пройден](./qualification/local-decisions/performance/wired-shared-soak-7200-0.12.3.md); [native wired Temporal/PostgreSQL/RAG gate пройден](./qualification/local-decisions/performance/temporal-wired-runtime-0.12.3.md); [постоянный wired rollout 0.12.3 пройден](./qualification/local-decisions/shadow/observability/resident-wired-rollout-0.12.3.md); [bounded crash-loop wired gate пройден](./qualification/local-decisions/shadow/observability/resident-crash-loop.md); [actual boot/login 09.10 подтверждён](./qualification/local-decisions/shadow/observability/resident-actual-boot-login.md); согласование owner/SLO; ограниченная маршрутизация после qualification |
+| Производительность | [180 локальных HTTP-попыток](./qualification/local-decisions/performance/README.md), конкурентность 1/2/4, задержки и busy отдельно; [8 процессов / 1200 вызовов](./qualification/local-decisions/performance/resources.md), cache 128/512 МиБ, снижение sampled active+cache с 7.933 до 3.635 ГиБ; [240 совместных вызовов с Qwen3 8B](./qualification/local-decisions/performance/shared-load.md), рост задержек при перекрытии; [81 синтетический вызов до 4096 токенов](./qualification/local-decisions/performance/context.md), точная граница отказа без усечения и память; [3086 HTTP-вызовов за 600 секунд](./qualification/local-decisions/performance/endurance.md), без ошибок/смены ответов, p95 289.099 мс и RSS по процессам | Длительная нагрузка на новых независимых документах и конфликтах, RAG на больших коллекциях, внешние бизнес-коннекторы и производственные SLO |
 
 [Трёхэтапный workflow с реальной Qwen3 8B](./qualification/local-decisions/performance/workflow.md) прошёл через worker/coordinator: 12 процессов, 36 primary-вызовов и 18 shadow-решений при фактической конкурентности до 2. Предыдущий неполный опыт сохранил primary после server timeout. Арифметическая проверка выявила неверные средние и доли во всех повторных итогах; выполнение workflow не является приёмкой качества.
 
@@ -187,6 +189,1508 @@ Development-сравнение не закрывает qualification: decider п
 [Временный PostgreSQL storage](./qualification/local-decisions/performance/temporary-postgres-volumes.md) больше не остаётся после удаления собственного тестового контейнера: Python fallback и оба shell EXIT traps используют удаление анонимных volumes. Утечка воспроизведена на закреплённом PostgreSQL image и в трёх live regression-сценариях; после исправления 74 целевые проверки прошли, именованные данные и marker сохранены. Следующий gate — полный повтор реального Temporal/RAG с неизменным профилем runtime 0.12.1 после cleanup-исправлений.
 
 [Сохранение приватных process logs](./qualification/local-decisions/performance/private-process-logs.md) исправлено после ENOSPC в полном повторе: позднее копирование из временного каталога потеряло process logs и не позволило записать итоговый report. Теперь приватные файлы открываются до запуска моделей; шесть fixture tests проверяют ENOSPC, SHA/permissions, отсутствие перезаписи и process admission без журналов. Неуспешный реальный запуск сохранён как отказ; повтор gate ожидает доступного Docker и дискового пространства.
+
+[Локальная доступность весов до admission](./qualification/local-decisions/performance/model-residency.md), 03.10: обнаруженное ожидание cloud-only checkpoint при подготовке полного повтора устранено явным отказом по macOS `SF_DATALESS` до чтения весов и запуска процессов. Шесть новых regression tests и вся cleanup/recovery матрица с live Docker — 86/86 pass; resident symlink cache, compressed файлы и платформы без flags поддерживаются. Serving-профиль 0.12.1 не меняется. Следующий gate — прежний полный real-model повтор после cleanup-исправлений; предметная qualification и SLO открыты.
+
+[Полный повтор после cleanup-исправлений](./qualification/local-decisions/performance/cleanup-repeat.md), 03.10: оба embedding transport прошли Temporal/PostgreSQL с runtime 0.12.1, реальными Qwen3/embeddings/decider, SIGKILL/restart и fallback. Независимый verifier, два replay после cleanup и сравнение прежнего baseline подтвердили 6 primary calls, 10 embedding items, 4 shadow inference, 2 unavailable fallback и все prompts/outputs/vectors. Четыре собственных контейнера удалены, PID/cleanup errors нет; raw artifacts остаются приватными. Следующий этап — многочасовая непрерывная нагрузка pinned runtime; предметная qualification и SLO открыты.
+
+[Инструмент непрерывной нагрузки](./qualification/local-decisions/performance/continuous-soak.md), 03.10: один owned runtime во всех ограниченных блоках, общий контроль PID/profile/ответов, немедленный приватный journal, сохранение checkpoint и кооперативная отмена; полный план ограничен двумя часами. Offline verifier пересчитывает committed source binding, summaries, длительность, journal и cleanup. 23 regression tests, реальный двухблочный smoke (209 measured calls) и SIGTERM с сохранением частичного блока прошли; отменённый прогон verifier отвергает. Serving-профиль 0.12.1 не меняется. Следующий gate — полный закреплённый двухчасовой прогон; предметная qualification и SLO открыты.
+
+[Неуспешный длинный прогон](./qualification/local-decisions/performance/continuous-soak-failure.md), 03.10: 10 030 решений и один busy после 38,57 минуты; два полных блока и третий частичный сохранены, runtime/profile/решения стабильны, cleanup завершён. Полный verifier отвергает неполный план. Детерминированно воспроизведена гонка: первый body прочитан, inference завершён, но следующий запрос получает busy до освобождения lock после response write. Добавлен source-bound публичный summary exporter с pooled percentiles; 466 Python/12 Node checks прошли. Следующий gate — освобождение inference admission до записи ответа, новый serving профиль и повтор полного плана; прежний exit 75 при совместной работе моделей и предметная qualification не объявляются объяснёнными.
+
+[Освобождение HTTP admission в 0.12.2](./qualification/local-decisions/performance/http-admission-release.md), 03.10: inference lock освобождается до response write после завершения вычисления и request-scoped cancellation watcher. Три regression tests воспроизводили busy до fix и прошли после; настоящий конкурентный inference по-прежнему получает busy. Экспортирован новый pinned профиль; 35 целевых и полный runtime набор (125 tests, три opt-in skips) прошли. Короткий реальный smoke — 209 measured calls, три warmup, два блока по 20 секунд; независимый verifier и cleanup прошли. Merge этого этапа завершает работу по указанию пользователя. Следующий gate — полный 7200-second повтор на 0.12.2, затем Temporal/RAG; предметная qualification и SLO открыты.
+
+[Полный двухчасовой soak runtime 0.12.2](./qualification/local-decisions/performance/continuous-soak-0.12.2.md), 04.10: один runtime без restart/retry завершил восемь блоков, 25 433 measured calls за 7201,446 с и три отдельных warmup. Ошибок и изменений решений нет; pooled p95 — 410,966 мс. Независимый source-bound verifier сверил все блоки и observation journal; профиль и process identity стабильны, все три собственных PID остановлены. Публичная сводка сохраняет counts/fingerprints, raw evidence остаётся приватным. Следующий gate — полный Temporal/PostgreSQL/RAG с тем же профилем 0.12.2 и независимым native replay; исходный внеплановый exit 75 под совместной модельной нагрузкой, предметная qualification и производственные SLO остаются открытыми.
+
+[Полный Temporal/PostgreSQL/RAG на runtime 0.12.2](./qualification/local-decisions/performance/temporal-runtime-0.12.2.md), 04.10: оба embedding transport прошли с тем же профилем, что двухчасовой soak. Проверены 6 primary calls, 10 embedding items, 4 shadow inference, 2 unavailable fallback, 3 warmup и 2 restart; RLS, snapshots, 12 source citations, независимый verifier и два replay после cleanup прошли. Prompts/outputs/token counts и пять векторов совпали с прежним baseline. Все 90 наблюдавшихся PID остановлены, четыре собственных контейнера удалены; raw resource/process evidence остаётся приватным. Следующий этап — native launchd restart с точным профилем и сохранённой диагностикой, затем реальное подключение наблюдения. Прежний внеплановый exit 75, предметная qualification и производственные SLO остаются открытыми.
+
+[Нативное восстановление launchd на 0.12.2](./qualification/local-decisions/shadow/native-launchd-0.12.2.md), 04.10: временный GUI LaunchAgent на реальных весах вышел 75 после SIGKILL inference ребёнка, автоматически восстановился за 29,883 с и сохранил точный профиль/распределение. Plist, retirement event, source bindings и числовые результаты перепроверены; три временных jobs и все 15 наблюдавшихся PID отсутствуют. Два failed reports сохранены; harness исправлен для символических exit codes и асинхронного удаления регистрации, добавлены 17 fixture tests. Следующий этап — настоящий native scraper и проверка наблюдения при recovery. Постоянная установка, исходный внеплановый exit 75, предметная qualification и SLO остаются открытыми.
+
+[Настоящий native Prometheus scrape/recovery](./qualification/local-decisions/shadow/observability/native-prometheus.md), 04.10: pinned Darwin/arm64 LTS 3.13.4 наблюдал runtime 0.12.2 через loopback. Четыре snapshots по 46 рядов подтвердили counters 0 → 1 → 0 → 1, новый server start time, target down, up 1 → 0 → 1 и pending/cleared alert. SHA архива/бинарников, восемь committed sources, raw API-ответы, model results и cleanup перепроверены; temporary job и все семь PID отсутствуют. 34 целевых и полный набор 497 Python/12 Node checks прошли. Следующий этап — постоянное наблюдение из стабильного resident deployment; владелец реакций, SLO, исходный внеплановый exit 75 и предметная qualification остаются открытыми.
+
+[Resident deployment package](./qualification/local-decisions/shadow/observability/resident-deployment.md), 04.10: новый bundle в Application Support закрепил 27 source, 36 copied и 9 generated files, fresh offline venv с 34 pinned wheels/dependencies, resident модель и Prometheus 3.13.4. Реальный launchd probe загрузил package вне Documents/TMP, восстановился за 20,427 с и сохранил профиль 0.12.2, оба решения и token counts прежнего baseline. Scrape/reset/up/pending alert и все artifact SHA перепроверены; временный job и семь PID отсутствуют. 30 целевых и полный набор 506 Python/12 Node checks прошли. Следующий этап после CI — постоянная регистрация собственных служб и реальное наблюдение через подготовленный конфиг. Boot/login, владелец реакций, SLO, исходный внеплановый exit 75 и предметная qualification остаются открытыми.
+
+[Управление resident службами](./qualification/local-decisions/shadow/observability/resident-deployment.md), 04.10: committed manager связывает check/install/status/stop с точным bundle, package verification и profile 0.12.2; проверяет фактический plist path, свежий scrape и прирост computed counter. Прерванный bootstrap и остановка при отказавшем HTTP сохраняют ownership/PID inventory; чужие файлы/jobs не изменяются. 21 новый fixture и 51 целевой test прошли, реальный read-only preflight подтвердил свободные labels/plists/ports и прежние SHA. Постоянные jobs не устанавливались. Следующий этап после CI — фактические install/status/stop/reinstall и локальное наблюдение; затем совместная модельная нагрузка для анализа прежнего внепланового exit 75. Предметная qualification и SLO остаются открытыми.
+
+[Повторный preflight после stop](./qualification/local-decisions/shadow/observability/resident-port-reuse.md), 05.10 MSK: первый реальный install/status с профилем 0.12.2, свежим scrape и диагностическим решением прошёл; stop удалил оба jobs/plists и завершил четыре PID. Повторный preflight сохранил отказ `Address already in use`. Настоящий TCP regression воспроизвёл механизм TIME_WAIT и подтвердил исправление SO_REUSEADDR при сохранении запрета live listener. 52 целевых и полный набор 528 Python/12 Node checks прошли; новый source-bound preflight и независимый verifier проверили package и отсутствие jobs. Исходный full rollout сохранил failed report, jobs после него отсутствовали. Следующий этап после CI — полный повтор install/status/stop/reinstall, затем совместная модельная нагрузка; предметная qualification и SLO открыты.
+
+[Постоянный resident rollout](./qualification/local-decisions/shadow/observability/resident-rollout.md), 05.10 MSK: полный семишаговый повтор check/install/status/stop/check/install/status прошёл на merged main. Два диагностических решения и token counts совпали с native baseline, оба новых scrape подтверждены counter 0 → 1. Первая PID set из четырёх процессов завершилась; два собственных LaunchAgents и четыре новых PID работают. Прежний failed report и marker сохранены, новый stopped marker архивирован; independent verifier сверил source/package/model/profile, raw API, job paths, permissions и обе PID sets. Следующий этап — bounded Qwen/decider нагрузка с supervisor/retirement/metrics evidence. Boot/login, owner/SLO и предметная qualification остаются открытыми.
+
+[Resident совместная нагрузка 0.12.2](./qualification/local-decisions/performance/resident-shared-load-0.12.2.md), 05.10 MSK: два полных прогона на merged main выполнили 480 measured calls и восемь warmup, 60 overlapping HTTP pairs; ошибок и изменений решений нет. Independent verifier пересчитал все строки, summaries, signatures, 95 process/metric samples, raw counter 1 → 245 и отсутствие retirement events. Parent/inference child/Prometheus PID стабильны; четыре временных PID остановлены, два постоянных jobs работают. Decider max wall times — 1870,782 / 2040,562 мс; p95 не скрывает эти пики. Следующий gate — длительный bounded совместный soak с сохранением первого отказа. Причина прежнего exit 75, independent business data/reviews, calibration/holdout и owner/SLO остаются открытыми.
+
+[Tooling длительного совместного soak](./qualification/local-decisions/performance/shared-soak.md), 05.10 MSK: controller/CLI сохраняют каждый completed pair и block checkpoint, проверяют committed source/input и profile до inference, прекращают нагрузку после первого отказа. Offline verifier независимо пересчитывает duration без warmup, фазовые prefixes, chronology/overlap, counts/distributions и journal. 42 целевых regression/mutation tests и полный набор 564 Python / 12 Node checks прошли. Настоящий 180-секундный smoke завершил 295 measured calls, 30 overlapping pairs и counter 245 → 399 без ошибок; 86 native samples подтвердили стабильные resident процессы, все три наблюдавшихся временных PID завершены. Последний partial time-budget block сохранён и проверен. Полный совместный 7200-секундный gate не запускался; по указанию пользователя продолжение остановлено после этапа tooling/smoke. Qualification, причина исторического exit 75 и owner/SLO остаются открытыми.
+
+[Первая полная совместная попытка и диагностика warmup timeout](./qualification/local-decisions/performance/shared-soak-warmup-failure.md), 05.10 MSK: после возобновления работы сохранён исходный план 7200 секунд / 128 блоков; первая primary warmup завершилась, decider вернул `inference_timeout` до measured нагрузки. Независимая проверка подтвердила zero measured calls/time, journal/source bindings и отказ полного verifier. Поздний retirement event связал текущий exit 75 с timeout, launchd восстановил точный профиль 0.12.2. Контроллер больше не подменяет первый request fault последующей недоступностью health; шесть сценариев воспроизведены до fix и прошли после, целевой набор — 44/44. Следующий gate — новый полный закреплённый повтор после recovery с отдельным системным наблюдением; причина исторического exit 75, предметная qualification и owner/SLO остаются открытыми.
+
+[Согласованная граница shared cases](./qualification/local-decisions/performance/shared-soak-case-cap.md), 05.10 MSK: объявленные 30 cases / два rounds ранее отклонялись paired probe из-за старого cap 240 calls. Дефект воспроизведён на 16 и 30 cases; общие constants теперь допускают конечный максимум 480 при прежней concurrency и time budget. Full controller fixture и независимый verifier подтвердили 480 measured / четыре warmup calls / 60 overlapping pairs; 31 cases отклоняются до модели. Целевой набор — 47/47. Новые inputs являются unit fixtures; serving profile, прежние реальные 15-case evidence и предметная qualification не меняются.
+
+[Воспроизводимая shared-soak сводка](./qualification/local-decisions/performance/shared-soak-summary.md), 05.10 MSK: новый CLI повторяет offline verifier перед public allowlist export, закрепляет analysis commit/SHA и считает pooled quantiles по исходным measured rows, отдельно от warmup. Шесть новых tests и полный целевой набор 53/53 прошли. Существующий реальный smoke независимо экспортирован повторно: 180 844,854 measured milliseconds, 295 calls, восемь warmup и 30 overlapping pairs; новых model calls нет. Это проверка анализа и прежнего короткого опыта; полный 7200-секундный gate, предметная qualification и owner/SLO этим этапом не закрываются.
+
+[Полный resident shared-soak повтор 0.12.2](./qualification/local-decisions/performance/resident-shared-soak-failure-0.12.2.md), 05.10 MSK: исходный gate 7200 секунд failed после 3 773 806,379 measured milliseconds. 34 блока прошли, в блоке 35 decider вернул timeout; всего 8176 attempts, 8175 успешных, 140 успешных отдельных warmup и 1020 overlapping pairs. Два независимых audits перепроверили исходы, фазы/порядок, journal, sources, duration, retirement 75/-15 и recovery с тем же профилем; успешный префикс не принят за полный gate. Системные memory observations не доказывают причину. Следующий инженерный этап — opt-in per-process wired-memory budget с отдельным serving profile, guard tests, коротким native опытом и затем новым полным совместным gate при прежнем deadline; предметная qualification и owner/SLO остаются открытыми.
+
+[Wired-memory budget runtime 0.12.3](./qualification/local-decisions/performance/wired-memory-budget.md), 05.10 MSK: новый explicit CLI/LaunchAgent/probe opt-in проверяет OS/device capacity до загрузки модели и сохраняет configured bytes в serving identity; deadline не меняется. Native pilot экспортировал default и wired 4096 MiB profiles и выполнил 30/30 решений с точными baseline signatures/tokens; p50/p95/max HTTP wall — 174,480 / 269,040 / 270,083 мс, первый запрос включён. Независимый audit подтвердил исходы, источники и возврат resident 0.12.2 при прежнем Prometheus PID, девять остановленных PID отсутствуют. Следующий этап — новый resident recipe, короткий paired gate и затем полный 7200-секундный shared soak; этот опыт не доказывает устранение timeout или предметную qualification.
+
+[Selected resident recipe 0.12.3](./qualification/local-decisions/performance/resident-profile-selection.md), 05.10 MSK: builder/manager закрепляют canonical public profile source, fingerprint и matching wired argv, сохраняя управление legacy 0.12.2. Шесть новых fixture tests, 61 целевой native test и полный набор 584 Python / 12 Node checks прошли. Новый отдельный wired-4096 bundle подготовлен из committed sources с 34 exact offline dependencies; независимый verifier сверил все bytes/pins/recipes, прежние jobs сохранили PID и свежий scrape. Новый package пока не запускался и не зарегистрирован. Следующий gate — native launch/fault/recovery с настоящим scraper и cleanup, затем rollout после CI и совместные Qwen/decider gates; qualification и owner/SLO остаются открытыми.
+
+[Native gate wired resident package 0.12.3](./qualification/local-decisions/performance/resident-wired-package-0.12.3.md), 05.10 MSK: новый venv/package запущен дважды на временном собственном label. Два решения/logits/tokens совпали с baseline; SIGKILL собственного inference child дал exit 75 за 427,302 мс и новый ready за 23719,925 мс. Настоящий scraper подтвердил counters reset, up/down/recovery и alert cycle; два audits перепроверили raw evidence и отсутствие семи временных PID. Старый resident 0.12.2 восстановлен с прежним Prometheus PID. Новый release не зарегистрирован; следующий gate — совместная Qwen/decider нагрузка, rollout после CI и полный shared soak, без переноса qualification или SLO.
+
+[Совместный wired package опыт 0.12.3](./qualification/local-decisions/performance/wired-package-shared-load-0.12.3.md), 05.10 MSK: corrected collector завершил два повтора, 480/480 measured calls и 60 фактически overlapping pairs. Независимый audit сверил 364 journal records, signatures/tokens прежнего baseline, pooled timings, 93 observations, raw counter 0 → 244 и отсутствие шести временных PID/job. Старый resident восстановлен с тем же Prometheus PID. Первоначальная попытка вычислила load, но failed из-за неправильного вызова cleanup helper; её protocol сохранён без изменений, cleanup отдельно подтверждён, весь опыт повторён. Primary API memory observation отличается от исторического запуска при том же digest/context; причинность не заявляется. Следующий этап — полный 7200-секундный shared gate; rollout ждёт CI, qualification и owner/SLO открыты.
+
+[Timeout collector полного wired soak](./qualification/local-decisions/performance/wired-soak-collector-timeout-0.12.3.md), 06.10 MSK: исходный 7200-секундный gate failed после 291 894,189 measured milliseconds из-за двухсекундного timeout metadata ps. Все 656 measured и 12 warmup calls вычислены; 88 overlapping pairs и 484 exact journal records independently audited. Full verifier отвергает исходный launcher; successful prefix не квалифицирован. Все шесть временных PID/job отсутствуют, старый resident 0.12.2 восстановлен с прежним Prometheus PID. Immutable evidence и measured source сохранены в проверенном private архиве. Inspection helper допускает отдельный bounded explicit timeout при прежнем default 2 с, ownership/role guards и fail-closed errors; deadline inference 5000 мс не изменён. Следующий шаг — новый полный gate с закреплённым inspection budget, без переноса qualification или permanent rollout.
+
+[Wired profile в Temporal/RAG launcher](./qualification/local-decisions/performance/temporal-wired-profile.md), 06.10 MSK: explicit --shadow-wired-limit-mib теперь требует matching committed public profile, сохраняет typed budget в plan и передаёт тот же argv initial/recovery. Config/profile/plan mismatch отклоняется до Popen; default/zero различаются, deadline 5000 мс не изменён. Archived-source verifier независимо восстанавливает optional wired identity и отвергает rehashed corruption, private reference и попытку изменить historical evidence. Девять regression scenarios, включая scalar aliases false/0/0.0, воспроизведены до соответствующих fixes; 16 profile и полный целевой набор 58 checks прошли. Следующий gate — новый реальный Temporal/PostgreSQL/RAG с wired profile, fallback/recovery и native replay после окончания отдельного full shared soak; qualification и permanent rollout этим tooling этапом не заявляются.
+
+[Управляемая остановка Temporal launcher](./qualification/local-decisions/performance/temporal-launcher-cancellation.md), 06.10 MSK: подтверждённые SIGTERM/SIGINT exits без failed report исправлены cooperative checkpoints после регистрации owned handles. Четыре настоящих OS-сценария и check восстановления handlers прошли; повторный сигнал не прерывает teardown и сохраняет первую причину. Целевой Temporal набор — 100 tests с четырьмя explicit-Docker skips. GPU/profile, inference deadline и Workflow Commands не меняются; полный wired shared gate продолжает исходный frozen опыт в отдельном worktree. Следующий этап — реальный wired Temporal/PostgreSQL/RAG с fallback, recovery и independent native replay; qualification и owner/SLO открыты.
+
+[Полный wired shared soak 0.12.3](./qualification/local-decisions/performance/wired-shared-soak-7200-0.12.3.md), 06.10 MSK: новый исходный gate 7200 секунд / 128 blocks завершён с `duration_complete` и 7 226 881,737 measured milliseconds. Сохранены 67 полных и два time-budget blocks, 16 353 measured calls и 276 warmup, все computed без request failures. Полный offline verifier и отдельный native audit перепроверили committed source/profile/dataset, все rows и 12 405 journal records, 2040 overlapping pairs, counter 0 → 8304, 3321 native observations и baseline signatures/tokens. Все шесть временных PID/job отсутствуют; старый resident 0.12.2 восстановлен с точным profile/fresh scrape и прежним Prometheus PID. Raw evidence, audits и полный measured Git source сохранены в private архиве с проверкой CRC и каждого file SHA/size; public summaries закрепляют analysis commit/SHA. Новый 0.12.3 не зарегистрирован; этот опыт не доказывает причину прошлых timeouts, correctness на независимых задачах или production SLO. **По указанию пользователя текущий этап закрыт и продолжение остановлено:** реальный wired Temporal/PostgreSQL/RAG с fallback/recovery/native replay, permanent rollout, boot/login, owner/SLO, независимая разметка/calibration/holdout остаются открытыми; routing выключен, `not_assessed`.
+
+[Реальный wired Temporal/PostgreSQL/RAG 0.12.3](./qualification/local-decisions/performance/temporal-wired-runtime-0.12.3.md), 06.10 MSK: после возобновления работы оба embedding transport прошли с точным профилем полного shared soak, 4096 МиБ wired и прежним deadline 5000 мс. Выполнены 6 primary calls, 10 embedding items, 4 shadow inference, 2 unavailable fallback, 3 warmup и 2 recovery. Source-bound verifier, отдельный native replay двух histories и независимый baseline/model/binary/cleanup audit прошли; 206 sources, 12 citations и 79 resource samples проверены. Все 81 наблюдавшийся собственный PID и четыре контейнера отсутствуют, прежний resident 0.12.2 сохранил PID/profile/fresh scrape. Следующий этап — permanent rollout проверенного wired package 0.12.3; boot/login, human reviews, calibration/holdout и owner/SLO остаются открытыми, routing выключен, `not_assessed`.
+
+[Постоянный wired rollout 0.12.3](./qualification/local-decisions/shadow/observability/resident-wired-rollout-0.12.3.md), 07.10 MSK: после merge PR #135 и 15 успешных CI checks прежний resident остановлен с сохранением проверенного rollback package. Девять команд old status/stop и нового check/install/status/stop/reinstall завершились; два native diagnostic results и tokens точно совпали с wired baseline, counters каждого процесса 0 → 1, scrape после начала install. Отдельный audit перепроверил seals/file SHA, 34 committed inputs, 41 различный bundle file, model bytes, marker archives и ownership: все 16 checks прошли, восемь прежних PID отсутствуют, два jobs и четыре новых PID работают. Raw evidence и measured Git source сохранены в проверенном private архиве. Runtime/management code не менялись; постоянный 0.12.3 использует wired 4096 МиБ и deadline 5000 мс, старый 0.12.2 сохранён. Следующие gates — boot/login, bounded crash-loop, owner/SLO и независимые human reviews/calibration/holdout; routing выключен, `not_assessed`.
+
+[Readonly приёмка boot/login](./qualification/local-decisions/shadow/observability/resident-boot-login.md), 07.10 MSK: отдельная CLI сохраняет baseline file SHA и проверяет фактическую смену boot UUID / GUI audit session обоих owned jobs, process birth times и свежий scrape при прежних package/model/profile/registration/plists. Python 3.13.12 arm64 и полный dependency set перепроверяются; источник measurement должен быть committed. Прежняя сессия или обычный reinstall дают `awaiting_event` / exit 2; SID/PID reuse после reboot допускается по новому boot и birth times. 25 целевых fixtures прошли, включая rehashed baseline corruption, numeric aliases, foreign host/UID, изменённые bindings и environment. Полный docs:check — 628 Python / 12 Node checks, четыре explicit Docker opt-in skips; настоящий capture на committed источнике сохранил 35 source hashes, 34 dependency pins и четыре PID. Немедленный verify вернул `awaiting_event` / exit 2; отдельный native audit подтвердил прежний boot/GUI/PID set, registration и counters computed 1 / rejected 0 / failed 0. Baseline и его SHA сохранены в постоянном workspace, raw evidence/source — в проверенном private архиве. Фактический boot/login не подменяется fixtures или прежней сессией; bounded crash-loop, owner/SLO и human reviews/calibration/holdout остаются открытыми.
+
+[Bounded crash-loop wired gate](./qualification/local-decisions/shadow/observability/resident-crash-loop.md), 07.10 MSK: отдельный временный job использует действующий sealed resident package с прежними Python/model/profile/policy/deadline/wired limit. Gate ограничен тремя idle child SIGKILL, четырьмя поколениями и 30-секундным stable window; принимает только generation-bound exit 75, native birth spacing, raw counters/reset/down/alerts и полное owned cleanup при неизменном постоянном resident. 27 целевых fixtures прошли; сырой native process birth сохраняется для отдельного audit. Первый full docs check выявил non-atomic readiness в существующем Temporal signal fixture; atomic publication исправлена, пять OS signal checks прошли, все три orphan fixture PID очищены. После committed checkpoint полный docs check — 655 Python / 12 Node checks; настоящий native gate прошёл: три отказа, четыре старта с интервалами 30/30/30 секунд, четыре точных прежних diagnostic results/tokens и stable window 30,056415 с / 16 observations. Отдельный audit подтвердил все 12 checks, raw state/birth/metrics/alerts/logs, 37 sources и cleanup всех 13 временных PID/job; постоянный resident сохранил четыре PID, bindings, counters и свежий scrape. Boot/login baseline применим, raw/source сохранены в проверенном private архиве. Boot/login, owner/SLO и human reviews/calibration/holdout открыты, routing выключен, `not_assessed`.
+
+[Однократный login collector](./qualification/local-decisions/shadow/observability/resident-login-observer.md), 07.10 MSK: frozen Git snapshot исходного baseline установлен в отдельном Application Support package, независимо от временного repository. Три committed builder sources, 35 исходных measurement files, baseline pin, local Git metadata/worktree и private modes проверены. Отдельный `RunAtLoad=true`, `KeepAlive=false` job записывает boot/login receipts и завершается без inference или изменения resident jobs. 26 целевых collector tests и 13 session regression tests прошли; финальный полный docs check — 682 Python / 12 Node checks. Первый native Background install дал Git inspection timeout; guarded rollback прошёл, immutable failure сохранён, source-bound Standard package подготовлен отдельно. Девять native steps, два installs и stop/reinstall прошли, шесть raw event receipts остаются `awaiting_event` / exit 2. Первый независимый audit ошибочно требовал равенство calendar boottime; Apple XNU source подтверждает его корректировку, corrected audit прошёл все 13 checks. Постоянный resident сохранил четыре PID, bindings/dependencies, fresh scrape и counters 1/0/0 без новых inference. Оба packages, raw/failed evidence, финальные checks и оба measured Git sources сохранены в проверенном private архиве и исходном workspace. Observer зарегистрирован и idle; фактический boot/login, owner/SLO и human reviews/calibration/holdout остаются открытыми.
+
+[Caller timing и SLI](./qualification/local-decisions/shadow/observability/caller-sli.md), 07.10 MSK: negotiated monotonic local HTTP timing сохраняется отдельно от scoring; trace включает input/profile pins и caller deadline. Native fixture прошёл 10 client steps, 12 persisted traces и четыре CLI measurements с expected exit 0/2/2/1, independent audit — 9 checks. Native reopen выявил прежний пустой process trace ID; regression failed до fix, затем rollback exporter regression также failed до fix; финальные 22 targeted и весь coordinator набор 325 tests прошли. Полный npm test/typecheck, 700 Python / 12 Node docs checks прошли; все 39 recorded temporary PID отсутствуют, permanent resident сохранил четыре PID, pins и counters 1/0/0. Четыре попытки и три measured Git sources сохранены в verified private ZIP и исходном workspace. Следующий gate — inventory assigned attempts без observation; provided traces не доказывают полноту production denominator. Владелец сценария, реальный поток и targets ещё не установлены; [owner/SLO proposal](./qualification/local-decisions/shadow/observability/resident-service-acceptance.md) остаётся draft. Boot/login и предметная qualification остаются открытыми.
+
+[Inventory сохранённых shadow stages](./qualification/local-decisions/shadow/observability/stage-inventory.md), 07.10 MSK: readonly trace inventory и caller SLI census различают recorded, terminal missing, assigned pending, unassigned и replay. Прежний blind spot воспроизведён на трёх назначенных SQLite stages; independent read-only snapshot audit прошёл 22 checks. Два native repeats прошли по восемь commands и восемь persisted traces, по два настоящих HTTP client calls; три primary retries до shadow оставили один failed stored stage. Settled caller ratio 2/2 и stage ratio 2/4 различаются корректно; pending, legacy gap и malformed inventory не принимаются как success. Independent native audit прошёл восемь checks, temporary cleanup и неизменность permanent resident перепроверены. Полные npm test/typecheck и docs checks прошли: coordinator — 327 tests, docs tooling — 713 Python / 12 Node checks. Все 170 files private ZIP и идентичная копия в исходном workspace проверены по CRC/SHA/size; оба успешных repeats, ранние failure fixtures и три committed Git sources сохранены. Следующий telemetry gate — история shadow assignments и caller attempts при retry; полнота production population не подтверждена. Owner/SLO, actual boot/login и human qualification остаются открытыми.
+
+[История shadow assignments](./qualification/local-decisions/shadow/observability/assignment-history.md), 07.10 MSK: versioned activity history сохраняет каждую shadow dispatch lease при primary retry, отдельный UUID, bindings и validated observation. History/lease writes transactional; record-once, safe/live replay, missing completion и rollback перепроверены. Первый native повтор прошёл восемь commands, девять current/три legacy traces и три HTTP fixture calls; final — восемь commands, десять current/три legacy traces и четыре calls. Три primary retries без HTTP сохраняют три rows; accepted observation не назначается снова. Real old coordinator writer из 47 source files сохранил primary и bound result без обновления ledger; новый reader корректно выдал legacy_gap. Regression failed до fix; final independent audit прошёл 11 checks, все 11 recorded temporary PID отсутствуют, permanent resident unchanged без новых inference. 32 targeted checks, полный coordinator 335 tests, typecheck и 713 Python / 12 Node docs checks прошли; полный npm test пройден до compatibility fix, затронутый coordinator набор повторён после него. Все 167 files и четыре Git states private ZIP проверены по CRC/SHA/size, копия сохранена в исходном workspace. Следующий telemetry gate — negotiated caller intent/return accounting; HTTP/customer population не подтверждена. Owner/SLO, фактический boot/login и human qualification остаются открытыми.
+
+[Учёт caller intent/return](./qualification/local-decisions/shadow/observability/caller-accounting.md), 07.10 MSK: exact worker capability согласует durable intent перед LocalDecisionClient. Повторный receipt не разрешает второй call; validated return сохраняется вместе с observation. Caller ledger отдельный от прежней assignment-history v1. Native: восемь commands, десять traces, семь worker executions, четыре HTTP backend calls; два SIGKILL после intent/return, lost ACK, duplicate и actual old coordinator/worker. Независимый SQL oracle подтвердил девять assignments, семь intents и один return, четыре missing и один pending; intervals сохраняют unknown outcomes без выдуманных timings. Девять independent checks, все 16 temporary processes отсутствуют, resident unchanged без новых inference. 40 coordinator / 36 SLI / три worker targeted checks, full npm test/typecheck и 718 Python / 12 Node docs checks прошли. Private ZIP 158 files / два Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Следующий gate — PostgreSQL concurrency/ownership/COMMIT uncertainty для caller accounting. HTTP/customer population, owner/SLO, actual boot/login и human qualification не подтверждены.
+
+[PostgreSQL caller transactions](./qualification/local-decisions/shadow/observability/caller-postgres.md), 07.10 MSK: concurrent HTTP begin двух coordinator разрешил один вызов; row/event-lock expiry откатывает изменения. Четыре retained real COMMIT replies воспроизвели unknown HTTP 503 без duplicate intent/return; независимый store сохранил primary, reopen и tenant RLS проверены. Raw SQL выявил readonly blind spot: истёкший lease считался pending до maintenance. Два tests failed до fix; reader теперь учитывает expiry из того же SQL read одним временем наблюдения, не меняя activity/events/timing. 42 targeted и полный coordinator 345 tests, typecheck прошли. Оба native прогона прошли по 8 targeted / 108 Fleet/HA tests; independent audit — 11 checks, 48 raw snapshots, 77 committed / 49 compiled contributors на command. Все 226 recorded temporary processes и четыре containers отсутствуют; permanent resident unchanged без новых inference. Следующий gate — actual Python caller continuation после PostgreSQL unknown COMMIT. Customer denominator, owner/SLO, actual boot/login и human qualification остаются открытыми.
+
+[Actual Python caller recovery](./qualification/local-decisions/shadow/observability/caller-worker-postgres.md), 07.10 MSK: четыре unknown PostgreSQL COMMIT сценария завершили primary через тот же coordinator и следующую lease в том же Python worker. Два native прогона прошли по 12 targeted / 112 Fleet/HA tests. Реальный HTTP 204 выявил default-200 defect в probe; failing-before regression сохранён, исправленный повтор измеряет фактический response code. Independent audit — 11 checks, 80 SQL snapshots, 78 committed / 49 compiled contributors на command. Исправленные commands: восемь workers, 16 leases/intents, 12 returns/actual backend calls, четыре missing returns без выдуманной duration. Все 258 recorded temporary processes и четыре containers отсутствуют; permanent resident unchanged. ZIP 326 files / два Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Найден следующий gate: coordinator закрепляет точные profile JSON bytes, offline SLI пока ожидает runtime fingerprint. Owner/SLO, population, actual boot/login и human qualification остаются открытыми.
+
+[Configured profile identity](./qualification/local-decisions/shadow/observability/caller-profile-identity.md), 07.10 MSK: actual CLI rejection воспроизвёл различие SHA configured JSON bytes и runtime fingerprint. Добавлен явный bytes mode; default algorithm, coordinator и historical hashes сохранены. 35 targeted / девять новых regressions и 727 Python / 12 Node docs tests прошли. Восемь actual CLI commands и восемь independent audit checks подтвердили восемь SQL intents, шесть returns/backend calls, два unknown returns и ноль profile mismatch; interval 0–25% остаётся insufficient_data, без выдуманной latency. Десять historical traces сохранили latency/ratios; legacy coverage gap остаётся видимым. 35 resident/session sources unchanged. ZIP 74 files / четыре Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Следующий gate — latest Temporal/PostgreSQL/RAG с caller telemetry и pinned SLI. Owner/SLO, population, actual boot/login и human qualification остаются открытыми.
+
+[Temporal/PostgreSQL/RAG 0.12.3 с caller accounting](./qualification/local-decisions/performance/temporal-caller-runtime-0.12.3.md), 07.10 MSK: v5 gate требует negotiated timing и raw SQL intent/return binding. Исправленный repeat прошёл isolated/session recovery; прежние model prompts, outputs, tokens, embedding vectors и MLX signatures сохранены. Шесть primary / десять embedding items / шесть shadow calls (четыре inference, два unavailable), три warmups, два restarts, 12 citations и независимый replay 137 events подтверждены. Шесть SQL intents/returns, без unknown или profile mismatch; diagnostic caller p50 114.469 / p95 1799.240 ms и bound/timely ratio 4/6. Первый failed run выявил ошибочный schema namespace в новом probe; evidence и cleanup сохранены, regression сверяется с producer export. 214 committed sources, семь audit checks, все 130 recorded processes и шесть containers отсутствуют. Resident unchanged без новых inference. 734 Python / 12 Node docs checks прошли. ZIP 71 files / три Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Owner/SLO/customer population, actual boot/login и independent human qualification/calibration/holdout остаются открытыми; routing выключен.
+
+[Open arrivals на wired 4096 МиБ](./qualification/local-decisions/performance/arrival-rate-4096.md), 07.10 MSK: два native repeats закрепили точные 256/2048-token inputs и fixed monotonic offsets 0.5/1/2 arrivals/с. Все 264 scheduled arrivals учтены: 216 computed, 24 client capacity drops, 24 HTTP busy; 8 warmups отдельно. На 2048 tokens при 1 arrival/с — 24/24, caller p95 874.733 мс; при 2 arrivals/с оба client slot bounds дают 50% computed. Independent verifier сверил журнал, bound intervals, tokens и runtime counters; audit прошёл 8 checks, все 8 recorded temporary PID отсутствуют. 50 committed sources, 12 targeted и 746 Python / 12 Node docs checks прошли. Resident unchanged, 35 session sources и counters 1/0/0 сохранены. ZIP 49 files / один measured Git state проверен по CRC/SHA/size и скопирован в исходный workspace. Planning envelope получил diagnostic данные; owner/SLO/customer population, actual boot/login и human qualification/calibration/holdout остаются открытыми, routing выключен.
+
+[Fixed arrivals при работе primary](./qualification/local-decisions/performance/arrival-primary-4096.md), 07.10 MSK: два native repeats с Qwen3:8b, context 8192 / 128 decode tokens и отдельным wired 4096 МиБ decider. 144 scheduled / 132 computed, 12 client capacity drops, 8 decision warmups отдельно. На 2048 tokens при 1 decision arrival/с active дал 12/24, caller p95 1116.329 мс; idle — 48/48. Primary вернул 10/24 planned calls, 14 capacity drops; 36 actual HTTP overlap pairs проверены. Audit прошёл 9 checks, все 12 recorded PID отсутствуют; resident, 35 protected sources и counters 1/0/0 сохранены. 53 committed contributors, 21 targeted и 755 Python / 12 Node docs checks; v1 verifier compatibility проверена на прежнем evidence. ZIP 47 files / один measured Git state проверен по CRC/SHA/size и скопирован в исходный workspace. Следующая diagnostic проверка — 0.5 decision arrival/с под тем же primary; owner/SLO/customer population, actual boot/login и human qualification/calibration/holdout остаются открытыми, routing выключен.
+
+[0.5 decision arrivals/с при работе primary](./qualification/local-decisions/performance/arrival-primary-half-4096.md), 07.10 MSK: opt-in v3 rate закреплён перед измерением; default v1/v2 сохраняется и прежние native evidence прошли verifier. Два native repeats дали 72/72 computed без drops/busy/measurement errors; long active 12/12, caller p95/max 1110.362 мс; 8 decision warmups отдельно. Primary вернул 10/24 planned calls, 14 capacity drops, 24 actual HTTP overlap pairs подтверждены. 10 audit checks сверили previous/current runtime/primary/inputs и неизменные computed signatures; все 12 recorded PID отсутствуют, resident и 35 protected sources сохранены без новых inference. 53 committed contributors, 25 targeted и 759 Python / 12 Node docs checks прошли. ZIP 57 files / два measured Git states проверен по CRC/SHA/size и скопирован в исходный workspace. Draft planning envelope для обсуждения уточнён до 0.5 decision arrivals/с / 1 active call. Следующие внешние gates — owners и реальные eligible workloads/SLO, actual boot/login, разрешённые независимые заявки и два human reviewers для calibration/holdout. Routing выключен, qualification not_assessed; инженерные synthetic результаты не заменяют эти gates.
+
+[Контракт реального shadow-пилота](./qualification/local-decisions/shadow/observability/shadow-pilot-plan.md),
+08.10 MSK: CLI закрепляет project/process/version, future UTC window до семи дней,
+profile bytes/fingerprint и предлагаемые targets. Blank owners/data scope остаются
+явными; filled plan — только `ready_for_review`, без принятия SLO или qualification.
+Восемь regression checks проверяют pins, prospective window, private output,
+source drift и отсутствие ложной готовности. Следующий инженерный шаг — census
+полного сохранённого cohort; независимые публичные данные подбираются отдельно.
+
+[Публичные IT-вопросы для разметки](./qualification/local-decisions/source-review/public-support/README.md),
+08.10 MSK: bounded сбор официального Stack Exchange API и importer закрепляют
+completed UTC window после pinned checkpoint, точные source bytes/URL/SHA,
+полноту пагинации, явную CC BY-SA 4.0 и атрибуцию. Известные author/text
+зависимости группируются с прежним seed. Два review остаются пустыми, метки
+из tags/ответов не выводятся; источники не выдаются за клиентские события
+Agat. BANKING77 отклонён как независимый benchmark из-за неизвестного
+пересечения с обучением и иной схемы intent. Qualification и routing не включены.
+Committed сбор `58bd7a5` вернул 145 вопросов; 129 включены, 16 без явной
+лицензии исключены. 955 audit checks восстановили source/input bindings и
+122 группы; fixed split даёт 49 development / 46 calibration / 34 holdout
+заданий. Девять targeted и 776 Python / 12 Node docs checks прошли.
+Human review, эталонные метки и model calls — ноль; преобладает английский язык.
+
+[Census сохранённого shadow cohort](./qualification/local-decisions/shadow/observability/shadow-pilot-cohort.md),
+08.10 MSK: authenticated API закрепляет project/process/numeric version и
+completed half-open окно до семи дней. Все statuses/replay и caller ledgers
+читаются из одного SQLite / PostgreSQL REPEATABLE READ READ ONLY snapshot;
+превышение row/byte bounds отказывает целиком. Общий trace helper сохраняет
+прежнюю семантику. Pilot v2 исправляет version ID на настоящий numeric version.
+12 targeted Node, 18 Python и 324 coordinator checks прошли; реальный отдельный
+PostgreSQL 17.6 подтвердил конкурентное обновление/RLS/read-only/rollback.
+Следующий шаг — offline binding census к prospective plan и caller SLI;
+client population/owners/human qualification не подтверждены, routing выключен.
+
+[Offline сверка shadow-пилота](./qualification/local-decisions/shadow/observability/shadow-pilot-evaluation.md),
+08.10 MSK: новый CLI требует independent plan/cohort/profile file SHA,
+prospective v2 plan и exact instance/run/stage inventories. Caller ratios
+включают errors и unknown returns; все assignment profiles/timeouts сверяются
+с plan, quantiles считаются по whole cohort до 1000 runs. Default provided
+trace limit 32 сохранён. Draft target comparison не утверждает owners/SLO;
+zero/legacy data не проходят как успешный пилот. Нативный SQLite/HTTP fixture
+включил четыре intents: ok, timeout, missing и pending; target ratios
+`[0.25, 0.75]`, diagnostic_only / insufficient_data, model calls 0.
+47 независимых audit, 53 targeted и 786 Python / 12 Node docs checks прошли.
+Следующий инженерный шаг — bounded authenticated collector exact cohort bytes
+для последующей offline сверки. Следующие внешние gates —
+реальный permitted workflow/owners и human review/calibration/holdout;
+actual boot/login остаётся открытым. Routing false, qualification not_assessed.
+
+[Authenticated capture shadow cohort](./qualification/local-decisions/shadow/observability/shadow-pilot-collection.md),
+08.10 MSK: новый collector получает exact HTTP bytes по pinned completed plan
+одним direct GET, без redirects/retries/ambient proxy. Remote HTTPS сохраняет
+certificate/hostname checks; loopback допускает HTTP. Отдельный network child
+ограничен общим deadline и reaped при timeout. Raw export до 16 MiB, private
+immutable receipt, source pins и plan/census binding проверяются до сохранения.
+Server build, owners, eligibility и population этим не аттестуются; SLO/routing
+false, qualification not_assessed. Семь новых transport/CLI regressions прошли.
+Нативная цепочка coordinator → collector → evaluator сохранила четыре intents;
+80 audit checks подтвердили pins и ratios. Настоящий self-signed TLS server
+отклонён до HTTP request, без keylog/usable export. Model calls 0,
+793 Python / 12 Node docs checks прошли; timings/window/owners — fixtures.
+
+CI evaluator обнаружил отказ worker restart/shutdown. [Signal shutdown fix](./qualification/local-decisions/performance/worker-signal-shutdown.md)
+устраняет подтверждённый Event-lock deadlock: настоящий SIGTERM/SIGINT
+больше не вызывает synchronization внутри handler; admission прекращается,
+активные futures drain. Три before/after regressions, 149/152 worker checks
+(3 optional skips) и полный native PostgreSQL Fleet/HA 113/113 без skips
+прошли; failed CI log сохранён, successor/cleanup diagnostics усилены.
+Все CI/CodeQL checks PR 154 прошли, этап слит в main.
+[Owner source review](./qualification/local-decisions/shadow/observability/owner-source-evidence.md)
+подтвердил public maintainer @TitanUser по pinned CODEOWNERS/Git bytes/API;
+это runtime owner candidate, не business appointment или SLO acceptance.
+
+[Evidence archive](./qualification/local-decisions/shadow/observability/pilot-evidence-archive-summary.json):
+63 files / четыре закреплённых Git states, 5 073 370 bytes; CRC и SHA каждого
+файла проверены после копирования ZIP в `docs/private` исходного workspace.
+Архив сохраняет native census/evaluator/collector, TLS refusal, worker signals,
+PostgreSQL logs и первичные owner sources; customer traces, model weights и
+TLS private key в этот архив не включались. Это инженерный протокол, без
+human reference labels, qualification или принятия SLO.
+
+[Терминальная независимая разметка](./qualification/local-decisions/source-review/blind-terminal-review.md),
+08.10 MSK: pinned blank/partial review показывает исходный вопрос, атрибуцию и
+разрешённые варианты, скрывая split/group metadata и чужие ответы. Каждый
+выбор требует обоснование и `y`; skips остаются null. Atomic private checkpoint
+после подтверждения, partial resume и input/source SHA binding сохраняют
+прежний review v1/finalize contract. 13 новых / 33 совместная targeted check
+прошли. Reviewer ID/TTY не аутентифицируют человека; human execution,
+independence/qualification остаются непроверенными, model calls 0/routing false.
+Native PTY/SIGKILL/resume прошёл 65 audit checks; public 129-case pool получил
+только skip/quit, меток 0, инженерные заполненные ответы относятся к отдельным
+synthetic fixtures. Финальный docs check: 806 Python / 4 optional skips,
+12 Node и links/catalog — pass.
+
+[Контекст публичных development-вопросов](./qualification/local-decisions/performance/public-support-context.md),
+08.10 MSK: profiler реконструирует pinned raw API/import corpus и выбирает
+весь прежний development split для offline tokenization. Точный prompt wrapper,
+профиль 0.12.3 / wired 4096 MiB и tokenizer/package pins сохраняются; длинные
+тексты остаются в inventory без усечения. Никакие reference labels или
+предсказания не создаются; следующий этап — capacity measurement на этом
+закреплённом наборе. Семь новых / 16 совместных targeted checks прошли.
+Native tokenizer получил 49 cases / 44 development groups: 46 помещаются
+в 2048 tokens, три имеют context_too_long; полный диапазон 188–9253 tokens.
+257 independent audit checks и 813 Python / 12 Node docs checks прошли.
+Context/profile/source pins сохранены; model calls и calibration/holdout
+tokenization — 0, resident counters 1/0/0 без дополнительных inference.
+
+[Полный public development HTTP inventory](./qualification/local-decisions/performance/public-support-http-load.md),
+08.10 MSK: отдельный owned 0.12.3 / wired 4096 MiB runtime получил все 49
+fixed arrivals при 0.5/с / одном client slot. 46 computed (31 ok, 15 abstain),
+три context_too_long, drops/errors измерения 0; два warmup отдельно.
+Caller computed p95 637.588 мс, max 719.935 мс, все 46 в 5000 мс.
+Полный denominator 46/49 и заранее определённый eligible 46/46 сохранены
+отдельно. 701 independent audit checks сверили raw journal, profile/input/
+source pins, policy/softmax, quantiles и все 51 physical POST handlers.
+Все три owned PID отсутствуют, resident сохранил четыре PID, 35 protected
+sources и counters 1/0/0. 26 targeted / 820 Python / 12 Node docs checks
+прошли. Primary companion здесь не запускался, background неконтролируемый;
+accuracy без human labels не измерена, qualification not_assessed/routing false.
+Следующий шаг — воспроизводимый source-bound verifier и public inventory
+с явно наблюдаемым primary; real workflow/owners/SLO, human calibration/
+holdout и actual boot/login остаются открытыми.
+
+[Offline verifier public HTTP inventory](./qualification/local-decisions/performance/public-support-load-verification.md),
+08.10 MSK: independently pinned context/plan/result и полные historical Git
+sources проходят strict replay. Typed replies, tokens, input/profile, fixed
+offsets, one slot, raw journal, nearest-rank quantiles и physical counters
+пересчитываются; unknown transport outcome остаётся insufficient_data, а
+старый cleanup receipt не выдаётся за новый live PID check. 13 новых / 39
+targeted tests, 833 Python / 12 Node docs checks прошли. Настоящий offline CLI
+из bf47ef3 дал pass/exact: прежние 49 scheduled, 46 computed, три rejection,
+два warmup и 40/57 historical contributors; 53 verifier sources закреплены.
+Новые model calls/labels — 0, SLO/routing false / qualification not_assessed.
+Следующий capacity этап — весь public development inventory при явно
+наблюдаемом primary workload; внешние предметные и boot/login gates сохранены.
+
+[Public development при активном primary](./qualification/local-decisions/performance/public-support-primary-load.md),
+08.10 MSK: opt-in v2 закрепляет прежние 49 полных inputs, профиль 0.12.3/wired
+4096 MiB и отдельный pinned Qwen3:8b workload на общей monotonic origin.
+При 0.5/s decider: 49 scheduled / 48 admitted / 45 computed, три context
+rejection и один client_capacity drop; caller p95 1126.021 мс, max 2284.683 мс.
+Primary: 25/49 returned, 24 drops, 49 actual HTTP overlap pairs; warmups
+сохранены отдельно. Source-bound verifier pass/exact и 307 independent checks
+подтвердили все denominators, прежние 48 response signatures, source/model pins,
+fresh owned cleanup и неизменный resident. Девять новых / 42 targeted и 842
+Python / 12 Node docs checks прошли. Drop показывает ограничение переноса
+synthetic envelope на full public inventory; более редкий arrival требует
+отдельного prospective протокола. SLO не принят, human accuracy не измерена,
+routing false / not_assessed; реальные owners/workflow и boot/login открыты.
+
+[Prospective quarter-rate public inventory](./qualification/local-decisions/performance/public-support-quarter-rate.md):
+отдельный v3 protocol задаёт 49 полных decision inputs при 0.25/s
+и 98 pinned primary arrivals при 0.5/s в общем 196-s window. Original context
+и исходный 0.5/s capacity result сохранены; schedule adjustment получает
+отдельный binding до запуска. Legacy bounds/defaults не расширены, slot
+сохраняется через 120-s boundary. Изменение rate — проверяемая гипотеза,
+не production capacity/SLO и не результат предметной qualification. Native
+run: 49 admitted / 46 computed / три context rejection / zero decision
+drops, computed caller p95 2063.062 ms, max 2234.359 ms. Primary 49/98
+returned, 49 capacity drops, 49 HTTP overlap pairs; source-bound replay
+pass/exact и 386 independent checks, все 49 baseline signatures совпали.
+851 Python / 12 Node docs checks прошли. Меньшая rate устранила admission
+loss в этом опыте, но не улучшила p95; причинный вывод и устойчивый SLO
+по двум последовательным runs недоступны. Resident неизменен, все owned
+PIDs отсутствуют; next gate — full public inventory через настоящий worker
+и coordinator census, без назначения owners или выдуманных human labels.
+
+[Public inventory через worker/coordinator](./qualification/local-decisions/performance/public-support-workflow.md),
+08.10 MSK: serial integration с fixture primary и отдельным owned MLX runtime
+подтвердила все 49 completed instances и caller returns. 46 computed,
+три context rejection; original input SHA и все 49 primary routes сохранены.
+Cohort 49 runs / 98 stored stages / 49 shadow stages, HTTP auth 401/200,
+physical 51 handlers с двумя warmup. Source snapshot 177 files, 553 independent
+checks, fresh cleanup всех 30 owned PID, resident 4 processes/35 sources/counters
+неизменен. 857 Python / 12 Node docs checks прошли. Все 49 числовых responses
+совпали с baseline; Node JSON normalization отличает raw signatures и
+отражена отдельно. Следующий этап — reusable offline receipt replay,
+без GPU/HTTP и без превращения lab workflow в назначенный customer pilot.
+
+[Offline public workflow receipt replay](./qualification/local-decisions/performance/public-workflow-verification.md),
+08.10 MSK: independent context/plan/result raw pins, historical source bytes,
+полные journals, caller ledger, warmups и counters проходят strict replay.
+Native CLI pass/exact: 49 instances / 49 returns / 46 computed / три context
+rejection, 177 measured и 97 verifier sources. Модель не перезапускалась;
+historical cleanup claim отделён от current live PID verification. Четыре
+новых / 10 targeted и 861 Python / 12 Node docs checks прошли. Human labels,
+appointed owners/customer workflow, SLO и actual boot/login остаются открытыми.
+
+[Whole public workflow при потере owned decider](./qualification/local-decisions/performance/public-workflow-runtime-loss.md),
+08.10 MSK: prospective v2 N=5, все 49 instances сохранили primary route и
+durable caller return; 5 computed, затем 44 unavailable/unreachable и
+44 measured TCP resets без payload reads. 7 physical model handlers
+включают 2 warmup; transport failures не выданы за model responses.
+180 sources / 30 temporary PIDs, fresh cleanup и resident unchanged;
+868 Python / 12 Node docs checks. Контролируемый SIGTERM между completed
+instances не доказывает crash-in-flight/recovery или customer SLO.
+Следующий шаг — offline replay этого v2 evidence; human/owner/workflow,
+calibration/holdout и actual boot/login gates остаются открытыми.
+
+[Offline public workflow loss replay](./qualification/local-decisions/performance/public-workflow-loss-verification.md),
+08.10 MSK: reusable v2 CLI подтвердил полный denominator 49, пять healthy
+physical scheduled handlers и 44 durable unavailable/TCP resets. 180
+measured / 99 verifier sources; v1 compatibility replay сохранил прежние
+49 scheduled / 51 с warmup и 177 sources. Native inference не повторялся;
+reported cleanup отделён от live proof. 871 Python / 12 Node docs checks.
+Следующий допустимый quality diagnostic — порядок вариантов на frozen
+public development inventory; labels/calibration/holdout не подменяются
+наблюдениями о стабильности. Owner/customer/SLO и actual boot/login gates
+остаются открытыми.
+
+[Whole public option-order preflight](./qualification/local-decisions/performance/public-option-permutation-context.md),
+08.10 MSK: полный development inventory 49 cases / 44 groups сохранён в
+343 case-blocked variants: пять balanced cyclic positions, distinct reverse
+и original repeat. Pinned offline tokenizer измерил каждый full prompt:
+322 eligible / 21 whole over-limit, tokens 188–9253; original/repeat parts
+точно совпали с прежним context. 102 current sources / 34 dependencies,
+1941 independent audit checks; шесть новых tests и full 877 Python / 12 Node
+checks прошли. Inference/predictions/labels и calibration/holdout access — 0.
+Следующий шаг — native serial diagnostic с уже закреплённым 600 s budget,
+двумя warmup и retry 0. Agreement зависимых variants не подменяет accuracy,
+назначение owners, customer SLO или предметную qualification.
+
+[Whole public option-order native diagnostic](./qualification/local-decisions/performance/public-option-permutation-diagnostic.md),
+08.10 MSK: все 343 variants из 49 cases / 44 groups завершены: 322 computed
+(219 ok / 103 abstain), 21 whole context rejection, zero omission. У 18/46
+fully computed cases меняется status/reason/selected ID/value между orders,
+у 28/46 поля стабильны; 46/46 original repeats совпали, probability delta
+повтора 0. Fixed dependent orders не дают causal bias/accuracy выводов.
+343 physical scheduled / 345 с warmup, 107 sources, 2653 independent audit
+checks; три временных PID отсутствуют, protected resident 4 PID / 35
+sources / fresh counters unchanged. Full 885 Python / 12 Node checks.
+Следующий шаг — reusable independent raw-pinned replay и разбор различий
+accepted outputs / argmax / abstention; human qualification, applicable
+calibration/holdout, owner/SLO и actual boot/login остаются открытыми.
+
+[Reusable offline option diagnostic replay](./qualification/local-decisions/performance/public-option-diagnostic-replay.md),
+08.10 MSK: independent raw pins и два полных replay сохранили 343 scheduled
+physical handlers / 345 с warmup, 107 measured / 101 current sources.
+Posthoc разбор 46 fully computed original cases: argmax меняется у 8,
+accepted/abstain status — у 11, conflicting accepted values — 0; sets
+пересекаются. 26 always accepted same value / 9 always abstained / 11 mixed,
+original accepted→abstained 5 / abstained→accepted 6. Полный denominator
+49 cases / 44 groups сохранён, три context-rejected cases не получили
+выдуманных comparison flags. 201 independent audit checks, 14 joint и
+full 891 Python / 12 Node checks; новых model/network/live PID calls нет.
+Следующий runtime gate — interrupted in-flight handler и owned recovery
+на том же endpoint: прежний loss v2 проверял SIGTERM между completed
+instances, без crash/recovery. Human/owner/SLO, applicable calibration/
+holdout и actual boot/login остаются открытыми; routing false.
+
+[Public in-flight HTTP crash и owned recovery](./qualification/local-decisions/performance/public-workflow-inflight-recovery.md),
+08.10 MSK: prospective index 3 / 1337 tokens, active handler snapshot и
+SIGKILL в собственной group; actual exit -9. Same-endpoint replacement
+прошёл zero origin и два warmup до suffix. Все 49 instances/returns/primary
+routes сохранены: 45 computed (31 ok / 14 abstain), один actual unavailable,
+три whole context rejection. Два completed counter epochs 5/47 дают 52
+handlers, включая четыре warmup; один attested active handler остаётся
+с unknown terminal outcome, без выдуманного GPU interruption или reset.
+741 independent audit checks / 186 contributors, 48 noninterrupted
+controls совпали по binary64 JSON semantics. Все 57 temporary PID
+отсутствуют, resident 4 PID / 35 sources / fresh metrics unchanged.
+Восемь новых / full 899 Python / 12 Node checks прошли. Human/owner/SLO,
+applicable calibration/holdout и actual boot/login остаются открытыми;
+routing false. По просьбе пользователя работа остановится после commit,
+push и merge этого этапа; новый этап не начинается.
+
+[Reusable offline crash/recovery replay](./qualification/local-decisions/performance/public-workflow-recovery-verification.md),
+09.10 MSK: после нового запроса пользователя работа возобновлена. Общий
+CLI принимает v3 и сохраняет v1/v2 semantics, raw input pins, historical
+Git contributors и source drift gate. Все три сохранённых native reports
+прошли с полным denominator 49; v3 сохранил 48 completed scheduled / один
+interrupted unknown handler / четыре warmup, epochs 5/47. Содержательные
+поля прежних reports совпали; 105 current verifier contributors и 360
+independent audit checks закреплены. Шесть новых / full 905 Python tests,
+12 Node checks, links/catalog прошли. Model/network/live PID calls — 0.
+Следующий runtime gate — active shadow caller deadline и восстановление
+полного процесса на frozen development inventory. Human/owner/SLO,
+applicable calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
+[Shadow response boundary checks](./qualification/local-decisions/shadow/response-boundaries.md),
+09.10 MSK: в подготовке caller deadline gate воспроизведено принятие HTTP
+200 result и быстрых 409/503 reasons после cancellation Event, пока watchdog
+ещё не получил CPU. Worker теперь проверяет отмену/deadline после connect,
+headers, body и JSON parsing, с cancelled precedence при socket timeout.
+Восемь новых socket regressions сохраняют primary output и следующий
+здоровый вызов; обычный watchdog repeat подтвердил четыре cancelled
+responses. Full 160 worker / 905 Python docs / 12 Node checks, typecheck,
+links/catalog прошли; optional skips 3/4 явно сохранены. Следующий gate —
+prospective timeout полного public workflow с physical/caller accounting
+и здоровым suffix. Human/owner/SLO и calibration/holdout остаются открытыми;
+routing false / not_assessed.
+
+[Full workflow caller timeout](./qualification/local-decisions/performance/public-workflow-timeout.md),
+09.10 MSK: новый prospective v4 протокол удержал фактический upstream ответ
+на input index 3 до caller deadline. Все 49 instances/returns сохранили
+primary branch: 45 computed (31 ok / 14 abstain), один unavailable timeout
+и три whole context rejection. Physical scheduled 49 (31 ok / 15 abstain /
+3 context rejected), включая отдельно доказанный undelivered abstain; две
+warmup дают 51 completed handlers в одном epoch, без restart/retry.
+Target upstream 583.704 ms / EOF 10000.983 ms / caller 10001.556 ms;
+малый scheduling/cleanup overrun не скрыт. Healthy suffix — 45 cases.
+Common raw-pinned offline replay и 1460 independent checks подтвердили
+186 contributors, exact numeric controls всех 49 результатов, counters и
+отсутствие 33 temporary PID; resident четыре PID / 35 sources unchanged.
+12 новых / 18 focused / full 917 Python / 12 Node checks, typecheck,
+links/catalog прошли. ZIP 89 entries / шесть source snapshots проверен по
+CRC/SHA/size в двух копиях и сохранён в исходном workspace `/docs/private`.
+Два preparation failure и red regressions сохранены
+отдельно: исправлены default option flags и JSON integer/float comparison,
+без переименования failed evidence в pass. Следующий gate — actual
+coordinator cancellation active shadow lease и durable caller accounting.
+Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
+[Отзыв lease во время shadow HTTP](./qualification/local-decisions/shadow/lease-cancellation.md),
+09.10 MSK: actual coordinator cancel отзывал lease, но socket оставался открытым
+9991.511 мс. Scoped watcher наблюдает renewal только во время разрешённого
+shadow-вызова: wait 500 мс, общий HTTP deadline 1000 мс и bounded body 4096 bytes.
+Первый repeat дал EOF 501.889 мс; новая trickling-header regression выявила
+оставшийся thread, поэтому финальный путь использует disposable transport
+с обязательным reap. Финальный repeat дал EOF 570.463 мс и healthy suffix
+на том же worker. Оба endpoints — явные fixtures, новых MLX inference нет.
+Cancel auth 401/204, late observation/complete 400 и renewal 404 сохранены;
+durable caller return отменённого assignment остаётся null / return_missing,
+без выдуманного cancelled observation. Девять новых, 169 worker / 917 Python
+/ 12 Node docs tests прошли; 3/4 optional skips сохранены. Independent audit
+781 checks подтвердил три Git states, шесть absent PID и resident четыре PID
+/ 35 sources unchanged. ZIP 66 entries / пять source snapshots проверен по
+CRC/SHA/size в двух копиях и сохранён в исходном workspace `/docs/private`.
+Следующий runtime gate — полный inventory 49 cases
+с actual coordinator cancellation, owned native runtime и offline replay.
+Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
+[Full workflow coordinator cancellation](./qualification/local-decisions/performance/public-workflow-cancellation.md),
+09.10 MSK: prospective v5 сохранил весь development inventory 49 cases / 44
+groups и реальные original POST bytes. На index 3 proxy удержал completed
+MLX response без headers; authenticated coordinator cancel дал 204, renewal
+404, поздние observation/complete/fail — 400. После начала cancel actual EOF
+наблюдался через 458.000 ms; upstream 566.381 ms / local caller 1179.725 ms.
+Completed instances и durable returns — 48, cancelled instance с unknown
+return — один; 45 computed (31 ok / 14 abstain), три whole context rejection.
+Physical 49 (31 ok / 15 abstain / 3 context rejected) и две отдельные warmups
+дают 51 handler / один epoch; retry/restart нет. Все 45 suffix cases завершены
+на том же worker. Late primary output не объявлен completed branch.
+Common offline replay и 2907 independent checks сверили 188 measured
+contributors, все 49 native signatures с frozen healthy control, 201 actual
+lease HTTP records, timing/counters и отсутствие 33 recorded temporary PID.
+Resident четыре PID / 35 sources unchanged. Дополнительная red mutation
+выявила foreign lease renewal в replay; final verifier закрыл cohort fence
+и подтвердил unchanged native v5 и prior v4 без новых model calls.
+13 новых / 38 focused / full 930 Python / 12 Node checks и typecheck прошли;
+четыре optional docs skips сохранены. Private ZIP с raw evidence и source
+snapshots проверен по CRC/SHA/size в двух копиях и сохранён в исходном
+workspace `/docs/private`. Измерение доказывает отмену после готового native
+ответа. Следующий runtime gate — доставка cancellation во время actual
+active native HTTP handler с доказанным upstream disconnect, состоянием
+isolated backend и healthy suffix;
+GPU interruption нельзя выводить из v5 результата.
+Human/owner/SLO, calibration/holdout и actual boot/login остаются открытыми;
+routing false / not_assessed.
+
+[Actual resident boot и GUI login](./qualification/local-decisions/shadow/observability/resident-actual-boot-login.md),
+09.10 MSK: установленный observer автоматически записал оба verified events,
+exit 0, на новом boot UUID после independently pinned baseline. Separate
+read-only audit подтвердил четыре live процесса, 35 historical Git sources,
+34 dependency pins, прежние package/profile/registration/plists и свежий
+successful scrape. Physical counters нового boot — computed/rejected/failed
+0/0/0; inference и service mutation — ноль. Original receipts не изменены;
+первая audit ошибка структуры metrics сохранена, corrected audit прошёл
+861 checks. Обе private ZIP copies проверены по CRC/SHA/size и сохранены
+под /docs/private. Actual boot/login gate этого package/host/event закрыт;
+recovery duration от boot, multi-day availability и customer SLO не измерены.
+Следующий инженерный этап — actual active native HTTP cancellation,
+upstream disconnect, isolated backend state и healthy suffix. Human owners,
+permitted real workflows, independent labels/calibration/holdout остаются
+открытыми; routing false / qualification not_assessed.
+
+[Active native peer cancellation и recovery](./qualification/local-decisions/performance/public-peer-active-cancellation.md),
+09.10: свежий native прогон сохранил все 49 development cases / 44 groups;
+48 delivered results (31 ok / 14 abstain / 3 whole-context rejections), один
+local unavailable.cancelled. Target index 25 отменён после fresh active HTTP
+snapshot без response bytes; штатный retirement `inference_cancelled`, exit 75
+и child exit -15 подтверждены. Replacement на том же порту/профиле завершил
+два новых warmups и все 23 suffix cases; всего 53 physical POST starts / 52 known
+completions, interrupted terminal counter unknown, retry 0. Offline replay и
+independent stdlib audit сверили 193 contributors, 48 baseline signatures,
+physical epochs и отсутствие всех шести temporary PIDs. 23 focused tests passed;
+resident package/config/profile и четыре protected PIDs unchanged. Actual
+boot/login уже закрыт; следующий runtime gate — actual coordinator cancellation
+во время active native HTTP, durable unknown return/late-write rejection и owned
+recovery. Owner/customer/SLO, human calibration/holdout остаются открытыми,
+routing false / not_assessed; GPU kernel preemption не заявляется.
+
+[Actual coordinator cancellation во время native HTTP](./qualification/local-decisions/performance/public-workflow-active-cancellation.md),
+09.10: свежий source-bound v6 прогон всех 49 development cases / 44 groups
+с реальным coordinator/worker сохранил 48 delivered results и один cancelled
+assignment с durable `return_missing`; local unavailable.cancelled доказан
+отклонённым HTTP return. После actual pending intent/401 probe fresh active
+snapshot привёл к authenticated cancel 204, renewal 404 и upstream EOF за 595 мс.
+Late observation/complete/fail — 400. Native exit 75 / child -15, cleanup всех
+трёх original native PIDs, same-port/profile replacement и 23 healthy suffix
+cases подтверждены. Всего 53 POST starts / 52 known completions, четыре warmups,
+retry 0; interrupted terminal counter unknown. 54 focused tests, TypeScript,
+offline replay и independent stdlib audit прошли; 48 baseline signatures,
+193 measured source hashes, все 49 lease assignments и отсутствие 13 temporary
+PIDs перепроверены. Resident package/config/profile, четыре protected PIDs и
+inference counters unchanged. ZIP/source snapshots и original workspace copy
+сохранены под /docs/private. Следующий runtime gate — actual worker caller
+deadline до native response с owned recovery и полным suffix. Primary fixture,
+owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel preemption не заявляется.
+
+[Actual worker deadline во время native HTTP](./qualification/local-decisions/performance/public-workflow-active-deadline.md),
+09.10: свежий v7 прогон всех 49 original development cases / 44 groups закрепил
+250 мс для target index 25 в единственной published process version; остальные
+48 cases сохранили 10000 мс и полные исходные inputs. Actual worker вернул
+unavailable.timeout за 250.732 мс после fresh active native snapshot без response
+bytes; timeout/primary completion — 200, renewals — 204. Все 49 durable returns
+и primary routes завершены, unknown caller returns 0. Upstream EOF привёл к
+native exit 75 / child -15; три original native PIDs отсутствовали до replacement,
+same-port/profile recovery завершил два warmups за 7106 мс и 23 healthy suffix
+cases. Всего 53 POST starts / 52 known completions, retry 0; interrupted terminal
+counter unknown. 62 focused tests, TypeScript, raw-pinned offline replay и fresh
+v6 control replay прошли. Independent stdlib audit сверил 48 baseline signatures,
+195 measured sources, published graph/budgets, 49 lease assignments и отсутствие
+10 temporary PIDs. Resident package/config/profile, четыре protected PIDs и
+inference counters unchanged; ZIP/source snapshots сохранены под /docs/private.
+Следующий engineering gate — весь inventory с real primary и matched control.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel preemption не заявляется.
+
+[Дополнительный paired native admission gate](./qualification/local-decisions/performance/public-workflow-paired-concurrency.md),
+10.10: исходные 49 development cases / 44 groups выполнены в 25 bounded pairs
+через actual coordinator и одного worker concurrency 2. Все 49 instances,
+durable returns и fixture primary routes завершены. Native: 24 computed
+(15 ok / 9 abstain), 24 busy, один whole-context rejection; ещё два длинных
+входа получили busy до token/context check. Original full inputs сохранены,
+retry/restart 0. Одно active metrics witness связало busy с ещё активным
+admitted партнёром в паре 0/1; 51 completed physical calls включают два warmups.
+63 focused tests, TypeScript, v8 offline replay и fresh v6/v7 control replay
+прошли. Independent stdlib audit: 3177 checks, 45347 JSON keys без дубликатов,
+25 совпавших typed baseline signatures, 199 actual lease records и все
+34 temporary PIDs absent. Resident package/profile/config, четыре PIDs,
+20 runtime files и counters unchanged. Private ZIP и source snapshots сохранены
+под /docs/private. Это fixture-primary admission evidence; следующий плановый
+шаг полного inventory с real primary и matched control сохраняется.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; GPU kernel concurrency и customer capacity не заявляются.
+
+[Полный inventory с real primary и matched control](./qualification/local-decisions/performance/public-workflow-real-primary.md),
+10.10: actual coordinator/worker завершили 98 workflow (49 control / 49 shadow)
+на всех original development cases / 44 groups. Pinned Ollama 0.35.1 / Qwen3:8b
+получил original input ровно один раз, context 32768 / decode 128; все 98 actual
+outputs сохранены, все 49 matched primary requests совпали. Native decider
+вернул 31 ok / 15 abstain / три whole-context rejections, все 49 negotiated
+caller returns известны; 49 signatures совпали с healthy control. Один epoch,
+два decision warmups / 51 physical calls, один primary warmup; retry/restart 0.
+Primary outputs совпали в 47/49 пар; 83 responses достигли decode limit.
+Whole-workflow p50 control/shadow — 4121.235/4465.132 ms, median matched delta
+722.171 ms; shared cache/prefill и один проход не устанавливают causal SLO.
+Первый failed native attempt сохранил 24 completed workflow, timeout и ошибку
+finalization без result receipt; v2 исправил полный input path, prospective
+budget и failure/PID journal, затем выполнил все 98 workflow заново. CI early
+timer wake воспроизведён до fix, census boundary guard исправлен. 18 tests,
+TypeScript и final offline replay прошли. Stdlib audit — 5254 checks /
+171430 JSON keys; все 111 owned PIDs absent, protected resident unchanged.
+Shared v8 driver получил тот же census guard после controlled early wake;
+49 related regressions, оба fresh offline replay и 1002 Python tests
+(четыре optional skips) прошли. Original native archive сохранён, CI follow-up
+записан отдельным supplement.
+Successful/failed raw evidence, source snapshots и original workspace copy
+сохранены под /docs/private. Следующий runtime gate — cancellation при actual
+worker concurrency 2 с unaffected соседним workflow и owned recovery.
+Owners/customer/SLO/human calibration/holdout открыты, routing false /
+not_assessed; input truncation и customer capacity не заявляются.
+
+[Actual native cancellation при двух занятых слотах worker](./qualification/local-decisions/performance/public-workflow-two-slot-cancellation.md),
+10.10: четыре полных original inputs (indices 24–27), actual coordinator и
+Python worker concurrency 2 / sequential global 2. Target отменён во время
+активного native HTTP без response bytes; соседний primary TCP-запрос остался
+открытым, assignment/worker/attempt 1 сохранились через retirement/recovery.
+Peer и suffix завершились без retry: три durable primary outputs, один
+cancelled workflow, три known caller returns (один ok / два abstain) и один
+unknown `return_missing`. Late target observation/complete/fail — 400;
+только target renewal — 404. Native exits 75/130, два epochs / четыре warmups,
+восемь starts / семь known physical terminals; interrupted target counter
+unknown. Caller 596.878 ms, cancel→EOF 568 ms, peer hold 6717 ms.
+Source 201 / context 40 files, три healthy baseline signatures совпали;
+14 новых / 77 related tests, strict TypeScript, offline replay и полный
+1016-test Python suite (четыре optional skips) прошли.
+Independent stdlib audit — 680 checks / 27176 JSON keys; все 10 recorded
+temporary PIDs отсутствуют, resident unchanged. Это focused fixture-primary
+gate; предыдущий real-primary inventory сохраняется отдельно. Следующий
+runtime gate — active worker caller deadline при concurrency 2 с unaffected
+in-flight primary peer и owned recovery. Owners/customer/SLO/human
+calibration/holdout открыты, routing false / not_assessed.
+
+[Active caller deadline при двух worker slots](./qualification/local-decisions/performance/public-workflow-two-slot-deadline.md),
+10.10: те же четыре full original inputs 24–27, actual coordinator/Python
+worker concurrency 2, sequential global 2. Две версии одного direct graph
+различаются только caller timeout 10000/250 ms; peer primary начат раньше
+target и остаётся открытым на той же lease/worker/attempt через native
+retirement/recovery. Все четыре workflow и primary outputs сохранены,
+четыре known caller returns: target `unavailable/timeout` за 250.736 ms,
+три healthy native returns (один ok / два abstain). Run cancellation нет,
+required writes 200 / renew 204, fail нет. Native starts 8 / known terminals 7,
+четыре warmups, два epochs; interrupted target counter unknown.
+Peer hold 6285 ms, native EOF→retirement 369 ms, recovery 5438 ms.
+Source 206 / context 40, три baseline signatures совпали; 14 новых /
+48 related tests, TypeScript и offline replay прошли. Independent audit
+708 checks / 27672 JSON keys; все 11 temporary PIDs absent, resident unchanged.
+Полный 1030-test Python suite (четыре optional skips) прошёл;
+raw/restorable archive остаётся приватным.
+Следующий performance gate — полный paired inventory с real primary и
+matched control при worker concurrency 2. Owners/customer/SLO/human
+calibration/holdout открыты, routing false / not_assessed.
+
+[Полный paired inventory с real primary и matched control](./qualification/local-decisions/performance/public-workflow-paired-real-primary.md),
+10.10: все 49 original development cases / 44 groups прошли 98 actual workflow
+(49 control / 49 shadow), worker 2 / sequential global 2. Pinned Ollama
+0.35.1 / Qwen3:8b использует два actual runner slots, context 32768 на запрос /
+65536 total, decode 128. Все 98 primary outputs и 49 known caller returns
+сохранены; 49 matched primary requests совпали, original input подан один раз.
+50 bounded batches / 48 actual two-slot pending-primary witnesses;
+native primary HTTP overlap min 2407 ms. Native returns — 16 ok / 7 abstain /
+два whole-context rejections / 24 busy; каждый busy подтверждён pending peer
+той же original пары и active-native gauge 1. Один overlong input получил
+busy до context check; все cases включены в census. Все 25 typed signatures
+совпали с healthy serial baseline. Exact primary outputs совпали в 45/49 пар,
+четыре различия сохранены; 83/98 responses достигли decode limit.
+Whole-workflow p50 control/shadow — 6069.950/7619.282 ms, median matched delta
+1151.024 ms. Shared cache/prefill и один проход не устанавливают causal SLO
+или customer capacity. Native epoch один, два decision warmups / 51 known
+physical terminals, один primary warmup отдельно; retry/restart 0.
+Source 209 / context 40 files; offline replay, 11 новых / 68 related tests,
+strict TypeScript, serial native compatibility и 1041 Python tests (четыре
+optional skips) / 12 Node docs tests прошли. Independent stdlib audit —
+7066 checks / 203542 JSON keys; все 117 recorded temporary PIDs absent,
+resident unchanged. Immutable ZIP — 173 files / 41419474 bytes; CRC/SHA/size
+и actual original-workspace copy restored replay прошли, model calls 0.
+Raw/restorable archive сохраняется под /docs/private.
+Runtime cancellation gate с двумя worker slots и actual real-primary peer
+выполнен далее в явно закреплённом queued-primary профиле. Owners/customer/SLO/
+human calibration/holdout открыты, routing false / not_assessed.
+
+### 10.10.2026 — two-slot active cancellation с queued actual primary
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-cancellation-archive-summary.json)
+фиксируют actual native v2 gate: worker/global concurrency=2, actual primary
+NUM_PARALLEL=1 / queue=1 / context=32768, прежние Qwen3:8b generation settings.
+Whole 49 inputs / 44 groups остаются в sealed plan; focused indices
+[24,25,12,27] выбраны до scoring, peer — longest original whole input.
+Target actual primary admitted до создания peer, два HTTP requests действительно
+пересекались 5955.000 ms. Primary response не удержан.
+3 completed / 1 cancelled workflow; 4 actual primary responses / 3 durable
+outputs, 3 known callers / 1 unknown return_missing. Peer lease/stage/worker
+сохранены через cancel→EOF (566.000 ms), old native retirement
+(479.000 ms after EOF) и новый epoch с двумя warmups;
+actual peer response получен после recovery. Late observation/complete/fail=400,
+revoked renewal=404, target output=null. Healthy native: 2 abstain / 1 whole-context
+rejection; все 3 typed signatures совпали с frozen healthy control. Native physical
+8 starts / 7 known terminals / 2 epochs / 4 warmups; interrupted target counter
+неизвестен, retry=0. Все 14 owned PIDs absent, protected resident unchanged.
+
+Всего 3 native attempts / 1 successful: NUM_PARALLEL=2 attempts 1/2 FAILED и
+сохранены со всеми raw bodies/source/PID receipts. Первый выявил fixture wait=30s
+при заранее declared primary=180s; после исправления второй peer ответил до
+recovery/target caller. V2 one-model-slot профиль закреплён отдельно, первые
+attempts не превращены в PASS. Cancellation при двух primary model slots ещё
+не квалифицирована. 12 новых / 69 related tests, 1053 Python tests (4 optional
+skips), strict TypeScript / 12 Node docs tests прошли; prior actual cancellation,
+deadline и paired inventory offline replay PASS, model calls=0. Stdlib audit:
+743 checks / 28892 JSON keys. Source 210 / context 40 files. Immutable ZIP —
+149 files / 43362674 bytes; every entry CRC/SHA/size и actual original
+copy restored replay PASS, model calls 0. Все attempts сохранены; public payloads
+содержат только metadata. Следующий runtime gate — worker deadline с этими
+двумя worker slots и queued actual primary peer; затем отдельный prospective
+fault protocol NUM_PARALLEL=2. Owners/customer/SLO/human labels/holdout открыты,
+routing false / not_assessed.
+
+### 10.10.2026 — worker deadline с queued actual primary
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-real-primary-deadline-archive-summary.json)
+фиксируют actual gate: worker/global=2, actual primary NUM_PARALLEL=1 / queue=1,
+request context=32768, прежняя Qwen3:8b generation. Whole 49 inputs / 44 groups
+сохранены в sealed plan; focused original indices=[24,25,12,27], whole longest
+peer=9253 decision / 9013 primary tokens. Target primary
+pending до peer creation; actual HTTP overlap=5666.000 ms,
+response не удержан. Published process v1 healthy10000 / v2 target250 различается
+только timeout. 4 completed workflow / 4 primary outputs / 4 known callers;
+one unavailable/timeout=254.246 ms записан в original
+target lease, cancellation/revocation/retry=0. Healthy native 2 abstain / 1
+context rejection, все 3 typed signatures совпали с frozen baseline.
+Native EOF→retirement=338.000 ms, recovery=7172.000 ms;
+actual peer response после new epoch/two warmups, assignment/stage/worker сохранены.
+8 physical starts / 7 known terminals / 2 epochs / 4 warmups; target native
+typed terminal неизвестен. 14 owned PIDs absent, protected resident unchanged.
+
+1 native attempt / 1 successful; 215 measurement / 40 context source
+files. Stdlib audit 772 checks / 29394 JSON keys;
+offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
+12 новых / 81 related tests, 1065 Python tests (4 optional skips),
+strict TypeScript / 12 Node docs tests прошли. Immutable ZIP 91 files / 41402360 bytes сохраняет
+raw/source/test/replay evidence; every-entry CRC/SHA/size и actual original-copy
+restored replay PASS, model calls=0; public payloads только metadata. Следующий
+runtime gate — отдельный prospective fault protocol NUM_PARALLEL=2 с actual
+target-first admission и naturally pending peer; two-primary-slot deadline
+ещё не квалифицирован. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
+### 10.10.2026 — active cancellation с двумя actual primary slots
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation-summary.json) и
+[archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-cancellation-archive-summary.json)
+фиксируют отдельный prospective gate: worker/global=2, NUM_PARALLEL2 / queue1,
+actual np2 / context65536 / request32768, прежняя decode128 generation.
+Whole 49 inputs / 44 groups и projection[24,25,12,27] сохранены. После failed
+первого target-first attempt новый candidate создаёт peer при observed target
+decode116..127 и подтверждает два processing slots до target response.
+Фактически admission decoded=116; HTTP overlap=5618.000 ms.
+3 completed / 1 cancelled, 3 known / 1 unknown callers; retry0.
+3 healthy typed signatures совпали с baseline; cold recovery=7401.000 ms,
+peer response после recovery, original lease/assignment/worker и primary output сохранены.
+8 starts / 7 known terminals / 4 warmups / 2 epochs; target typed terminal неизвестен.
+14 owned PIDs absent, protected resident27 checks unchanged.
+
+2 native attempts / 1 successful; отдельный API diagnostic failed_parser /
+wire audit PASS сохранён с 1 scoring primary + 1 warmup, вне workflow denominator.
+Stdlib audit 4891 checks / 89948 JSON keys, source216 /
+context source40; offline/legacy/restored replay model0 PASS.
+18 новых / 99 related / 1083 Python tests (4 optional skips), strict TS /
+12 Node docs tests PASS. Immutable evidence включает failed/native/probe/source/test
+artifacts; CRC/every-entry SHA/size и actual original-copy replay PASS.
+Следующий gate — NUM_PARALLEL2 worker deadline; customer/SLO/human labels/holdout
+и owners открыты, routing=false / not_assessed.
+
+### 10.10.2026 — worker deadline с двумя actual primary slots
+
+[Протокол](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline.md),
+[summary](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline-summary.json)
+и [archive receipt](qualification/local-decisions/performance/public-workflow-two-slot-parallel-real-primary-deadline-archive-summary.json)
+фиксируют actual gate: worker/global=2, actual primary NUM_PARALLEL=2 / queue=1,
+request context=32768, прежняя Qwen3:8b generation. Whole 49 inputs / 44 groups
+сохранены в sealed plan; focused original indices=[24,25,12,27], whole longest
+peer=9253 decision / 9013 primary tokens. Target primary
+late decode admission=116; два processing slots
+подтверждены до target response; actual HTTP overlap=5629.000 ms,
+response не удержан. Published process v1 healthy10000 / v2 target250 различается
+только timeout. 4 completed workflow / 4 primary outputs / 4 known callers;
+one unavailable/timeout=252.662 ms записан в original
+target lease, cancellation/revocation/retry=0. Healthy native 2 abstain / 1
+context rejection, все 3 typed signatures совпали с frozen baseline.
+Native EOF→retirement=1345.000 ms, recovery=7904.000 ms;
+actual peer response после new epoch/two warmups, assignment/stage/worker сохранены.
+8 physical starts / 7 known terminals / 2 epochs / 4 warmups; target native
+typed terminal неизвестен; child exit=-9 через предусмотренный bounded SIGKILL. 15 owned PIDs absent, protected resident unchanged.
+
+1 native attempt / 1 successful; 221 measurement / 40 context source
+files. Stdlib audit 4946 checks / 90821 JSON keys;
+offline replay и previous cancellation/deadline raw receipts PASS, model calls=0.
+18 новых / 117 related tests, 1101 Python tests (4 optional skips),
+strict шесть TypeScript drivers / 12 Node docs tests прошли. Immutable ZIP 104 files / 41510156 bytes сохраняет
+raw/source/test/replay evidence; actual original-copy restored replay model0 PASS.
+Public payloads только metadata. Focused NUM_PARALLEL2 cancellation/deadline
+пройдены с явно закреплённым admission protocol; customer capacity/causal overhead,
+Owners/customer/SLO/human labels/holdout остаются открытыми,
+routing=false / not_assessed.
+
+### Whole inventory primary-only A/A repeat control, 2026-10-10
+
+[Проспективный A/A control](./qualification/local-decisions/performance/public-workflow-primary-repeat-control.md)
+реализован и измерен после NUM_PARALLEL2 cancellation/deadline. Все 49 whole
+inputs / 44 groups, включая 3 native-overlong inputs, дважды прошли один
+published process/version 1 без shadow: 98 completed workflow / 98 durable
+primary outputs / 49 byte-identical primary request pairs. Labels не входят
+в worker/native prompt. Worker/global concurrency 2, pinned Ollama 0.35.1,
+Qwen3:8B NUM_PARALLEL2 / actual np2 / total context 65536 / per-request 32768,
+decode 128, temperature/seed 0, think=false; retry/restart=0.
+
+Matched outputs 46/49; different original indices
+[12, 36, 43]. Output equality не является gate: все различия
+сохранены без lucky retry. 50 blocked batch / 48 actual pending-primary
+witnesses / положительное HTTP overlap; 50 native background snapshots
+сохраняют только два warmup, case scores/intents/returns=0.
+Repeat workflow median delta -470.494 ms —
+контрольная вариация на одном host, causal shadow overhead не установлен.
+Protected resident 27 checks неизменен, 105 owned PIDs отсутствуют.
+
+218 measured / 40 context sources;
+stdlib 5644 checks / 152601 JSON keys,
+model-free offline и legacy serial/paired replay PASS. 18 новых / 47 related /
+1119 Python tests (4 optional skips), strict TypeScript и Node docs
+пройдены. Immutable ZIP: 166 files / 42154725 bytes / 3131 selected Git objects;
+CRC/SHA/size и actual original-copy restored replay model0 PASS. ZIP и proof
+сохранены в исходном workspace docs/private. Owners/customer/SLO/human
+labels, holdout и customer capacity открыты; routing=false / not_assessed.
+
+### Source-bound workflow latency accounting, 2026-10-10
+
+[Latency decomposition](./qualification/local-decisions/performance/public-workflow-latency-decomposition.md)
+выполнен без новых model calls по paired real-primary и A/A raw receipts.
+196 completed workflow, все 49 whole cases / 44 groups в каждом dataset,
+включая 4 paired и 3 A/A different-output pairs, сохранены без отбора.
+Для каждой пары отдельно учтены pre-primary, primary proxy, post-primary
+и явный wall/monotonic clock residual; все matched delta суммы сходятся.
+
+Paired mean whole delta 42.224 ms =
+pre-primary -14.388 +
+primary -938.854 +
+post-primary 995.469 + clock residual.
+A/A primary mean delta -919.227 ms
+при case scores=0 подтверждает необходимость отдельного учёта primary variation.
+Caller mean 990.437 ms / relay mean 988.308 ms
+включают busy/context-rejection/typed outcomes; whole delta не является
+готовой оценкой causal shadow cost или production SLO.
+
+222 analysis / 209 paired / 218 A/A / 40 context sources;
+238 raw artifacts; stdlib 5136 checks / 258476 JSON keys,
+source-bound model-free replay PASS. 18 новых / 65 related / 1137 Python tests
+(4 optional skips), Node docs checks прошли. Protected resident 27 checks
+неизменен. Immutable ZIP: 282 files / 43337520 bytes / 3170 selected Git objects.
+CRC/every SHA/size и actual original-copy restored replay model0 PASS; ZIP и proof
+сохранены в исходном workspace docs/private. Архив сохраняет оба inventories и
+воспроизводимый ledger. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
+
+### Prospective counterbalanced replication design, 2026-10-10
+
+[ABBA/BAAB design](./qualification/local-decisions/performance/public-workflow-counterbalanced-design.md)
+зафиксирован до нового измерения. Все 49 whole inputs / 44 groups, включая
+три context-too-long cases; 24 complete original pair blocks balanced 12/12,
+последний singleton имеет отдельный seeded bit. 100 batches / 196 unique routes:
+по два control и shadow наблюдения каждого input. 196 primary / 98 decision
+scores являются planned counts; actual model calls и measured workflows=0.
+
+Source-bound plan/replay закрепляет context file SHA, domain-separated seed,
+полный порядок, distinct replicas и неизменные primary settings. Contrast
+mean-two-shadow minus mean-two-control алгебраически балансирует linear drift
+по ordinal period; elapsed-wall-time drift, nonlinear effects, cache carryover
+и group dependence не считаются устранёнными. Different outputs и failed
+attempts сохраняются; posthoc выбор порядка запрещён.
+
+219 design / 40 context sources; stdlib audit 6110 checks / 5700 JSON keys PASS.
+17 новых / 1154 Python tests (4 optional skips) прошли, protected resident
+27 checks и 8 snapshot fields неизменны. Immutable prospective ZIP: 36 files /
+39783532 bytes / 3145 Git objects; CRC/every SHA/size и actual original-copy
+restored replay model0 PASS. ZIP и proof сохранены в исходном docs/private.
+Actual overlap/completion/native outcomes ещё не измерены. Owners/customer/SLO/human labels/holdout открыты,
+routing=false / not_assessed.
+
+### Native counterbalanced real-primary replication, 2026-10-10
+
+[Первое выполнение ABBA/BAAB](./qualification/local-decisions/performance/public-workflow-counterbalanced-real-primary.md)
+завершено: один native attempt, 196 completed workflows / primary calls,
+98 decision HTTP attempts, 100 batches / 96 actual two-slot HTTP witnesses.
+Все 49 whole inputs / 44 groups и четыре периода сохранены по предварительно
+sealed order, без выбора по outcome. ok=32 / abstain=18 / busy=46 /
+context_rejected=2; busy подтверждены active peer той же pair/period/replica.
+95/98 matched output pairs и 46/49 all-four outputs равны; различия
+[19, 36, 43] сохранены. Mean whole contrast +412.922 ms, pre +5.541,
+primary −376.989, post +784.378, clock −0.007 ms. Это descriptive accounting,
+не causal cost или customer capacity; cache/carryover/group dependence остаются.
+
+224 measurement / 219 design / 40 context sources; 18 новых / 100 related /
+1172 Python tests (4 optional skips), три TypeScript checks и три model-free
+legacy replay PASS. Stdlib audit 15763 checks / 427840 JSON keys PASS, model0.
+Две ошибки аудитора исправлены отдельными версиями с сохранением прежних logs;
+source, план и raw данные не менялись, native reruns=0. Все 231 owned PID
+отсутствуют; 27 protected resident checks и восемь snapshot полей неизменны.
+Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
+
+
+Immutable ZIP: 279 files / 42613126 bytes / 3168 Git objects. CRC/every SHA/size,
+copy equality и actual original-copy restored replay 196 workflows/model0 PASS;
+ZIP и proof сохранены в исходном docs/private.
+
+### Replication sensitivity across corpus units, 2026-10-10
+
+[Source-bound sensitivity analysis](./qualification/local-decisions/performance/public-workflow-replication-sensitivity.md)
+выполнен по всем исходным 196 workflows / 98 matched contrasts без model calls.
+49 inputs / 44 groups / 25 original pair blocks сохранены. Mean workflow contrast
+по inputs +412.922 ms, по groups +544.900, по blocks +414.191; все три веса явно
+описаны. Exhaustive leave-one-group-out range +343.288…+655.689 ms — corpus
+sensitivity, не confidence interval. Восемь period cells и четыре outcome cells
+сохраняют denominators; outcome means × count воспроизводят full contrast.
+ABBA/BAAB и admission strata не объявляются causal; inputs/groups/blocks
+не считаются независимыми, different outputs/context-too-long cases не исключены.
+
+228 analysis / 224 native / 40 context sources; 18 новых / 71 related /
+1190 Python tests (4 optional skips) PASS. Stdlib audit 20816 checks / 32193
+JSON keys PASS, model0. Rounding maximum исправлен только в отдельно pinned
+auditor revision; analysis/source/method/weights не менялись, reruns=0.
+Protected resident 27 checks и восемь snapshot fields неизменны.
+Human labels/owners/customer/SLO/holdout gates открыты; routing=false / not_assessed.
+
+
+Immutable ZIP: 277 files / 43574956 bytes / 3186 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 196 workflows/model0 PASS.
+ZIP и proof сохранены в исходном docs/private.
+
+### Native request-level execution accounting, 2026-10-10
+
+[Source-contract accounting](./qualification/local-decisions/performance/public-workflow-native-execution-accounting.md)
+выполнен по всем 100 original native HTTP attempts, new model calls=0.
+98 case attempts: 50 successful scores / 46 busy / 2 context rejections;
+два warmups — successful abstain. Source-inferred backend entries=54,
+request-level logical forward completions=52 (50 cases + 2 warmups).
+Generated decision tokens=0. Эти counts не являются GPU kernel trace или
+GPU-only duration. Cache limit 128 MiB относится к reusable buffers;
+необоснованное предположение о cached native reply исправлено в текущем report,
+прежние immutable archived snapshots и raw data сохранены.
+
+232 analysis / 224 native / 40 context sources; 16 новых / 70 related /
+1206 Python tests (4 optional skips) PASS. Independent stdlib audit первой
+версии: 12474 checks / 31185 JSON keys PASS; source contract проверен по четырём
+SHA и AST score path. Protected resident 27 checks и восемь snapshot полей
+неизменны. Runtime/policy/settings не менялись, model0 replay PASS.
+Human labels/owners/customer/SLO/holdout gates открыты, routing=false / not_assessed.
+
+
+Immutable ZIP: 276 files / 43558437 bytes / 3193 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 100 native attempts/model0
+PASS. ZIP и proof сохранены в исходном docs/private; исправленные native report
+и summary входят в documentary source snapshots.
+
+### Development-only independent review handoff, 2026-10-10
+
+[Source-bound development review](./qualification/local-decisions/source-review/public-support/development-review.md)
+подготовлен из того же frozen context profile: все 49 inputs / 44 groups,
+включая три over-limit, в исходном порядке, без clipping/translation.
+Два blank review по 49 заданий совместимы с существующей terminal session;
+атрибуция, question, options и full state сохранены. Предсказания и native
+outcomes не потребляются, calibration/holdout cases в заданиях — 0.
+File/source pins и ordered case/input/group bindings проверяются model0.
+
+236 preparation / 40 context sources; 17 новых / 46 related / 1223 Python
+tests (4 optional skips), 12 Node tests, links/catalog PASS. Independent
+stdlib audit 765 checks / 6852 JSON keys PASS; pinned before packet,
+preparation reruns=0. Uncommitted-source refusal до output подтверждён.
+Protected resident 27 checks / восемь snapshot fields неизменны.
+Реальных человеческих review и gold labels — 0, пустые пакеты не проходят
+finalize. Следующий предметный gate — фактическая независимая разметка;
+owners/customer/SLO/quality/holdout открыты, routing=false / not_assessed.
+
+Immutable ZIP: 47 files / 40022257 bytes / 3175 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored replay 49 tasks/model0 PASS.
+ZIP и proof сохранены в исходном docs/private.
+
+### Editable blind review drafts and explicit submission, 2026-10-10
+
+[Terminal review v2](./qualification/local-decisions/source-review/blind-terminal-review.md)
+поддерживает :edit N / подтверждённый :clear N и отдельный :submit + y.
+Полностью заполненный draft на EOF/quit остаётся partial с reviewedAt=null;
+его можно продолжить и исправить. Pool, question/options/input SHA и ownership
+сохраняются. Session v2 явно различает new/revised/cleared net counts и
+submissionConfirmed, старые v1 artifacts не перезаписываются.
+
+10 новых / 40 targeted / 1233 Python tests (4 optional skips), 12 Node tests,
+links/catalog PASS. Первый native probe: шесть PTYs / 216 checks; публичные
+49 cases оставлены без меток, synthetic-only edits/clear/submit/SIGKILL/resume
+прошли. Independent post-probe stdlib audit 384 checks / 7623 JSON keys PASS,
+model0. Все шесть owned PID отсутствуют, protected resident 27 checks и восемь
+snapshot fields неизменны. Human/reference labels=0, routing=false /
+not_assessed; фактическая независимая предметная разметка остаётся открытой.
+
+Immutable ZIP: 55 files / 38172350 bytes / 3183 Git objects; CRC/every SHA/size,
+copy equality и actual original-copy restored audit six original PTYs/model0
+PASS. ZIP и proof сохранены в исходном docs/private.
+
+## Целостность source snapshot терминального review — выполнено
+
+[Проверка исходников](./qualification/local-decisions/source-review/blind-terminal-source-integrity.md)
+расширяет registry с семи до 14 локальных зависимостей. Коммит одной документации
+с неизменными SHA кода больше не прерывает review; изменение транзитивного файла
+отклоняет предложенный ответ до checkpoint. Начальный source commit сохраняется
+в квитанции. AST regression и запуск CLI из минимальной копии подтверждены.
+
+Две реальные PTY-сессии использовали только три синтетических задания.
+Независимый аудит: 2644 проверки / 2477 JSON keys. Целевые тесты 43; полный
+Python-прогон 1236, четыре пропуска. Protected resident неизменен, оба owned PID
+отсутствуют, model calls и новые публичные labels равны нулю. Первый отказ helper
+из-за сокращённого SHA сохранён; он произошёл до plan и PTY. Старые v2 receipts
+с registry из семи файлов сохранены без исправления задним числом.
+
+Следующий предметный gate всё ещё требует двух независимых review реальными
+людьми. Инженерная проверка CLI не заменяет экспертную разметку и не измеряет
+точность классификации.
+
+## Проверка сессионных квитанций review — выполнено
+
+[Verifier v2](./qualification/local-decisions/source-review/review-session-verification.md)
+сверяет input/output/session SHA, полный pool, seed, ownership, net counts и
+явный submit. Completed artifact требует всех ответов и reviewedAt=finishedAt;
+полный draft после quit и failed checkpoint не получают этот статус. Source
+и human declarations прежней сессии не превращаются в authentication.
+
+Реальный CLI проверил семь исходных квитанций и отклонил девять контролей
+подмены. Аудитор независимо восстановил JSON результатов: 498 checks / 6028
+keys. Все 16 owned PID отсутствуют, protected resident неизменен. Python:
+55 целевых и 1248 полных тестов, четыре пропуска. Только прежняя synthetic
+submit-квитанция соответствует complete artifact; новые публичные labels,
+reference labels, реальные human reviews и model calls равны нулю.
+
+Следующий предметный этап требует двух независимых review реальными людьми
+и критериев владельца. Проверка артефактов подготовлена для приёма этих review;
+qualification и production routing остаются без изменения.
+
+## Сверка пары review и подготовка разногласий — выполнено
+
+[Сверка пары](./qualification/local-decisions/source-review/review-pair-comparison.md)
+проверяет две pinned v2 тройки и отдельный submit, одинаковые pool/seed и
+различие reviewer IDs. Private comparison сохраняет counts по cases/группам
+и оба варианта с rationale для разногласий. Expert labels не создаются;
+identity, независимость, expertise и classification accuracy не подтверждаются.
+
+Одна новая synthetic terminal session явно отправила три ответа. Comparison
+CLI показал два совпадения / одно разногласие и отклонил шесть controls. Все
+восемь owned PID отсутствуют. Независимый аудит: 4037 checks / 3836 JSON keys;
+Python 66 целевых / 1259 полных, четыре пропуска. Protected resident неизменен;
+публичные 49 labels по-прежнему пусты, реальные human reviews и model calls=0.
+
+Следующий предметный gate — два review реальными людьми, разбор фактических
+разногласий и критерии владельца. Техническая сверка готова; routing и
+qualification сохраняют прежний статус.
+
+## Наблюдение native Python execution — выполнено
+
+[Изолированное наблюдение](./qualification/local-decisions/performance/native-python-call-observations.md)
+выполнено на четырёх заранее запланированных dev-попытках. Original journal:
+25 records, 4 backend score entries, 3 text-backbone calls и 3 mx.eval calls.
+Повтор одного входа прошёл отдельное вычисление; полный 9253-token input
+отказан до model/eval. Это observed Python boundaries в owned worker;
+старые counts 100 HTTP attempts сохраняют source-inferred статус.
+GPU kernels/time, HTTP admission и model loading не измерены; host spans
+содержат instrumentation overhead и не задают прежнюю latency или SLO.
+
+12 новых / 1271 полных Python tests PASS, четыре optional skips; 12 Node tests.
+Native 104 checks, independent stdlib 3411 checks / 2779 keys. Первый auditor
+с ошибочно переписанным profile SHA сохранён; V2 PASS без повторения model calls.
+Protected resident: 27 checks / 8 неизменных полей; три owned PID отсутствуют.
+Native model calls=3; planning/audit/archive replay=0; routing=false/not_assessed.
+Предметные gates реальных reviewers, владельца, accuracy, traffic, SLO и holdout открыты.
+
+## Reusable проверка native Python journal — выполнено
+
+[Verifier journal](./qualification/local-decisions/performance/native-python-journal-verification.md)
+различает entries, returns, raises и unfinished spans, проверяет external pins,
+SHA chain, nested call order, clocks и bound input schedule. Header-only,
+open model, returned model без backend end и первый ended score из expected
+четырёх остаются incomplete. Default CLI отказывает до записи; explicit opt-in
+сохраняет diagnostic artifact с completeScoringTrace=false.
+
+24 original CLI calls: две полные byte-identical проверки (включая standalone
+из двух файлов), пять incomplete outputs, 17 отказов без output directory.
+19 новых / 31 targeted / 1290 full Python tests PASS, четыре optional skips.
+Native protocol 134 checks; independent stdlib replay 3537 checks / 3146 keys.
+Protected resident: 27 checks / 8 неизменных полей, 25 owned PID отсутствуют.
+Новые model calls=0. Source/runtime authenticity, GPU time, quality, SLO и
+routing не подтверждаются journal verifier; предметные review gates остаются открыты.
+
+## Пакет для разрешения разногласий review — выполнено
+
+[Adjudication handoff](./qualification/local-decisions/source-review/review-adjudication.md)
+повторно связывает два complete submitted review со сверкой и создаёт blank
+только для разногласий. Оба исходных мнения и rationale остаются в private notes;
+решения и adjudicator пусты. Full pool/seed сохраняются для finalize_reviews.
+Generic blind terminal пока не поддерживает subset: следующий этап — отдельная
+adjudication session с проверяемым explicit submit.
+
+7 original CLI calls: два byte-identical handoff (standalone 17 sources),
+5 отказов без output directory. 8 новых / 1298 full Python tests PASS,
+4 optional skips. Probe 118 checks; независимый replay 1491 checks / 1277 keys.
+Resident 27 checks / 8 неизменных полей, 8 owned PID отсутствуют.
+Новые labels/model calls=0; реальные reviewers и adjudicator не назначены,
+qualification=not_assessed, routing=false. Обе неудачные версии auditor сохранены.
+
+## Интерактивная adjudication session — выполнено
+
+[Dedicated session](./qualification/local-decisions/source-review/adjudication-session.md)
+редактирует disputed subset, показывает два исходных мнения и сохраняет whole
+pool/seed. Correction, clear, resume и explicit submit используют общую механику
+review. Полный draft после quit остаётся partial; receipt связывает все четыре
+input SHA, output, disputed IDs и 17 committed sources. Declared third ID не
+подтверждает identity, human execution, expertise или независимость.
+
+18 original CLI calls: 6 synthetic sessions (5 partial / 1 submitted),
+12 отказов без output directory; standalone draft byte-identical.
+16 новых / 62 targeted / 1314 full Python tests PASS, 4 optional skips.
+Probe 334 checks; stdlib audit 2438 checks / 2120 keys; resident 27 checks /
+8 неизменных полей и 19 owned PID отсутствуют. Первый preflight failure сохранён;
+original protocol выполнен один раз. Следующий этап — reusable CLI verifier
+adjudication receipt. Реальные reviewers/adjudicator и quality gates открыты;
+новые reference labels/model calls=0, qualification=not_assessed, routing=false.
+
+Пользователь подтвердил planned reviewers: он сам и второй независимый эксперт.
+[Инструкция](./qualification/local-decisions/source-review/public-support/confirmed-review-participants.md)
+закрепляет исходные blank SHA и separate sessions. Выполнение review пока не
+подтверждено. Первый full suite run с setUpClass error сохранён; повторный полный
+набор прошёл после diagnostic class PASS без изменения кода или ослабления guards.
+
+## Русская форма review — выполнено
+
+По отдельному запросу пользователя подготовлена [переносимая форма](./qualification/local-decisions/source-review/public-support/review-form-ru.md)
+для 49 development заданий. Вопросы, рубрика и обычный текст обращений на русском;
+команды и журналы сохранены точно. Отдельные состояния участников, сохранение,
+перенос черновика, навигация, исправление и явное завершение доступны в браузере.
+Один итоговый JSON прикладывается к чату. [Импорт и проверка](./qualification/local-decisions/source-review/public-support/review-form-verification.md)
+сохраняют исходный пул и поддерживают прежнюю сверку пары. Тестовые ответы
+создаются только на синтетических заданиях; настоящие review и reference labels
+пока не получены. Эквивалентность перевода и предметное качество не подтверждены.
+Продолжение общего плана было остановлено по указанию пользователя; 11.10.2026
+пользователь поручил возобновить последовательную реализацию с commit/push/merge
+каждого этапа.
+
+## Проверка сохранённых adjudication receipts — выполнено, 11.10.2026
+
+[Reusable CLI verifier](./qualification/local-decisions/source-review/adjudication-session-verification.md)
+связывает шесть external file SHA, handoff notes, full pool/seed и disputed subset.
+Partial/failed/completed не смешиваются; completed требует explicit submit.
+Шесть прежних synthetic receipts сохранили пять partial / один completed;
+восемь controls отклонены до output. Standalone из 17 sources и replay копии
+архива исходного workspace дали byte-identical report, model calls=0.
+413 independent artifact checks, 10 новых / 70 related Python tests, 18 Node
+documentation tests и links/catalog прошли. Private evidence сохранён под /docs.
+Declared human/source authority остаётся false, labels не создаются.
+Этот шаг реализован далее в source-bound finalization; реальные review и
+quality gates открыты.
+
+## Finalization с проверкой исходных review — выполнено, 11.10.2026
+
+[Finalizer и offline replay](./qualification/local-decisions/source-review/review-finalization.md)
+заново проверяют два submitted review, comparison и полный adjudication bundle.
+Handoff восстанавливается из фактической source pair; другая pair или полный
+unsubmitted draft не создают finalized dataset. Согласованные и спорные случаи
+сохраняют все записи, source inputs, provenance и прежний group split.
+
+Original synthetic CLI: три cases / два agreed / один adjudicated; два positive
+calls и четыре отказа до output. Независимый stdlib rebuild всего dataset —
+40 checks; 17 новых / 87 related Python tests прошли. Private archive из 53 files /
+23 code sources сохранён под /docs; replay actual original-copy без Git дал
+byte-identical verification. Human/identity/expertise flags остаются false;
+реальные reference labels и model calls=0, routing=false/not_assessed.
+
+Полный локальный прогон предыдущего этапа сохранил timing error старого paired
+fixture; один isolated replay PASS не превращает его в полный PASS. GitHub CI
+test job прошёл отдельно. Следующий предметный gate — получение фактических двух
+review и разрешение их разногласий; development accuracy без них не вычисляется.
+
+## Границы измерения paired workflow — выполнено, 11.10.2026
+
+[Versioned clock brackets](./qualification/local-decisions/performance/paired-batch-clock.md)
+добавлены после обнаруженного local timing error. Wall read теперь окружён
+двумя monotonic samples; elapsed независимо пересчитывается, sampling входит
+в прежний 20 s deadline, sequential barrier проверяется теми же часами.
+Historical receipts сохраняют прежнее правило ±2 ms и прежние reports;
+неподтверждённое clock difference и mixed schemas отклоняются.
+11 новых / 32 related / 1365 full Python tests (четыре optional skips),
+18 Node documentation tests и strict driver typecheck прошли. Actual model-free
+worker/coordinator сохранил шесть synthetic inputs и три busy; 255 independent
+checks и standalone из 224 sources дали pass. Current CLI перепроверил прежние
+49 native cases / 25 batches, historical inventory byte-identical. Private
+archive 271 files сохранён в original workspace; restored copy replay pass.
+Причина исходного старого failure не утверждается. Human reference labels/model
+calls=0; quality gates требуют двух фактических независимых review.
+Переносимый finalized-review bundle реализован следующим этапом ниже.
+
+## Переносимый finalized-review bundle — выполнено, 11.10.2026
+
+[Packager и bundle verifier](./qualification/local-decisions/source-review/review-bundle.md)
+копируют exact source bytes и завершённые outputs в immutable private folder.
+Один external manifest SHA позволяет заново проверить source reviews,
+comparison, adjudication и dataset после переноса без original paths/Git.
+Fixed names, точные sizes, ранний byte budget, missing/extra/symlink/path-escape
+refusals и completion manifest последним сохраняют проверяемую границу output.
+
+14 новых / 101 related tests и текущий synthetic native CLI из 24 sources
+прошли. 119 independent checks, два positive calls и пять refusals; dataset
+и package manifest byte-identical предыдущим исходным artifacts. Private
+archive 138 files сохранён в original workspace, restored production replay
+byte-identical. Неверное имя module в первом test command сохранено отдельно.
+Новые model calls / real reference labels=0, human/identity/expertise flags
+false, routing=false/not_assessed. Следующий предметный gate требует двух
+фактических независимых review 49 development inputs и разрешения разногласий.
+
+## Полный native gate для paired clock — выполнено, 11.10.2026
+
+[Свежий MLX-прогон](./qualification/local-decisions/performance/paired-batch-clock-native.md)
+выполнил неизменные 49 inputs / 44 groups через 25 bounded pairs и fixture
+primary на committed 225 sources. Все instances/primary/returns завершены:
+24 computed (16 ok / 8 abstain), 24 native busy и один context rejection.
+Два warmups дают 51 physical HTTP call / 26 model scores. Все 25 v2 clock
+receipts проходят независимый пересчёт sampling, elapsed, deadline и barrier.
+Максимальный sampling interval 0.004625 ms, wall/lower residual 0.862 ms.
+
+Production offline verifier PASS; independent stdlib audit — 2870 checks,
+35933 JSON keys, 198 actual lease records и 25 совпавших healthy signatures.
+Admitted участник изменился в девяти парах, поэтому новые 16/8 не измеряют
+изменение accuracy. Все 39 own PID отсутствуют, восемь protected resident
+fields и четыре permanent PID/counters unchanged. ZIP 305 files сохранён
+в original workspace; restored no-Git/no-inference audit на том же host
+byte-identical. Human reference labels=0, accuracy/owner/SLO не подтверждены,
+routing=false/not_assessed. Следующий предметный gate требует фактических
+двух независимых review исходных 49 development inputs.
+
+## Связка finalized reviews и whole native diagnostic — реализована, 11.10.2026
+
+[Development diagnostic CLI](./qualification/local-decisions/source-review/review-native-diagnostics.md)
+заново проверяет source review bundle и полный native option-order history
+по пяти independent file pins. Original pool/requests/groups/seed и whole
+development denominator должны совпасть; partial/foreign/holdout inputs
+отклоняются. Per-order comparison со submitted labels сохраняет context
+rejections, abstentions, group census, macro-F1/NLL/Brier/ECE и все cases.
+Saved report пересчитывается полностью; rehashed numbers/authority и late
+artifact/source drift не публикуются. Новые inference/calibration/holdout
+calls=0, human/source authority=false, accuracy qualification не заявляется.
+14 новых / 59 related и полный набор 1393 Python tests прошли (4 optional
+skips), 18 Node documentation tests и links/catalog PASS. Production CLI:
+три positive / пять refusal commands, 88 independent arithmetic checks,
+91 parent archive checks, восемь собственных processes absent. Existing real
+49 cases / 343 variants повторно проверены без inference; чужие synthetic
+labels для real pool отвергнуты до output. Positive diagnostics используют
+explicit synthetic measurements и test labels.
+ZIP 408 files / 79910488 bytes сохранён в original docs/private; CRC/every
+SHA/size проверены, production CLI из actual original-copy restore выдала
+byte-identical diagnostic без resident runtime/inference, используя embedded
+owned synthetic fixture Git. Failed sandbox log сохранён отдельно от успешного
+полного повторного прогона. Реальные 49 submitted reviews остаются необходимым
+предметным gate; эта инженерная связка не подменяет их model pseudo-labels.
+
+## Назначение standalone development reviews — реализовано, 11.10.2026
+
+[Finalization v2](./qualification/local-decisions/source-review/development-review-scope.md)
+добавляет sealed development-only usage для whole-development submitted labels.
+Source records, annotation, порядок и assignments сохранены; standalone
+dataset не допускается в runtime evaluation/freeze/validate experiment;
+comparison доступен через source-verified native diagnostic без inference.
+Resealed split/authority mutations отвергаются. Serving runtime files и
+закреплённые profiles сохранены побайтно; guard находится в offline review lib.
+Mixed pool сохраняет прежние dataset bytes. Pinned v1 receipt выбирает прежний
+replay, поэтому исторические bundles и native diagnostics остаются проверяемыми.
+12 новых / 109 related / 1405 full scripts tests (4 skips) и 135 runtime tests
+(3 skips) прошли. Восемь positive / шесть refusal production CLI commands,
+14 own Python CLI PID absent; legacy diagnostic byte-identical, scoped
+comparison unchanged. ZIP 888 files сохранён в original docs/private,
+CRC/every SHA/size и actual original-copy restored production replay PASS,
+model0. Failed architectural-boundary log сохранён вместе с исправленным
+прогоном. Реальные 49 reviews не получены; human authority=false,
+routing=false/not_assessed.
+
+## GLiClass baseline — реализовано и измерено, 11.10.2026
+
+[Закреплённый offline GLiClass Edge v3](./qualification/local-decisions/baselines/gliclass.md)
+добавлен как opt-in кандидат: CPU FP32, два threads, один full-input forward,
+нативные logits всего списка, прежний softmax/policy, явный context refusal
+вместо обрезания. Serving runtime/profiles сохранены. Публичная сводка
+ссылается на SHA весов, dataset, source/fixture commits и private report.
+
+На тех же 36 authored synthetic случаях / 3 template groups выполнены 72
+original/reversed forward, 200–267 токенов, backend errors=0. GLiClass совпал
+с synthetic labels 11/36 и 15/36, изменил 22/36 argmax; accepted 3/36 (0 errors)
+и 2/36 (2 errors). Ранее измеренные decider дали 31/36 и 30/36, Base — 18/36
+и 28/36. Порядковая нестабильность и низкое покрытие не обосновывают замену
+scorer этим профилем. CPU latency описательная; отдельный memory-профиль
+приведён в следующем этапе.
+Синтетические группы и permutations не превращены в human qualification.
+
+Независимый stdlib audit: 3086 checks; отдельный real tokenizer replay —
+72/72 полных массивов tokens. Production verifier без inference восстановил
+byte-identical report, 11 typed/scope/byte/inventory refusals — без output.
+Все четыре protected resident PID, 20 source files и 8 полей остались прежними.
+12 новых / 1417 full scripts tests (4 skips), runtime 135 (3 skips), 18 Node
+tests, links/catalog — PASS. Initial CLI JSON/BatchEncoding failures сохранены
+и исправлены с entrypoint/container tests. Routing=false/not_assessed;
+human labels, representative calibration/holdout и owners/SLO остаются gates.
+
+Финальный private archive: 1097 ZIP entries / 1114 logical files, веса и
+143 measured source files включены. CRC/every SHA/size, завершённые 1417/135
+logs и byte-identical verifier из actual original-copy — PASS, model0.
+
+## GLiClass process memory/CPU — реализовано и измерено, 11.10.2026
+
+[Offline profiler](./qualification/local-decisions/baselines/gliclass-resources.md)
+добавляет три raw RUSAGE_SELF снимка и проверяемую сводку вокруг прежнего
+full-input scorer. Current Darwin RSS unit проверена 96 MiB allocation/touch
+с независимым ps RSS; Linux conversion покрыта fixture. Это whole-process
+high-water mark, включая imports/model/tokenizer/allocator, не model-only
+allocation и не доказанный concurrency SLO.
+
+Actual CPU FP32 run: 36 synthetic development cases / 3 dependent groups,
+72 native forwards / 0 errors; все 72 typed distributions совпали с прежним
+запуском. Max RSS до backend / после load / после scoring:
+45858816 / 479854592 / 552878080 bytes (43.7 / 457.6 / 527.3 MiB).
+Полный load + scoring — 10309.713–10309.724 ms, user/system CPU
+5.030461 / 1.405390 s. Результаты относятся к одному процессу; сравнение
+latency с предыдущим run не контролировалось.
+
+Independent stdlib audit: 1248 checks; production stdlib verifier
+byte-identical, model0; 10 refusals / 1 positive без leaked output, все 11
+owned PID завершены. Четыре resident PID / 20 serving files / 8 полей
+сохранены. 8 new / 1425 full scripts tests, 4 skips — PASS.
+Private archive: 391 ZIP entries / 390 logical files с весами, 146 measured
+sources, raw snapshots и завершённым full-suite log. CRC/every SHA/size и
+actual original-copy production replay — PASS, model0. Human quality,
+representative calibration/holdout и владельцы/SLO остаются открытыми gates;
+authority/routing=false/not_assessed.
+
+## NanoJev CPU reference — реализовано и измерено, 11.10.2026
+
+[Pinned native-heads baseline](./qualification/local-decisions/baselines/nanojev.md)
+закрепляет immutable HF revision, все 12 inference/provenance files, source
+и dependency pins. Официальный predictor требует CUDA; отдельный CPU FP32/
+eager reference использует тот же builtin Qwen3 body и pinned DecisionModel
+со strict загрузкой всех 322 FP32 tensors. Serving runtime сохранён.
+
+Вся исходная 36-case authored development inventory / 3 dependent groups:
+72 native forwards / 192 полных candidate paths / 0 errors. Original/reversed
+matches — 13/36 и 13/36; accepted — 12/36, errors among accepted — 6/12;
+changed argmax — 0/36. Все accepted были Boolean `False`; 24 Choice остались
+abstain. Current profile сохраняется diagnostic_only. Все четыре planned
+кандидата сравнены на том же whole development dataset; descriptive scores
+не заменяют representative human qualification/calibration/holdout.
+
+Process high-water RSS: 49364992 bytes до backend, 5258067968 после load и
+после scoring; это process peak, не isolated model allocation. Native p50/
+p95 — 409.685 / 535.440 ms; load + 72 scoring — 57850.445–57850.456 ms.
+SLO/capacity и controlled latency improvement не заявлены.
+
+Independent audit — 4909 checks, direct Tokenizers JSON replay — 192/192
+full arrays, production stdlib verifier byte-identical/model0, 17 refusals
+без outputs. Все 18 refusal/replay PID и 4 main native/capture/replay PID
+завершены; 4 protected resident PID / 20 sources / 8 полей прежние.
+Separate native typed-contract smoke: 3 synthetic cases / 1 group, 6 forwards
+Choice/Boolean/Score; это interface evidence, не quality benchmark.
+14 new / 1439 full scripts tests, 4 skips / 524.970 s — PASS. Два whole runs
+сохраняют те же 36 cases / 3 groups; 144 native/typed pairs между runs
+bit-identical, кроме duration. Byte-bound regression включает завершающий
+newline canonical JSON до публикации output. Human references не получены;
+authority/routing=false/not_assessed.
+
+Private v2 archive сохранён в исходном workspace: 1958090546 bytes / 870 ZIP
+entries / 908 restored logical files, SHA-256
+`2a99134b51e95d6082ef935115c1c6dca956b40402ccd00884a57a60e0fe9e90`.
+Both native runs, pinned weights, own Git и завершённые full logs сохранены.
+Обе copies CRC/SHA/size и actual copied production CLI/model0 byte-identical
+replay — PASS. [Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/nanojev-summary.json)
+и [archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/nanojev-archive-summary.json)
+позволяют сверить claims; routing не включён.
+
+## GLiClass и NanoJev: все публичные входы — реализовано и измерено, 11.10.2026
+
+[Whole-input native baseline](./qualification/local-decisions/baselines/public-native-inputs.md)
+сохраняет все 49 unlabelled English support cases / 44 dependency groups,
+включая длинные входы. Отбор по context eligibility прежнего decider
+не применяется; каждому кандидату задан свой прежний limit 1024 tokens
+до forward, без truncation/translation. Calibration/holdout не использованы.
+На двух порядках двух кандидатов — 196 variants / 166 actual forwards.
+
+GLiClass: 41 computed / 8 context refusals в каждом порядке, accepted 0/1,
+abstained 41/40; argmax changed 6/41. NanoJev: 42 computed / 7 context
+refusals в каждом порядке, accepted 0/0, abstained 42/42; argmax changed
+0/42. Unexpected backend errors=0, admission changes=0. Меток нет:
+accepted/argmax — только поведение модели, accuracy не измерена.
+Все token arrays, включая refused: GLiClass 98 / 73346 tokens,
+NanoJev 490 / 323080 tokens; processed 32832/135320 tokens.
+
+Native p50/p95 — 38.457/127.615 и 1275.943/4883.865 ms;
+whole-process max RSS — 736755712/5269979136 bytes. Один host, concurrent
+full suite, разные token paths: controlled latency/capacity/SLO не заявлены.
+155 frozen sources; serving body/version/policy/weights не менялись.
+
+15 new / 49 related / 1454 full scripts tests, 4 skips / 543.263 s — PASS.
+Independent stdlib 6081 checks, реальные tokenizer replay 588/588 arrays,
+35 CLI refusals + 2 byte-identical replays, model0; все owned PID absent,
+4 protected resident PID / 20 serving sources / 8 fields прежние. Первая
+source-copy попытка (missing transitive worker source) отказала до model
+import; inventory исправлен и isolated CLI regression добавлен. Первый
+full suite прерван и не считается PASS; обе истории сохранены.
+
+Private archive в исходном workspace — 2164356018 bytes / 1230 ZIP entries /
+1248 restored logical files, SHA-256
+`850f3e52418a04842e9e9efa8c4652098552ad391fddaa63c36b8a033a093313`.
+Обе copies закрыты CRC/SHA/size, включают все model bytes и own Git.
+Оба actual copied production CLI с `-I` воспроизвели reports byte-identical
+без model calls. [Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/public-native-summary.json)
+и [archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/public-native-archive-summary.json)
+не публикуют per-case predictions. Human labels=0; qualification/routing
+false/not_assessed. Реальные reviews, независимые calibration/holdout,
+подтверждение representative Agat/Russian quality и owner/SLO остаются открытыми.
+
+## decider и Qwen Base: все публичные входы — реализовано и измерено, 11.10.2026
+
+[Whole-input MLX baseline](./qualification/local-decisions/baselines/public-mlx-inputs.md)
+использует прежний MlxBackend.score, runtime 0.12.3 и все 49 unlabelled
+development inputs / 44 source groups в двух dependent orders. 196 variants,
+184 actual native forwards; все входы сохранены, по 3 context refusals
+на модель/order до backbone/eval, backend errors=0. Calibration/holdout
+не использованы. 13 immutable publisher files закреплены SHA/size;
+decider bytes переиспользованы, Qwen Base явно скачан вне Documents.
+
+decider: 46 computed в каждом порядке, policy accepted 31/34,
+abstained 15/12, argmax changed 4/46. Qwen Base: 46 computed, accepted
+33/0, abstained 13/46, argmax changed 46/46. Эта чувствительность к порядку
+зафиксирована без вывода об accuracy. Verified human references=0,
+routing/qualification остаются false/not_assessed.
+
+Native p50/p95: 170.744/550.190 ms и 168.736/548.693 ms. Whole-process
+high-water RSS: 3511582720/3539681280 bytes; MLX allocator peak:
+4475192924/4531778140 bytes. Разные scopes не смешиваются; cache/wired
+budgets не считаются hard cap total allocations. Одноhostовые concurrent
+observations не дают controlled speed, capacity или принятый SLO.
+
+Перепроверены 7443 stdlib checks, 1312 actual token arrays и 920 decoded
+continuations, 50 CLI refusals + 2 positive replays; все owned PIDs завершены,
+4 resident PIDs / 20 serving files / 8 fields сохранены. 15 новых regression
+tests, 45 related tests и полный **1469-test suite PASS / 4 skip / 553.522 s**.
+Первый full attempt с недоступными sandbox loopback/process inspection
+сохранён как failed; passing повтор использовал тот же source и необходимые
+permissions, не подменяя первый результат.
+
+[Aggregate](./qualification/local-decisions/baselines/evidence/2026-10-11/public-mlx-summary.json)
+не раскрывает per-case predictions будущим human reviewers.
+[Archive receipt](./qualification/local-decisions/baselines/evidence/2026-10-11/public-mlx-archive-summary.json)
+закрывает один standalone ZIP в original workspace с обоими полными
+artifacts, historical source/input evidence и actual relocated copied CLI
+replays: оба report byte-identical, 0 model calls. Следующая qualification
+зависит от настоящих независимых human reviews и representative datasets.
+
+## Внешний русский TERRa corpus — импортирован и проверен, 11.10.2026
+
+[Pinned external development import](./qualification/local-decisions/external/README.md)
+добавляет настоящие опубликованные reference labels для русского textual
+entailment. Все 307 development rows / 282 normalized premise groups,
+153 entailment / 154 not_entailment; immutable publisher revision, ZIP,
+development member и оригинальный MIT license закреплены по SHA/size.
+Train/test members не читаются, calibration/holdout не создаются.
+
+Исходный premise сохранён целиком в state, hypothesis — в фиксированном
+вопросе; два Choice options, gold/provenance/group находятся вне model
+request. Перевод, truncation, выбор по model outputs и переписывание
+publisher labels отсутствуют. `published-corpus` / `external-development-only`
+не превращаются в локальные human reviews или representative Agat traffic.
+
+Actual committed-source CLI import/replay в 148-file source fixture,
+2924 independent stdlib checks и 22 CLI refusals + 1 positive replay PASS.
+Все owned PIDs завершены, model imports/calls=0; 13 новых regression tests
+и полный **1482-test suite PASS / 4 skip / 515.775 s**.
+[Aggregate](./qualification/local-decisions/external/evidence/2026-10-11/terra-import-summary.json)
+и [original archive receipt](./qualification/local-decisions/external/evidence/2026-10-11/terra-import-archive-summary.json)
+фиксируют standalone complete source/corpus ZIP, CRC/SHA/size всех 824
+entries и actual copied original-workspace CLI byte-identical replay.
+
+[Native comparison четырёх pinned кандидатов на TERRa](./qualification/local-decisions/external/terra-native-baselines.md)
+завершён отдельным этапом: 2456 forwards, опубликованные references и
+независимый replay. Representative quality, local human reviews,
+calibration/holdout и SLO требуют собственного qualification evidence.
+
+## Внешний русский DaNetQA Boolean corpus — импортирован, 11.10.2026
+
+[DaNetQA development](./qualification/local-decisions/external/danetqa-development.md)
+сохранён целиком: 821 опубликованный typed Boolean reference, 409 false / 412 true,
+779 passage groups, оба дополнительных duplicate rows сохранены. ZIP/development
+member/MIT license имеют immutable SHA/size; исходные passage/question и
+Boolean values не меняются, references находятся вне model requests. Train/test,
+calibration/holdout и inference в этом этапе не использовались.
+
+Actual copied import/replay, 7865 независимых stdlib checks, 35 CLI refusals и
+1 positive replay PASS, все owned PIDs завершены, 0 model imports/calls.
+12 новых tests, полный 1506-test suite / 4 skip / 518.658 s и 18 Node tests PASS.
+[Aggregate](./qualification/local-decisions/external/evidence/2026-10-11/danetqa-import-summary.json)
+и [standalone archive receipt](./qualification/local-decisions/external/evidence/2026-10-11/danetqa-import-archive-summary.json)
+фиксируют полную source/corpus копию и actual original-workspace byte-identical
+verify после closed CRC/SHA/size проверки. 20 serving source files не менялись.
+
+[Native Boolean comparison](./qualification/local-decisions/external/danetqa-native-baselines.md)
+завершён на всех 821 cases и обоих порядках: 6568 forwards, 0 context/backend
+errors, без новых моделей, tuning или truncation. Decider correct 695/701,
+Base 686/689, GLiClass 420/398, NanoJev 412/412 и всегда true; accepted errors
+и coverage раскрыты отдельно. Changed argmax: 24/69/548/0 из 821. Все source
+и logits перепроверены 191294 независимыми checks; 16420 tokenizer arrays,
+6568 letter decodes, 77 actual CLI refusals + 4 replays PASS. 14 новых tests,
+полный 1520-test suite / 4 skip / 619.260 s и 18 Node tests PASS. Closed archive
+в original workspace восстановлен: independent audit до model prerequisites
+и четыре actual stdlib CLI byte-identical. Новое evidence ZIP явно требует
+двух сохранённых pinned weight bundles. Serving sources/resident unchanged.
+Следующий этап — внешний numeric Score development corpus с сохранением
+дробных references. Internal human reviews, representative calibration/holdout
+и owner/SLO остаются открытыми; routing disabled и qualification=not_assessed.
+
+## Внешний русский numeric RuSTSBenchmark corpus — импортирован, 11.10.2026
+
+[RuSTSBenchmark development](./qualification/local-decisions/external/ru-stsb-development.md)
+сохранён целиком: 1336 continuous float references 0.0–5.0, 943 дробных,
+2561 normalized sentences / 1242 connected components по обоим sentence roles.
+Все 3 additional duplicate rows и 2 conflicting score pairs сохранены без
+округления, invented class targets или adjudication. Original dev JSON,
+publisher declaration и полный CC-BY-SA-4.0 legal code имеют immutable byte
+pins; derived dataset сохраняет attribution/license и framing modifications.
+
+Actual copied import/replay, 12514 independent BFS/source/float checks,
+43 actual CLI refusals + 1 positive replay PASS; все owned PIDs завершены,
+0 model imports/calls. 12 новых / 37 related tests, полный 1532-test suite
+/ 4 skip / 540.387 s и 18 Node tests PASS. Closed standalone archive
+в original workspace восстановлен: actual stdlib CLI byte-identical после
+CRC/SHA/size проверки. Serving sources unchanged. Следующий этап — actual
+numeric Score comparison прежних pinned candidates с MAE/RMSE/Pearson/Spearman,
+whole/accepted denominators и отдельными dependent orders. External ratings
+не заменяют internal human reviews, representative calibration/holdout,
+owner/SLO; routing disabled и qualification=not_assessed.
 
 ## Вывод: что именно можно воспроизвести
 

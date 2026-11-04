@@ -3,13 +3,14 @@ import { Worker } from "node:worker_threads";
 import type { ExtractedKnowledgeFile } from "./knowledge-file-parser.js";
 import { normalizeKnowledgeDocumentInput } from "./knowledge.js";
 import type { UploadKnowledgeDocumentInput } from "./types.js";
+import { KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 
 export const KNOWLEDGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const KNOWLEDGE_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export function normalizeKnowledgeUpload(input: UploadKnowledgeDocumentInput) {
-  if (!input || !["application/pdf", KNOWLEDGE_DOCX_MEDIA_TYPE].includes(input.mediaType)) {
-    throw new Error("Поддерживаются PDF и DOCX");
+  if (!input || !["application/pdf", KNOWLEDGE_DOCX_MEDIA_TYPE, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE].includes(input.mediaType)) {
+    throw new Error("Поддерживаются PDF и DOCX, CSV и XLSX");
   }
   const metadata = normalizeKnowledgeDocumentInput({ name: input.name, sourceUri: input.sourceUri, content: "file" });
   const encoded = input.contentBase64;
@@ -25,8 +26,13 @@ export function normalizeKnowledgeUpload(input: UploadKnowledgeDocumentInput) {
 
 let activeParsers = 0;
 
+export class KnowledgeParserBusyError extends Error {
+  readonly status = 503;
+  constructor() { super("Разбор документов занят. Повторите загрузку или индексацию позже"); }
+}
+
 export async function parseKnowledgeFile(bytes: Uint8Array, mediaType: string): Promise<ExtractedKnowledgeFile> {
-  if (activeParsers >= 2) throw new Error("Разбор документов занят. Повторите индексацию позже");
+  if (activeParsers >= 2) throw new KnowledgeParserBusyError();
   activeParsers += 1;
   try {
     return await new Promise<ExtractedKnowledgeFile>((resolve, reject) => {
