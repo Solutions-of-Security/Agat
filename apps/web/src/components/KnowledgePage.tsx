@@ -30,6 +30,7 @@ const documentStatusCopy: Record<KnowledgeDocument["status"], string> = {
   indexing: "Индексируется",
   ready: "Готов",
   failed: "Ошибка",
+  review_required: "Проверьте текст",
 };
 
 function formatDate(value: string | null): string {
@@ -66,6 +67,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [ingestCollectionId, setIngestCollectionId] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -116,6 +118,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
   async function mutate(action: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
     setError(null);
+    setUploadNotice(null);
     try {
       await action();
       after?.();
@@ -158,6 +161,9 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
       const document = documentBase64 !== null
         ? await api.uploadKnowledgeDocument(ingestCollectionId, { ...metadata, contentBase64: documentBase64 })
         : await api.ingestKnowledgeDocument(ingestCollectionId, { ...metadata, content: documentContent });
+      if ("upload" in document && (document.upload as { disposition: string }).disposition === "existing") {
+        setUploadNotice({ projectId, message: `Файл «${documentName}» уже загружен как «${document.name}». Открыт сохранённый документ с текущим состоянием проверки и индексации.` });
+      }
       window.location.hash = knowledgeDocumentHref(projectId, document.id);
     }, () => {
       setIngestCollectionId(null);
@@ -295,11 +301,13 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
       </section>
 
       {error ? <button className="connection-toast knowledge-page__error" type="button" onClick={() => setError(null)}>{error}</button> : null}
+      {uploadNotice?.projectId === projectId ? <p role="status">{uploadNotice.message}</p> : null}
 
       {recovery.get("documentId") ? <KnowledgeDocumentPreview
         key={`${projectId}:${recovery.get("documentId")}`} documentId={recovery.get("documentId")!} projectId={projectId}
         requestedProjectId={recovery.get("projectId")} chunkId={recovery.get("chunkId")} expectedSha256={recovery.get("sha256")}
-        pageNumber={Number(recovery.get("page") || 1)} revision={revision}
+        pageNumber={Number(recovery.get("page") || 1)} revision={revision} canReview={canManage}
+        onReviewed={async () => { await Promise.all([refreshDetailed(), onChanged()]); }}
         onClose={() => { window.location.hash = "#knowledge"; }} /> : null}
 
       {createOpen ? (
@@ -335,7 +343,7 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
         <section className="large-empty-state">
           <Icon name="knowledge" size={34} />
           <h2>Коллекций пока нет</h2>
-          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте PDF, DOCX или текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
+          <p>Создайте коллекцию, выберите локальную embedding-модель и добавьте PDF, DOCX, CSV, XLSX или текстовый документ. После индексации коллекцию можно подключить к запуску или процессу.</p>
           {canManage ? <button className="button button--primary" type="button" onClick={() => setCreateOpen(true)}><Icon name="plus" size={16} />Создать первую коллекцию</button> : null}
         </section>
       ) : (
@@ -372,10 +380,10 @@ export function KnowledgePage({ overview, projectId, agents, nodes, roles, onCha
                       <label className="field"><span>Название</span><input required maxLength={180} value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Privacy policy.md" /></label>
                       <label className="field"><span>Source URI</span><input name="sourceUri" maxLength={2_048} placeholder="agat://handbook/privacy" /></label>
                       <label className="field"><span>Media type</span><input required readOnly={documentBase64 !== null} maxLength={120} value={documentMediaType} onChange={(event) => setDocumentMediaType(event.target.value)} /></label>
-                      <label className="field knowledge-file"><span>PDF/DOCX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*,.pdf,.docx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
+                      <label className="field knowledge-file"><span>PDF, DOCX, CSV, XLSX до 5 МиБ · текст до 2 МБ</span><input disabled={busy} type="file" accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/*,.pdf,.docx,.xlsx,.md,.txt,.csv,.json" onChange={(event) => void readDocumentFile(event)} /></label>
                     </div>
                     {documentBase64 !== null ? <p>Файл выбран. После загрузки откроется предпросмотр извлечённого текста.</p> : <label className="field"><span>Текст</span><textarea required rows={7} maxLength={2_000_000} value={documentContent} onChange={(event) => setDocumentContent(event.target.value)} placeholder="Вставьте текст или выберите файл" /></label>}
-                    <footer><small>Текст извлекается локально. PDF-сканы без текстового слоя требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и индексировать"}</button></footer>
+                    <footer><small>Разбор выполняется локально. PDF/DOCX требуют проверки извлечённого текста перед индексацией. Для CSV нужен UTF-8, для XLSX — копия без формул и макросов. Даты и форматирование ячеек не интерпретируются. PDF-сканы требуют OCR.</small><button className="button button--primary" type="submit" disabled={busy || fileReading}>{fileReading ? "Читаем файл…" : busy ? "Разбираем документ…" : "Загрузить и разобрать"}</button></footer>
                   </form>
                 ) : null}
 

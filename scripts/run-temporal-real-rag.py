@@ -10,7 +10,9 @@ from pathlib import Path
 import platform
 import re
 import shlex
+import signal
 import socket
+import stat
 import subprocess
 import sys
 import tarfile
@@ -19,6 +21,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from decision_runtime.mlx_backend import wired_limit_bytes
 spec = importlib.util.spec_from_file_location('embedding_profile', ROOT / 'scripts/profile-embedding-rag.py')
 shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
@@ -33,20 +36,29 @@ SHADOW_POLICY = 'docs/qualification/local-decisions/policy.shadow.v1.json'
 SHADOW_REFERENCE = 'docs/qualification/local-decisions/performance/evidence/2026-09-28/rag-http-isolation/resident-isolated/rag-workflow-plan.json'
 SHADOW_SOURCES = ['decision_runtime', SHADOW_POLICY, SHADOW_REFERENCE]
 SHADOW_RECOVERY_SOURCES = ['scripts/lib/temporal_shadow_control.py', 'scripts/test/test_temporal_shadow_control.py']
+CALLER_ACCOUNTING_SOURCES = ['scripts/verify-temporal-real-rag.py', 'scripts/test/test_temporal_caller_accounting.py']
+CALLER_ACCOUNTING_PLAN = {'capability': 'agat.decision.caller-accounting.v1',
+    'timingSchemaVersion': 'agat.decision.caller-timing.v1', 'clock': 'monotonic',
+    'boundary': 'local_http_call', 'profileIdentity': 'coordinator_json_bytes'}
 
 
-def shadow_profile(path):
+def shadow_profile(path, *, wired_limit_mib=None):
     """Admit an explicit export of this runtime with the original experiment settings."""
     from decision_runtime import VERSION, implementation_sha256
     from decision_runtime.contracts import canonical_json, parse_json
+    wired_bytes = wired_limit_bytes(wired_limit_mib)
     path = path.resolve()
-    require(path.is_relative_to(ROOT / 'docs') and path.is_file(), 'Shadow profile must be a file under docs')
+    docs = (ROOT / 'docs').resolve()
+    require(path.is_relative_to(docs) and not path.is_relative_to(docs / 'private') and path.is_file(),
+            'Shadow profile must be a public file under docs')
     expected = json.loads(json.loads((ROOT / SHADOW_REFERENCE).read_text())['decision']['profileJson'])
     expected['runtimeVersion'] = VERSION
     expected['model']['implementationSha256'] = implementation_sha256()
+    if wired_bytes is not None:
+        expected['model']['allocatorWiredLimitBytes'] = wired_bytes
     profile = parse_json(path.read_bytes())
-    require(profile == expected, 'Explicit shadow profile differs from current runtime or frozen experiment settings')
     raw = canonical_json(profile)
+    require(raw == canonical_json(expected), 'Explicit shadow profile differs from current runtime or frozen experiment settings')
     return path.relative_to(ROOT).as_posix(), {'profileJson': raw, 'profileSha256': sha(raw.encode())}
 
 
@@ -131,16 +143,50 @@ def open_private_log(path):
         raise
 
 
-def start_shadow_runtime(state, args, port, decision, warmup_request, log):
-    process = subprocess.Popen([str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
+def require_resident_shadow_model(manifest_path):
+    """Reject macOS cloud placeholders before opening or hashing model files."""
+    def resident(path):
+        require(not (getattr(path.stat(), 'st_flags', 0) & getattr(stat, 'SF_DATALESS', 0)),
+                'Shadow model has cloud-only files; restore pinned weights in a local store before running')
+    resident(manifest_path)
+    manifest = json.loads(manifest_path.read_bytes())
+    require(isinstance(manifest, dict) and isinstance(manifest.get('snapshot'), str)
+            and bool(manifest['snapshot']) and isinstance(manifest.get('files'), dict)
+            and bool(manifest['files']), 'Invalid shadow model manifest')
+    snapshot = Path(manifest['snapshot'])
+    resident(snapshot)
+    for name in manifest['files']:
+        require(isinstance(name, str) and bool(name) and Path(name).name == name,
+                'Invalid shadow model manifest')
+        resident(snapshot / name)
+
+
+def start_shadow_runtime(state, args, port, decision, warmup_request, log, *, check_cancelled=lambda: None):
+    check_cancelled()
+    wired_mib = getattr(args, 'shadow_wired_limit_mib', None)
+    wired_bytes = wired_limit_bytes(wired_mib)
+    model = json.loads(decision['profile']['profileJson'])['model']
+    require(('allocatorWiredLimitBytes' in model) == (wired_bytes is not None)
+            and model.get('allocatorWiredLimitBytes') == wired_bytes
+            and (wired_bytes is None or type(model['allocatorWiredLimitBytes']) is int),
+            'Shadow wired budget differs from pinned profile')
+    require('wiredLimitMiB' not in decision if wired_bytes is None else
+            type(decision.get('wiredLimitMiB')) is int and decision['wiredLimitMiB'] == wired_mib,
+            'Shadow wired budget differs from recorded plan')
+    arguments = [str(args.shadow_python.absolute()), '-m', 'decision_runtime', 'serve',
         '--manifest', str(args.shadow_manifest.resolve()), '--policy', str(ROOT / SHADOW_POLICY),
         '--max-tokens', '2048', '--cache-limit-mib', '128', '--inference-timeout-ms', '5000',
-        '--exit-on-backend-unavailable', '--port', str(port)], cwd=ROOT,
+        '--exit-on-backend-unavailable', '--port', str(port)]
+    if wired_mib is not None:
+        arguments += ['--wired-limit-mib', str(wired_mib)]
+    process = subprocess.Popen(arguments, cwd=ROOT,
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'})
     state['process'] = process
+    check_cancelled()  # The handle is owned before cooperative cancellation.
     deadline = time.monotonic() + 30
     while True:
+        check_cancelled()
         require(process.poll() is None, 'Owned shadow runtime exited during startup')
         try:
             state['health'] = request(port, '/health')
@@ -149,15 +195,17 @@ def start_shadow_runtime(state, args, port, decision, warmup_request, log):
             require(time.monotonic() < deadline, 'Owned shadow runtime startup timeout')
             time.sleep(.1)
     health = state['health']
+    check_cancelled()
     require(health.get('status') == 'ready' and health.get('mode') == 'shadow', 'Shadow runtime not ready')
     require(all(health[key] == decision['profile'][key] for key in ['profileJson', 'profileSha256']), 'Live shadow profile changed')
     state['warmup'] = request(port, '/v1/decisions', warmup_request, 12, capture_status=True)
+    check_cancelled()
     warmup = state['warmup']
     require(warmup['httpStatus'] == 200 and warmup['result'].get('status') in ['ok', 'abstain'],
             'Shadow warmup failed: ' + str(warmup['result'].get('reason')))
 
 
-def main():
+def main(*, check_cancelled=lambda: None):
     if not __debug__:
         raise RuntimeError('Assertions must be enabled')
     parser = argparse.ArgumentParser(description=__doc__)
@@ -165,16 +213,22 @@ def main():
     parser.add_argument('--shadow-python', type=Path, help='Resident MLX Python; requires --shadow-manifest')
     parser.add_argument('--shadow-manifest', type=Path, help='Verified resident decider manifest; enables the v2 shadow gate')
     parser.add_argument('--shadow-profile', type=Path, help='Committed runtime profile export; default retains the historical profile')
+    parser.add_argument('--shadow-wired-limit-mib', type=int, help='Explicit per-process wired budget; requires a matching committed shadow profile')
     parser.add_argument('--shadow-recovery', action='store_true', help='Kill/restart the owned shadow server during each workflow')
     parser.add_argument('--shadow-resources', action='store_true', help='Observe owned-process and system memory during shadow recovery')
+    parser.add_argument('--caller-accounting', action='store_true', help='Require real caller timing and SQL intent/return receipts; enables the v5 gate')
     args = parser.parse_args()
+    wired_limit_bytes(args.shadow_wired_limit_mib)
     require(bool(args.shadow_python) == bool(args.shadow_manifest), 'Both shadow runtime arguments are required')
     shadow_enabled = args.shadow_manifest is not None
     require(not args.shadow_profile or shadow_enabled, 'An explicit shadow profile requires both shadow runtime arguments')
-    reference_path, explicit_profile = shadow_profile(args.shadow_profile) if args.shadow_profile else (SHADOW_REFERENCE, None)
+    require(args.shadow_wired_limit_mib is None or (shadow_enabled and args.shadow_profile is not None),
+            'An explicit wired budget requires both shadow runtime arguments and a matching shadow profile')
+    reference_path, explicit_profile = shadow_profile(args.shadow_profile, wired_limit_mib=args.shadow_wired_limit_mib) if args.shadow_profile else (SHADOW_REFERENCE, None)
     require(not args.shadow_recovery or shadow_enabled, 'Shadow recovery requires both shadow runtime arguments')
     require(not args.shadow_resources or args.shadow_recovery, 'Shadow resource diagnostics requires recovery mode')
-    version_number = 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
+    require(not args.caller_accounting or args.shadow_resources, 'Caller accounting requires shadow resource/recovery mode')
+    version_number = 5 if args.caller_accounting else 4 if args.shadow_resources else 3 if args.shadow_recovery else 2 if shadow_enabled else 1
     resource_sources = []
     if args.shadow_resources:
         from scripts.lib.shadow_resource_sample import ResourceSampler, PLAN as RESOURCE_PLAN, SOURCE_PATHS
@@ -186,7 +240,8 @@ def main():
     require(platform.system() == 'Darwin', 'This installed-model experiment requires the macOS host')
     commit = command(['git', 'rev-parse', 'HEAD'])
     measured_paths = [*SOURCES, *(SHADOW_SOURCES if shadow_enabled else []), *(SHADOW_RECOVERY_SOURCES if args.shadow_recovery else []),
-                      *resource_sources, *([reference_path] if explicit_profile else [])]
+                      *resource_sources, *([reference_path] if explicit_profile else []),
+                      *(CALLER_ACCOUNTING_SOURCES if args.caller_accounting else [])]
     snapshot = subprocess.check_output(['git', 'archive', commit, '--', *measured_paths], cwd=ROOT, timeout=15)
     sources = {}
     with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
@@ -199,6 +254,7 @@ def main():
     require(not command(['git', 'ls-files', '--others', '--exclude-standard', '--', *measured_paths]), 'Untracked measured sources')
     decision = None
     if shadow_enabled:
+        require_resident_shadow_model(args.shadow_manifest.resolve())
         sys.path.insert(0, str(ROOT))
         from decision_runtime.model_store import verify_manifest
         manifest, _ = verify_manifest(args.shadow_manifest.resolve())
@@ -216,6 +272,8 @@ def main():
                     'referencePath': reference_path, 'policyPath': SHADOW_POLICY, 'warmupCalls': 3 if args.shadow_recovery else 1}
         if explicit_profile:
             decision['referenceFormat'] = 'runtime-profile-v1'
+        if args.shadow_wired_limit_mib is not None:
+            decision['wiredLimitMiB'] = args.shadow_wired_limit_mib
     model_root = Path(os.environ.get('OLLAMA_MODELS', str(Path.home() / '.ollama/models')))
     for name, digest in shared.MODELS.items():
         require(sha((model_root / 'manifests/registry.ollama.ai/library' / name.replace(':', '/')).read_bytes()) == digest,
@@ -242,6 +300,8 @@ def main():
             'actions': [f'{transport}/{action}' for transport in plan['transports'] for action in ['kill', 'restart']]}
     if args.shadow_resources:
         plan['resources'] = RESOURCE_PLAN
+    if args.caller_accounting:
+        plan['callerAccounting'] = CALLER_ACCOUNTING_PLAN
     directory.mkdir(parents=True)
     write(directory / 'plan.json', plan)
     started = time.monotonic()
@@ -274,6 +334,7 @@ def main():
                 bound.bind(('127.0.0.1', 0))
                 port = bound.getsockname()[1]
             try:
+                check_cancelled()
                 shadow_environment = {}
                 if args.shadow_resources:
                     resources = ResourceSampler(started)
@@ -281,6 +342,8 @@ def main():
                     require(not resources.errors, 'Resource counters unavailable')
                     require(before['pressureDispatchLevel'] != 4, 'Critical memory pressure before model admission')
                     shadow_environment['AGAT_TEMPORAL_SHADOW_RESOURCES'] = 'true'
+                if args.caller_accounting:
+                    shadow_environment['AGAT_TEMPORAL_SHADOW_CALLER_ACCOUNTING'] = 'true'
                 if shadow_enabled:
                     with socket.socket() as shadow_bound:
                         shadow_bound.bind(('127.0.0.1', 0)); shadow_port = shadow_bound.getsockname()[1]
@@ -291,12 +354,14 @@ def main():
                         if args.shadow_recovery:
                             from scripts.lib.temporal_shadow_control import ShadowRecoveryControl
                             shadow_control = ShadowRecoveryControl(temporary / 'control',
-                                lambda state: start_shadow_runtime(state, args, shadow_port, decision, warmup_request, decision_log),
+                                lambda state: start_shadow_runtime(state, args, shadow_port, decision, warmup_request, decision_log,
+                                                                   check_cancelled=check_cancelled),
                                 shared.inventory, shared.stop, started)
                             shadow_control.start()
                             shadow_environment['AGAT_TEMPORAL_SHADOW_CONTROL'] = str(shadow_control.directory)
                         else:
-                            start_shadow_runtime(initial_state, args, shadow_port, decision, warmup_request, decision_log)
+                            start_shadow_runtime(initial_state, args, shadow_port, decision, warmup_request, decision_log,
+                                                 check_cancelled=check_cancelled)
                     finally:
                         initial_state = shadow_control.state if shadow_control else initial_state
                         shadow_runtime = initial_state.get('process')
@@ -308,8 +373,10 @@ def main():
                 ollama = subprocess.Popen(['ollama', 'serve'], cwd=ROOT, stdout=model_log, stderr=subprocess.STDOUT,
                                           start_new_session=True, env={**os.environ, **settings, 'OLLAMA_HOST': f'127.0.0.1:{port}'})
                 pids.add(ollama.pid)
+                check_cancelled()
                 deadline = time.monotonic() + 30
                 while True:
+                    check_cancelled()
                     require(ollama.poll() is None, 'Owned model server exited')
                     try:
                         version = request(port, '/api/version')
@@ -318,13 +385,16 @@ def main():
                         require(time.monotonic() < deadline, 'Owned model server startup timeout')
                         time.sleep(.1)
                 initial = request(port, '/api/ps')
+                check_cancelled()
                 require(initial.get('models') == [], 'Owned model server must start empty')
                 for endpoint, payload in [('/api/embed', {'model': 'embeddinggemma:latest', 'input': ['Локальная проверка'],
                         'truncate': False, 'keep_alive': '5m', 'options': {'num_ctx': 2048}}),
                     ('/api/chat', {'model': 'qwen3:8b', 'messages': [{'role': 'user', 'content': 'Ответь одним словом: готово.'}],
                         'stream': False, 'think': False, 'keep_alive': '5m',
                         'options': {'temperature': .2, 'seed': 0, 'num_ctx': 8192, 'num_predict': 8}})]:
+                    check_cancelled()
                     result = request(port, endpoint, payload, 60)
+                    check_cancelled()
                     require(result.get('model') == payload['model'], 'Warmup model mismatch')
                     warmup.append({'model': payload['model'], 'nativeTotalMs': result['total_duration'] / 1e6,
                                    'nativeLoadMs': result['load_duration'] / 1e6})
@@ -333,6 +403,7 @@ def main():
                 deadline, next_sample, next_resources = time.monotonic() + plan['workloadBudgetSeconds'], 0, 0
                 print('Owned models warmed; real PostgreSQL/Temporal RAG started', flush=True)
                 for transport in plan['transports']:
+                    check_cancelled()
                     workload = subprocess.Popen(['bash', 'scripts/test-temporal-postgres-rag.sh',
                         '--test-skip-pattern=Temporal RAG (sqlite|postgresql)/'], cwd=ROOT, stdout=test_log,
                         stderr=subprocess.STDOUT, start_new_session=True, env={**environment, **shadow_environment,
@@ -340,7 +411,9 @@ def main():
                             'AGAT_TEMPORAL_REAL_MODEL_URL': f'http://127.0.0.1:{port}',
                             'AGAT_TEMPORAL_REAL_RAG_PLAN': str(directory / 'plan.json'), 'AGAT_TEMPORAL_REAL_RAG_TRANSPORT': transport})
                     pids.add(workload.pid)
+                    check_cancelled()
                     while workload.poll() is None:
+                        check_cancelled()
                         require(time.monotonic() < deadline, 'Workload budget exceeded')
                         if resources is not None and time.monotonic() >= next_resources:
                             sample_resources(transport)
@@ -361,23 +434,28 @@ def main():
                             samples.append({'elapsedMs': (time.monotonic() - started) * 1000, 'models': request(port, '/api/ps')['models']})
                             next_sample = time.monotonic() + 10
                         time.sleep(.5)
+                    check_cancelled()
                     workloads.append({'transport': transport, 'pid': workload.pid, 'exitCode': workload.returncode})
                     require(workload.returncode == 0, 'Live integration tests failed; inspect tests.log')
                     require(json.loads((directory / f'{transport}.json').read_text()).get('status') == 'pass', 'Incomplete transport evidence')
                     print(transport + ': recovery and native replay passed', flush=True)
                 if shadow_enabled:
+                    check_cancelled()
                     decision_after = request(shadow_port, '/health')
+                    check_cancelled()
                     require(decision_after == decision_before, 'Shadow runtime health/profile changed during workload')
                 if shadow_control:
                     require(shadow_control.failure is None and len(shadow_control.events) == 4, 'Incomplete shadow failure/recovery sequence')
                 if resources:
                     require(not resources.errors, 'Resource observations incomplete')
-            except Exception as error:
+            except (Exception, KeyboardInterrupt) as error:
                 failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
                 # Let the integration harness persist the failed response and
                 # close its children before forcing the wrapper to stop.
+                # An operator cancellation instead starts teardown now.
                 drain_deadline = time.monotonic() + 5
-                while workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
+                interrupted = isinstance(error, (ExperimentInterrupted, KeyboardInterrupt))
+                while not interrupted and workload is not None and workload.poll() is None and time.monotonic() < drain_deadline:
                     time.sleep(.1)
             finally:
                 sample_resources('before_cleanup')
@@ -423,6 +501,11 @@ def main():
         failure = {'type': 'CleanupError', 'reason': 'Owned resources did not close or could not be verified'}
     if resources is not None and resources.errors and failure is None:
         failure = {'type': 'ObservationError', 'reason': 'Resource observations incomplete'}
+    if failure is None:
+        try:
+            check_cancelled()  # Signals received during teardown cannot skip it.
+        except (Exception, KeyboardInterrupt) as error:
+            failure = {'type': type(error).__name__, 'reason': str(error)[:300]}
     report = {'schema': f'agat.temporal.real-rag-launcher.v{version_number}', 'status': 'fail' if failure else 'pass', 'failure': failure,
               'planSha256': sha((directory / 'plan.json').read_bytes()), 'phaseSha256': phase_hashes,
               'elapsedMs': (time.monotonic() - started) * 1000, 'ollamaVersion': version, 'warmup': warmup,
@@ -448,5 +531,31 @@ def main():
     return 1 if failure else 0
 
 
+class ExperimentInterrupted(RuntimeError):
+    """An operator stopped the experiment at an owned-process checkpoint."""
+
+
+def cli():
+    # Exceptions inside a signal handler can interrupt Popen before its handle
+    # is registered or abandon cleanup. Record the first signal, then raise
+    # only at explicit checkpoints after ownership has been established.
+    requested = None
+    def interrupt(signum, _frame):
+        nonlocal requested
+        if requested is None:
+            requested = signum
+    def check_cancelled():
+        if requested is not None:
+            raise ExperimentInterrupted('Temporal experiment interrupted by ' + signal.Signals(requested).name)
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        for sig in previous:
+            signal.signal(sig, interrupt)
+        return main(check_cancelled=check_cancelled)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(cli())

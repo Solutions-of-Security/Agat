@@ -50,7 +50,8 @@ class ProcessMemory:
 
 def endurance(dataset, url, *, duration_s=600, window_s=30, max_requests=5000, warmup=3,
               timeout_ms=10000, process_pids=(), health_transport=None, client=None,
-              memory_sampler=None, clock=time.perf_counter, progress=None):
+              memory_sampler=None, clock=time.perf_counter, progress=None,
+              cancel_requested=None, observation=None, expected_profile_sha=None):
     cases = development_cases(dataset)
     requests = [Request.from_dict(c['request']) for c in cases]
     if (not requests or len(requests) > 100 or any(r.kind not in {'choice', 'boolean'} for r in requests)
@@ -58,27 +59,34 @@ def endurance(dataset, url, *, duration_s=600, window_s=30, max_requests=5000, w
             or type(window_s) is not int or not 1 <= window_s <= min(300, duration_s)
             or type(max_requests) is not int or not 1 <= max_requests <= 10000
             or type(warmup) is not int or not 0 <= warmup <= 20
-            or type(timeout_ms) is not int or not 100 <= timeout_ms <= 10000):
+            or type(timeout_ms) is not int or not 100 <= timeout_ms <= 10000
+            or (cancel_requested is not None and not callable(cancel_requested))
+            or (observation is not None and not callable(observation))):
         raise ValueError("Unsupported or excessive endurance plan")
     memory = memory_sampler or ProcessMemory(process_pids)
     transport = health_transport or LoopbackJson(url, timeout=2)
     client = client or LocalDecisionClient(url)
     profile = profile_from_health(transport('GET', '/health'))
     pinned = fingerprint(profile)
+    if expected_profile_sha is not None and pinned != expected_profile_sha:
+        raise ValueError('Pinned endurance profile changed')
     created = datetime.now(timezone.utc).isoformat()
     signatures, changes, snapshots, windows, measured = {}, set(), [], [], []
     started = clock()
 
-    def one(request, index):
+    def cancelled():
+        return cancel_requested is not None and cancel_requested()
+
+    def one(request, index, phase):
         begin = clock()
-        observation = client.decide({'profile': PROFILE, 'profileSha256': pinned,
+        outcome = client.decide({'profile': PROFILE, 'profileSha256': pinned,
                                      'timeoutMs': timeout_ms, 'request': request.to_dict()})
         end = clock()
         row = {'index': index, 'caseId': request.id, 'inputSha256': request.input_sha256,
                'startedMs': round((begin-started)*1000, 3), 'wallMs': round((end-begin)*1000, 3)}
         try:
-            if set(observation) == {'result'}:
-                result = observation['result']; validate_result(result, request, profile)
+            if set(outcome) == {'result'}:
+                result = outcome['result']; validate_result(result, request, profile)
                 row.update(status=result['status'], reason=result['reason'], runtimeMs=result['durationMs'])
                 if result['status'] != 'error':
                     row['inputTokens'] = result['inputTokens']
@@ -86,13 +94,15 @@ def endurance(dataset, url, *, duration_s=600, window_s=30, max_requests=5000, w
                     row['decisionSha256'] = signature
                     if signatures.setdefault(request.input_sha256, signature) != signature:
                         changes.add(request.id)
-            elif (set(observation) == {'status', 'reason'} and observation['status'] == 'unavailable'
-                  and observation['reason'] in {'busy', 'timeout', 'cancelled', 'unreachable', 'invalid_response', 'profile_mismatch'}):
-                row.update(observation)
+            elif (set(outcome) == {'status', 'reason'} and outcome['status'] == 'unavailable'
+                  and outcome['reason'] in {'busy', 'timeout', 'cancelled', 'unreachable', 'invalid_response', 'profile_mismatch'}):
+                row.update(outcome)
             else:
                 raise ValueError
         except (KeyError, ValueError, TypeError, OverflowError):
             row.update(status='unavailable', reason='invalid_response')
+        if observation:
+            observation(dict(row), phase)
         return row
 
     def snapshot(phase):
@@ -109,7 +119,9 @@ def endurance(dataset, url, *, duration_s=600, window_s=30, max_requests=5000, w
     warm = []
     stopped = None
     for i in range(warmup):
-        row = one(requests[i % len(requests)], i); warm.append(row)
+        if cancelled():
+            stopped = 'cancelled'; break
+        row = one(requests[i % len(requests)], i, 'warmup'); warm.append(row)
         if row['status'] not in {'ok', 'abstain'} or changes:
             stopped = 'warmup_failed'; break
     # Start the measurement clock after warmup; warmup timestamps use their own origin.
@@ -119,12 +131,16 @@ def endurance(dataset, url, *, duration_s=600, window_s=30, max_requests=5000, w
         stopped = 'health_or_process_unavailable'
     window_start, offset = 0.0, 0
     while stopped is None and len(measured) < max_requests and clock()-started < duration_s:
-        row = one(requests[len(measured) % len(requests)], len(measured)); measured.append(row)
+        if cancelled():
+            stopped = 'cancelled'; break
+        row = one(requests[len(measured) % len(requests)], len(measured), 'measured'); measured.append(row)
         elapsed = clock()-started
         if row['status'] not in {'ok', 'abstain'}:
             stopped = 'request_failed'
         elif changes:
             stopped = 'decision_changed'
+        elif cancelled():
+            stopped = 'cancelled'
         if elapsed-window_start >= window_s:
             windows.append({'index': len(windows), 'startedMs': round(window_start*1000, 3),
                             'finishedMs': round(elapsed*1000, 3),

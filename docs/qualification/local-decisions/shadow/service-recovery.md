@@ -1,6 +1,8 @@
 # Завершение отказавшего сервиса и восстановление
 
-26.09.2026. Runtime `0.10.0` добавляет `serve --exit-on-backend-unavailable`. При отказе изолированного MLX-процесса HTTP-сервис прекращает приём, завершает уже принятые обработчики и выходит с кодом **75**. Восстановление новым foreground-процессом проверено на реальных весах. Подготовлены генератор LaunchAgent и ограниченный тест launchd; нативный опыт на этом Mac остановился до старта runtime из-за запроса доступа macOS к Documents. Автоматический restart launchd **не подтверждён**.
+26.09.2026. Runtime `0.10.0` добавляет `serve --exit-on-backend-unavailable`. При отказе изолированного MLX-процесса HTTP-сервис прекращает приём, завершает уже принятые обработчики и выходит с кодом **75**. Восстановление новым foreground-процессом проверено на реальных весах. Первый нативный опыт остановился до старта runtime из-за доступа macOS к Documents; его исторические результаты сохранены ниже.
+
+04.10.2026. [Native restart на профиле 0.12.2](./native-launchd-0.12.2.md) подтверждён из отдельного resident checkout вне Documents: exit 75, автоматический новый запуск, идентичный профиль/решение и полная очистка временного job. Постоянная установка, boot/login и recovery SLO остаются отдельными gates.
 
 ## Поведение
 
@@ -98,5 +100,60 @@ launchctl bootout "gui/$(id -u)/org.agat.decision-shadow"
 ```
 
 Опыты прекращаются при неподтверждённом результате; неготовый native startup не считается успешным restart. Предметная qualification остаётся открытой, автоматическая маршрутизация выключена.
+
+## Проверка закреплённого профиля и сохранение диагностики
+
+04.10.2026. Нативный probe теперь принимает `--expected-profile` и явный
+`--inference-timeout-ms`. Ранее он всегда выбирал 2000 мс и мог проверить restart
+другого профиля, чем опубликованный isolated-профиль с deadline 5000 мс.
+При заданном expected profile параметры проверяются до регистрации job,
+а полный `/health` профиль — до первого scoring и SIGKILL и после restart.
+Несовпадение останавливает опыт; endpoint не получает диагностический input
+при первоначальном несовпадении.
+
+`--evidence-dir` создаёт новый каталог только внутри игнорируемого `docs/private`.
+Plist и stdout/stderr сохраняются и при неготовом startup: каталог имеет режим
+0700, файлы — 0600. Дети собственного LaunchAgent учитываются до HTTP readiness.
+Неполный inventory или ошибка очистки сохраняются в failed report; они не
+допускают отметку о подтверждённой остановке всех процессов. Ошибка `launchctl
+print` также не означает отсутствия job: принимается только конкретный ответ
+об отсутствии указанной службы.
+
+Измеритель требует committed bytes собственных исходников и сохраняет commit,
+source SHA и SHA оставшихся diagnostic files. Изменение harness во время опыта
+отвергается. Эти SHA фиксируют содержимое, а не являются цифровой подписью.
+Схема нового отчёта — `agat.decision.launchd-recovery.v2`; неуспешный опыт
+возвращает ненулевой exit status и сохраняет отдельные исходы lifecycle/cleanup.
+
+```bash
+# Сначала commit изменённых исходников probe; каталог evidence ещё не существует.
+.venv/decision/bin/python scripts/check-decision-launchd.py \
+  --python .venv/decision/bin/python \
+  --manifest .local-models/decisions/decider-2b.json \
+  --policy docs/qualification/local-decisions/policy.shadow.v1.json \
+  --request docs/qualification/local-decisions/request.example.json \
+  --expected-profile docs/qualification/local-decisions/performance/profiles/runtime-0.12.2.json \
+  --inference-timeout-ms 5000 \
+  --evidence-dir docs/private/new-run/launchd \
+  --output docs/private/new-run/launchd/launchd-recovery.json
+```
+
+SIGTERM во время lifecycle опыта вызывает bounded cleanup и сохраняет failed
+report с диагностикой. Прежний signal handler восстанавливается после cleanup.
+
+`launchctl print` может добавлять символическое имя к числовому exit code,
+например `75: EX_TEMPFAIL`. Такой формат показан и в [диагностике Apple DTS](https://developer.apple.com/forums/thread/791996).
+Parser принимает числовой код с необязательным символическим suffix и отвергает
+посторонний текст. После исчезновения PID публикация exit code ожидается не
+более пяти секунд; другой код или потеря регистрации завершают опыт ошибкой.
+Исходный вывод launchctl сохраняется приватно в `failure-service-state.txt`.
+После `bootout` отсутствие регистрации ожидается не более восьми секунд;
+возвращение команды само по себе не доказывает завершённое удаление. Последний
+нативный ответ сохраняется в `cleanup-service-state.txt`, PID проверяются отдельно.
+
+Семнадцать новых fixture tests проверяют границы профиля и source admission,
+startup без HTTP, inventory, ошибки проверки регистрации, сохранение логов
+и отказ при неподтверждённом cleanup, а также SIGTERM. Они не запускают MLX и не доказывают
+нативный restart; для этого требуется отдельный реальный опыт.
 
 [Независимая перепроверка](./evidence/2026-09-26/verification-service-recovery.json) пересчитала seals, профили и logits/вероятности, сверила текущий implementation SHA и отсутствие процессов/job. `npm test`: 204 coordinator, 52 web, 45 worker (1 skip), 97 runtime (3 skip), Temporal/replay и process pack — без ошибок. `docs:check`: 12 Node- и 62 Python-проверки, каталог процессов и локальные ссылки — без ошибок. Шесть lifecycle-тестов отдельно проверяют смерть в простое, сохранение ответа при одновременном shutdown, отсутствие retry и сохранение стандартного поведения без opt-in.

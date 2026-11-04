@@ -2,12 +2,19 @@ import { createHash, createPublicKey, randomUUID, verify as verifySignature } fr
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { AuthenticationError } from "./auth.js";
+import { currentLocalIdentity, identityAudit } from "./local-identity-context.js";
 
 import { PostgresDatabaseSync, type PostgresDatabaseOptions } from "./postgres-database.js";
 import type { SyncDatabase } from "./sync-database.js";
 import { createDecisionShadowLease, normalizeDecisionShadowConfig, supportsDecisionShadow,
   unavailableDecision, validateDecisionShadowResult, type DecisionShadowLease,
   type DecisionShadowConfig, type DecisionShadowObservation } from "./local-decisions.js";
+import { appendShadowAssignment, assignmentHistory,
+  newAssignmentHistory, recordAssignmentObservation } from "./decision-shadow-assignments.js";
+import { DECISION_CALLER_ACCOUNTING, appendCallerAssignment, beginCallerIntent,
+  callerAccounting, newCallerAccounting, recordCallerReturn } from "./decision-caller-accounting.js";
+import { COHORT_LIMITS, cohortEnvelope, cohortScope, decisionTraceInventory } from "./decision-shadow-cohort.js";
 import {
   S3ArtifactObjectStoreSync,
   artifactObjectKey,
@@ -29,11 +36,21 @@ import { exportProcessBpmn as serializeProcessBpmn, importProcessBpmn as parsePr
 import { diffProcessDocuments } from "./process-versioning.js";
 import { getProcessTemplateCatalog, instantiateCatalogTemplate } from "./process-catalog.js";
 import { recoveryLink, scenarioTrigger, ScenarioPreflightError, type ScenarioBlocker, type ScenarioPreflight, type ScenarioPreflightInput, type ScenarioPreflightContext } from "./scenario-preflight.js";
-import { getInternalReportPack, internalReportGraph, validateProcessPackInput, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview } from "./process-packs.js";
+import { getInternalReportPack, internalReportGraph, validateProcessPackInput, processPackChanges, type ProcessPackInput, type ProcessPackInstallation, type ProcessPackPreview, type ProcessPackActivation, type ProcessPackHistoryEntry } from "./process-packs.js";
 import { decryptCredential, encryptCredential } from "./credentials.js";
-import { normalizeKnowledgeUpload, parseKnowledgeFile } from "./knowledge-files.js";
+import { normalizeKnowledgeUpload, parseKnowledgeFile, KnowledgeParserBusyError } from "./knowledge-files.js";
+import { extractionReport, extractionReportSha256, validateExtractionReview, type KnowledgeExtractionReport, type KnowledgeExtractionReview, type KnowledgeExtractionReviewInput, type KnowledgeExtractionProvenance } from "./knowledge-extraction.js";
+import { chunkTabularKnowledgeText, KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE } from "./knowledge-tables.js";
 import type { KnowledgePageLocation, KnowledgeSource, UploadKnowledgeDocumentInput } from "./types.js";
 import { appendKnowledgeSources } from "./knowledge-citations.js";
+import { BusinessInputValidationError, businessOutputContractDescriptor, businessOutputSystemPrompt, normalizeBusinessInputContract,
+  normalizeBusinessOutputContract, validateBusinessReportInput, validateBusinessReportOutput } from "./business-contracts.js";
+import { BusinessReportRenderingError, normalizeBusinessReportFormat, renderValidatedBusinessReport } from "./business-report-markdown.js";
+import { renderBusinessReportOffice } from "./business-report-office.js";
+import { BUSINESS_REPORT_OFFICE_PROFILE, BUSINESS_REPORT_OFFICE_RENDERER_SHA256, BusinessReportOfficeError, normalizeOfficeFormat, normalizeOfficeOrigin } from "./business-report-office-document.js";
+import { BUSINESS_REPORT_DECISION_LIMIT, BUSINESS_REPORT_DECISION_PROFILE, BusinessReportDecisionError, normalizeBusinessReportDecision } from "./business-report-decisions.js";
+import { BUSINESS_REPORT_EVAL_PROFILE, BusinessReportEvalError, normalizeReportEvalRequest, type BusinessReportEvalCandidate } from "./business-report-eval.js";
+import { BUSINESS_REPORT_EVAL_IMPORT_PROFILE, normalizeReportEvalImport, reportEvalDatasetId, type BusinessReportEvalImportReceipt } from "./business-report-eval-import.js";
 import { rankKnowledgeCandidates } from "./knowledge-ranking.js";
 import { renderProcessTemplate } from "./process-expressions.js";
 import { processFormOutput, validateProcessFormData } from "./process-forms.js";
@@ -252,8 +269,11 @@ function quotePostgresIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-export const POSTGRES_SCHEMA_VERSION = 30;
-export const POSTGRES_SCHEMA_CONTRACT = "agat-scheduled-cancellation-intent-v30";
+export const POSTGRES_SCHEMA_VERSION = 35;
+export const POSTGRES_SCHEMA_CONTRACT = "agat-report-decisions-v35";
+
+const ARTIFACT_METADATA_FIELDS = ["id", "run_id", "stage_id", "name", "kind", "media_type", "relative_path", "size_bytes", "sha256",
+  "storage_backend", "storage_state", "retention_until", "legal_hold", "deleted_at", "created_at", "rendering_json", "source_artifact_id", "export_key", "project_id"];
 
 export class ScheduledStartConflictError extends Error {}
 export class ScheduledStartCancelledError extends Error {}
@@ -1102,6 +1122,12 @@ export class AgatStore {
   private readonly artifactObjectLockMode: "none" | "GOVERNANCE" | "COMPLIANCE";
   private artifactObjectStore: ArtifactObjectStore | null;
   private transactionDepth = 0;
+  private runIdentityGuard?: {
+    bindRun(runId: string, projectId: string, parentRunId?: string): void;
+    assertRunAllowed(runId: string, projectId?: string): void;
+    runAudit(runId: string): Record<string, unknown> | undefined;
+  };
+  private readonly transactionProcessSpans = new Set<string>();
 
   constructor(dbPath: string, options: StoreOptions = {}) {
     this.knowledgeSearchMaxCandidates = normalizeKnowledgeSearchMaxCandidates(options.knowledgeSearchMaxCandidates);
@@ -1303,6 +1329,7 @@ export class AgatStore {
   }
 
   maintenanceTick(): void {
+    this.enforceRunIdentities();
     this.heartbeatCoordinatorReplica();
     this.completeAutomaticWaitStages();
     // Preserve the side-effect guard while expiring a lost lease: executing MCP calls
@@ -1313,6 +1340,30 @@ export class AgatStore {
     this.cleanupExpiredMemory();
     this.cleanupEdgeEnrollmentChallenges();
     this.cleanupWorkerRuntimeAttestationChallenges();
+  }
+
+  setRunIdentityGuard(guard: AgatStore["runIdentityGuard"]): void { this.runIdentityGuard = guard; }
+
+  enforceRunIdentities(): void {
+    if (!this.runIdentityGuard) return;
+    for (const run of this.db.prepare("SELECT id, project_id FROM runs WHERE status NOT IN ('completed', 'failed', 'cancelled')").all()) {
+      try { this.runIdentityGuard.assertRunAllowed(String(run.id), String(run.project_id)); }
+      catch (error) {
+        if (!(error instanceof AuthenticationError)) throw error;
+        this.transaction(() => {
+          const instance = this.db.prepare("SELECT id FROM process_instances WHERE run_id = ?").get(String(run.id));
+          if (instance) {
+            const timestamp = nowIso();
+            // Revocation cannot authorize new compensation side effects.
+            this.quiesceProcessExecution(String(instance.id), error.message, timestamp);
+            this.db.prepare("UPDATE process_compensations SET status = 'cancelled', completed_at = ? WHERE instance_id = ? AND status IN ('armed', 'queued')").run(timestamp, String(instance.id));
+            this.finalizeProcessTerminal(String(instance.id), String(run.id), "cancelled", "Индивидуальные полномочия отозваны или истекли");
+            this.db.prepare("UPDATE stages SET node_id = NULL, lease_id = NULL, lease_expires_at = NULL WHERE run_id = ? AND status = 'cancelled'").run(String(run.id));
+          } else this.cancelRun(String(run.id), String(run.project_id));
+          this.addEvent(String(run.id), null, null, "warn", "identity.run.blocked", "Запуск остановлен: индивидуальные полномочия недействительны", { reason: error.message });
+        });
+      }
+    }
   }
 
   private configure(): void {
@@ -1506,11 +1557,48 @@ export class AgatStore {
         published_at TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS business_report_decisions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+        artifact_sha256 TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision >= 1 AND revision <= 1000),
+        request_id TEXT NOT NULL,
+        actor_sha256 TEXT NOT NULL,
+        request_sha256 TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK(decision IN ('accepted', 'rework_requested')),
+        reason TEXT NOT NULL,
+        binding_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(artifact_id, revision),
+        UNIQUE(project_id, actor_sha256, request_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_decisions_run ON business_report_decisions(run_id);
+
+      CREATE TABLE IF NOT EXISTS business_report_rework_tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        decision_id TEXT NOT NULL UNIQUE REFERENCES business_report_decisions(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_rework_project ON business_report_rework_tasks(project_id, created_at);
+
       CREATE TABLE IF NOT EXISTS process_pack_installations (
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         pack_id TEXT NOT NULL,
         installation_json TEXT NOT NULL,
         PRIMARY KEY (project_id, pack_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS process_pack_history (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        pack_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        manifest_json TEXT NOT NULL,
+        installation_json TEXT NOT NULL,
+        PRIMARY KEY (project_id, pack_id, version)
       );
 
       CREATE TABLE IF NOT EXISTS process_scheduled_start_receipts (
@@ -2309,11 +2397,22 @@ export class AgatStore {
     for (const [name, definition] of [
       ["original_base64", "TEXT"], ["original_sha256", "TEXT"],
       ["pages_json", "TEXT NOT NULL DEFAULT '[]'"], ["parse_error", "TEXT"],
+      ["extraction_state", "TEXT NOT NULL DEFAULT 'legacy_unknown'"], ["extraction_report_json", "TEXT"],
+      ["extraction_review_json", "TEXT"], ["extraction_revision", "TEXT"],
     ]) {
       if (!knowledgeDocumentColumns.some((column) => column.name === name)) {
         this.db.exec(`ALTER TABLE knowledge_documents ADD COLUMN ${name} ${definition};`);
       }
     }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_documents_original_file
+      ON knowledge_documents(collection_id, original_sha256) WHERE original_sha256 IS NOT NULL;`);
+    // Older file ingests have no coverage/review evidence. Invalidate embedding
+    // leases but preserve extracted text/chunks and historical citation snapshots.
+    this.db.exec(`DELETE FROM knowledge_embedding_jobs WHERE document_id IN (
+      SELECT id FROM knowledge_documents WHERE original_sha256 IS NOT NULL AND extraction_state = 'legacy_unknown'
+    );
+    UPDATE knowledge_documents SET status = 'review_required', error = 'История извлечения неизвестна. Переиндексируйте файл и проверьте текст перед использованием.'
+      WHERE original_sha256 IS NOT NULL AND extraction_state = 'legacy_unknown';`);
     const knowledgeChunkColumns = this.db.prepare("PRAGMA table_info(knowledge_chunks)").all() as Array<{ name: string }>;
     if (!knowledgeChunkColumns.some((column) => column.name === "page_number")) {
       this.db.exec("ALTER TABLE knowledge_chunks ADD COLUMN page_number INTEGER;");
@@ -2563,12 +2662,16 @@ export class AgatStore {
       ["deleted_at", "TEXT"],
       ["last_storage_error", "TEXT"],
       ["project_id", "TEXT"],
+      ["rendering_json", "TEXT"],
+      ["source_artifact_id", "TEXT REFERENCES artifacts(id) ON DELETE CASCADE"],
+      ["export_key", "TEXT"],
     ] as const;
     for (const [name, definition] of artifactAdditions) {
       if (!artifactColumns.some((column) => column.name === name)) {
         this.db.exec(`ALTER TABLE artifacts ADD COLUMN ${name} ${definition};`);
       }
     }
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_export_key ON artifacts(export_key) WHERE export_key IS NOT NULL;");
     if (this.stateStoreDriver === "postgresql") {
       this.db.exec("UPDATE artifacts SET storage_backend = 'postgresql' WHERE storage_backend = 'filesystem' AND content_blob IS NOT NULL;");
     }
@@ -2940,7 +3043,24 @@ export class AgatStore {
       ) SELECT id, project_id, 'pending', 0, created_at, created_at, created_at FROM events WHERE 1 = 1
       ON CONFLICT(event_id) DO NOTHING;
     `);
-    this.db.exec("PRAGMA user_version = 30;");
+    if (this.stateStoreDriver === "sqlite") {
+      for (const table of ["business_report_decisions", "business_report_rework_tasks"]) this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${table}_immutable_update BEFORE UPDATE ON ${table}
+          BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+      `);
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS business_report_decisions_immutable_delete BEFORE DELETE ON business_report_decisions
+        WHEN EXISTS (SELECT 1 FROM projects WHERE id = OLD.project_id)
+          AND EXISTS (SELECT 1 FROM runs WHERE id = OLD.run_id)
+          AND EXISTS (SELECT 1 FROM artifacts WHERE id = OLD.artifact_id)
+        BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS business_report_rework_tasks_immutable_delete BEFORE DELETE ON business_report_rework_tasks
+        WHEN EXISTS (SELECT 1 FROM business_report_decisions d JOIN runs r ON r.id = d.run_id
+          JOIN artifacts a ON a.id = d.artifact_id JOIN projects p ON p.id = d.project_id WHERE d.id = OLD.decision_id)
+        BEGIN SELECT RAISE(ABORT, 'Report history is append-only'); END;
+      `);
+    }
+    this.db.exec("PRAGMA user_version = 35;");
     if (this.stateStoreDriver === "postgresql") {
       const manifestSha256 = this.postgresSchemaManifestSha256();
       this.db.prepare(`
@@ -3082,10 +3202,20 @@ export class AgatStore {
             AND NOT (
               has_table_privilege(current_user, class_row.oid, 'SELECT')
               AND has_table_privilege(current_user, class_row.oid, 'INSERT')
-              AND has_table_privilege(current_user, class_row.oid, 'UPDATE')
-              AND has_table_privilege(current_user, class_row.oid, 'DELETE')
+              AND (class_row.relname IN ('business_report_decisions', 'business_report_rework_tasks')
+                OR (has_table_privilege(current_user, class_row.oid, 'UPDATE')
+                  AND has_table_privilege(current_user, class_row.oid, 'DELETE')))
             )
         ) AS missing_runtime_dml,
+        COUNT(*) FILTER (
+          WHERE class_row.relkind = 'r' AND class_row.relname IN ('business_report_decisions', 'business_report_rework_tasks')
+            AND (has_table_privilege(current_user, class_row.oid, 'UPDATE')
+              OR has_table_privilege(current_user, class_row.oid, 'DELETE')
+              OR has_table_privilege(?, class_row.oid, 'UPDATE')
+              OR has_table_privilege(?, class_row.oid, 'DELETE')
+              OR NOT has_table_privilege(?, class_row.oid, 'SELECT')
+              OR NOT has_table_privilege(?, class_row.oid, 'INSERT'))
+        ) AS invalid_report_history_privileges,
         COUNT(*) FILTER (
           WHERE class_row.relkind = 'r'
             AND (
@@ -3104,8 +3234,9 @@ export class AgatStore {
       FROM pg_class AS class_row
       JOIN pg_namespace AS namespace_row ON namespace_row.oid = class_row.relnamespace
       WHERE namespace_row.nspname = current_schema() AND class_row.relkind IN ('r', 'S')
-    `).get() as Row | undefined;
+    `).get(this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!, this.postgresTenantRole!) as Row | undefined;
     if (Number(privileges?.missing_runtime_dml ?? 0) !== 0
+      || Number(privileges?.invalid_report_history_privileges ?? 0) !== 0
       || Number(privileges?.dangerous_runtime_table_privileges ?? 0) !== 0
       || Number(privileges?.missing_runtime_sequence_privileges ?? 0) !== 0) {
       throw new Error("PostgreSQL runtime grants не соответствуют DDL-free contract");
@@ -3250,6 +3381,9 @@ export class AgatStore {
       events: "project_id = agat_current_project()",
       processes: "project_id = agat_current_project()",
       process_pack_installations: "project_id = agat_current_project()",
+      process_pack_history: "project_id = agat_current_project()",
+      business_report_decisions: "project_id = agat_current_project()",
+      business_report_rework_tasks: "project_id = agat_current_project()",
       process_scheduled_start_receipts: "project_id = agat_current_project()",
       process_signal_waits: "project_id = agat_current_project()",
       process_webhooks: "project_id = agat_current_project()",
@@ -3365,6 +3499,9 @@ export class AgatStore {
       GRANT SELECT ON TABLE ${readOnly} TO ${tenantRole};
       GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${tenantRole};
       GRANT EXECUTE ON FUNCTION ${schema}.agat_current_project() TO ${tenantRole};
+
+      REVOKE UPDATE, DELETE ON TABLE ${schema}.business_report_decisions, ${schema}.business_report_rework_tasks
+        FROM ${runtimeRole}, ${tenantRole};
 
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON TABLES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
       ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} REVOKE ALL ON SEQUENCES FROM PUBLIC, ${runtimeRole}, ${tenantRole};
@@ -5457,6 +5594,7 @@ export class AgatStore {
       WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at >= ?
     `).get(nodeId, leaseId, nowIso()) as Row | undefined;
     if (!stage) return null;
+    this.runIdentityGuard?.assertRunAllowed(String(stage.run_id), String(stage.project_id));
     const graph = parseJson<ProcessGraph>(stage.process_graph_json, { nodes: [], edges: [] });
     if (graph.mcpToolAllowlist !== undefined && !graph.mcpToolAllowlist.includes(publicName)) return null;
     const project = String(stage.project_id);
@@ -7656,7 +7794,8 @@ export class AgatStore {
       `).get(collectionId, projectId) as Row | undefined;
       if (!collection) return null;
       const documents = (this.db.prepare(`
-        SELECT id, name, content_sha256, status, chunk_count, embedded_count
+        SELECT id, name, content_sha256, status, chunk_count, embedded_count, original_sha256,
+          extraction_state, extraction_report_json, extraction_review_json, extraction_revision
         FROM knowledge_documents WHERE collection_id = ? ORDER BY id
       `).all(collectionId) as Row[]).map((document) => ({
         id: String(document.id),
@@ -7665,6 +7804,7 @@ export class AgatStore {
         status: String(document.status),
         chunkCount: Number(document.chunk_count),
         embeddedCount: Number(document.embedded_count),
+        ...(document.original_sha256 ? { extraction: this.knowledgeExtractionFingerprint(document) } : {}),
         chunkHashes: (this.db.prepare(`
           SELECT content_sha256 FROM knowledge_chunks WHERE document_id = ? ORDER BY ordinal
         `).all(String(document.id)) as Row[]).map((chunk) => String(chunk.content_sha256)),
@@ -7815,6 +7955,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(runId, project);
           insertStage.run(randomUUID(), runId, String(input.agentId), JSON.stringify(snapshot), timestamp, timestamp);
           insertItem.run(randomUUID(), experimentId, String(example.id), runId, timestamp, timestamp);
           this.addEvent(runId, null, null, "info", "eval.candidate.queued", "Golden eval пример добавлен в batch", {
@@ -8070,6 +8211,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(judgeRunId, project);
           insertStage.run(randomUUID(), judgeRunId, JSON.stringify(snapshot), timestamp, timestamp);
           this.db.prepare(`
             UPDATE eval_experiment_items
@@ -8537,6 +8679,7 @@ export class AgatStore {
     const documents = (this.db.prepare(`
       SELECT d.id, d.collection_id, d.name, d.source_uri, d.media_type, d.content_sha256,
         d.status, d.error, d.parse_error, d.original_sha256, d.pages_json,
+        d.extraction_state, d.extraction_report_json, d.extraction_review_json, d.extraction_revision,
         d.chunk_count, d.embedded_count, d.created_at, d.updated_at, c.name AS collection_name, c.embedding_model
       FROM knowledge_documents d
       JOIN knowledge_collections c ON c.id = d.collection_id
@@ -8620,8 +8763,9 @@ export class AgatStore {
     input: IngestKnowledgeDocumentInput,
     projectId = "default",
   ): Record<string, unknown> {
+    const document = normalizeKnowledgeDocumentInput(input);
     return this.persistKnowledgeDocument(collectionId, {
-      ...normalizeKnowledgeDocumentInput(input), pages: [], parseError: null,
+      ...document, pages: [], parseError: null, extraction: extractionReport("provided-text.v1", document.content),
       originalBase64: null, originalSha256: null,
     }, projectId);
   }
@@ -8632,12 +8776,31 @@ export class AgatStore {
       throw new Error("Knowledge collection не найдена");
     }
     const file = normalizeKnowledgeUpload(input);
+    const existing = this.existingKnowledgeUpload(collectionId, file, projectId);
+    if (existing) return existing;
     let content = "";
     let pages: KnowledgePageLocation[] = [];
     let parseError: string | null = null;
-    try { ({ content, pages } = await parseKnowledgeFile(file.bytes, file.mediaType)); }
-    catch (error) { parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`; }
-    return this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError }, projectId);
+    let extraction: KnowledgeExtractionReport | null = null;
+    try { ({ content, pages, extraction } = await parseKnowledgeFile(file.bytes, file.mediaType)); }
+    catch (error) {
+      if (error instanceof KnowledgeParserBusyError) throw error;
+      parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`;
+    }
+    const document = this.persistKnowledgeDocument(collectionId, { ...file, content, pages, parseError, extraction }, projectId);
+    return document.upload ? document : { ...document, upload: { disposition: "created", requestedName: file.name } };
+  }
+
+  private existingKnowledgeUpload(collectionId: string, file: { originalSha256: string; mediaType: string; sourceUri: string; name: string }, projectId: string) {
+    const match = this.db.prepare(`SELECT d.id FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
+      WHERE c.id = ? AND c.project_id = ? AND d.original_sha256 = ? ORDER BY d.created_at, d.id LIMIT 1`)
+      .get(collectionId, projectId, file.originalSha256) as Row | undefined;
+    if (!match) return null;
+    const row = this.knowledgeDocumentMetadataRow(String(match.id), projectId);
+    if (!row) return null;
+    if (file.mediaType !== row.media_type) throw new Error(`Этот файл уже загружен как «${row.name}» с другим форматом. Откройте существующий документ и проверьте формат файла.`);
+    if (file.sourceUri && file.sourceUri !== row.source_uri) throw new Error(`Этот файл уже загружен как «${row.name}», но указан другой источник. Используйте сохранённый источник или откройте существующий документ.`);
+    return { ...this.knowledgeDocumentDto(row), upload: { disposition: "existing", requestedName: file.name } };
   }
 
   async reindexKnowledgeDocument(documentId: string, projectId = "default") {
@@ -8649,25 +8812,36 @@ export class AgatStore {
     let content = String(row.content);
     let pages: KnowledgePageLocation[] = [];
     let parseError: string | null = null;
+    let extraction: KnowledgeExtractionReport | null = extractionReport("provided-text.v1", content);
     if (typeof row.original_base64 === "string") {
-      try { ({ content, pages } = await parseKnowledgeFile(Buffer.from(row.original_base64, "base64"), String(row.media_type))); }
+      try { ({ content, pages, extraction } = await parseKnowledgeFile(Buffer.from(row.original_base64, "base64"), String(row.media_type))); }
       catch (error) {
+        if (error instanceof KnowledgeParserBusyError) throw error;
         content = "";
+        extraction = null;
         parseError = `Ошибка разбора: ${error instanceof Error ? error.message : "неизвестный формат"}`;
       }
     }
     return this.persistKnowledgeDocument(String(row.collection_id), {
       name: String(row.name), sourceUri: String(row.source_uri), mediaType: String(row.media_type),
-      content, pages, parseError,
+      content, pages, parseError, extraction,
       originalBase64: typeof row.original_base64 === "string" ? row.original_base64 : null,
       originalSha256: typeof row.original_sha256 === "string" ? row.original_sha256 : null,
-    }, projectId, { id: documentId, updatedAt: String(row.updated_at) });
+    }, projectId, { id: documentId, updatedAt: String(row.updated_at), extractionRevision: typeof row.extraction_revision === "string" ? row.extraction_revision : null });
   }
 
   private knowledgeDocumentRow(documentId: string, projectId: string): Row | undefined {
     return this.db.prepare(`SELECT d.*, c.name AS collection_name, c.embedding_model
       FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
       WHERE d.id = ? AND c.project_id = ?`).get(documentId, projectId) as Row | undefined;
+  }
+
+  private knowledgeDocumentMetadataRow(documentId: string, projectId: string, lock = false): Row | undefined {
+    return this.db.prepare(`SELECT d.id, d.collection_id, d.name, d.source_uri, d.media_type, d.content_sha256,
+      d.status, d.error, d.parse_error, d.original_sha256, d.pages_json, d.chunk_count, d.embedded_count,
+      d.extraction_state, d.extraction_report_json, d.extraction_review_json, d.extraction_revision, d.created_at, d.updated_at,
+      c.name AS collection_name, c.embedding_model FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id
+      WHERE d.id = ? AND c.project_id = ?${lock && this.stateStoreDriver === "postgresql" ? " FOR UPDATE OF d" : ""}`).get(documentId, projectId) as Row | undefined;
   }
 
   getKnowledgeDocument(documentId: string, projectId = "default"): Record<string, unknown> | null {
@@ -8693,18 +8867,33 @@ export class AgatStore {
     name: string; sourceUri: string; mediaType: string; content: string;
     pages: KnowledgePageLocation[]; parseError: string | null;
     originalBase64: string | null; originalSha256: string | null;
-  }, projectId: string, previous?: { id: string; updatedAt: string }): Record<string, unknown> {
+    extraction: KnowledgeExtractionReport | null;
+  }, projectId: string, previous?: { id: string; updatedAt: string; extractionRevision: string | null }): Record<string, unknown> {
     const project = this.requireProject(projectId);
     const documentId = previous?.id ?? randomUUID();
     const timestamp = nowIso();
+    const extractionRevision = randomUUID();
+    const requiresReview = !document.parseError && Boolean(document.extraction?.reviewRequired);
+    let duplicate: Record<string, unknown> | null = null;
     try {
       this.transaction(() => {
-        const collection = this.db.prepare("SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?")
+        const collection = this.db.prepare(`SELECT * FROM knowledge_collections WHERE id = ? AND project_id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`)
           .get(collectionId, project) as Row | undefined;
         if (!collection) throw new Error("Knowledge collection не найдена");
+        if (!previous && document.originalSha256) {
+          // The collection write lock serializes cold uploads across replicas.
+          // Recheck after parsing: another request may have stored these bytes.
+          duplicate = this.existingKnowledgeUpload(collectionId, { ...document, originalSha256: document.originalSha256 }, project);
+          if (duplicate) return;
+        }
         if (previous) {
-          const current = this.knowledgeDocumentRow(documentId, project);
-          if (!current || current.updated_at !== previous.updatedAt) throw new Error("Документ изменился. Обновите страницу и повторите индексацию");
+          // Embedding completion already locks job before document. Preserve
+          // that order so reindex cannot form a job/document deadlock with it.
+          if (this.stateStoreDriver === "postgresql") this.db.prepare("SELECT id FROM knowledge_embedding_jobs WHERE document_id = ? FOR UPDATE").all(documentId);
+          // Review and reindex share this lock before touching jobs/chunks. A
+          // concurrent acknowledgement must not queue work for the new revision.
+          const current = this.knowledgeDocumentMetadataRow(documentId, project, true);
+          if (!current || current.updated_at !== previous.updatedAt || (current.extraction_revision ?? null) !== previous.extractionRevision) throw new Error("Документ изменился. Обновите страницу и повторите индексацию");
           if (this.knowledgeCollectionUsedByActiveRun(project, collectionId)) {
             throw new Error("Нельзя переиндексировать документ, пока коллекцию использует активный запуск");
           }
@@ -8716,17 +8905,23 @@ export class AgatStore {
             VALUES (?, ?, ?, ?, ?, ?)`).run(documentId, collectionId, document.name, sha256Text(document.content), timestamp, timestamp);
         }
         const locations = document.pages.length ? document.pages : [{ pageNumber: null, charStart: 0, charEnd: document.content.length }];
-        const chunks = locations.flatMap((location) => chunkKnowledgeText(
+        const chunkText = [KNOWLEDGE_CSV_MEDIA_TYPE, KNOWLEDGE_XLSX_MEDIA_TYPE].includes(document.mediaType)
+          && document.originalBase64 !== null ? chunkTabularKnowledgeText : chunkKnowledgeText;
+        const chunks = locations.flatMap((location) => chunkText(
           document.content.slice(location.charStart, location.charEnd), Number(collection.chunk_size), Number(collection.chunk_overlap),
         ).map((chunk) => ({ ...chunk, charStart: chunk.charStart + location.charStart,
           charEnd: chunk.charEnd + location.charStart, pageNumber: location.pageNumber })));
         if (!document.parseError && !chunks.length) throw new Error("Документ не содержит индексируемого текста");
         this.db.prepare(`UPDATE knowledge_documents SET name = ?, source_uri = ?, media_type = ?, content_sha256 = ?, content = ?,
           original_base64 = ?, original_sha256 = ?, pages_json = ?, parse_error = ?, status = ?, error = ?,
+          extraction_state = ?, extraction_report_json = ?, extraction_review_json = NULL, extraction_revision = ?,
           chunk_count = ?, embedded_count = 0, updated_at = ? WHERE id = ?`).run(
           document.name, document.sourceUri, document.mediaType, sha256Text(document.content), document.content,
           document.originalBase64, document.originalSha256, JSON.stringify(document.pages), document.parseError,
-          document.parseError ? "failed" : "pending", document.parseError, chunks.length, timestamp, documentId,
+          document.parseError ? "failed" : requiresReview ? "review_required" : "pending",
+          document.parseError ?? (requiresReview ? "Сверьте извлечённый текст с оригиналом перед индексацией." : null),
+          document.parseError ? "unavailable" : requiresReview ? "review_required" : "scope_recorded",
+          document.extraction ? JSON.stringify(document.extraction) : null, extractionRevision, chunks.length, timestamp, documentId,
         );
         const insertChunk = this.db.prepare(`INSERT INTO knowledge_chunks(id, collection_id, document_id, ordinal, content,
           content_sha256, char_start, char_end, page_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -8736,7 +8931,7 @@ export class AgatStore {
           insertChunk.run(id, collectionId, documentId, ordinal, chunk.content, sha256Text(chunk.content),
             chunk.charStart, chunk.charEnd, chunk.pageNumber, timestamp);
         });
-        if (!document.parseError) this.db.prepare(`INSERT INTO knowledge_embedding_jobs(
+        if (!document.parseError && !requiresReview) this.db.prepare(`INSERT INTO knowledge_embedding_jobs(
           id, project_id, collection_id, document_id, status, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'pending', ?, ?)`)
           .run(randomUUID(), project, collectionId, documentId, timestamp, timestamp);
@@ -8748,11 +8943,50 @@ export class AgatStore {
       }
       throw error;
     }
+    if (duplicate) return duplicate;
     this.addEvent(null, null, null, document.parseError ? "error" : "info",
-      document.parseError ? "knowledge.document.parse_failed" : "knowledge.document.queued",
-      document.parseError ? `Ошибка разбора «${document.name}»` : `Документ «${document.name}» поставлен на локальную индексацию`,
-      { projectId: project, collectionId, documentId, reindex: Boolean(previous), error: document.parseError });
+      document.parseError ? "knowledge.document.parse_failed" : requiresReview ? "knowledge.document.review_required" : "knowledge.document.queued",
+      document.parseError ? `Ошибка разбора «${document.name}»` : requiresReview ? `Проверьте извлечённый текст «${document.name}»` : `Документ «${document.name}» поставлен на локальную индексацию`,
+      { projectId: project, collectionId, documentId, reindex: Boolean(previous), error: document.parseError,
+        extractionRevision, extractionReportSha256: document.extraction ? extractionReportSha256(document.extraction) : null });
     return this.knowledgeDocumentDto(this.knowledgeDocumentRow(documentId, project)!);
+  }
+
+  reviewKnowledgeExtraction(documentId: string, raw: KnowledgeExtractionReviewInput, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId);
+    const input = validateExtractionReview(raw);
+    return this.transaction(() => {
+      if (this.stateStoreDriver === "postgresql") {
+        // Parent -> job -> document is also the embedding completion order.
+        // NO KEY UPDATE lets unrelated FK inserts continue using the collection.
+        const collection = this.db.prepare(`SELECT c.id FROM knowledge_collections c JOIN knowledge_documents d ON d.collection_id = c.id
+          WHERE d.id = ? AND c.project_id = ? FOR NO KEY UPDATE OF c`).get(documentId, project);
+        if (!collection) return null;
+      }
+      const row = this.knowledgeDocumentMetadataRow(documentId, project, true);
+      if (!row) return null;
+      const report = parseJson<KnowledgeExtractionReport | null>(row.extraction_report_json, null);
+      if (!report || !report.reviewRequired || row.parse_error || !report.textCharacters || !Number(row.chunk_count)) {
+        throw new Error("Этот разбор нельзя подтвердить. Для неизвестного или ошибочного разбора повторно загрузите/переиндексируйте файл.");
+      }
+      if (input.originalSha256 !== row.original_sha256 || input.contentSha256 !== row.content_sha256
+        || input.reportSha256 !== extractionReportSha256(report) || input.extractionRevision !== row.extraction_revision) throw new Error("Разбор изменился. Откройте текущий текст и оригинал перед подтверждением.");
+      if (row.extraction_review_json) return this.knowledgeDocumentDto(this.knowledgeDocumentMetadataRow(documentId, project)!);
+      if (row.status !== "review_required" || row.extraction_state !== "review_required") throw new Error("Состояние разбора изменилось. Обновите предпросмотр.");
+      const timestamp = nowIso();
+      const review: KnowledgeExtractionReview = { schemaVersion: "document-extraction-review.v1", ...input, documentId, actor: actor.slice(0, 200), reviewedAt: timestamp };
+      this.db.prepare(`UPDATE knowledge_documents SET extraction_state = 'accepted_text', extraction_review_json = ?, status = 'pending', error = NULL, updated_at = ? WHERE id = ?`)
+        .run(JSON.stringify(review), timestamp, documentId);
+      this.db.prepare(`INSERT INTO knowledge_embedding_jobs(id, project_id, collection_id, document_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)`).run(randomUUID(), project, String(row.collection_id), documentId, timestamp, timestamp);
+      this.db.prepare("UPDATE knowledge_collections SET updated_at = ? WHERE id = ?").run(timestamp, String(row.collection_id));
+      this.addEvent(null, null, null, "info", "knowledge.extraction.reviewed", "Подтверждено использование только извлечённого текста", {
+        projectId: project, collectionId: String(row.collection_id), documentId, actor: review.actor, originalSha256: input.originalSha256,
+        contentSha256: input.contentSha256, extractionReportSha256: input.reportSha256, extractionRevision: input.extractionRevision,
+        decision: input.decision, reasonSha256: sha256Text(input.reason),
+      });
+      return this.knowledgeDocumentDto(this.knowledgeDocumentMetadataRow(documentId, project)!);
+    });
   }
 
   deleteKnowledgeDocument(documentId: string, projectId = "default"): boolean {
@@ -8867,6 +9101,7 @@ export class AgatStore {
           originalSha256: typeof document.original_sha256 === "string" ? document.original_sha256 : null,
           pages: parseJson<KnowledgePageLocation[]>(document.pages_json, []),
           parseError: typeof document.parse_error === "string" ? document.parse_error : null,
+          extraction: this.knowledgeExtractionDto(document),
           status: String(document.status),
           chunks: (this.db.prepare(`
             SELECT id, ordinal, content, content_sha256, char_start, char_end, page_number,
@@ -8945,6 +9180,7 @@ export class AgatStore {
         JOIN knowledge_documents d ON d.id = j.document_id
         JOIN projects p ON p.id = j.project_id
         WHERE j.status = 'pending' AND j.failures < j.max_failures
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
           AND p.home_region = ? AND p.residency_domain = ?
           AND (
             (SELECT COUNT(*) FROM stages active_stage
@@ -9196,6 +9432,7 @@ export class AgatStore {
         SELECT DISTINCT ch.embedding_model, ch.embedding_dimensions
         FROM knowledge_chunks ch JOIN knowledge_documents d ON d.id = ch.document_id
         WHERE ch.collection_id IN (${placeholders}) AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
       `).all(...collectionIds) as Row[];
       for (const indexed of indexedDimensions) {
         const dimensions = Number(indexed.embedding_dimensions);
@@ -9211,6 +9448,7 @@ export class AgatStore {
         JOIN knowledge_collections c ON c.id = ch.collection_id
         WHERE c.project_id = ? AND c.id IN (${placeholders})
           AND c.embedding_model = ? AND ch.embedding_model = ? AND ch.embedding_json IS NOT NULL AND d.status = 'ready'
+          AND (d.original_sha256 IS NULL OR d.extraction_state IN ('scope_recorded', 'accepted_text'))
         ORDER BY ch.embedded_at DESC
         LIMIT ?
       `);
@@ -9223,6 +9461,17 @@ export class AgatStore {
         ? statement.rankKnowledgeCandidates(ranking, ...params)
         : rankKnowledgeCandidates(statement.iterate(...params), ranking);
       for (const { candidate, score } of ranked) {
+        // Fetch small coverage metadata only for selected binary-file hits; never
+        // send original_base64 or full document text through the ranking bridge.
+        let extraction: KnowledgeExtractionProvenance | undefined;
+        if (candidate.original_sha256) {
+          const coverage = this.db.prepare(`SELECT d.id, d.content_sha256, d.original_sha256, d.extraction_state,
+            d.extraction_report_json, d.extraction_review_json, d.extraction_revision
+            FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE d.id = ? AND c.project_id = ?`)
+            .get(String(candidate.document_id), project) as Row | undefined;
+          if (!coverage) throw new Error("Источник изменился во время поиска");
+          extraction = this.knowledgeExtractionProvenance(coverage);
+        }
         const hit: Omit<KnowledgeSearchHit, "marker"> = {
           score,
           content: String(candidate.content),
@@ -9241,6 +9490,7 @@ export class AgatStore {
             chunkSha256: String(candidate.content_sha256),
             pageNumber: candidate.page_number === null ? null : Number(candidate.page_number),
             originalSha256: typeof candidate.original_sha256 === "string" ? candidate.original_sha256 : null,
+            ...(extraction ? { extraction } : {}),
           },
         };
         const current = bestByChunk.get(hit.provenance.chunkId);
@@ -9432,6 +9682,32 @@ export class AgatStore {
     this.db.prepare("DELETE FROM edge_enrollment_challenges WHERE expires_at < ?").run(retentionCutoff);
   }
 
+  private knowledgeExtractionDto(row: Row) {
+    const report = parseJson<KnowledgeExtractionReport | null>(row.extraction_report_json, null);
+    const reportSha256 = report ? extractionReportSha256(report) : null;
+    const review = parseJson<KnowledgeExtractionReview | null>(row.extraction_review_json, null);
+    const validReview = review && review.originalSha256 === row.original_sha256 && review.contentSha256 === row.content_sha256
+      && review.reportSha256 === reportSha256 && review.extractionRevision === row.extraction_revision && review.documentId === row.id ? review : null;
+    return { state: String(row.extraction_state ?? "legacy_unknown"), revision: typeof row.extraction_revision === "string" ? row.extraction_revision : null,
+      report, reportSha256, review: validReview };
+  }
+
+  private knowledgeExtractionProvenance(row: Row) {
+    const result = this.knowledgeExtractionDto(row);
+    if (!result.report || !result.revision || !result.reportSha256 || (result.report.reviewRequired && !result.review)) throw new Error("Разбор источника не подтверждён. Проверьте оригинал и текущий извлечённый текст.");
+    return { profile: result.report.profile, reportSha256: result.reportSha256, extractionRevision: result.revision,
+      reviewSha256: result.review ? sha256Text(JSON.stringify(result.review)) : null, decision: result.review?.decision ?? null,
+      emptyPageCount: result.report.totalPages === null ? null : result.report.emptyPages.length,
+      omittedPartsCount: result.report.profile === "docx-main-document.v1" ? result.report.omittedParts.length : null,
+      features: result.report.features, fidelity: result.report.fidelity };
+  }
+
+  private knowledgeExtractionFingerprint(row: Row) {
+    const result = this.knowledgeExtractionDto(row);
+    return { state: result.state, revision: result.revision, reportSha256: result.reportSha256,
+      reviewSha256: result.review ? sha256Text(JSON.stringify(result.review)) : null };
+  }
+
   private knowledgeDocumentDto(row: Row): Record<string, unknown> {
     return {
       id: String(row.id),
@@ -9443,6 +9719,7 @@ export class AgatStore {
       mediaType: String(row.media_type),
       contentSha256: String(row.content_sha256),
       status: String(row.status),
+      extraction: this.knowledgeExtractionDto(row),
       originalSha256: typeof row.original_sha256 === "string" ? row.original_sha256 : null,
       hasOriginal: typeof row.original_sha256 === "string",
       pageCount: parseJson<KnowledgePageLocation[]>(row.pages_json, []).length,
@@ -9974,6 +10251,7 @@ export class AgatStore {
       SELECT c.*,
         (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id) AS documents,
         (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id AND d.status <> 'ready') AS unready,
+        (SELECT COUNT(*) FROM knowledge_documents d WHERE d.collection_id = c.id AND (d.status = 'review_required' OR (d.original_sha256 IS NOT NULL AND d.extraction_state IN ('legacy_unknown', 'review_required', 'unavailable')))) AS extraction_review,
         (SELECT COUNT(*) FROM knowledge_chunks ch WHERE ch.collection_id = c.id) AS chunks,
         (SELECT COUNT(*) FROM knowledge_chunks ch WHERE ch.collection_id = c.id AND ch.embedding_json IS NOT NULL AND ch.embedding_model = c.embedding_model) AS embedded
       FROM knowledge_collections c WHERE c.project_id = ? AND c.id IN (${ids.map(() => "?").join(",")}) ORDER BY c.id
@@ -10019,60 +10297,140 @@ export class AgatStore {
     return { blockers, signatures, notices };
   }
 
-  getProcessPackInstallation(packId: string, projectId = "default"): ProcessPackInstallation | null {
+  getProcessPackInstallation(packId: string, projectId = "default", version?: number): ProcessPackInstallation | null {
     const project = this.requireProject(projectId);
+    if (version !== undefined) {
+      const historical = this.db.prepare("SELECT installation_json FROM process_pack_history WHERE project_id = ? AND pack_id = ? AND version = ?").get(project, packId, version) as Row | undefined;
+      if (historical) return parseJson<ProcessPackInstallation | null>(historical.installation_json, null);
+    }
     const row = this.db.prepare("SELECT installation_json FROM process_pack_installations WHERE project_id = ? AND pack_id = ?").get(project, packId) as Row | undefined;
-    return row ? parseJson<ProcessPackInstallation | null>(row.installation_json, null) : null;
+    const active = row ? parseJson<ProcessPackInstallation | null>(row.installation_json, null) : null;
+    return version === undefined || active?.version === version ? active : null;
+  }
+
+  getProcessPackHistory(packId: string, projectId = "default"): ProcessPackHistoryEntry[] {
+    const project = this.requireProject(projectId);
+    const rows = this.db.prepare("SELECT manifest_json, installation_json FROM process_pack_history WHERE project_id = ? AND pack_id = ? ORDER BY version DESC").all(project, packId) as Row[];
+    const entries = rows.map((row) => {
+      const manifest = JSON.parse(String(row.manifest_json)) as ProcessPackHistoryEntry["manifest"];
+      const installation = JSON.parse(String(row.installation_json)) as ProcessPackInstallation;
+      const { manifestSha256, ...content } = manifest;
+      if (manifestSha256 !== installation.manifestSha256 || manifest.id !== packId || manifest.version !== installation.version
+        || createHash("sha256").update(JSON.stringify(content)).digest("hex") !== manifestSha256) throw new Error("История пакета повреждена");
+      return { manifest, installation };
+    });
+    // Legacy v1 rows are visible without a write during GET/preflight. Snapshot them before activation changes the pointer.
+    const active = this.getProcessPackInstallation(packId, project);
+    if (active && !entries.some((entry) => entry.installation.version === active.version)) {
+      const manifest = getInternalReportPack(active.version);
+      if (manifest.manifestSha256 !== active.manifestSha256) throw new Error("Исторический manifest пакета недоступен");
+      entries.push({ manifest, installation: active });
+    }
+    return entries.sort((a, b) => b.installation.version - a.installation.version);
+  }
+
+  private recordProcessPackHistory(installation: ProcessPackInstallation, project: string): void {
+    const manifest = getInternalReportPack(installation.version);
+    if (manifest.manifestSha256 !== installation.manifestSha256) throw new Error("Исторический manifest пакета недоступен");
+    this.db.prepare(`INSERT INTO process_pack_history(project_id, pack_id, version, manifest_json, installation_json)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, pack_id, version) DO NOTHING`)
+      .run(project, installation.packId, installation.version, JSON.stringify(manifest), JSON.stringify(installation));
   }
 
   preflightProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
     const options = validateProcessPackInput(packId, input);
     const project = this.requireProject(projectId);
-    const manifest = getInternalReportPack();
-    const installation = this.getProcessPackInstallation(packId, project);
+    const manifest = getInternalReportPack(options.version);
+    const activeInstallation = this.getProcessPackInstallation(packId, project);
+    const installation = this.getProcessPackInstallation(packId, project, options.version);
+    const changes = processPackChanges(activeInstallation ? getInternalReportPack(activeInstallation.version) : null, manifest, activeInstallation, options, installation);
     if (installation) {
-      if (installation.manifestSha256 !== options.manifestSha256 || installation.model !== options.model) throw new Error("Пакет уже установлен с другой конфигурацией. Откройте установленный процесс; повторная установка не перезаписывает его.");
+      if (installation.manifestSha256 !== options.manifestSha256 || installation.model !== options.model
+        || (options.version === 2 && JSON.stringify([...installation.knowledgeCollectionIds].sort()) !== JSON.stringify(options.knowledgeCollectionIds))) {
+        throw new Error("Пакет уже установлен с другой конфигурацией. Откройте установленный процесс; повторная установка не перезаписывает его.");
+      }
       const preflight = this.preflightProcess(installation.processId, { version: installation.processVersion, knowledgeCollectionIds: installation.knowledgeCollectionIds }, project, context);
       if (!preflight) throw new Error("Установленный процесс удалён. Восстановите процесс из резервной копии проекта.");
-      return { manifest, installation, preflight };
+      return { manifest, installation, preflight, activeInstallation, changes };
     }
     const agents = Object.fromEntries(manifest.roles.map((role) => [role.id, {
       id: `pack-${role.id}`, name: role.name, role: role.responsibility, system_prompt: role.systemPrompt,
       model: options.model, runtime: "single", runtime_config_json: JSON.stringify({ profile: "tool_loop_v1", maxIterations: 3 }),
     }]));
-    const graph = internalReportGraph(Object.fromEntries(manifest.roles.map((role) => [role.id, String(agents[role.id]!.id)])), []);
+    const graph = internalReportGraph(Object.fromEntries(manifest.roles.map((role) => [role.id, String(agents[role.id]!.id)])), options.knowledgeCollectionIds ?? [], options.version);
     const preflight = this.evaluateScenario(null, null, graph, {}, project, context, Object.values(agents));
     const recovery = { label: "Установить пакет: роли, знания и опубликованный процесс", href: recoveryLink("processes", { packId }) };
     preflight.blockers = preflight.blockers.filter((blocker) => blocker.code !== "version_unavailable");
-    preflight.blockers.unshift({ code: "pack_installation", category: "version", blocks: "queue", message: "Пакет ещё не установлен в текущем проекте.", recovery },
-      { code: "pack_knowledge", category: "knowledge", blocks: "queue", message: `Нужна коллекция «${manifest.knowledge.name}» с двумя учебными документами. Установка создаст её и поставит документы на индексацию.`, recovery });
-    preflight.notices.push(`После установки дождитесь индексации. Worker агента должен поддерживать ${manifest.defaults.embeddingModel}.`);
-    return { manifest, installation, preflight };
+    preflight.blockers.unshift({ code: "pack_installation", category: "version", blocks: "queue", message: "Пакет ещё не установлен в текущем проекте.", recovery });
+    if (options.version === 1) preflight.blockers.push({ code: "pack_knowledge", category: "knowledge", blocks: "queue", message: `Нужна коллекция «${manifest.knowledge.name}» с двумя учебными документами. Установка создаст её и поставит документы на индексацию.`, recovery });
+    preflight.saved = false; preflight.queueable = false; preflight.runnableNow = false;
+    preflight.notices.push(options.version === 1 ? `После установки дождитесь индексации. Worker агента должен поддерживать ${manifest.defaults.embeddingModel}.`
+      : "Дождитесь индексации. Worker каждого агента должен поддерживать модели embeddings выбранных коллекций.");
+    return { manifest, installation, preflight, activeInstallation, changes };
   }
 
-  installProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
+  installProcessPack(packId: string, input: ProcessPackInput, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview & { created: boolean } {
     const options = validateProcessPackInput(packId, input);
     const project = this.requireProject(projectId);
     return this.transaction(() => {
       // Serialize installations for a project, including concurrent PostgreSQL requests.
       this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
-      if (this.getProcessPackInstallation(packId, project)) return this.preflightProcessPack(packId, options, project, context);
-      const manifest = getInternalReportPack();
+      if (this.getProcessPackInstallation(packId, project, options.version)) return { ...this.preflightProcessPack(packId, options, project, context), created: false };
+      const manifest = getInternalReportPack(options.version);
+      if (options.version === 2) {
+        for (const id of options.knowledgeCollectionIds!) {
+          if (!this.db.prepare("SELECT id FROM knowledge_collections WHERE id = ? AND project_id = ?").get(id, project)) throw new Error("Выбранная коллекция недоступна в текущем проекте");
+        }
+      }
       const agentIds = Object.fromEntries(manifest.roles.map((role) => [role.id, String(this.createAgent({
         name: `${manifest.name} · ${role.name}`, role: role.responsibility, systemPrompt: role.systemPrompt,
         model: options.model, runtime: "single", runtimeConfig: { profile: "tool_loop_v1", maxIterations: 3 },
       }, project).id)]));
-      const collection = this.createKnowledgeCollection({ name: manifest.knowledge.name, description: manifest.knowledge.description,
-        embeddingModel: manifest.defaults.embeddingModel }, project);
-      const knowledgeCollectionIds = [String(collection.id)];
-      for (const document of manifest.knowledge.documents) this.ingestKnowledgeDocument(String(collection.id), document, project);
+      let knowledgeCollectionIds = options.knowledgeCollectionIds ?? [];
+      if (options.version === 1) {
+        const collection = this.createKnowledgeCollection({ name: manifest.knowledge.name, description: manifest.knowledge.description,
+          embeddingModel: manifest.defaults.embeddingModel }, project);
+        knowledgeCollectionIds = [String(collection.id)];
+        for (const document of manifest.knowledge.documents) this.ingestKnowledgeDocument(String(collection.id), document, project);
+      }
       // Legacy state stores still enforce a global process-name constraint.
-      const process = this.createProcess({ name: `${manifest.name} · ${project}`, description: manifest.description, graph: internalReportGraph(agentIds, knowledgeCollectionIds) }, project);
+      const process = this.createProcess({ name: `${manifest.name} · ${project}`, description: manifest.description, graph: internalReportGraph(agentIds, knowledgeCollectionIds, options.version) }, project);
       const published = this.publishProcess(String(process.id), project)!;
       const installation: ProcessPackInstallation = { packId, version: manifest.version, manifestSha256: manifest.manifestSha256, model: options.model,
         processId: String(process.id), processVersion: Number(published.publishedVersion), agentIds, knowledgeCollectionIds, installedAt: nowIso() };
-      this.db.prepare("INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)").run(project, packId, JSON.stringify(installation));
+      this.recordProcessPackHistory(installation, project);
+      if (!this.getProcessPackInstallation(packId, project)) {
+        this.db.prepare("INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)").run(project, packId, JSON.stringify(installation));
+      }
       this.addEvent(null, null, null, "info", "process.pack.installed", `Установлен пакет «${manifest.name}» v${manifest.version}`, { projectId: project, ...installation });
+      return { ...this.preflightProcessPack(packId, options, project, context), created: true };
+    });
+  }
+
+  activateProcessPack(packId: string, input: ProcessPackActivation, projectId = "default", context?: ScenarioPreflightContext): ProcessPackPreview {
+    const project = this.requireProject(projectId);
+    if (!input || typeof input !== "object" || Array.isArray(input) || !Number.isInteger(input.version)
+      || Object.keys(input).some((key) => !["version", "manifestSha256", "expectedActiveManifestSha256"].includes(key))
+      || (input.expectedActiveManifestSha256 !== null && !/^[a-f0-9]{64}$/.test(String(input.expectedActiveManifestSha256)))) throw new Error("Укажите версию и ожидаемый manifest активной установки");
+    return this.transaction(() => {
+      this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR UPDATE" : ""}`).get(project);
+      const installation = this.getProcessPackInstallation(packId, project, input.version);
+      if (!installation || installation.manifestSha256 !== input.manifestSha256) throw new Error("Установленная версия пакета с таким manifest не найдена");
+      const active = this.getProcessPackInstallation(packId, project);
+      const options: ProcessPackInput = { version: installation.version, manifestSha256: installation.manifestSha256, model: installation.model,
+        ...(installation.version === 2 ? { knowledgeCollectionIds: installation.knowledgeCollectionIds } : {}) };
+      const preview = this.preflightProcessPack(packId, options, project, context);
+      if (active?.manifestSha256 === installation.manifestSha256) return preview;
+      if ((active?.manifestSha256 ?? null) !== input.expectedActiveManifestSha256) throw new Error("Активная версия изменилась. Повторите проверку различий перед переключением.");
+      if (!preview.preflight.queueable) throw new ScenarioPreflightError(preview.preflight);
+      if (active) this.recordProcessPackHistory(active, project);
+      this.recordProcessPackHistory(installation, project);
+      this.db.prepare(`INSERT INTO process_pack_installations(project_id, pack_id, installation_json) VALUES (?, ?, ?)
+        ON CONFLICT(project_id, pack_id) DO UPDATE SET installation_json = excluded.installation_json`).run(project, packId, JSON.stringify(installation));
+      this.addEvent(null, null, null, "info", "process.pack.activated", "Изменена активная версия пакета", {
+        projectId: project, packId, fromVersion: active?.version ?? null, fromManifestSha256: active?.manifestSha256 ?? null,
+        toVersion: installation.version, toManifestSha256: installation.manifestSha256, processId: installation.processId,
+      });
       return this.preflightProcessPack(packId, options, project, context);
     });
   }
@@ -10124,6 +10482,10 @@ export class AgatStore {
     };
     if (version === null) add("version_unavailable", "version", "queue", processId ? "Выберите существующую опубликованную версию процесса." : "Шаблон ещё не сохранён и не опубликован.", "processes", { ...processTarget, tab: "versions" }, "Сохранить и опубликовать версию");
     if (!context.runtime.connected) add("runtime_disconnected", "runtime", "queue", "Runtime процессов недоступен; запуск не может быть принят.", "fleet", { section: "runtime" }, "Проверить runtime процессов");
+    for (const issue of context.deployment?.blockers ?? []) add(`deployment:${issue.code}`, "runtime", "queue", issue.message, "fleet", { section: "deployment" }, "Проверить профиль развёртывания");
+    const deploymentOperation = context.deployment?.capabilities.find(capability => capability.operation === (trigger.kind === "schedule" ? "schedules" : "processes"));
+    if (deploymentOperation && !deploymentOperation.available && !blockers.some(issue => issue.code === `deployment:${deploymentOperation.code}`)) add(`deployment:${deploymentOperation.code}`, "runtime", "queue", deploymentOperation.message, "fleet", { section: "deployment" }, "Проверить профиль развёртывания");
+    if (trigger.kind === "webhook" && context.deployment?.authentication.mode === "local") add("deployment:service_binding_unqualified", "trigger", "queue", "Process webhook требует квалифицированной индивидуальной service binding; используйте REST запуск.", "processes", { ...processTarget, tab: "readiness" }, "Выбрать ручной запуск");
     const knowledge = this.scenarioKnowledge(project, ids);
     if (trigger.kind === "schedule" && context.schedule && JSON.stringify(ids) !== JSON.stringify(selectedIds)) {
       const names = ids.map((id) => String(knowledge.find((row) => row.id === id)?.name ?? id));
@@ -10153,6 +10515,7 @@ export class AgatStore {
         if (owner) add(`knowledge_missing:${id}`, "knowledge", "queue", `Обязательная коллекция ${id} недоступна. Создайте и индексируйте замену в разделе «Знания», выберите её в требованиях процесса и опубликуйте новую версию.`, "processes", { processId: owner.processId!, tab: "readiness", field: "requiredKnowledge" }, "Заменить обязательную коллекцию и опубликовать версию");
         else add(`knowledge_missing:${id}`, "knowledge", "queue", `Выбранная коллекция ${id} недоступна в проекте.`, "knowledge", { collectionId: id }, "Выбрать доступную коллекцию");
       }
+      else if (Number(collection.extraction_review)) add(`knowledge_extraction:${id}`, "knowledge", "queue", `«${collection.name}»: для ${collection.extraction_review} документов нужно исправить ошибки разбора или проверить извлечённый текст перед использованием.`, "knowledge", { collectionId: id }, "Проверить разбор и ограничения документов");
       else if (!Number(collection.documents) || !Number(collection.chunks)) add(`knowledge_empty:${id}`, "knowledge", "run", `«${collection.name}»: нет индексированных документов.`, "knowledge", { collectionId: id }, "Добавить документы");
       else if (Number(collection.unready) || Number(collection.embedded) !== Number(collection.chunks)) add(`knowledge_embeddings:${id}`, "embeddings", "run", `«${collection.name}»: embeddings готовы для ${collection.embedded} из ${collection.chunks} фрагментов; неготовых документов: ${collection.unready}.`, "knowledge", { collectionId: id }, "Завершить индексацию коллекции");
     }
@@ -10195,7 +10558,9 @@ export class AgatStore {
         if (!agent) { add(`agent_missing:${owner}:${node.id}`, "team", "queue", `«${node.name}»: назначьте агента проекта.`, "processes", stepTarget, "Назначить агента этому шагу"); continue; }
         let snapshot: AgentExecutionSnapshot;
         try {
-          snapshot = previewAgent ? agentSnapshot(agent, "process_queue") : this.captureAgentSnapshot(agent, "process_queue", project);
+          const effectiveAgent = node.config.outputContract ? { ...agent,
+            system_prompt: businessOutputSystemPrompt(String(agent.system_prompt), node.config.outputContract) } : agent;
+          snapshot = previewAgent ? agentSnapshot(effectiveAgent, "process_queue") : this.captureAgentSnapshot(effectiveAgent, "process_queue", project);
           this.validateSpecialistTeamConfig(snapshot.runtimeConfig, project, snapshot.id);
           snapshots.push(snapshot);
         } catch {
@@ -10251,8 +10616,10 @@ export class AgatStore {
     if (processId && version !== null && trigger.kind !== "manual" && Number(this.getProcess(processId, project)?.publishedVersion) !== version) {
       add("trigger_version", "version", "queue", "Этот trigger запускает последнюю опубликованную версию. Выбранный pin отличается от неё.", "processes", { ...processTarget, tab: "readiness" }, "Проверить текущую версию trigger");
     }
-    const documents = ids.length ? this.db.prepare(`SELECT d.id, d.collection_id, d.content_sha256, d.updated_at FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE c.project_id = ? AND d.collection_id IN (${ids.map(() => "?").join(",")}) ORDER BY d.id`).all(project, ...ids) : [];
+    const documents = ids.length ? this.db.prepare(`SELECT d.id, d.collection_id, d.content_sha256, d.updated_at, d.extraction_revision FROM knowledge_documents d JOIN knowledge_collections c ON c.id = d.collection_id WHERE c.project_id = ? AND d.collection_id IN (${ids.map(() => "?").join(",")}) ORDER BY d.id`).all(project, ...ids) : [];
     const fingerprint = sha256Text(JSON.stringify({ processId, version, graphs, trigger: context.executionTrigger ?? trigger, ids,
+      deployment: context.deployment ? { contractVersion: context.deployment.contractVersion, profile: context.deployment.profile,
+        authenticationMode: context.deployment.authentication.mode, stateStore: context.deployment.stateStore } : undefined,
       agents: snapshots.map(({ capturedAt: _captured, source: _source, ...snapshot }) => snapshot),
       knowledge: knowledge.map((row) => ({ id: row.id, model: row.embedding_model, updatedAt: row.updated_at })), documents, tools: tools.signatures, httpCredentials }));
     const evidence = processId && version !== null ? (this.db.prepare(`SELECT e.data_json, pi.id, pi.run_id, pi.completed_at FROM events e JOIN process_instances pi ON pi.run_id = e.run_id
@@ -10262,7 +10629,8 @@ export class AgatStore {
     if (hasShadow) notices.push("Доступность модели и точное совпадение профиля проверяются при вызове. Успешный основной сценарий не подтверждает качество локальных проверок.");
     const queueable = processId !== null && !blockers.some((item) => item.blocks === "queue");
     return { checkedAt: nowIso(), processId, version, saved: processId !== null, queueable, runnableNow: queueable && blockers.length === 0,
-      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)] };
+      scenarioVerified: verification !== null, verification, fingerprint, blockers, notices: [...new Set(notices)],
+      ...(context.deployment ? { deployment: context.deployment } : {}) };
   }
 
   startScheduledProcess(
@@ -10371,6 +10739,7 @@ export class AgatStore {
       runtime?: "database" | "temporal" | "embedded";
       replayOfInstanceId?: string | null;
       replayMode?: "safe" | "live";
+      parentRunId?: string;
     },
   ): Record<string, unknown> | null {
       if (typeof input.input !== "string") throw new Error("Входные данные процесса должны быть строкой");
@@ -10387,6 +10756,12 @@ export class AgatStore {
         .get(processId, version) as Row | undefined;
       if (!versionRow) throw new Error("Опубликованная версия процесса не найдена");
       const graph = parseJson<ProcessGraph>(versionRow.graph_json, { nodes: [], edges: [] });
+      const inputContract = graph.nodes.find((node) => node.type === "start")?.config.inputContract;
+      const inputReceipt = inputContract === undefined ? null : (() => {
+        normalizeBusinessInputContract(inputContract);
+        if (input.startNodeId) throw new BusinessInputValidationError("partial_start_not_allowed");
+        return validateBusinessReportInput(processInput);
+      })();
       const runId = randomUUID();
       const instanceId = randomUUID();
       const timestamp = nowIso();
@@ -10397,14 +10772,16 @@ export class AgatStore {
         node.type === "approval" || (node.type === "agent" && node.config.approvalRequired === true)
       );
       const placement = this.assertProjectQueueCapacity(project);
-
+      const runTrace = this.telemetry.startRun({ runId, projectId: project });
+      if (this.transactionDepth > 0) this.transactionProcessSpans.add(runId);
+    try {
       this.db
         .prepare(`
           INSERT INTO runs(
             id, name, input, status, execution_mode, priority, approval_required,
             result_destination, artifact_path, created_at, updated_at
-            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain
-          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            , project_id, knowledge_collection_ids_json, queue_name, region, residency_domain, trace_id, root_span_id
+          ) VALUES (?, ?, ?, 'queued', 'sequential', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           runId,
@@ -10421,7 +10798,10 @@ export class AgatStore {
           String(placement.queue_name),
           String(placement.home_region),
           String(placement.residency_domain),
+          runTrace.traceId,
+          runTrace.spanId,
         );
+      this.runIdentityGuard?.bindRun(runId, project, options.parentRunId);
       this.db
         .prepare(`
           INSERT INTO process_instances(
@@ -10463,6 +10843,8 @@ export class AgatStore {
         processInstanceId: instanceId,
         processVersion: version,
       });
+      if (inputReceipt) this.addEvent(runId, null, null, "info", "business.input.validated",
+        "Входные данные проверены по закреплённому контракту", inputReceipt);
       const requestedStartNodeId = typeof input.startNodeId === "string" ? input.startNodeId.trim() : "";
       const start = requestedStartNodeId
         ? graph.nodes.find((node) => node.id === requestedStartNodeId)
@@ -10488,6 +10870,10 @@ export class AgatStore {
         this.advanceProcessToken(instanceId, tokenId, start.id, requestedStartNodeId ? processInput : null);
       }
       return this.getProcessInstance(instanceId, project)!;
+    } catch (error) {
+      this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      throw error;
+    }
   }
 
   replayProcessInstance(
@@ -10565,8 +10951,18 @@ export class AgatStore {
       }, project);
       const stage = this.db.prepare("SELECT id FROM stages WHERE run_id = ? ORDER BY position LIMIT 1").get(created.id) as Row;
       this.db.prepare("UPDATE stages SET process_node_id = ?, activity_json = ? WHERE id = ?").run(
-        node.id, JSON.stringify(node.config.decisionShadow ? { decisionShadowConfig: node.config.decisionShadow } : {}), String(stage.id),
+        node.id, JSON.stringify({
+          ...(node.config.decisionShadow ? { decisionShadowConfig: node.config.decisionShadow } : {}),
+          ...(node.config.outputContract ? { businessOutputContract: businessOutputContractDescriptor(node.config.outputContract) } : {}),
+        }), String(stage.id),
       );
+      if (node.config.outputContract) {
+        const agent = this.effectiveAgentRow(node.config.agentId, project)!;
+        const snapshot = this.captureAgentSnapshot({ ...agent,
+          system_prompt: businessOutputSystemPrompt(String(agent.system_prompt), node.config.outputContract),
+        }, "process_queue", project);
+        this.db.prepare("UPDATE stages SET agent_snapshot_json = ? WHERE id = ?").run(JSON.stringify(snapshot), String(stage.id));
+      }
       this.addEvent(created.id, String(stage.id), null, "info", "process.node.test.created", `Создан тест шага «${node.name}»`, {
         processNodeId: node.id,
         agentId: node.config.agentId,
@@ -10630,6 +11026,7 @@ export class AgatStore {
     }
 
     if (node.type === "artifact") {
+      if (node.config.reportFormat) throw new Error("Предпросмотр бизнес-отчёта требует выполнения процесса с доступными источниками");
       const content = renderProcessTemplate(node.config.artifactContent ?? "", {
         input: testInput,
         lastOutput: testInput,
@@ -10702,6 +11099,43 @@ export class AgatStore {
       `)
       .all(project, clampInteger(limit, 1, 500, 100)) as Row[];
     return rows.map((row) => this.processInstanceDto(row));
+  }
+
+  getDecisionShadowCohort(processId: string, rawScope: unknown, projectId = "default") {
+    const project = normalizeProjectId(projectId);
+    const observedAt = nowIso();
+    const scope = cohortScope(rawScope, observedAt);
+    // Do not inherit an enclosing write transaction or change its isolation.
+    if (this.transactionDepth > 0) throw new Error("Decision cohort requires a separate read snapshot");
+    this.db.exec(this.db.dialect === "postgresql" ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
+    this.transactionDepth = 1;
+    try {
+      const version = this.db.prepare(`SELECT pv.version FROM process_versions pv
+        JOIN processes p ON p.id = pv.process_id
+        WHERE p.id = ? AND p.project_id = ? AND pv.version = ?`).get(processId, project, scope.processVersion);
+      if (!version) { this.db.exec("COMMIT"); return null; }
+      const params = [processId, project, scope.processVersion, scope.startAt, scope.endAt];
+      const instances = this.db.prepare(`SELECT pi.id, pi.run_id, pi.process_version, pi.status, pi.created_at,
+          pi.replay_of_instance_id, pi.replay_mode, r.project_id AS run_project_id
+        FROM process_instances pi JOIN processes p ON p.id = pi.process_id LEFT JOIN runs r ON r.id = pi.run_id
+        WHERE pi.process_id = ? AND p.project_id = ? AND pi.process_version = ? AND pi.created_at >= ? AND pi.created_at < ?
+        ORDER BY pi.created_at, pi.id LIMIT ?`).all(...params, COHORT_LIMITS.instances + 1) as Row[];
+      if (instances.length > COHORT_LIMITS.instances) throw new Error("Decision cohort instance limit exceeded; no partial export");
+      if (instances.some(row => row.run_project_id !== project)) throw new Error("Decision cohort has an inconsistent run/project binding");
+      const stages = this.db.prepare(`SELECT s.id, s.run_id, s.status, s.attempt, s.lease_id, s.lease_expires_at, s.activity_json
+        FROM stages s JOIN process_instances pi ON pi.run_id = s.run_id JOIN processes p ON p.id = pi.process_id
+        WHERE pi.process_id = ? AND p.project_id = ? AND pi.process_version = ? AND pi.created_at >= ? AND pi.created_at < ?
+        ORDER BY pi.created_at, pi.id, s.position, s.id LIMIT ?`).all(...params, COHORT_LIMITS.stages + 1) as Row[];
+      if (stages.length > COHORT_LIMITS.stages) throw new Error("Decision cohort stage limit exceeded; no partial export");
+      const result = cohortEnvelope(project, processId, scope, observedAt, this.db.dialect, instances, stages);
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* Preserve the snapshot/COMMIT failure; never emit its result. */ }
+      throw error;
+    } finally {
+      this.transactionDepth = 0;
+    }
   }
 
   getProcessInstance(instanceId: string, projectId = "default"): Record<string, unknown> | null {
@@ -10911,6 +11345,7 @@ export class AgatStore {
             timestamp,
           );
 
+        this.runIdentityGuard?.bindRun(runId, project);
         const insertStage = this.db.prepare(`
           INSERT INTO stages(
             id, run_id, agent_id, position, status, requires_approval,
@@ -11788,6 +12223,7 @@ export class AgatStore {
   }
 
   leaseNext(nodeId: string, workerVersion = "unknown"): LeasePayload | null {
+    this.enforceRunIdentities();
     let startedLeaseId: string | null = null;
     try {
       return this.transaction(() => {
@@ -11908,13 +12344,14 @@ export class AgatStore {
       const nodeRegion = String(node.region ?? this.region);
       const candidate = candidates.find((row) => {
         if (!parseJson<string[]>(row.allowed_regions_json, []).includes(nodeRegion)) return false;
+        const ids = row.stage_kind === "agent" ? normalizeKnowledgeCollectionIds(parseJson<unknown>(row.knowledge_collection_ids_json, [])) : [];
+        const knowledge = this.scenarioKnowledge(String(row.project_id), ids);
+        if (knowledge.some(collection => Number(collection.extraction_review) > 0)) return false;
         if (!this.workerEligibleForRollout(node, String(row.project_id))) return false;
         if (row.process_graph_json) {
           const graph = parseJson<ProcessGraph>(row.process_graph_json, { nodes: [], edges: [] });
           if (this.scenarioTools(graph.requiredTools ?? [], String(row.project_id), true).blockers.length) return false;
           if (row.stage_kind === "agent") {
-            const ids = normalizeKnowledgeCollectionIds(parseJson<unknown>(row.knowledge_collection_ids_json, []));
-            const knowledge = this.scenarioKnowledge(String(row.project_id), ids);
             const embeddings = parseJson<string[]>(node.embedding_models_json, []);
             if (knowledge.length !== ids.length || knowledge.some((collection) => !Number(collection.documents) || !Number(collection.chunks)
               || Number(collection.unready) > 0 || Number(collection.embedded) !== Number(collection.chunks)
@@ -12053,9 +12490,20 @@ export class AgatStore {
             if (!supportsDecisionShadow(labels.decisionShadow, config)) {
               unavailable = "unsupported_worker";
             } else {
-              decisionShadow = createDecisionShadowLease(config, String(candidate.stage_id),
+              const nextShadow = createDecisionShadowLease(config, String(candidate.stage_id),
                 typeof candidate.stage_input === "string" ? candidate.stage_input : String(candidate.run_input));
-              rawActivity.decisionShadowLease = decisionShadow;
+              const history = assignmentHistory(rawActivity.decisionShadowAssignmentHistory)
+                ?? newAssignmentHistory(Number(candidate.attempt) === 0 ? "complete" : "legacy_gap");
+              const assignmentId = randomUUID(); const stageAttempt = Number(candidate.attempt) + 1;
+              const negotiated = labels.decisionCallerAccounting === DECISION_CALLER_ACCOUNTING;
+              const updated = appendShadowAssignment(history, assignmentId, stageAttempt, nextShadow);
+              const accounting = appendCallerAssignment(callerAccounting(rawActivity.decisionShadowCallerAccounting)
+                ?? newCallerAccounting(Number(candidate.attempt) === 0 ? "complete" : "legacy_gap"), assignmentId, stageAttempt, negotiated);
+              if (negotiated) { nextShadow.callerAccountingVersion = DECISION_CALLER_ACCOUNTING; nextShadow.assignmentId = assignmentId; }
+              rawActivity.decisionShadowAssignmentHistory = updated;
+              rawActivity.decisionShadowCallerAccounting = accounting;
+              rawActivity.decisionShadowLease = nextShadow;
+              decisionShadow = nextShadow;
             }
           } catch {
             unavailable = "invalid_input";
@@ -12254,10 +12702,13 @@ export class AgatStore {
     stageId: string, state: string | null): Record<string, unknown> {
     if (!node.config.decisionShadow) return {};
     const config = node.config.decisionShadow;
-    const activity: Record<string, unknown> = { decisionShadowConfig: config };
+    const activity: Record<string, unknown> = { decisionShadowConfig: config,
+      decisionShadowAssignmentHistory: newAssignmentHistory(), decisionShadowCallerAccounting: newCallerAccounting() };
     const instance = this.db.prepare("SELECT replay_mode, replay_of_instance_id FROM process_instances WHERE id = ?")
       .get(instanceId) as Row;
     if (instance.replay_mode !== "safe") return activity;
+    activity.decisionShadowAssignmentHistory = newAssignmentHistory("replay");
+    activity.decisionShadowCallerAccounting = newCallerAccounting("replay");
     const visit = Number((this.db.prepare("SELECT COUNT(*) AS count FROM stages WHERE run_id = ? AND process_node_id = ?")
       .get(runId, node.id) as Row).count);
     const source = this.db.prepare(`
@@ -12285,10 +12736,33 @@ export class AgatStore {
     return activity;
   }
 
+  beginDecisionShadow(nodeId: string, leaseId: string, raw: unknown) {
+    return this.transaction(() => {
+      const stage = this.db.prepare(`
+        SELECT s.id, s.activity_json, s.attempt, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
+        WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ? AND r.status = 'running'
+        ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
+      `).get(nodeId, leaseId, nowIso()) as Row | undefined;
+      if (!stage) throw new Error("Активная аренда не найдена");
+      const expiresAt = Date.parse(String(stage.lease_expires_at));
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+      const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
+      const lease = activity.decisionShadowLease as DecisionShadowLease | undefined;
+      if (lease?.callerAccountingVersion !== DECISION_CALLER_ACCOUNTING || activity.decisionShadowObservation) {
+        throw new Error("Caller accounting was not negotiated for an active shadow call");
+      }
+      const begun = beginCallerIntent(callerAccounting(activity.decisionShadowCallerAccounting), Number(stage.attempt), raw);
+      activity.decisionShadowCallerAccounting = begun.history;
+      this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
+      if (expiresAt <= Date.now()) throw new Error("Активная аренда не найдена");
+      return begun.receipt;
+    });
+  }
+
   recordDecisionShadow(nodeId: string, leaseId: string, raw: unknown): DecisionShadowObservation {
     return this.transaction(() => {
       const stage = this.db.prepare(`
-        SELECT s.id, s.run_id, s.activity_json, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
+        SELECT s.id, s.run_id, s.activity_json, s.attempt, s.lease_expires_at FROM stages s JOIN runs r ON r.id = s.run_id
         WHERE s.node_id = ? AND s.lease_id = ? AND s.status = 'running' AND s.lease_expires_at > ?
           AND r.status = 'running'
         ${this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF s" : ""}
@@ -12303,6 +12777,10 @@ export class AgatStore {
       const config = normalizeDecisionShadowConfig(activity.decisionShadowConfig);
       const observation = validateDecisionShadowResult(raw, activity.decisionShadowLease as DecisionShadowLease, config.profileJson);
       activity.decisionShadowObservation = observation;
+      const history = recordAssignmentObservation(assignmentHistory(activity.decisionShadowAssignmentHistory), Number(stage.attempt), observation);
+      if (history) activity.decisionShadowAssignmentHistory = history;
+      const accounting = recordCallerReturn(callerAccounting(activity.decisionShadowCallerAccounting), Number(stage.attempt), observation);
+      if (accounting) activity.decisionShadowCallerAccounting = accounting;
       this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(activity), String(stage.id));
       this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId, observation);
       // Roll back both writes if persistence outlasted ownership, before COMMIT.
@@ -12316,6 +12794,7 @@ export class AgatStore {
   }
 
   private renewWorkerLease(table: "stages" | "knowledge_embedding_jobs", nodeId: string, leaseId: string): boolean {
+    if (table === "stages") this.enforceRunIdentities();
     const expiredDuringWrite = new Error("Аренда истекла во время продления");
     try {
       return this.transaction(() => {
@@ -12364,6 +12843,35 @@ export class AgatStore {
     );
   }
 
+  private businessOutputContext(runId: string, projectId: string) {
+    const currentSource = this.db.prepare(`
+      SELECT d.id, d.content_sha256, d.original_sha256, d.extraction_state,
+        d.extraction_report_json, d.extraction_review_json, d.extraction_revision
+      FROM knowledge_chunks k JOIN knowledge_documents d ON d.id = k.document_id
+      JOIN knowledge_collections c ON c.id = k.collection_id
+      WHERE c.project_id = ? AND c.id = ? AND d.id = ? AND k.id = ?
+        AND d.content_sha256 = ? AND k.content_sha256 = ?
+        AND (d.original_sha256 IS NULL OR (d.status = 'ready' AND d.extraction_state IN ('scope_recorded', 'accepted_text')))
+    `);
+    const sources = (this.getRunKnowledgeSources(runId, projectId) ?? []).filter((source) => {
+      const row = currentSource.get(projectId, source.provenance.collectionId, source.provenance.documentId, source.provenance.chunkId,
+        source.provenance.documentSha256, source.provenance.chunkSha256) as Row | undefined;
+      if (!row) return false;
+      if (!row.original_sha256) return true;
+      try { return JSON.stringify(source.provenance.extraction) === JSON.stringify(this.knowledgeExtractionProvenance(row)); }
+      catch { return false; }
+    });
+    const markerCounts = new Map<string, number>();
+    for (const source of sources) markerCounts.set(source.marker, (markerCounts.get(source.marker) ?? 0) + 1);
+    return { sources, context: {
+      sourceMarkers: new Set(sources.filter((source) => markerCounts.get(source.marker) === 1).map((source) => source.marker)),
+      artifactSha256: (id: string) => {
+        if (!this.db.prepare("SELECT id FROM artifacts WHERE id = ? AND run_id = ?").get(id, runId)) return null;
+        return String(this.getArtifactDownload(id, projectId)?.artifact.sha256 ?? "");
+      },
+    } };
+  }
+
   completeLease(
     nodeId: string,
     leaseId: string,
@@ -12371,12 +12879,14 @@ export class AgatStore {
     workerArtifacts: WorkerArtifactInput[] = [],
     executionMetrics: WorkerExecutionMetrics = {},
   ): { runCompleted: boolean; processInstanceId: string | null } {
+    this.enforceRunIdentities();
     const metrics = normalizeExecutionMetrics(executionMetrics);
     let completedRunId: string | null = null;
+    let outputRejected = false;
     const result = this.transaction(() => {
       const stage = this.db
         .prepare(`
-          SELECT s.*, r.result_destination, r.artifact_path, a.name AS agent_name
+          SELECT s.*, r.project_id, r.result_destination, r.artifact_path, a.name AS agent_name
           FROM stages s
           JOIN runs r ON r.id = s.run_id
           JOIN agents a ON a.id = s.agent_id
@@ -12390,6 +12900,9 @@ export class AgatStore {
       const shadowActivity = parseJson<Record<string, unknown>>(stage.activity_json, {});
       if (shadowActivity.decisionShadowLease && !shadowActivity.decisionShadowObservation) {
         shadowActivity.decisionShadowObservation = unavailableDecision("missing_result");
+        const history = recordAssignmentObservation(assignmentHistory(shadowActivity.decisionShadowAssignmentHistory),
+          Number(stage.attempt), shadowActivity.decisionShadowObservation as DecisionShadowObservation);
+        if (history) shadowActivity.decisionShadowAssignmentHistory = history;
         this.db.prepare("UPDATE stages SET activity_json = ? WHERE id = ?").run(JSON.stringify(shadowActivity), String(stage.id));
         this.addDecisionShadowEvent(String(stage.run_id), String(stage.id), nodeId,
           shadowActivity.decisionShadowObservation as DecisionShadowObservation);
@@ -12406,6 +12919,51 @@ export class AgatStore {
       const snapshot = parseAgentSnapshot(stage.agent_snapshot_json);
       if (snapshot) stage.agent_name = snapshot.name;
       const timestamp = nowIso();
+
+      const contractInstance = this.db.prepare(`
+        SELECT pi.*, r.project_id FROM process_instances pi JOIN runs r ON r.id = pi.run_id WHERE pi.run_id = ?
+      `).get(String(stage.run_id)) as Row | undefined;
+      const contractNode = contractInstance
+        ? parseJson<ProcessGraph>(contractInstance.graph_json, { nodes: [], edges: [] }).nodes
+          .find((node) => node.id === stage.process_node_id)
+        : undefined;
+      const selectedOutputContract = contractNode?.config.outputContract
+        ?? (shadowActivity.businessOutputContract as { id?: unknown } | undefined)?.id;
+      if (selectedOutputContract !== undefined) {
+        let receipt;
+        try {
+          normalizeBusinessOutputContract(selectedOutputContract);
+          const projectId = String(stage.project_id);
+          receipt = validateBusinessReportOutput(output, this.businessOutputContext(String(stage.run_id), projectId).context);
+          const pinnedContract = shadowActivity.businessOutputContract as { schemaSha256?: string } | undefined;
+          if (pinnedContract && pinnedContract.schemaSha256 !== receipt.schemaSha256) {
+            receipt = { ...receipt, status: "invalid", codes: ["schema_revision_mismatch"] };
+          }
+        } catch {
+          receipt = { status: "invalid", codes: ["validator_unavailable"] };
+        }
+        this.addEvent(String(stage.run_id), String(stage.id), nodeId,
+          receipt.status === "validated" ? "info" : "warn", "business.output.validated",
+          receipt.status === "validated" ? "Структура, ссылки и расчёты проверены; утверждения требуют решения человека"
+            : "Бизнес-результат требует исправления или ручной проверки", { ...receipt });
+        if (receipt.status !== "validated") {
+          outputRejected = true;
+          this.db.prepare(`UPDATE stages SET status = 'failed', output = ?, metrics_json = ?, lease_expires_at = NULL,
+            completed_at = ?, updated_at = ? WHERE id = ?`)
+            .run(output, JSON.stringify(metrics), timestamp, timestamp, String(stage.id));
+          const failure = `Контракт бизнес-результата: ${receipt.codes.join(", ")}. Требуется ручная проверка.`;
+          if (!contractInstance) {
+            this.db.prepare("UPDATE runs SET status = 'failed', completed_at = ?, updated_at = ? WHERE id = ?")
+              .run(timestamp, timestamp, String(stage.run_id));
+            this.addEvent(String(stage.run_id), String(stage.id), nodeId, "error", "stage.failed", failure, null);
+            return { runCompleted: false, processInstanceId: null };
+          }
+          this.failProcessInstance(String(contractInstance.id), String(stage.run_id), failure);
+          const parent = this.db.prepare("SELECT parent_instance_id FROM process_subprocess_links WHERE child_instance_id = ?")
+            .get(String(contractInstance!.id)) as Row | undefined;
+          return { runCompleted: false, processInstanceId: String(parent?.parent_instance_id ?? contractInstance!.id) };
+        }
+      }
 
       this.db
         .prepare(`
@@ -12543,7 +13101,7 @@ export class AgatStore {
     if (metrics.inputTokens !== undefined) spanAttributes["gen_ai.usage.input_tokens"] = metrics.inputTokens;
     if (metrics.outputTokens !== undefined) spanAttributes["gen_ai.usage.output_tokens"] = metrics.outputTokens;
     if (metrics.model) spanAttributes["gen_ai.response.model"] = metrics.model;
-    this.telemetry.endStage(leaseId, { status: "completed", attributes: spanAttributes });
+    this.telemetry.endStage(leaseId, { status: outputRejected ? "failed" : "completed", attributes: spanAttributes });
     if (completedRunId) {
       const terminal = this.db.prepare("SELECT status FROM runs WHERE id = ?").get(completedRunId) as Row | undefined;
       if (terminal?.status === "completed") this.telemetry.endRun(completedRunId, { status: "completed" });
@@ -12961,21 +13519,18 @@ export class AgatStore {
     const events = eventRows.slice(0, 10_000).map((row) => this.eventDto(row));
     const artifacts = this.listRunArtifacts(runId);
     const goldenEvaluation = this.goldenEvaluationForRun(runId, project);
+    const decisionStageRows = this.db.prepare("SELECT id, status, attempt, lease_id, lease_expires_at, activity_json FROM stages WHERE run_id = ? ORDER BY position")
+      .all(runId) as Row[];
+    const traceObservedAt = Date.now();
+    const decisionStages = decisionStageRows.map(stage => ({ stage,
+        activeLease: Boolean(stage.lease_id) && Date.parse(String(stage.lease_expires_at ?? "")) > traceObservedAt,
+        activity: parseJson<Record<string, unknown>>(stage.activity_json, {}) }));
     return {
       run: this.runDto(run),
       events,
       artifacts,
       manifest: this.executionManifest(run),
-      decisionObservations: (this.db.prepare("SELECT id, activity_json FROM stages WHERE run_id = ? ORDER BY position")
-        .all(runId) as Row[]).flatMap((stage) => {
-        const activity = parseJson<Record<string, unknown>>(stage.activity_json, {});
-        const decisionConfig = activity.decisionShadowConfig as DecisionShadowConfig | undefined;
-        return activity.decisionShadowObservation ? [{ stageId: String(stage.id),
-          profileSha256: (activity.decisionShadowLease as DecisionShadowLease | undefined)?.profileSha256 ?? null,
-          context: decisionConfig ? { kind: decisionConfig.kind, question: decisionConfig.question,
-            options: decisionConfig.options } : null,
-          observation: activity.decisionShadowObservation }] : [];
-      }),
+      ...decisionTraceInventory(decisionStages),
       comparison: typeof run.evaluation_group_id === "string" && !goldenEvaluation
         ? this.evaluationComparison(run.evaluation_group_id, project)
         : null,
@@ -13139,6 +13694,7 @@ export class AgatStore {
             timestamp,
             timestamp,
           );
+          this.runIdentityGuard?.bindRun(replayId, project);
           snapshots.forEach((snapshot, index) => {
             const replaySnapshot = agentSnapshot({
               id: snapshot.id,
@@ -13219,6 +13775,7 @@ export class AgatStore {
         worker,
         routing,
         metrics,
+        ...(activity.businessOutputContract ? { businessOutputContract: activity.businessOutputContract } : {}),
         ...(activity.decisionShadowConfig ? { decisionShadow: {
           profileSha256: shadowLease?.profileSha256 ?? null,
           inputSha256: shadowLease?.inputSha256 ?? null,
@@ -13315,8 +13872,326 @@ export class AgatStore {
 
   listRunArtifacts(runId: string): Array<Record<string, unknown>> {
     return (this.db
-      .prepare("SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at ASC, name ASC")
+      .prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.join(", ")} FROM artifacts WHERE run_id = ? ORDER BY created_at ASC, name ASC`)
       .all(runId) as Row[]).map((row) => this.artifactDto(row));
+  }
+
+  getRunArtifacts(runId: string, projectId = "default") {
+    if (!this.db.prepare("SELECT id FROM runs WHERE id = ? AND project_id = ?").get(runId, normalizeProjectId(projectId))) return null;
+    return { artifacts: this.listRunArtifacts(runId) };
+  }
+
+  private legacyBusinessReportReceipt(row: Row): Record<string, unknown> | null {
+    if (row.kind !== "process_artifact" || !String(row.media_type).startsWith("text/markdown") || !row.stage_id || row.source_artifact_id) return null;
+    const stage = this.db.prepare(`SELECT s.output, s.process_node_id, pi.graph_json FROM stages s
+      JOIN process_instances pi ON pi.run_id = s.run_id WHERE s.id = ? AND s.run_id = ? AND s.stage_kind = 'artifact' AND s.status = 'completed'`)
+      .get(String(row.stage_id), String(row.run_id)) as Row | undefined;
+    if (!stage || sha256Text(String(stage.output)) !== row.sha256) return null;
+    const graph = parseJson<ProcessGraph>(stage.graph_json, { nodes: [], edges: [] });
+    if (!graph.nodes.some(node => node.id === stage.process_node_id && node.type === "artifact" && node.config.reportFormat === "business-report-markdown.v1")) return null;
+    const candidates = (this.db.prepare("SELECT data_json FROM events WHERE run_id = ? AND type = 'business.report.rendered' ORDER BY id LIMIT 201")
+      .all(String(row.run_id)) as Row[]);
+    if (candidates.length > 200) return null;
+    const receipts = candidates.map(event => parseJson<Record<string, unknown>>(event.data_json, {})).filter(receipt => this.validBusinessReportReceipt(receipt, row));
+    return receipts.length && new Set(receipts.map(receipt => receipt.inputSha256)).size === 1 ? receipts[0]! : null;
+  }
+
+  private validBusinessReportReceipt(receipt: Record<string, unknown>, row: Row): boolean {
+    return receipt.format === "business-report-markdown.v1" && receipt.contract === "business-report.v1" && receipt.contentSha256 === row.sha256
+      && receipt.sizeBytes === Number(row.size_bytes) && typeof receipt.inputSha256 === "string" && /^[a-f0-9]{64}$/.test(receipt.inputSha256)
+      && typeof receipt.schemaSha256 === "string" && /^[a-f0-9]{64}$/.test(receipt.schemaSha256);
+  }
+
+  private businessReportArtifactSource(artifactId: string, projectId: string, lock = false): Row | undefined {
+    const row = this.db.prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.map(field => `a.${field}`).join(", ")}, r.status AS run_status, r.artifact_path
+      FROM artifacts a JOIN runs r ON r.id = a.run_id WHERE a.id = ? AND r.project_id = ? AND a.project_id = ?
+      ${lock && this.stateStoreDriver === "postgresql" ? "FOR UPDATE OF a" : ""}`).get(artifactId, projectId, projectId) as Row | undefined;
+    if (!row) return undefined;
+    if (row.run_status !== "completed" || row.storage_state !== "ready" || row.deleted_at || row.kind !== "process_artifact" || !row.stage_id) {
+      throw new BusinessReportOfficeError("report_not_ready", "Действие доступно для сохранённого проверенного отчёта завершённого запуска", 409);
+    }
+    const receipt = parseJson<Record<string, unknown> | null>(row.rendering_json, null) ?? this.legacyBusinessReportReceipt(row);
+    if (!receipt || !this.validBusinessReportReceipt(receipt, row)) throw new BusinessReportOfficeError("receipt_unavailable", "Для файла нет сохранённой квитанции проверки. Доступен исходный файл.", 409);
+    return { ...row, rendering_json: JSON.stringify(receipt) };
+  }
+
+  private businessReportDecisionDto(row: Row) {
+    return { id: String(row.id), profile: BUSINESS_REPORT_DECISION_PROFILE, artifactId: String(row.artifact_id), sourceSha256: String(row.artifact_sha256),
+      runId: String(row.run_id), revision: Number(row.revision), decision: String(row.decision), reason: String(row.reason),
+      actor: String(row.actor_id), binding: parseJson<Record<string, unknown>>(row.binding_json, {}),
+      reworkTaskId: row.rework_task_id ? String(row.rework_task_id) : null, createdAt: String(row.created_at) };
+  }
+
+  getBusinessReportDecisions(artifactId: string, projectId = "default", beforeRevision: number | null = null) {
+    const project = this.requireProject(projectId);
+    const source = this.db.prepare(`SELECT a.sha256, a.storage_state, a.deleted_at FROM artifacts a JOIN runs r ON r.id = a.run_id
+      WHERE a.id = ? AND a.project_id = ? AND r.project_id = ?`).get(artifactId, project, project) as Row | undefined;
+    if (!source) return null;
+    if (beforeRevision !== null && (!Number.isInteger(beforeRevision) || beforeRevision < 1 || beforeRevision > BUSINESS_REPORT_DECISION_LIMIT + 1)) {
+      throw new BusinessReportDecisionError("invalid_cursor", "Некорректная ревизия истории");
+    }
+    const snapshot = this.db.prepare(`WITH latest AS (
+        SELECT MAX(revision) AS current_revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?
+      ), page AS (
+        SELECT * FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? AND revision < ? ORDER BY revision DESC LIMIT 51
+      ) SELECT p.*, t.id AS rework_task_id, l.current_revision FROM latest l LEFT JOIN page p ON 1 = 1
+      LEFT JOIN business_report_rework_tasks t ON t.decision_id = p.id AND t.project_id = p.project_id ORDER BY p.revision DESC`)
+      .all(artifactId, project, artifactId, project, beforeRevision ?? BUSINESS_REPORT_DECISION_LIMIT + 1) as Row[];
+    const revision = Number(snapshot[0]?.current_revision ?? 0);
+    // Stored human decisions remain readable after file retention removes bytes.
+    // A fresh/unreviewed resource still needs the canonical validation receipt.
+    if (!revision) this.businessReportArtifactSource(artifactId, project);
+    const rows = snapshot.filter(row => row.id !== null && row.id !== undefined);
+    return { artifactId, sourceSha256: String(source.sha256), sourceReady: source.storage_state === "ready" && !source.deleted_at, revision,
+      decisions: rows.slice(0, 50).map(row => this.businessReportDecisionDto(row)),
+      nextBeforeRevision: rows.length > 50 ? Number(rows[49]!.revision) : null };
+  }
+
+  getBusinessReportReworkTask(taskId: string, projectId = "default") {
+    const project = this.requireProject(projectId);
+    const row = this.db.prepare(`SELECT d.*, t.id AS task_id, a.storage_state, a.deleted_at, a.sha256 AS current_sha256
+      FROM business_report_rework_tasks t JOIN business_report_decisions d ON d.id = t.decision_id
+      JOIN artifacts a ON a.id = d.artifact_id JOIN runs r ON r.id = d.run_id
+      WHERE t.id = ? AND t.project_id = ? AND d.project_id = ? AND r.project_id = ?`)
+      .get(taskId, project, project, project) as Row | undefined;
+    if (!row) return null;
+    const latest = this.db.prepare("SELECT MAX(revision) AS revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?")
+      .get(String(row.artifact_id), project) as Row;
+    return { id: String(row.task_id), kind: "business_report_rework", execution: "manual", title: "Исправить отчёт",
+      state: Number(row.revision) === Number(latest.revision) ? "open" : "superseded", decisionId: String(row.id),
+      artifactId: String(row.artifact_id), sourceSha256: String(row.artifact_sha256), runId: String(row.run_id),
+      sourceAvailable: row.storage_state === "ready" && !row.deleted_at && row.current_sha256 === row.artifact_sha256,
+      reason: String(row.reason), requestedBy: String(row.actor_id), binding: parseJson<Record<string, unknown>>(row.binding_json, {}), createdAt: String(row.created_at) };
+  }
+
+  recordBusinessReportDecision(artifactId: string, raw: unknown, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId), input = normalizeBusinessReportDecision(raw), actorSha256 = sha256Text(actor);
+    const before = this.businessReportArtifactSource(artifactId, project);
+    if (!before) return null;
+    if (before.sha256 !== input.expectedSha256) throw new BusinessReportDecisionError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+    // Verify bytes before taking write locks. Recheck the authoritative source
+    // and review revision inside the commit, without network I/O under a lock.
+    try {
+      if (!this.getArtifactDownload(artifactId, project)) throw new Error("Source unavailable");
+    } catch { throw new BusinessReportDecisionError("source_unavailable", "Исходный файл недоступен или не прошёл проверку целостности", 503); }
+    return this.transaction(() => {
+      // Request IDs share an actor/project namespace even across artifacts.
+      if (this.stateStoreDriver === "postgresql") this.db.prepare("SELECT id FROM projects WHERE id = ? FOR NO KEY UPDATE").get(project);
+      const source = this.businessReportArtifactSource(artifactId, project, true);
+      if (!source) return null;
+      const prior = this.db.prepare(`SELECT d.*, t.id AS rework_task_id FROM business_report_decisions d
+        LEFT JOIN business_report_rework_tasks t ON t.decision_id = d.id AND t.project_id = d.project_id
+        WHERE d.project_id = ? AND d.actor_sha256 = ? AND d.request_id = ?`).get(project, actorSha256, input.requestId) as Row | undefined;
+      if (prior) {
+        if (prior.artifact_id !== artifactId || prior.request_sha256 !== input.requestSha256) {
+          throw new BusinessReportDecisionError("idempotency_conflict", "Этот request ID уже использован для другого решения", 409);
+        }
+        return { decision: this.businessReportDecisionDto(prior), reworkTask: prior.rework_task_id ? this.getBusinessReportReworkTask(String(prior.rework_task_id), project) : null, created: false };
+      }
+      if (source.sha256 !== input.expectedSha256) throw new BusinessReportDecisionError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+      const current = this.db.prepare("SELECT MAX(revision) AS revision FROM business_report_decisions WHERE artifact_id = ? AND project_id = ?")
+        .get(artifactId, project) as Row;
+      const revision = Number(current.revision ?? 0);
+      if (input.expectedRevision !== revision) throw new BusinessReportDecisionError("decision_changed", "У отчёта уже есть новое решение. Прочитайте историю перед сохранением", 409);
+      if (revision >= BUSINESS_REPORT_DECISION_LIMIT) throw new BusinessReportDecisionError("history_limit", "Достигнут предел истории решений для этого файла", 409);
+      const instance = this.db.prepare("SELECT id, process_id, process_version, graph_json FROM process_instances WHERE run_id = ?")
+        .get(String(source.run_id)) as Row | undefined;
+      if (!instance) throw new BusinessReportDecisionError("binding_unavailable", "Не найдена сохранённая версия процесса отчёта", 409);
+      const receipt = parseJson<Record<string, unknown>>(source.rendering_json, {});
+      const binding = { artifactId, sourceSha256: input.expectedSha256, runId: String(source.run_id), stageId: String(source.stage_id),
+        processInstanceId: String(instance.id), processId: String(instance.process_id), processVersion: Number(instance.process_version),
+        graphSha256: sha256Text(String(instance.graph_json)), inputSha256: receipt.inputSha256, schemaSha256: receipt.schemaSha256 };
+      const id = randomUUID(), taskId = input.decision === "rework_requested" ? randomUUID() : null, timestamp = nowIso();
+      this.db.prepare(`INSERT INTO business_report_decisions(id, project_id, run_id, artifact_id, artifact_sha256, revision,
+        request_id, actor_sha256, request_sha256, actor_id, decision, reason, binding_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, project, String(source.run_id), artifactId, input.expectedSha256, revision + 1, input.requestId, actorSha256, input.requestSha256,
+          actor.slice(0, 200), input.decision, input.reason, JSON.stringify(binding), timestamp);
+      if (taskId) this.db.prepare("INSERT INTO business_report_rework_tasks(id, project_id, decision_id, created_at) VALUES (?, ?, ?, ?)").run(taskId, project, id, timestamp);
+      this.db.prepare("UPDATE artifacts SET rendering_json = ? WHERE id = ? AND rendering_json IS NULL").run(String(source.rendering_json), artifactId);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.decision.recorded", "Сохранено решение о версии отчёта", {
+        projectId: project, decisionId: id, artifactId, sourceSha256: input.expectedSha256, revision: revision + 1, decision: input.decision,
+        processId: binding.processId, processVersion: binding.processVersion, graphSha256: binding.graphSha256, actorSha256, reworkTaskId: taskId,
+      });
+      const saved = this.db.prepare("SELECT * FROM business_report_decisions WHERE id = ? AND project_id = ?").get(id, project) as Row;
+      return { decision: this.businessReportDecisionDto({ ...saved, rework_task_id: taskId }),
+        reworkTask: taskId ? this.getBusinessReportReworkTask(taskId, project) : null, created: true };
+    });
+  }
+
+  prepareBusinessReportEvalCandidate(artifactId: string, raw: unknown, projectId = "default"): BusinessReportEvalCandidate | null {
+    const project = this.requireProject(projectId), input = normalizeReportEvalRequest(raw);
+    const source = this.businessReportArtifactSource(artifactId, project);
+    if (!source) return null;
+    if (source.sha256 !== input.expectedSha256) throw new BusinessReportEvalError("source_changed", "Версия отчёта изменилась. Обновите результат", 409);
+    const latest = () => this.db.prepare(`SELECT * FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? ORDER BY revision DESC LIMIT 1`).get(artifactId, project) as Row | undefined;
+    const decision = latest();
+    if (!decision || Number(decision.revision) !== input.expectedRevision) throw new BusinessReportEvalError("decision_changed", "Прочитайте актуальное решение перед передачей примера", 409);
+    const report = this.db.prepare(`SELECT s.stage_input, s.output, s.position, pi.id AS instance_id, pi.process_id, pi.process_version, pi.graph_json,
+        r.input AS run_input, r.knowledge_collection_ids_json FROM stages s JOIN runs r ON r.id = s.run_id
+        JOIN process_instances pi ON pi.run_id = r.id WHERE s.id = ? AND s.run_id = ? AND r.project_id = ?
+        AND s.stage_kind = 'artifact' AND s.status = 'completed'`).get(String(source.stage_id), String(source.run_id), project) as Row | undefined;
+    const receipt = parseJson<Record<string, unknown>>(source.rendering_json, {});
+    const binding = parseJson<Record<string, unknown>>(decision.binding_json, {});
+    if (!report || typeof report.stage_input !== "string" || sha256Text(report.stage_input) !== receipt.inputSha256
+      || typeof report.output !== "string" || sha256Text(report.output) !== source.sha256
+      || binding.artifactId !== artifactId || binding.sourceSha256 !== source.sha256 || binding.runId !== source.run_id || binding.stageId !== source.stage_id
+      || binding.processInstanceId !== report.instance_id || binding.processId !== report.process_id || binding.processVersion !== Number(report.process_version)
+      || binding.graphSha256 !== sha256Text(String(report.graph_json)) || binding.inputSha256 !== receipt.inputSha256 || binding.schemaSha256 !== receipt.schemaSha256) {
+      throw new BusinessReportEvalError("context_unavailable", "Не удалось подтвердить сохранённый вход и выход отчёта", 409);
+    }
+    // A formatter is not the model under evaluation. Locate a unique preceding
+    // agent that actually produced the exact validated JSON, never the Markdown.
+    const agents = this.db.prepare(`SELECT id, stage_input, output, agent_snapshot_json, activity_json FROM stages
+      WHERE run_id = ? AND stage_kind = 'agent' AND status = 'completed' AND output = ? AND position < ? ORDER BY position DESC LIMIT 2`)
+      .all(String(source.run_id), report.stage_input, Number(report.position)) as Row[];
+    const stage = agents.length === 1 ? agents[0] : undefined;
+    const snapshot = stage ? parseAgentSnapshot(stage.agent_snapshot_json) : null;
+    const activity = stage ? parseJson<Record<string, unknown>>(stage.activity_json, {}) : {};
+    const contract = activity.businessOutputContract as { id?: unknown; schemaSha256?: unknown } | undefined;
+    if (!stage || !snapshot || snapshot.source === "migration_backfill" || snapshot.promptVersion !== sha256Text(snapshot.systemPrompt)
+      || !/^[a-f0-9]{64}$/.test(snapshot.definitionVersion) || contract?.id !== "business-report.v1" || contract.schemaSha256 !== receipt.schemaSha256) {
+      throw new BusinessReportEvalError("context_unavailable", "Нужен однозначный агентный этап с сохранённым контрактом; соберите пример вручную", 409);
+    }
+    const exampleInput = typeof stage.stage_input === "string" ? stage.stage_input : String(report.run_input);
+    const observedOutput = String(stage.output);
+    if (!exampleInput.trim() || exampleInput.length > 100_000 || observedOutput.length > 100_000) throw new BusinessReportEvalError("example_too_large", "Вход или результат превышает лимит Golden eval; подготовьте отдельный пример без автоматического усечения", 409);
+    const collectionIds = this.requireKnowledgeCollectionIds(project, parseJson<unknown>(report.knowledge_collection_ids_json, []));
+    let chunkCount = 0, documentCount = 0;
+    for (const collectionId of collectionIds) {
+      const sizes = this.db.prepare(`SELECT COUNT(DISTINCT d.id) AS documents, COUNT(c.id) AS chunks FROM knowledge_documents d
+        LEFT JOIN knowledge_chunks c ON c.document_id = d.id WHERE d.collection_id = ?`).get(collectionId) as Row;
+      documentCount += Number(sizes.documents); chunkCount += Number(sizes.chunks);
+      if (documentCount > 1000 || chunkCount > 10_000) throw new BusinessReportEvalError("context_too_large", "Корпус слишком велик для передачи примера; подготовьте отдельный evaluation dataset", 409);
+    }
+    const knowledge = this.evalKnowledgeSnapshot(project, collectionIds);
+    const currentKnowledgeSnapshot = { schemaVersion: knowledge.schemaVersion, collectionIds, missingCollectionIds: knowledge.missingCollectionIds, fingerprint: knowledge.fingerprint };
+    if (Number(source.size_bytes) > 800_000) throw new BusinessReportEvalError("source_too_large", "Отчёт превышает лимит передачи примера", 409);
+    try {
+      if (!this.getArtifactDownload(artifactId, project)) throw new Error("Source unavailable");
+    } catch { throw new BusinessReportEvalError("source_unavailable", "Не удалось проверить исходный файл в Artifact Store", 503); }
+    const finalSource = this.businessReportArtifactSource(artifactId, project), finalDecision = latest();
+    if (!finalSource || finalSource.sha256 !== source.sha256 || finalDecision?.id !== decision.id) throw new BusinessReportEvalError("decision_changed", "Результат или решение изменились во время подготовки; перечитайте историю", 409);
+    const packet: Omit<BusinessReportEvalCandidate, "contentSha256"> = {
+      profile: BUSINESS_REPORT_EVAL_PROFILE, purpose: "development", holdoutEligible: false, referenceReviewRequired: true,
+      replay: { automatic: false, scope: "single_agent", context: "requires_review" },
+      source: { projectId: project, artifactId, sourceSha256: input.expectedSha256, runId: String(source.run_id), reportStageId: String(source.stage_id),
+        processInstanceId: String(report.instance_id), processId: String(report.process_id), processVersion: Number(report.process_version), graphSha256: sha256Text(String(report.graph_json)),
+        decisionId: String(decision.id), decisionRevision: Number(decision.revision), decision: String(decision.decision) as "accepted" | "rework_requested", reason: String(decision.reason),
+        agentStageId: String(stage.id), agentId: snapshot.id, promptSha256: snapshot.promptVersion, definitionSha256: snapshot.definitionVersion,
+        requestedModel: snapshot.model, runtime: snapshot.runtime, runtimeProfile: snapshot.runtimeConfig.profile,
+        inputSha256: sha256Text(exampleInput), observedOutputSha256: sha256Text(observedOutput), schemaSha256: String(receipt.schemaSha256) },
+      example: { name: "Пример из проверенного отчёта", input: exampleInput, referenceOutput: "", requiredTerms: [], forbiddenTerms: [], knowledgeCollectionIds: collectionIds },
+      observedOutput, currentKnowledgeSnapshot,
+    };
+    return { ...packet, contentSha256: sha256Text(JSON.stringify(packet)) };
+  }
+
+  createBusinessReportEvalDataset(artifactId: string, raw: unknown, projectId = "default", actor = "system"): BusinessReportEvalImportReceipt | null {
+    const project = this.requireProject(projectId), input = normalizeReportEvalImport(raw), rubric = normalizeEvalRubric(input.rubric);
+    const datasetId = reportEvalDatasetId(project, actor, input.requestId), actorSha256 = sha256Text(actor);
+    const requestSha256 = sha256Text(JSON.stringify({ profile: BUSINESS_REPORT_EVAL_IMPORT_PROFILE, artifactId, ...input, rubric }));
+    const cached = (): BusinessReportEvalImportReceipt | null => {
+      const row = this.db.prepare(`SELECT v.knowledge_snapshot_json, v.content_sha256 FROM eval_datasets d
+        JOIN eval_dataset_versions v ON v.dataset_id = d.id AND v.version = 1 WHERE d.id = ? AND d.project_id = ?`).get(datasetId, project) as Row | undefined;
+      if (!row) return null;
+      const metadata = parseJson<Record<string, unknown>>(row.knowledge_snapshot_json, {}).reportImport as Record<string, unknown> | undefined;
+      if (metadata?.profile !== BUSINESS_REPORT_EVAL_IMPORT_PROFILE || metadata.actorSha256 !== actorSha256 || metadata.requestSha256 !== requestSha256) {
+        throw new BusinessReportEvalError("idempotency_conflict", "Этот request ID уже использован для другого примера", 409);
+      }
+      return { datasetId, datasetVersion: 1, datasetContentSha256: String(row.content_sha256), candidateSha256: String(metadata.candidateSha256), created: false };
+    };
+    const prior = cached(); if (prior) return prior;
+    const candidate = this.prepareBusinessReportEvalCandidate(artifactId, { expectedSha256: input.expectedSha256, expectedRevision: input.expectedRevision }, project);
+    if (!candidate) return null;
+    if (candidate.contentSha256 !== input.expectedCandidateSha256) throw new BusinessReportEvalError("candidate_changed", "Контекст примера изменился. Подготовьте и проверьте его заново", 409);
+    const referenceValidation = validateBusinessReportOutput(input.referenceOutput, this.businessOutputContext(candidate.source.runId, project).context);
+    if (referenceValidation.schemaSha256 !== candidate.source.schemaSha256) throw new BusinessReportEvalError("schema_changed", "Контракт reference изменился; подготовьте пример для актуального профиля вручную", 409);
+    if (referenceValidation.status === "invalid") {
+      const code = referenceValidation.codes[0];
+      const message = code === "calculation_mismatch" || code === "undefined_calculation" ? "Проверьте расчёты в эталонном JSON"
+        : code === "source_out_of_scope" || code === "artifact_unavailable_or_mismatched" ? "Проверьте ссылки эталона на доступные источники этого запуска"
+          : "Проверьте структуру эталонного JSON по контракту business-report.v1";
+      throw new BusinessReportEvalError("invalid_reference", message);
+    }
+    if (rubric.some(criterion => criterion.weight <= 0)) throw new BusinessReportEvalError("invalid_rubric", "Вес критерия должен оставаться положительным после округления");
+    const normalized = this.normalizeEvalDatasetVersion(project, input.description, "Development пример из отчёта; reference и rubric проверены человеком", rubric,
+      [{ ...candidate.example, referenceOutput: input.referenceOutput }]);
+    // The existing experiment executor accepts the stored example verbatim.
+    // Preserve a process-stage input even when it has significant outer whitespace.
+    normalized.examples[0]!.input = candidate.example.input;
+    if (normalized.knowledgeSnapshot.fingerprint !== candidate.currentKnowledgeSnapshot.fingerprint) throw new BusinessReportEvalError("candidate_changed", "Корпус изменился во время подготовки примера", 409);
+    const { reason: _reason, ...origin } = candidate.source;
+    const reportImport = { profile: BUSINESS_REPORT_EVAL_IMPORT_PROFILE, purpose: "development", holdoutEligible: false, reviewConfirmed: true,
+      requestSha256, actorSha256, candidateSha256: candidate.contentSha256, source: origin,
+      referenceSha256: sha256Text(input.referenceOutput), referenceValidation };
+    normalized.knowledgeSnapshot = { ...normalized.knowledgeSnapshot, reportImport };
+    normalized.contentSha256 = sha256Text(JSON.stringify({ description: normalized.description, rubric: normalized.rubric,
+      examples: normalized.examples.map(({ id: _id, ...example }) => example), knowledgeFingerprint: normalized.knowledgeSnapshot.fingerprint, reportImport }));
+    // All Artifact Store I/O and corpus fingerprint work is complete before the
+    // shared project -> artifact lock order used by report decision writers.
+    return this.transaction(() => {
+      const projectRow = this.db.prepare(`SELECT id FROM projects WHERE id = ?${this.stateStoreDriver === "postgresql" ? " FOR NO KEY UPDATE" : ""}`).get(project);
+      if (!projectRow) throw new BusinessReportEvalError("source_changed", "Проект недоступен", 409);
+      const existing = cached(); if (existing) return existing;
+      const source = this.businessReportArtifactSource(artifactId, project, true);
+      const latest = this.db.prepare("SELECT id FROM business_report_decisions WHERE artifact_id = ? AND project_id = ? ORDER BY revision DESC LIMIT 1").get(artifactId, project) as Row | undefined;
+      if (!source || source.sha256 !== input.expectedSha256 || latest?.id !== candidate.source.decisionId) throw new BusinessReportEvalError("decision_changed", "Отчёт или решение изменились перед фиксацией примера", 409);
+      const timestamp = nowIso();
+      try {
+        this.db.prepare(`INSERT INTO eval_datasets(id, project_id, name, description, current_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 1, ?, ?)`).run(datasetId, project, input.name, input.description, timestamp, timestamp);
+      } catch (error) {
+        if (error instanceof Error && /unique|duplicate key/i.test(error.message)) throw new BusinessReportEvalError("dataset_name_conflict", "Dataset с таким названием уже существует. Выберите другое название", 409);
+        throw error;
+      }
+      this.insertEvalDatasetVersion(datasetId, 1, normalized, actor, timestamp);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.eval.dataset.created", "Сохранён development пример отчёта", {
+        projectId: project, datasetId, datasetVersion: 1, datasetContentSha256: normalized.contentSha256, candidateSha256: candidate.contentSha256,
+        artifactId, sourceSha256: input.expectedSha256, decisionId: candidate.source.decisionId, decisionRevision: candidate.source.decisionRevision,
+        agentStageId: candidate.source.agentStageId, inputSha256: candidate.source.inputSha256, referenceSha256: reportImport.referenceSha256, actorSha256,
+      });
+      return { datasetId, datasetVersion: 1, datasetContentSha256: normalized.contentSha256, candidateSha256: candidate.contentSha256, created: true };
+    });
+  }
+
+  async exportBusinessReportArtifact(artifactId: string, input: { format: unknown; expectedSha256: unknown; origin: unknown }, projectId = "default", actor = "system") {
+    const project = this.requireProject(projectId);
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !["format", "expectedSha256", "origin"].includes(key))) throw new BusinessReportOfficeError("invalid_request", "Нужны формат, текущий SHA-256 и адрес АГАТ");
+    const format = normalizeOfficeFormat(input.format), origin = normalizeOfficeOrigin(input.origin);
+    if (typeof input.expectedSha256 !== "string" || !/^[a-f0-9]{64}$/.test(input.expectedSha256)) throw new BusinessReportOfficeError("invalid_hash", "Нужен текущий SHA-256 исходного отчёта");
+    const source = this.businessReportArtifactSource(artifactId, project);
+    if (!source) return null;
+    if (source.sha256 !== input.expectedSha256) throw new BusinessReportOfficeError("source_changed", "Исходный отчёт изменился. Обновите список артефактов", 409);
+    const exportKey = sha256Text(JSON.stringify({ artifactId, sha256: source.sha256, format, origin, renderer: BUSINESS_REPORT_OFFICE_RENDERER_SHA256 }));
+    const cached = () => this.db.prepare(`SELECT ${ARTIFACT_METADATA_FIELDS.join(", ")} FROM artifacts WHERE export_key = ? AND project_id = ?`).get(exportKey, project) as Row | undefined;
+    const available = (row: Row) => {
+      if (row.storage_state !== "ready" || row.deleted_at || !this.getArtifactDownload(String(row.id), project)) throw new BusinessReportOfficeError("export_unavailable", "Сохранённый экспорт недоступен. Проверьте Artifact Store", 503);
+      return { artifact: this.artifactDto(row), created: false };
+    };
+    const existing = cached(); if (existing) return available(existing);
+    const download = this.getArtifactDownload(artifactId, project);
+    if (!download) throw new BusinessReportOfficeError("source_unavailable", "Исходный отчёт недоступен в Artifact Store", 503);
+    if (Number(source.size_bytes) > 800_000) throw new BusinessReportOfficeError("source_too_large", "Исходный отчёт превышает лимит экспорта");
+    const markdown = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(download.filePath));
+    const rendered = await renderBusinessReportOffice({ format, markdown, canonicalSha256: input.expectedSha256, canonicalArtifactId: artifactId, origin, createdAt: String(source.created_at) });
+    return this.transaction(() => {
+      const current = this.businessReportArtifactSource(artifactId, project, true);
+      if (!current || current.sha256 !== input.expectedSha256) throw new BusinessReportOfficeError("source_changed", "Исходный отчёт изменился во время экспорта", 409);
+      const prior = cached(); if (prior) return available(prior);
+      // Preserve an exact historical receipt recovered from the original stage and audit event.
+      this.db.prepare("UPDATE artifacts SET rendering_json = ? WHERE id = ? AND rendering_json IS NULL").run(String(current.rendering_json), artifactId);
+      const name = safeArtifactName(String(source.name).replace(/\.md$/i, "") + `.${format}`);
+      const metadata = { profile: BUSINESS_REPORT_OFFICE_PROFILE, format, rendererSha256: BUSINESS_REPORT_OFFICE_RENDERER_SHA256,
+        sourceArtifactId: artifactId, sourceSha256: input.expectedSha256, documentSha256: rendered.documentSha256, origin };
+      const artifact = this.persistArtifact({ id: String(source.stage_id), run_id: String(source.run_id), artifact_path: source.artifact_path ?? null }, name, "business_report_export",
+        format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", rendered.bytes,
+        path.posix.join("exports", artifactId, exportKey, name), metadata, artifactId, exportKey);
+      this.addEvent(String(source.run_id), String(source.stage_id), null, "info", "business.report.exported", "Подготовлен файл из сохранённого проверенного отчёта", {
+        artifactId: artifact.id, sourceArtifactId: artifactId, sourceSha256: input.expectedSha256, format, rendererSha256: BUSINESS_REPORT_OFFICE_RENDERER_SHA256,
+        documentSha256: rendered.documentSha256, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes, actor: actor.slice(0, 200),
+      });
+      return { artifact, created: true };
+    });
   }
 
   getArtifactDownload(artifactId: string, projectId = "default"): { artifact: Record<string, unknown>; filePath: string } | null {
@@ -13739,6 +14614,11 @@ export class AgatStore {
         ORDER BY e.id ASC LIMIT ?
       `)
       .all(afterId, normalizeProjectId(projectId), clampInteger(limit, 1, 1_000, 200)) as Row[]).map((row) => this.eventDto(row));
+  }
+
+  listIdentityAudit(afterId = 0, limit = 200): EventRecord[] {
+    return this.db.prepare("SELECT * FROM events WHERE type LIKE 'identity.%' AND id > ? ORDER BY id LIMIT ?")
+      .all(afterId, clampInteger(limit, 1, 1000, 200)).map(row => this.eventDto(row as Row));
   }
 
   claimAuditExportBatch(limit = 100): Array<Record<string, unknown>> {
@@ -14968,13 +15848,33 @@ export class AgatStore {
       }
       if (node.type === "artifact") {
         const name = safeArtifactName(renderProcessTemplate(node.config.artifactName ?? "artifact.txt", expressionContext()));
-        const content = renderProcessTemplate(node.config.artifactContent ?? "", expressionContext());
+        let content = renderProcessTemplate(node.config.artifactContent ?? "", expressionContext());
+        let renderingMetadata: Record<string, unknown> | null = null;
+        if (node.config.reportFormat) {
+          try {
+            normalizeBusinessReportFormat(node.config.reportFormat);
+            const projectId = String((this.db.prepare("SELECT project_id FROM runs WHERE id = ?").get(runId) as Row).project_id);
+            const { sources, context } = this.businessOutputContext(runId, projectId);
+            const rendered = renderValidatedBusinessReport(content, sources, context);
+            content = rendered.content;
+            renderingMetadata = rendered.receipt;
+            this.addEvent(runId, null, null, "info", "business.report.rendered", "Подготовлен Markdown из проверенного JSON", rendered.receipt);
+          } catch (error) {
+            const known = error instanceof BusinessReportRenderingError;
+            this.addEvent(runId, null, null, "warn", "business.report.rejected", "Сохранение отчёта остановлено проверкой", {
+              format: node.config.reportFormat, code: known ? error.code : "renderer_unavailable", reasons: known ? error.reasons : [],
+            });
+            this.failProcessInstance(instanceId, runId, known ? error.message
+              : "Не удалось проверить и сохранить бизнес-отчёт. Проверьте доступность валидатора и источников.");
+            return false;
+          }
+        }
         const mediaType = node.config.artifactMediaType && /^[\w.+-]+\/[\w.+-]+(?:;\s*charset=[\w-]+)?$/i.test(node.config.artifactMediaType)
           ? node.config.artifactMediaType
           : "text/plain; charset=utf-8";
-        const stage = this.recordInternalStage(runId, tokenId, node, "artifact", lastOutput, lastOutput ?? "");
+        const stage = this.recordInternalStage(runId, tokenId, node, "artifact", lastOutput, node.config.reportFormat ? content : lastOutput ?? "");
         const position = String(Number(stage.position) + 1).padStart(2, "0");
-        this.persistArtifact(stage, name, "process_artifact", mediaType, content, path.posix.join("artifacts", `${position}-${name}`));
+        this.persistArtifact(stage, name, "process_artifact", mediaType, content, path.posix.join("artifacts", `${position}-${name}`), renderingMetadata);
         this.addEvent(runId, String(stage.id), null, "info", "process.artifact.completed", `Артефакт «${name}» сохранён`, {
           processInstanceId: instanceId,
           processNodeId: node.id,
@@ -15205,6 +16105,8 @@ export class AgatStore {
     const requiresApproval = node.config.approvalRequired === true;
     const status = requiresApproval ? "waiting_approval" : "queued";
     const stageId = randomUUID();
+    const effectiveAgent = node.config.outputContract ? { ...agentRow,
+      system_prompt: businessOutputSystemPrompt(String(agentRow.system_prompt), node.config.outputContract) } : agentRow;
     this.db
       .prepare(`
         INSERT INTO stages(
@@ -15222,9 +16124,10 @@ export class AgatStore {
         node.id,
         tokenId,
         lastOutput,
-        JSON.stringify(this.captureAgentSnapshot(agentRow, "process_queue", projectId, timestamp)),
+        JSON.stringify(this.captureAgentSnapshot(effectiveAgent, "process_queue", projectId, timestamp)),
         JSON.stringify({
           ...(requiresApproval && node.config.approvalForm ? { form: node.config.approvalForm } : {}),
+          ...(node.config.outputContract ? { businessOutputContract: businessOutputContractDescriptor(node.config.outputContract) } : {}),
           ...this.replayDecisionShadow(instanceId, runId, node, stageId, lastOutput),
         }),
         timestamp,
@@ -15651,22 +16554,30 @@ export class AgatStore {
       ) VALUES (?, ?, '__agat_system__', ?, 'waiting_external', 0, ?, ?, 'subprocess', ?, ?, ?)
     `).run(stageId, runId, position, node.id, tokenId, lastOutput, timestamp, timestamp);
     this.setProcessWaitingState(instanceId, runId, "waiting_external", node.id, lastOutput, loopCounts, transitionCount, timestamp);
-    const child = this.startProcessLocked(
-      childProcessId,
-      {
-        input: childInput.trim(),
-        priority: Number(parentRun.priority),
-        resultDestination: normalizeResultDestination(parentRun.result_destination),
-        artifactPath: String(parentRun.artifact_path ?? ""),
-        knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
-      },
-      String(parentRun.project_id),
-      {
-        knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
-        version: childVersion,
-        runtime: "embedded",
-      },
-    );
+    let child: Record<string, unknown> | null;
+    try {
+      child = this.startProcessLocked(
+        childProcessId,
+        {
+          input: childInput.trim(),
+          priority: Number(parentRun.priority),
+          resultDestination: normalizeResultDestination(parentRun.result_destination),
+          artifactPath: String(parentRun.artifact_path ?? ""),
+          knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
+        },
+        String(parentRun.project_id),
+        {
+          knowledgeCollectionIds: parseJson<string[]>(parentRun.knowledge_collection_ids_json, []),
+          version: childVersion,
+          runtime: "embedded",
+          parentRunId: runId,
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof BusinessInputValidationError)) throw error;
+      this.triggerProcessFailure(instanceId, runId, error.message, "failed");
+      return;
+    }
     if (!child) {
       this.triggerProcessFailure(instanceId, runId, `Subprocess ${childProcessId} v${childVersion} не найден`, "failed");
       return;
@@ -16066,7 +16977,10 @@ export class AgatStore {
     mediaType: string,
     content: string | Buffer,
     pathWithinRun: string,
-  ): void {
+    renderingMetadata: Record<string, unknown> | null = null,
+    sourceArtifactId: string | null = null,
+    exportKey: string | null = null,
+  ): Record<string, unknown> {
     const artifactId = randomUUID();
     const relativePath = path.posix.join(
       this.artifactRunBase(String(stage.run_id), stage.artifact_path),
@@ -16148,8 +17062,8 @@ export class AgatStore {
               id, run_id, stage_id, name, kind, media_type, relative_path,
               size_bytes, sha256, content_blob, storage_backend, storage_state,
               object_bucket, object_key, object_version_id, retention_until,
-              legal_hold, deleted_at, last_storage_error, project_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
+              legal_hold, deleted_at, last_storage_error, project_id, created_at, rendering_json, source_artifact_id, export_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?)
           `).run(
             artifactId,
             String(stage.run_id),
@@ -16168,6 +17082,9 @@ export class AgatStore {
             retentionUntil,
             String(artifactRun.project_id),
             createdAt,
+            renderingMetadata ? JSON.stringify(renderingMetadata) : null,
+            sourceArtifactId,
+            exportKey,
           );
         this.addEvent(
           String(stage.run_id),
@@ -16197,6 +17114,9 @@ export class AgatStore {
       }
       throw error;
     }
+    return this.artifactDto({ id: artifactId, run_id: String(stage.run_id), stage_id: stage.id ?? null, name, kind, media_type: mediaType, relative_path: relativePath,
+      size_bytes: buffer.byteLength, sha256, storage_backend: this.artifactStoreDriver, storage_state: "ready", retention_until: retentionUntil,
+      created_at: createdAt, rendering_json: renderingMetadata ? JSON.stringify(renderingMetadata) : null, source_artifact_id: sourceArtifactId });
   }
 
   private nodeDto(row: Row): Record<string, unknown> {
@@ -16378,6 +17298,8 @@ export class AgatStore {
       legalHold: Number(row.legal_hold ?? 0) === 1,
       deletedAt: row.deleted_at ?? null,
       createdAt: row.created_at,
+      rendering: parseJson<Record<string, unknown> | null>(row.rendering_json, null) ?? this.legacyBusinessReportReceipt(row),
+      sourceArtifactId: row.source_artifact_id ?? null,
     };
   }
 
@@ -16404,6 +17326,9 @@ export class AgatStore {
     message: string,
     data: Record<string, unknown> | null,
   ): EventRecord {
+    const actor = identityAudit(currentLocalIdentity());
+    const initiator = runId ? this.runIdentityGuard?.runAudit(runId) : undefined;
+    if (actor || initiator) data = { ...data, ...(actor ? { identityActor: actor } : {}), ...(initiator ? { initiator } : {}) };
     const createdAt = nowIso();
     let projectId = "global";
     if (runId) {
@@ -16421,6 +17346,7 @@ export class AgatStore {
       const credential = this.db.prepare("SELECT project_id FROM credentials WHERE id = ?").get(data.credentialId) as Row | undefined;
       if (typeof credential?.project_id === "string") projectId = credential.project_id;
     }
+    if (!runId && type.startsWith("identity.") && !data?.projectId) projectId = "__identity__";
     const result = this.db
       .prepare(`
         INSERT INTO events(run_id, stage_id, node_id, level, type, message, data_json, project_id, created_at)
@@ -16445,11 +17371,15 @@ export class AgatStore {
     if (this.transactionDepth > 0) return callback();
     this.db.exec("BEGIN IMMEDIATE");
     this.transactionDepth = 1;
+    this.transactionProcessSpans.clear();
     try {
       const result = callback();
       this.db.exec("COMMIT");
       return result;
     } catch (error) {
+      for (const runId of this.transactionProcessSpans) {
+        this.telemetry.endRun(runId, { status: "failed", errorType: error instanceof Error ? error.name : "Error" });
+      }
       try { this.db.exec("ROLLBACK"); }
       catch (rollbackError) {
         // A failed COMMIT may already have released a broken connection. Its
@@ -16458,6 +17388,7 @@ export class AgatStore {
       }
       throw error;
     } finally {
+      this.transactionProcessSpans.clear();
       this.transactionDepth = 0;
     }
   }

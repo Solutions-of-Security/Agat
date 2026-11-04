@@ -1,4 +1,4 @@
-import type { ProcessPackInput, ProcessPackManifest, ProcessPackInstallation, ProcessPackPreview } from "../processPacks";
+import type { ProcessPackInput, ProcessPackCatalog, ProcessPackHistoryEntry, ProcessPackActivation, ProcessPackInstallation, ProcessPackPreview } from "../processPacks";
 import type {
   A2AEndpoint,
   A2AEndpointSecret,
@@ -68,9 +68,17 @@ import type {
   SaveProcessScheduleRequest,
   TestProcessNodeResult,
   UpdateProcessRequest,
+  ReportDecisionHistory,
+  ReportReworkTask,
+  RecordReportDecisionRequest,
+  RecordReportDecisionResponse,
+  ReportEvalCandidate,
+  ReportEvalImportRequest,
+  ReportEvalImportReceipt,
 } from "../types";
-import { accessToken, activeProjectId, oidcEnabled } from "./auth";
+import { acceptLocalSession, accessToken, activeProjectId, csrfToken, expireLocalSession, localAuthEnabled, oidcEnabled } from "./auth";
 import type { ScenarioPreflight, ScenarioPreflightInput } from "../scenarioPreflight";
+import type { CreateLocalPrincipal, IssueLocalCredential, LocalPrincipal, LocalCredential } from "../../../coordinator/src/local-identity-contract";
 
 const API_ROOT = "/api/v1";
 const TOKEN_KEY = "agat.admin-token.v1";
@@ -84,6 +92,7 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly preflight: ScenarioPreflight | null = null,
+    readonly code: string | null = null,
   ) {
     super(message);
   }
@@ -94,8 +103,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
-  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string; preflight?: ScenarioPreflight };
-  throw new ApiError(response.status, body.error ?? "Ошибка запроса", body.preflight ?? null);
+  const body = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string; preflight?: ScenarioPreflight; code?: unknown };
+  throw new ApiError(response.status, body.error ?? "Ошибка запроса", body.preflight ?? null, typeof body.code === "string" ? body.code : null);
 }
 
 function notifyAdminTokenListeners(required: boolean) {
@@ -129,16 +138,18 @@ export function provideAdminToken(token: string | null): void {
 }
 
 async function authorizedFetch(path: string, init?: RequestInit, retryAuth = true): Promise<Response> {
-  const token = window.localStorage.getItem(TOKEN_KEY);
+  const token = localAuthEnabled() ? null : window.localStorage.getItem(TOKEN_KEY);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const bearer = await accessToken();
   if (bearer) headers.set("authorization", `Bearer ${bearer}`);
   else if (token) headers.set("x-agat-admin-token", token);
   headers.set("x-agat-project-id", activeProjectId());
+  if (localAuthEnabled() && csrfToken() && !["GET", "HEAD"].includes(init?.method ?? "GET")) headers.set("x-agat-csrf-token", csrfToken()!);
 
-  const response = await fetch(`${API_ROOT}${path}`, { ...init, headers });
-  if (response.status === 401 && retryAuth && !oidcEnabled()) {
+  const response = await fetch(`${API_ROOT}${path}`, { ...init, credentials: "same-origin", headers });
+  if (response.status === 401 && localAuthEnabled()) expireLocalSession();
+  if (response.status === 401 && retryAuth && !oidcEnabled() && !localAuthEnabled()) {
     window.localStorage.removeItem(TOKEN_KEY);
     const entered = await requestAdminToken();
     if (entered) return authorizedFetch(path, init, false);
@@ -158,10 +169,21 @@ async function requestBlob(path: string): Promise<Blob> {
 }
 
 export const api = {
+  localPrincipals: () => request<{ principals: LocalPrincipal[] }>("/auth/principals"),
+  createLocalPrincipal: (input: CreateLocalPrincipal) => request<LocalPrincipal>("/auth/principals", { method: "POST", body: JSON.stringify(input) }),
+  updateLocalPrincipal: (subject: string, input: Partial<CreateLocalPrincipal> & { disabled?: boolean }) => request<LocalPrincipal>(`/auth/principals/${encodeURIComponent(subject)}`, { method: "PATCH", body: JSON.stringify(input) }),
+  localCredentials: (subject: string) => request<{ credentials: LocalCredential[] }>(`/auth/principals/${encodeURIComponent(subject)}/credentials`),
+  issueLocalCredential: (subject: string, input: IssueLocalCredential) => request<{ credential: LocalCredential; token: string }>(`/auth/principals/${encodeURIComponent(subject)}/credentials`, { method: "POST", body: JSON.stringify(input) }),
+  revokeLocalCredential: (id: string) => request<void>(`/auth/credentials/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
+  rotateLocalCredential: async (id: string) => {
+    const result = await request<{ credential: LocalCredential; token: string; csrfToken?: string }>(`/auth/credentials/${encodeURIComponent(id)}/rotate`, { method: "POST" });
+    if (result.csrfToken) acceptLocalSession({ csrfToken: result.csrfToken });
+    return result;
+  },
   scenarioPreflight: (kind: "processes" | "process-templates", id: string, payload: ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }, signal?: AbortSignal) =>
     request<ScenarioPreflight>(`/${kind}/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(payload), signal }),
   me: () => request<AuthUser>("/auth/me", undefined, false),
-  projects: () => request<{ projects: ProjectSummary[]; activeProjectId: string }>("/projects", undefined, false),
+  projects: () => request<{ projects: ProjectSummary[]; activeProjectId: string }>("/projects"),
   createProject: (name: string, id?: string) => request<ProjectSummary>("/projects", {
     method: "POST",
     body: JSON.stringify({ name, id }),
@@ -272,12 +294,15 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   uploadKnowledgeDocument: (collectionId: string, payload: UploadKnowledgeDocumentRequest) =>
-    request<KnowledgeDocument>(`/knowledge/collections/${encodeURIComponent(collectionId)}/documents/upload`, {
+    request<KnowledgeDocument & { upload: { disposition: "created" | "existing"; requestedName: string } }>(`/knowledge/collections/${encodeURIComponent(collectionId)}/documents/upload`, {
       method: "POST", body: JSON.stringify(payload),
     }),
   knowledgeDocument: (documentId: string, signal?: AbortSignal) =>
     request<KnowledgeDocumentPreview>(`/knowledge/documents/${encodeURIComponent(documentId)}`, { signal }),
   knowledgeDocumentFile: (documentId: string) => requestBlob(`/knowledge/documents/${encodeURIComponent(documentId)}/file`),
+  reviewKnowledgeExtraction: (documentId: string, payload: { originalSha256: string; contentSha256: string; reportSha256: string;
+    extractionRevision: string; decision: "use_extracted_text_only"; reason: string }) =>
+    request<KnowledgeDocument>(`/knowledge/documents/${encodeURIComponent(documentId)}/review-extraction`, { method: "POST", body: JSON.stringify(payload) }),
   reindexKnowledgeDocument: (documentId: string) =>
     request<KnowledgeDocument>(`/knowledge/documents/${encodeURIComponent(documentId)}/reindex`, { method: "POST" }),
   runKnowledgeSources: (runId: string, signal?: AbortSignal) =>
@@ -307,6 +332,18 @@ export const api = {
     request<void>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   downloadArtifact: (artifactId: string) =>
     requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/download`),
+  runArtifacts: (runId: string, signal?: AbortSignal) => request<{ artifacts: import("../types").Artifact[] }>(`/runs/${encodeURIComponent(runId)}/artifacts`, { signal }),
+  reportDecisions: (artifactId: string, beforeRevision: number | null = null, signal?: AbortSignal) =>
+    request<ReportDecisionHistory>(`/artifacts/${encodeURIComponent(artifactId)}/decisions${beforeRevision === null ? "" : `?beforeRevision=${beforeRevision}`}`, { signal }),
+  recordReportDecision: (artifactId: string, payload: RecordReportDecisionRequest) =>
+    request<RecordReportDecisionResponse>(`/artifacts/${encodeURIComponent(artifactId)}/decisions`, { method: "POST", body: JSON.stringify(payload) }),
+  reportReworkTask: (taskId: string, signal?: AbortSignal) => request<ReportReworkTask>(`/report-rework-tasks/${encodeURIComponent(taskId)}`, { signal }),
+  prepareReportEvalCandidate: (artifactId: string, expectedSha256: string, expectedRevision: number, signal?: AbortSignal) =>
+    request<ReportEvalCandidate>(`/artifacts/${encodeURIComponent(artifactId)}/eval-candidate`, { method: "POST", body: JSON.stringify({ expectedSha256, expectedRevision }), signal }),
+  importReportEvalDataset: (artifactId: string, payload: ReportEvalImportRequest) =>
+    request<ReportEvalImportReceipt>(`/artifacts/${encodeURIComponent(artifactId)}/eval-dataset`, { method: "POST", body: JSON.stringify(payload) }),
+  exportArtifact: (artifactId: string, payload: { format: "docx" | "pdf"; expectedSha256: string; origin: string }) =>
+    request<{ artifact: import("../types").Artifact; created: boolean }>(`/artifacts/${encodeURIComponent(artifactId)}/export`, { method: "POST", body: JSON.stringify(payload) }),
   localWorkers: (signal?: AbortSignal) =>
     request<LocalWorkerLauncherSnapshot>("/local-workers", { signal }),
   launchLocalWorkers: (payload: LaunchLocalWorkersRequest) =>
@@ -385,9 +422,11 @@ export const api = {
       body: JSON.stringify({ enabled, reason }),
     }),
   processTemplates: () => request<ProcessTemplateCatalog>("/process-templates"),
-  processPacks: (signal?: AbortSignal) => request<{ packs: Array<ProcessPackManifest & { installation: ProcessPackInstallation | null }> }>("/process-packs", { signal }),
+  processPacks: (signal?: AbortSignal) => request<ProcessPackCatalog>("/process-packs", { signal }),
+  processPackHistory: (id: string, signal?: AbortSignal) => request<{ history: ProcessPackHistoryEntry[]; activeInstallation: ProcessPackInstallation | null }>(`/process-packs/${encodeURIComponent(id)}/history`, { signal }),
   previewProcessPack: (id: string, input: ProcessPackInput, signal?: AbortSignal) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/preflight`, { method: "POST", body: JSON.stringify(input), signal }),
   installProcessPack: (id: string, input: ProcessPackInput) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify(input) }),
+  activateProcessPack: (id: string, input: ProcessPackActivation) => request<ProcessPackPreview>(`/process-packs/${encodeURIComponent(id)}/activate`, { method: "POST", body: JSON.stringify(input) }),
   createProcess: (payload: CreateProcessRequest) =>
     request<ProcessDefinition>("/processes", {
       method: "POST",

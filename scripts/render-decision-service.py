@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--port', type=int, default=8766)
     parser.add_argument('--max-tokens', type=int, default=2048)
     parser.add_argument('--cache-limit-mib', type=int, default=128)
+    parser.add_argument('--wired-limit-mib', type=int)
     parser.add_argument('--inference-timeout-ms', type=int, default=2000)
     parser.add_argument('--throttle-s', type=int, default=30)
     args = parser.parse_args()

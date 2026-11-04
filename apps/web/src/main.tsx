@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import { ActionDialogProvider } from "./components/ActionDialog";
+import { LocalSessionGate } from "./components/LocalSessionGate";
 import { initializeAuth } from "./lib/auth";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
@@ -14,7 +15,7 @@ void initializeAuth()
   .then(() => root.render(
     <StrictMode>
       <ActionDialogProvider>
-        <App />
+        <LocalSessionGate><App /></LocalSessionGate>
       </ActionDialogProvider>
     </StrictMode>,
   ))

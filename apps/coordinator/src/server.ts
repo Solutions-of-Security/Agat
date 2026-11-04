@@ -5,7 +5,16 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getProcessTemplateCatalog } from "./process-catalog.js";
 import { scenarioTrigger, ScenarioPreflightError, type ScenarioPreflightContext, type ScenarioPreflightInput } from "./scenario-preflight.js";
-import { getInternalReportPack, type ProcessPackInput } from "./process-packs.js";
+import { authenticationMode, deploymentPreflight, deploymentSnapshot } from "./deployment.js";
+import { LocalIdentityProvider, localIdentitiesExist } from "./local-identities.js";
+import { enterLocalIdentity, withLocalIdentityScope } from "./local-identity-context.js";
+import type { CreateLocalPrincipal, IssueLocalCredential, ChannelBinding } from "./local-identity-contract.js";
+import { getInternalReportPack, getProcessPackReleases, type ProcessPackInput, type ProcessPackActivation } from "./process-packs.js";
+import type { KnowledgeExtractionReviewInput } from "./knowledge-extraction.js";
+import { KnowledgeParserBusyError } from "./knowledge-files.js";
+import { BusinessReportOfficeError, normalizeOfficeOrigin } from "./business-report-office-document.js";
+import { BusinessReportDecisionError, normalizeDecisionHistoryCursor } from "./business-report-decisions.js";
+import { BusinessReportEvalError } from "./business-report-eval.js";
 
 import {
   loadConfig,
@@ -21,7 +30,9 @@ import {
 } from "./approval-decisions.js";
 import {
   AuthenticationError,
-  localAdminContext,
+  authenticateLegacyRequest,
+  hasGlobalProjectAccess,
+  hasInstallationAdminAccess,
   OidcVerifier,
   selectProject,
   type AgatRole,
@@ -201,6 +212,7 @@ function attachmentDisposition(filename: string): string {
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
+const requestAuthorizationGuards = new WeakMap<IncomingMessage, () => void>();
 async function readJson<T>(request: IncomingMessage, limitBytes = JSON_LIMIT_BYTES): Promise<T> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -210,6 +222,7 @@ async function readJson<T>(request: IncomingMessage, limitBytes = JSON_LIMIT_BYT
     if (size > limitBytes) throw new HttpError(413, "Тело запроса слишком большое");
     chunks.push(buffer);
   }
+  requestAuthorizationGuards.get(request)?.();
   if (chunks.length === 0) return {} as T;
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
@@ -227,6 +240,7 @@ async function readText(request: IncomingMessage, limitBytes = JSON_LIMIT_BYTES)
     if (size > limitBytes) throw new HttpError(413, "Тело запроса слишком большое");
     chunks.push(buffer);
   }
+  requestAuthorizationGuards.get(request)?.();
   return Buffer.concat(chunks).toString("utf8");
 }
 
@@ -248,7 +262,7 @@ async function readA2AJson(request: IncomingMessage): Promise<unknown> {
 
 function setSecurityHeaders(response: ServerResponse, config: CoordinatorConfig): void {
   const connectSources = ["'self'"];
-  if (config.oidcEnabled && config.oidcIssuer) {
+  if (authenticationMode(config) === "oidc" && config.oidcIssuer) {
     try {
       const issuer = new URL(config.oidcIssuer);
       if (issuer.protocol === "http:" || issuer.protocol === "https:") connectSources.push(issuer.origin);
@@ -273,7 +287,7 @@ function setCors(request: IncomingMessage, response: ServerResponse, config: Coo
   response.setHeader("access-control-allow-origin", origin);
   response.setHeader("vary", "Origin");
   response.setHeader("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type, authorization, idempotency-key, x-agat-admin-token, x-agat-project-id, a2a-version, a2a-extensions, traceparent");
+  response.setHeader("access-control-allow-headers", "content-type, authorization, idempotency-key, x-agat-admin-token, x-agat-project-id, x-agat-csrf-token, a2a-version, a2a-extensions, traceparent");
   return true;
 }
 
@@ -282,13 +296,19 @@ const READ_ROLES: AgatRole[] = ["admin", "designer", "operator", "viewer", "audi
 async function authorize(
   request: IncomingMessage,
   config: CoordinatorConfig,
-  verifier: OidcVerifier | null,
+  verifier: OidcVerifier | LocalIdentityProvider | null,
   allowedRoles: AgatRole[],
   requireLegacyAdmin: boolean,
   allowProjectFallback = false,
 ): Promise<AuthContext & { projectId: string }> {
   let context: AuthContext;
-  if (config.oidcEnabled) {
+  const mode = authenticationMode(config);
+  if (mode === "local") {
+    if (!(verifier instanceof LocalIdentityProvider) || !verifier.available) throw new HttpError(503, "Локальный вход недоступен; fallback запрещён");
+    context = verifier.authenticate(request);
+    verifier.authorizeOperation(request, context, allowedRoles);
+    enterLocalIdentity(context);
+  } else if (mode === "oidc") {
     const token = bearerToken(request.headers.authorization);
     if (!token || !verifier) throw new AuthenticationError(401, "Нужен OIDC access token");
     context = await verifier.verify(token);
@@ -296,13 +316,8 @@ async function authorize(
       throw new AuthenticationError(403, "Недостаточно прав для операции");
     }
   } else {
-    if (requireLegacyAdmin && config.adminToken) {
-      const supplied = request.headers["x-agat-admin-token"];
-      if (typeof supplied !== "string" || !tokensEqual(supplied, config.adminToken)) {
-        throw new HttpError(401, "Нужен токен администратора");
-      }
-    }
-    context = localAdminContext();
+    context = authenticateLegacyRequest({ adminToken: config.adminToken, adminHeader: request.headers["x-agat-admin-token"],
+      authorizationHeader: request.headers.authorization, remoteAddress: request.socket.remoteAddress, requireAdmin: requireLegacyAdmin });
   }
   const projectHeader = request.headers["x-agat-project-id"];
   let projectId: string;
@@ -310,9 +325,19 @@ async function authorize(
     projectId = selectProject(context, typeof projectHeader === "string" ? projectHeader : undefined);
   } catch (error) {
     if (!allowProjectFallback || !(error instanceof AuthenticationError)) throw error;
-    projectId = context.roles.has("admin") ? "default" : [...context.projectIds].sort()[0] ?? "default";
+    projectId = hasGlobalProjectAccess(context) ? "default" : [...context.projectIds].sort()[0] ?? "default";
+    selectProject(context, projectId);
   }
   enterPostgresTenantScope(projectId);
+  if (mode === "local" && verifier instanceof LocalIdentityProvider) {
+    requestAuthorizationGuards.set(request, () => {
+      const current = verifier.authenticate(request);
+      if (current.subject !== context.subject || current.credentialId !== context.credentialId) throw new AuthenticationError(401, "Идентичность запроса изменилась");
+      verifier.authorizeOperation(request, current, allowedRoles);
+      selectProject(current, projectId);
+      Object.assign(context, current);
+    });
+  }
   return Object.assign(context, { projectId });
 }
 
@@ -321,6 +346,7 @@ function requireWorker(
   store: AgatStore,
   allowWipeControl = false,
 ): Record<string, unknown> {
+  store.enforceRunIdentities();
   const token = bearerToken(request.headers.authorization);
   if (!token) throw new HttpError(401, "Нужен токен узла");
   const node = store.authenticateNode(token, allowWipeControl);
@@ -597,13 +623,13 @@ function validateRemoteBinding(config: CoordinatorConfig): void {
     throw new Error("AGAT_A2A_PUBLIC_BASE_URL должен использовать HTTPS при удалённой публикации координатора");
   }
   if (loopback.has(config.host)) return;
-  if (!config.adminToken) {
-    throw new Error("AGAT_ADMIN_TOKEN обязателен при публикации координатора не на loopback-интерфейсе");
+  if (!config.adminToken && (authenticationMode(config) === "legacy" || config.temporalEnabled)) {
+    throw new Error("AGAT_ADMIN_TOKEN обязателен для удалённого legacy либо внутренних Temporal endpoints");
   }
   if (config.enrollmentToken === "agat-local-enrollment") {
     throw new Error("Замените стандартный AGAT_ENROLLMENT_TOKEN перед удалённым запуском");
   }
-  if (config.oidcEnabled && (!config.oidcIssuer || !config.oidcClientId)) {
+  if (authenticationMode(config) === "oidc" && (!config.oidcIssuer || !config.oidcClientId)) {
     throw new Error("AGAT_OIDC_ISSUER и AGAT_OIDC_CLIENT_ID обязательны при включённом OIDC");
   }
   if (config.credentialsKey === "agat-local-credentials-key") {
@@ -638,7 +664,18 @@ export function createCoordinatorServer(
   knowledgeSearch?: KnowledgeSearchService,
   shutdownSignal?: AbortSignal,
 ): http.Server {
+  const localIdentities = authenticationMode(config) === "local" && store.stateStoreDriver === "sqlite"
+    ? new LocalIdentityProvider(store.db, config.localAuthOrigin, (type, data) => store.recordPlatformEvent(type, "Изменение индивидуального доступа", data)) : null;
+  store.setRunIdentityGuard(localIdentities ?? undefined);
   const eventStreams = new Set<ServerResponse>();
+  const localEventStreams = new Map<ServerResponse, { request: IncomingMessage; projectId: string }>();
+  const closeInvalidIdentityStreams = (): void => {
+    if (!localIdentities) return;
+    for (const [stream, context] of localEventStreams) {
+      try { localIdentities.assertCurrent(localIdentities.authenticate(context.request), context.projectId, "read"); }
+      catch { stream.end(); }
+    }
+  };
   const trackEventStream = (response: ServerResponse, a2aTaskId?: string): void => {
     // Authentication/body parsing may have completed after shutdown began.
     if (shutdownSignal?.aborted) {
@@ -646,14 +683,23 @@ export function createCoordinatorServer(
       throw new HttpError(503, "Coordinator останавливается");
     }
     eventStreams.add(response);
-    response.once("close", () => eventStreams.delete(response));
+    response.once("close", () => { eventStreams.delete(response); localEventStreams.delete(response); });
   };
   const closeEventStreams = (): void => {
-    for (const response of eventStreams) response.end();
+    for (const response of eventStreams) {
+      const socket = response.socket;
+      response.shouldKeepAlive = false;
+      // SSE headers have already advertised keep-alive. Finish the body before
+      // closing its socket so a retrying client cannot prevent HTTP draining.
+      response.end(() => socket?.end());
+    }
     eventStreams.clear();
   };
   shutdownSignal?.addEventListener("abort", closeEventStreams, { once: true });
+  const deploymentStatus = () => deploymentSnapshot(config, { runtime: processRuntime.snapshot(), sandbox: mcpGateway.sandboxSnapshot(),
+    localIdentityAvailable: localIdentities?.available, localIdentityInitialized: localIdentitiesExist(store.db) });
   const scenarioContext = (projectId?: string): ScenarioPreflightContext => ({
+    deployment: deploymentStatus(),
     runtime: processRuntime.snapshot(), mcpEnabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot(),
     ...(projectId ? { fleet: runWithPostgresSystemScope(() => store.scenarioFleetReadiness(projectId)) } : {}),
   });
@@ -661,20 +707,20 @@ export function createCoordinatorServer(
     config.a2aPublicBaseUrl,
     `http://127.0.0.1:${config.port}`,
   );
-  const oidcVerifier = config.oidcEnabled
+  const identityProvider = localIdentities ?? (authenticationMode(config) === "oidc"
     ? new OidcVerifier({
       issuer: config.oidcIssuer,
       clientId: config.oidcClientId,
       jwksUrl: config.oidcJwksUrl || undefined,
     })
-    : null;
+    : null);
   const a2aOutboundPolicy: A2AOutboundPolicy = {
     allowLoopback: config.a2aAllowLoopbackOutbound,
     timeoutMs: config.a2aOutboundTimeoutSeconds * 1_000,
     maxResponseBytes: config.a2aMaxResponseBytes,
   };
   const server = http.createServer((request, response) => {
-    const requestTask = runWithPostgresSystemScope(async () => {
+    const requestTask = withLocalIdentityScope(() => runWithPostgresSystemScope(async () => {
     setSecurityHeaders(response, config);
     const corsAllowed = setCors(request, response, config);
     if (request.method === "OPTIONS") {
@@ -691,17 +737,31 @@ export function createCoordinatorServer(
 
     try {
       if (shutdownSignal?.aborted) {
+        response.shouldKeepAlive = false;
+        response.setHeader("connection", "close");
         if (pathname.startsWith("/a2a/")) throw a2aShutdownError();
         throw new HttpError(503, "Coordinator останавливается");
       }
+      const deployment = deploymentStatus();
+      if (!deployment.controlPlaneAvailable && (pathname.startsWith("/api/") || pathname.startsWith("/a2a/")) && pathname !== "/api/v1/health" && pathname !== "/api/v1/auth/config") {
+        const blocker = deployment.blockers.find((issue) => issue.code !== "temporal_required")!;
+        if (pathname.startsWith("/a2a/")) throw new A2AProtocolError(503, "UNAVAILABLE", "DEPLOYMENT_UNAVAILABLE", blocker.message);
+        json(response, 503, { error: blocker.message, code: blocker.code, deployment });
+        return;
+      }
+      if (localIdentities && (pathname.startsWith("/a2a/") || request.method === "POST" && /^\/api\/v1\/process-webhooks\/[^/]+$/.test(pathname))) {
+        if (pathname.startsWith("/a2a/")) throw new A2AProtocolError(503, "UNAVAILABLE", "IDENTITY_BINDING_REQUIRED", "Endpoint-token ingress требует индивидуальной service binding; в local профиле он не квалифицирован");
+        throw new HttpError(503, "Process webhook требует индивидуальной service binding; используйте авторизованный REST запуск");
+      }
       if (request.method === "GET" && pathname === "/api/v1/health") {
         const retrieval = knowledgeSearch?.snapshot();
-        const ready = retrieval?.accepting !== false;
+        const ready = retrieval?.accepting !== false && deployment.ready;
         json(response, ready ? 200 : 503, {
           status: ready ? "ok" : "degraded",
           knowledgeSearch: retrieval ? { execution: "isolated", ...retrieval } : { execution: "sync" },
           time: new Date().toISOString(),
           version: "1.7.0",
+          deployment,
           stateStore: runWithPostgresSystemScope(() => store.stateStoreSnapshot()),
           processRuntime: processRuntime.snapshot(),
           sandbox: mcpGateway.sandboxSnapshot(),
@@ -1001,6 +1061,7 @@ export function createCoordinatorServer(
         /^\/api\/v1\/internal\/processes\/([^/]+)\/scheduled-(?:start|cancel)$/,
       );
       if (request.method === "POST" && scheduledProcessId) {
+        if (localIdentities && pathname.endsWith("/scheduled-start")) throw new HttpError(503, "Scheduled start требует квалифицированной индивидуальной service binding");
         if (!config.temporalEnabled || !config.temporalInternalToken) throw new HttpError(404, "Маршрут API не найден");
         const supplied = request.headers["x-agat-temporal-token"];
         if (typeof supplied !== "string" || !tokensEqual(supplied, config.temporalInternalToken)) {
@@ -1024,18 +1085,90 @@ export function createCoordinatorServer(
         const realmMarker = "/realms/";
         const realmIndex = config.oidcIssuer.lastIndexOf(realmMarker);
         json(response, 200, {
-          enabled: config.oidcEnabled,
-          url: config.oidcEnabled && realmIndex > 0 ? config.oidcIssuer.slice(0, realmIndex) : "",
-          realm: config.oidcEnabled && realmIndex > 0 ? config.oidcIssuer.slice(realmIndex + realmMarker.length) : "",
+          enabled: authenticationMode(config) === "oidc",
+          mode: authenticationMode(config),
+          deployment,
+          url: authenticationMode(config) === "oidc" && realmIndex > 0 ? config.oidcIssuer.slice(0, realmIndex) : "",
+          realm: authenticationMode(config) === "oidc" && realmIndex > 0 ? config.oidcIssuer.slice(realmIndex + realmMarker.length) : "",
           clientId: config.oidcClientId,
         });
         return;
       }
 
+      if (pathname.startsWith("/api/v1/auth/local/")) {
+        if (!localIdentities?.available) throw new HttpError(503, "Локальный вход не настроен");
+        response.setHeader("cache-control", "no-store");
+        if (request.method === "POST" && pathname === "/api/v1/auth/local/login") {
+          if (request.headers.authorization !== undefined || request.headers["x-agat-admin-token"] !== undefined) throw new AuthenticationError(401, "Используйте индивидуальный ключ входа");
+          const body = await readJson<{ token?: unknown }>(request, 4096);
+          const result = localIdentities.login(request, typeof body.token === "string" ? body.token : "");
+          response.setHeader("set-cookie", result.cookie);
+          json(response, 200, { csrfToken: result.csrfToken });
+        } else if (request.method === "GET" && pathname === "/api/v1/auth/local/session") {
+          // An explicitly supplied invalid credential must never fall back to a cookie.
+          if (request.headers.authorization !== undefined || request.headers["x-agat-admin-token"] !== undefined) throw new AuthenticationError(401, "Для UI session используйте cookie");
+          const result = localIdentities.session(request);
+          json(response, 200, { csrfToken: result.csrfToken });
+        } else if (request.method === "POST" && pathname === "/api/v1/auth/local/logout") {
+          localIdentities.assertOrigin(request);
+          if (request.headers.authorization !== undefined) throw new AuthenticationError(401, "Logout требует UI session");
+          response.setHeader("set-cookie", localIdentities.logout(request));
+          closeInvalidIdentityStreams();
+          noContent(response);
+        } else throw new HttpError(404, "Маршрут локального входа не найден");
+        return;
+      }
+
+      if (pathname === "/api/v1/auth/audit" || pathname === "/api/v1/auth/principals" || pathname.startsWith("/api/v1/auth/principals/") || pathname.startsWith("/api/v1/auth/credentials/")) {
+        if (!localIdentities?.available) throw new HttpError(404, "Локальные идентичности выключены");
+        const auth = await authorize(request, config, identityProvider, ["admin"], true, true);
+        response.setHeader("cache-control", "no-store");
+        const subject = routeParam(pathname, /^\/api\/v1\/auth\/principals\/([^/]+)$/);
+        const credentialSubject = routeParam(pathname, /^\/api\/v1\/auth\/principals\/([^/]+)\/credentials$/);
+        const credentialAction = /^\/api\/v1\/auth\/credentials\/([^/]+)\/(revoke|rotate)$/.exec(pathname);
+        if (pathname === "/api/v1/auth/audit" && request.method === "GET") json(response, 200, { events: store.listIdentityAudit(Number(url.searchParams.get("after") ?? 0) || 0) });
+        else if (pathname === "/api/v1/auth/principals" && request.method === "GET") json(response, 200, { principals: localIdentities.listPrincipals() });
+        else if (pathname === "/api/v1/auth/principals" && request.method === "POST") json(response, 201, localIdentities.createPrincipal(await readJson<CreateLocalPrincipal>(request)));
+        else if (subject && request.method === "PATCH") {
+          const principal = localIdentities.updatePrincipal(subject, await readJson<Partial<CreateLocalPrincipal> & { disabled?: boolean }>(request));
+          store.enforceRunIdentities();
+          closeInvalidIdentityStreams();
+          json(response, 200, principal);
+        } else if (credentialSubject && request.method === "GET") json(response, 200, { credentials: localIdentities.listCredentials(credentialSubject) });
+        else if (credentialSubject && request.method === "POST") json(response, 201, localIdentities.issueCredential(credentialSubject, await readJson<IssueLocalCredential>(request)));
+        else if (credentialAction && request.method === "POST") {
+          const id = decodeURIComponent(credentialAction[1]!);
+          const result = credentialAction[2] === "rotate" ? localIdentities.rotateCredential(id) : localIdentities.revokeCredential(id);
+          store.enforceRunIdentities();
+          const replacement = result && auth.credentialId === id && auth.identitySource === "local-session"
+            ? localIdentities.login(request, result.token) : null;
+          if (replacement) response.setHeader("set-cookie", replacement.cookie);
+          closeInvalidIdentityStreams();
+          if (result) json(response, 201, { ...result, ...(replacement ? { csrfToken: replacement.csrfToken } : {}) }); else noContent(response);
+        } else throw new HttpError(405, "Метод управления доступом не поддерживается");
+        return;
+      }
+
+      if (pathname === "/api/v1/auth/channel-bindings" || pathname.startsWith("/api/v1/auth/channel-bindings/")) {
+        if (!localIdentities?.available) throw new HttpError(404, "Локальные привязки выключены");
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
+        const id = routeParam(pathname, /^\/api\/v1\/auth\/channel-bindings\/([^/]+)$/);
+        if (request.method === "GET" && !id) json(response, 200, { bindings: localIdentities.listBindings(auth.projectId) });
+        else if (request.method === "POST" && !id) {
+          const body = await readJson<Omit<ChannelBinding, "id" | "projectId"> & { projectId?: string }>(request);
+          if (body.projectId !== undefined && body.projectId !== auth.projectId) throw new HttpError(403, "Проект привязки не совпадает с активным");
+          json(response, 201, localIdentities.createBinding({ ...body, projectId: auth.projectId }));
+        } else if (request.method === "DELETE" && id) {
+          if (!localIdentities.deleteBinding(id, auth.projectId)) throw new HttpError(404, "Привязка не найдена");
+          noContent(response);
+        } else throw new HttpError(405, "Метод привязки не поддерживается");
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/v1/auth/me") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false, true);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false, true);
         const availableProjects = runWithPostgresSystemScope(() =>
-          store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds));
+          store.listProjects(hasGlobalProjectAccess(auth) ? undefined : auth.projectIds));
         const activeProjectId = availableProjects.some((project) => project.id === auth.projectId)
           ? auth.projectId
           : availableProjects[0]?.id ?? auth.projectId;
@@ -1047,12 +1180,25 @@ export function createCoordinatorServer(
           projectIds: [...auth.projectIds],
           activeProjectId,
           local: auth.local,
+          authenticationMode: authenticationMode(config),
+          principalKind: auth.principalKind, identitySource: auth.identitySource, application: auth.application, scopes: auth.scopes ? [...auth.scopes] : undefined,
+          globalProjectAccess: hasGlobalProjectAccess(auth),
         });
         return;
       }
 
+      if (pathname === "/api/v1/deployment" || pathname === "/api/v1/deployment/preflight") {
+        await authorize(request, config, identityProvider, READ_ROLES, false);
+        if (request.method === "GET" && pathname === "/api/v1/deployment") json(response, 200, deployment);
+        else if (request.method === "POST" && pathname === "/api/v1/deployment/preflight") {
+          const body = await readJson<{ operations?: unknown }>(request);
+          json(response, 200, deploymentPreflight(deployment, body.operations));
+        } else throw new HttpError(405, "Метод не поддерживается");
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/v1/overview") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const overview = store.getOverview(auth.projectId);
         const mcp = overview.mcp && typeof overview.mcp === "object" ? overview.mcp as Record<string, unknown> : {};
         const approvals = Array.isArray(overview.approvals)
@@ -1063,12 +1209,13 @@ export function createCoordinatorServer(
           approvals,
           mcp: { ...mcp, enabled: config.mcpEnabled, sandbox: mcpGateway.sandboxSnapshot() },
           processRuntime: processRuntime.snapshot(),
+          deployment,
         });
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/a2a") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const snapshot = store.getA2ASnapshot(auth.projectId);
         const endpoints = Array.isArray(snapshot.endpoints)
           ? snapshot.endpoints.map((item) => {
@@ -1093,7 +1240,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/a2a/endpoints") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateA2AEndpointInput>(request);
         json(response, 201, store.createA2AEndpoint(body, auth.projectId, auth.username));
         return;
@@ -1101,7 +1248,7 @@ export function createCoordinatorServer(
 
       const rotateA2AEndpointId = routeParam(pathname, /^\/api\/v1\/a2a\/endpoints\/([^/]+)\/token\/rotate$/);
       if (request.method === "POST" && rotateA2AEndpointId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const rotated = store.rotateA2AEndpointToken(rotateA2AEndpointId, auth.projectId, auth.username);
         if (!rotated) throw new HttpError(404, "A2A endpoint не найден");
         json(response, 200, rotated);
@@ -1110,7 +1257,7 @@ export function createCoordinatorServer(
 
       const manageA2AEndpointId = routeParam(pathname, /^\/api\/v1\/a2a\/endpoints\/([^/]+)$/);
       if (request.method === "PATCH" && manageA2AEndpointId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<UpdateA2AEndpointInput>(request);
         const updated = store.updateA2AEndpoint(manageA2AEndpointId, body, auth.projectId, auth.username);
         if (!updated) throw new HttpError(404, "A2A endpoint не найден");
@@ -1118,7 +1265,7 @@ export function createCoordinatorServer(
         return;
       }
       if (request.method === "DELETE" && manageA2AEndpointId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteA2AEndpoint(manageA2AEndpointId, auth.projectId, auth.username)) {
           throw new HttpError(404, "A2A endpoint не найден");
         }
@@ -1128,7 +1275,7 @@ export function createCoordinatorServer(
 
       if (request.method === "POST" && pathname === "/api/v1/a2a/remotes") {
         if (!config.a2aOutboundEnabled) throw new HttpError(503, "Outbound A2A выключен централизованной конфигурацией");
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateA2ARemoteInput>(request);
         if (typeof body.agentCardUrl !== "string" || !body.auth) throw new HttpError(400, "agentCardUrl и auth обязательны");
         if (body.auth.mode === "oauth2_token_exchange") {
@@ -1147,7 +1294,7 @@ export function createCoordinatorServer(
       const invokeA2ARemoteId = routeParam(pathname, /^\/api\/v1\/a2a\/remotes\/([^/]+)\/message:send$/);
       if (request.method === "POST" && invokeA2ARemoteId) {
         if (!config.a2aOutboundEnabled) throw new HttpError(503, "Outbound A2A выключен централизованной конфигурацией");
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const remote = store.getA2ARemoteConnection(invokeA2ARemoteId, auth.projectId, true);
         const remoteAuth = store.getA2ARemoteAuth(invokeA2ARemoteId, auth.projectId);
         if (!remote || !remoteAuth) throw new HttpError(404, "Outbound A2A peer не найден или выключен");
@@ -1199,7 +1346,7 @@ export function createCoordinatorServer(
         const auth = await authorize(
           request,
           config,
-          oidcVerifier,
+          identityProvider,
           cancelling ? ["admin", "designer", "operator"] : READ_ROLES,
           cancelling,
         );
@@ -1229,7 +1376,7 @@ export function createCoordinatorServer(
 
       const manageA2ARemoteId = routeParam(pathname, /^\/api\/v1\/a2a\/remotes\/([^/]+)$/);
       if (request.method === "PATCH" && manageA2ARemoteId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<UpdateA2ARemoteInput>(request);
         if (body.skillId !== undefined) throw new HttpError(400, "Skill outbound peer неизменяем; создайте новую запись");
         if (body.auth?.mode === "oauth2_token_exchange") {
@@ -1246,7 +1393,7 @@ export function createCoordinatorServer(
         return;
       }
       if (request.method === "DELETE" && manageA2ARemoteId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteA2ARemote(manageA2ARemoteId, auth.projectId, auth.username)) {
           throw new HttpError(404, "Outbound A2A peer не найден");
         }
@@ -1255,9 +1402,9 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/projects") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false, true);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false, true);
         const projects = runWithPostgresSystemScope(() =>
-          store.listProjects(auth.roles.has("admin") ? undefined : auth.projectIds));
+          store.listProjects(hasGlobalProjectAccess(auth) ? undefined : auth.projectIds));
         json(response, 200, {
           projects,
           activeProjectId: projects.some((project) => project.id === auth.projectId)
@@ -1268,27 +1415,27 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/projects") {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<CreateProjectInput>(request);
         json(response, 201, runWithPostgresSystemScope(() => store.createProject(body)));
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/fleet") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, runWithPostgresSystemScope(() => store.getFleetSnapshot(auth.projectId)));
         return;
       }
 
       if (request.method === "PATCH" && pathname === "/api/v1/fleet/project-policy") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<ProjectFleetPolicyInput>(request);
         json(response, 200, store.updateProjectFleetPolicy(body, auth.projectId, auth.username));
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/fleet/releases") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<RegisterWorkerReleaseInput>(request);
         json(response, 201, runWithPostgresSystemScope(() => store.registerWorkerRelease(body, auth.username)));
         return;
@@ -1296,7 +1443,7 @@ export function createCoordinatorServer(
 
       const revokeReleaseId = routeParam(pathname, /^\/api\/v1\/fleet\/releases\/([^/]+)\/revoke$/);
       if (request.method === "POST" && revokeReleaseId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ reason?: string }>(request);
         if (!body.reason?.trim()) throw new HttpError(400, "Причина revoke release обязательна");
         const revoked = runWithPostgresSystemScope(() =>
@@ -1307,7 +1454,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "PUT" && pathname === "/api/v1/fleet/rollouts") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<WorkerRolloutInput>(request);
         json(response, 200, runWithPostgresSystemScope(() =>
           store.updateWorkerRollout(body, auth.projectId, auth.username)));
@@ -1315,11 +1462,11 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/fleet/siem/dead-letters") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "auditor"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "auditor"], true);
         const limit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
         json(response, 200, {
           deadLetters: runWithPostgresSystemScope(() => store.listAuditExportDeadLetters(
-            auth.roles.has("admin") ? undefined : auth.projectId,
+            hasGlobalProjectAccess(auth) ? undefined : auth.projectId,
             Number.isFinite(limit) ? limit : 100,
           )),
         });
@@ -1328,7 +1475,7 @@ export function createCoordinatorServer(
 
       const replaySiemEventId = routeParam(pathname, /^\/api\/v1\/fleet\/siem\/dead-letters\/(\d+)\/replay$/);
       if (request.method === "POST" && replaySiemEventId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ reason?: string; confirm?: string }>(request);
         if (body.confirm !== "REPLAY_SIEM_DEAD_LETTER" || !body.reason?.trim()) {
           throw new HttpError(400, "Replay требует reason и confirm=REPLAY_SIEM_DEAD_LETTER");
@@ -1345,7 +1492,7 @@ export function createCoordinatorServer(
 
       const resolveSiemEventId = routeParam(pathname, /^\/api\/v1\/fleet\/siem\/dead-letters\/(\d+)\/resolve$/);
       if (request.method === "POST" && resolveSiemEventId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ reason?: string; confirm?: string }>(request);
         if (body.confirm !== "RESOLVE_SIEM_DEAD_LETTER" || !body.reason?.trim()) {
           throw new HttpError(400, "Resolve требует reason и confirm=RESOLVE_SIEM_DEAD_LETTER");
@@ -1362,7 +1509,7 @@ export function createCoordinatorServer(
 
       const nodeRingId = routeParam(pathname, /^\/api\/v1\/fleet\/nodes\/([^/]+)\/ring$/);
       if (request.method === "PATCH" && nodeRingId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ ring?: string }>(request);
         if (!body.ring) throw new HttpError(400, "rollout ring обязателен");
         const node = runWithPostgresSystemScope(() => store.setNodeRolloutRing(nodeRingId, body.ring!, auth.username));
@@ -1372,19 +1519,19 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/agents") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, { agents: store.listAgents(auth.projectId) });
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/credentials") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         json(response, 200, { credentials: store.listCredentials(auth.projectId) });
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/credentials") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateCredentialInput>(request);
         json(response, 201, store.createCredential(body, auth.projectId));
         return;
@@ -1392,7 +1539,7 @@ export function createCoordinatorServer(
 
       const credentialId = routeParam(pathname, /^\/api\/v1\/credentials\/([^/]+)$/);
       if (request.method === "PATCH" && credentialId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateCredentialInput>(request);
         const updated = store.updateCredential(credentialId, body, auth.projectId);
         if (!updated) throw new HttpError(404, "Credentials не найдены");
@@ -1400,14 +1547,14 @@ export function createCoordinatorServer(
         return;
       }
       if (request.method === "DELETE" && credentialId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteCredential(credentialId, auth.projectId)) throw new HttpError(404, "Credentials не найдены");
         noContent(response);
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/mcp/servers") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, {
           enabled: config.mcpEnabled,
           sandbox: mcpGateway.sandboxSnapshot(),
@@ -1418,20 +1565,20 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/mcp/policy") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, store.getMcpPolicySnapshot(auth.projectId));
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/mcp/policy/preview") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<{ document?: unknown }>(request);
         json(response, 200, store.previewMcpPolicy(body.document, auth.projectId));
         return;
       }
 
       if (request.method === "PUT" && pathname === "/api/v1/mcp/policy") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<{ document?: unknown; baseSha256?: unknown }>(request);
         if (typeof body.baseSha256 !== "string") throw new HttpError(400, "baseSha256 обязателен");
         json(response, 200, store.activateMcpPolicy(body.document, body.baseSha256, auth.projectId, {
@@ -1442,7 +1589,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "PUT" && pathname === "/api/v1/mcp/emergency-deny") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ enabled?: unknown; reason?: unknown }>(request);
         if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled должен быть boolean");
         if (typeof body.reason !== "string") throw new HttpError(400, "reason обязателен");
@@ -1454,10 +1601,10 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/mcp/servers") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateMcpServerInput>(request);
         if ((body.transport && body.transport !== "http") || body.sandbox) {
-          if (!auth.roles.has("admin")) throw new HttpError(403, "Изолированные MCP tools может настраивать только admin");
+          if (!hasInstallationAdminAccess(auth)) throw new HttpError(403, "Изолированные MCP tools может настраивать только администратор установки");
         }
         json(response, 201, await mcpGateway.createServer(body, auth.projectId));
         return;
@@ -1465,7 +1612,7 @@ export function createCoordinatorServer(
 
       const syncMcpServerId = routeParam(pathname, /^\/api\/v1\/mcp\/servers\/([^/]+)\/sync$/);
       if (request.method === "POST" && syncMcpServerId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const synced = await mcpGateway.syncServer(syncMcpServerId, auth.projectId);
         if (!synced) throw new HttpError(404, "MCP-сервер не найден");
         json(response, 200, synced);
@@ -1474,7 +1621,7 @@ export function createCoordinatorServer(
 
       const mcpToolPolicyMatch = /^\/api\/v1\/mcp\/servers\/([^/]+)\/tools\/([^/]+)$/.exec(pathname);
       if (request.method === "PATCH" && mcpToolPolicyMatch?.[1] && mcpToolPolicyMatch[2]) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<{ policy?: McpToolPolicy }>(request);
         if (!body.policy) throw new HttpError(400, "policy обязательна");
         const updated = mcpGateway.setToolPolicy(
@@ -1490,13 +1637,13 @@ export function createCoordinatorServer(
 
       const mcpServerId = routeParam(pathname, /^\/api\/v1\/mcp\/servers\/([^/]+)$/);
       if (request.method === "PATCH" && mcpServerId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<UpdateMcpServerInput>(request);
         const current = mcpGateway.listServers(auth.projectId).find((item) => item.id === mcpServerId);
         if (!current) throw new HttpError(404, "MCP-сервер не найден");
         if ((current.transport !== "http" || (body.transport && body.transport !== "http") || body.sandbox !== undefined)
-          && !auth.roles.has("admin")) {
-          throw new HttpError(403, "Изолированные MCP tools может настраивать только admin");
+          && !hasInstallationAdminAccess(auth)) {
+          throw new HttpError(403, "Изолированные MCP tools может настраивать только администратор установки");
         }
         const updated = mcpGateway.updateServer(mcpServerId, body, auth.projectId);
         if (!updated) throw new HttpError(404, "MCP-сервер не найден");
@@ -1504,11 +1651,11 @@ export function createCoordinatorServer(
         return;
       }
       if (request.method === "DELETE" && mcpServerId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const current = mcpGateway.listServers(auth.projectId).find((item) => item.id === mcpServerId);
         if (!current) throw new HttpError(404, "MCP-сервер не найден");
-        if (current.transport !== "http" && !auth.roles.has("admin")) {
-          throw new HttpError(403, "Изолированные MCP tools может удалять только admin");
+        if (current.transport !== "http" && !hasInstallationAdminAccess(auth)) {
+          throw new HttpError(403, "Изолированные MCP tools может удалять только администратор установки");
         }
         if (!mcpGateway.deleteServer(mcpServerId, auth.projectId)) throw new HttpError(404, "MCP-сервер не найден");
         noContent(response);
@@ -1517,11 +1664,15 @@ export function createCoordinatorServer(
 
       const mcpDecisionCallId = routeParam(pathname, /^\/api\/v1\/mcp\/tool-calls\/([^/]+)\/decision$/);
       if (request.method === "POST" && mcpDecisionCallId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "operator"], true);
         const body = approvalDecision(await readJson<unknown>(request));
         const currentApproval = overviewApprovalItems(store, auth.projectId)
           .find((item) => approvalMatches(item, "mcp_tool", "callId", mcpDecisionCallId));
         if (!currentApproval) throw new HttpError(404, "MCP approval не найден, истёк или уже обработан");
+        const required = currentApproval as { requiredApprovals?: number; risk?: string; riskTier?: string };
+        if (body.decision === "approve" && auth.local && (Number(required.requiredApprovals) > 1 || required.risk === "destructive" || required.riskTier === "critical")) {
+          throw new HttpError(403, "Critical/four-eyes approval требует отдельно квалифицированного OIDC assurance");
+        }
         const result = await mcpGateway.decideCall(
           mcpDecisionCallId,
           body.decision,
@@ -1547,13 +1698,13 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/local-workers") {
-        await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, await localWorkerLauncher.snapshot());
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/local-workers") {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<LaunchLocalWorkersInput>(request);
         const pool = await localWorkerLauncher.launch(body);
         store.recordPlatformEvent(
@@ -1567,7 +1718,7 @@ export function createCoordinatorServer(
 
       const localWorkerAction = /^\/api\/v1\/local-workers\/([^/]+)\/(start|stop)$/.exec(pathname);
       if (request.method === "POST" && localWorkerAction?.[1] && localWorkerAction[2]) {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const poolId = decodeURIComponent(localWorkerAction[1]);
         const action = localWorkerAction[2];
         const pool = action === "start"
@@ -1585,7 +1736,7 @@ export function createCoordinatorServer(
 
       const localWorkerPoolId = routeParam(pathname, /^\/api\/v1\/local-workers\/([^/]+)$/);
       if (request.method === "DELETE" && localWorkerPoolId) {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const pool = await localWorkerLauncher.deletePool(localWorkerPoolId);
         store.deleteWorkerPoolNodes(pool.id);
         store.recordPlatformEvent(
@@ -1599,7 +1750,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/agents") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateAgentInput>(request);
         json(response, 201, store.createAgent(body, auth.projectId));
         return;
@@ -1607,7 +1758,7 @@ export function createCoordinatorServer(
 
       const agentId = routeParam(pathname, /^\/api\/v1\/agents\/([^/]+)$/);
       if (request.method === "PATCH" && agentId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateAgentInput>(request);
         const updated = store.updateAgent(agentId, body, auth.projectId);
         if (!updated) throw new HttpError(404, "Агент не найден");
@@ -1616,13 +1767,13 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/evals") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, store.getEvalSnapshot(auth.projectId));
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/evals/prompts") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreatePromptInput>(request);
         json(response, 201, store.createPrompt(body, auth.projectId, auth.username));
         return;
@@ -1630,7 +1781,7 @@ export function createCoordinatorServer(
 
       const promptVersionId = routeParam(pathname, /^\/api\/v1\/evals\/prompts\/([^/]+)\/versions$/);
       if (request.method === "POST" && promptVersionId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreatePromptVersionInput>(request);
         const created = store.createPromptVersion(promptVersionId, body, auth.projectId, auth.username);
         if (!created) throw new HttpError(404, "Prompt registry не найден");
@@ -1640,7 +1791,7 @@ export function createCoordinatorServer(
 
       const promotePromptId = routeParam(pathname, /^\/api\/v1\/evals\/prompts\/([^/]+)\/promote$/);
       if (request.method === "POST" && promotePromptId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<PromotePromptInput>(request);
         const promoted = store.promotePrompt(promotePromptId, body, auth.projectId, auth.username);
         if (!promoted) throw new HttpError(404, "Prompt registry не найден");
@@ -1649,7 +1800,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/evals/datasets") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateEvalDatasetInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
         json(response, 201, store.createEvalDataset(body, auth.projectId, auth.username));
         return;
@@ -1657,7 +1808,7 @@ export function createCoordinatorServer(
 
       const datasetVersionId = routeParam(pathname, /^\/api\/v1\/evals\/datasets\/([^/]+)\/versions$/);
       if (request.method === "POST" && datasetVersionId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateEvalDatasetVersionInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
         const created = store.createEvalDatasetVersion(datasetVersionId, body, auth.projectId, auth.username);
         if (!created) throw new HttpError(404, "Golden dataset не найден");
@@ -1666,7 +1817,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/evals/experiments") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<CreateEvalExperimentInput>(request);
         json(response, 201, store.createEvalExperiment(body, auth.projectId, auth.username));
         return;
@@ -1674,7 +1825,7 @@ export function createCoordinatorServer(
 
       const judgeExperimentId = routeParam(pathname, /^\/api\/v1\/evals\/experiments\/([^/]+)\/judge$/);
       if (request.method === "POST" && judgeExperimentId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<JudgeEvalExperimentInput>(request);
         const experiment = store.judgeEvalExperiment(judgeExperimentId, body, auth.projectId, auth.username);
         if (!experiment) throw new HttpError(404, "Golden experiment не найден");
@@ -1684,7 +1835,7 @@ export function createCoordinatorServer(
 
       const evalExperimentId = routeParam(pathname, /^\/api\/v1\/evals\/experiments\/([^/]+)$/);
       if (request.method === "GET" && evalExperimentId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const experiment = store.getEvalExperiment(evalExperimentId, auth.projectId);
         if (!experiment) throw new HttpError(404, "Golden experiment не найден");
         json(response, 200, experiment);
@@ -1696,7 +1847,7 @@ export function createCoordinatorServer(
         const auth = await authorize(
           request,
           config,
-          oidcVerifier,
+          identityProvider,
           ["admin", "designer", "operator", "auditor"],
           true,
         );
@@ -1708,13 +1859,13 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/knowledge") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, store.getKnowledgeSnapshot(auth.projectId));
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/knowledge/export") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "auditor"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "auditor"], true);
         const payload = Buffer.from(JSON.stringify(store.exportKnowledge(auth.projectId), null, 2), "utf8");
         response.writeHead(200, {
           "content-type": "application/json; charset=utf-8",
@@ -1727,7 +1878,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/knowledge/collections") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateKnowledgeCollectionInput>(request);
         json(response, 201, store.createKnowledgeCollection(body, auth.projectId));
         return;
@@ -1735,7 +1886,7 @@ export function createCoordinatorServer(
 
       const ingestKnowledgeMatch = /^\/api\/v1\/knowledge\/collections\/([^/]+)\/documents$/.exec(pathname);
       if (request.method === "POST" && ingestKnowledgeMatch?.[1]) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<IngestKnowledgeDocumentInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
         json(response, 201, store.ingestKnowledgeDocument(
           decodeURIComponent(ingestKnowledgeMatch[1]),
@@ -1747,15 +1898,26 @@ export function createCoordinatorServer(
 
       const uploadKnowledgeId = routeParam(pathname, /^\/api\/v1\/knowledge\/collections\/([^/]+)\/documents\/upload$/);
       if (request.method === "POST" && uploadKnowledgeId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<UploadKnowledgeDocumentInput>(request, KNOWLEDGE_JSON_LIMIT_BYTES);
-        json(response, 201, await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId));
+        const document = await store.uploadKnowledgeDocument(uploadKnowledgeId, body, auth.projectId);
+        const upload = document.upload as { disposition: string };
+        json(response, upload.disposition === "existing" ? 200 : 201, document);
+        return;
+      }
+
+      const reviewExtractionId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/review-extraction$/);
+      if (request.method === "POST" && reviewExtractionId) {
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
+        const document = store.reviewKnowledgeExtraction(reviewExtractionId, await readJson<KnowledgeExtractionReviewInput>(request), auth.projectId, auth.subject);
+        if (!document) throw new HttpError(404, "Документ не найден");
+        json(response, 200, document);
         return;
       }
 
       const reindexKnowledgeId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/reindex$/);
       if (request.method === "POST" && reindexKnowledgeId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const document = await store.reindexKnowledgeDocument(reindexKnowledgeId, auth.projectId);
         if (!document) throw new HttpError(404, "Документ не найден");
         json(response, 200, document);
@@ -1764,7 +1926,7 @@ export function createCoordinatorServer(
 
       const knowledgeFileId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)\/file$/);
       if (request.method === "GET" && knowledgeFileId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const file = store.getKnowledgeDocumentFile(knowledgeFileId, auth.projectId);
         if (!file) throw new HttpError(404, "Исходный файл не найден");
         response.writeHead(200, { "content-type": file.mediaType, "content-length": file.bytes.length,
@@ -1776,7 +1938,7 @@ export function createCoordinatorServer(
 
       const runKnowledgeId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/knowledge$/);
       if (request.method === "GET" && runKnowledgeId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const sources = store.getRunKnowledgeSources(runKnowledgeId, auth.projectId);
         if (!sources) throw new HttpError(404, "Запуск не найден");
         json(response, 200, { sources });
@@ -1785,7 +1947,7 @@ export function createCoordinatorServer(
 
       const knowledgeCollectionId = routeParam(pathname, /^\/api\/v1\/knowledge\/collections\/([^/]+)$/);
       if (request.method === "DELETE" && knowledgeCollectionId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteKnowledgeCollection(knowledgeCollectionId, auth.projectId)) {
           throw new HttpError(404, "Knowledge collection не найдена");
         }
@@ -1795,14 +1957,14 @@ export function createCoordinatorServer(
 
       const knowledgeDocumentId = routeParam(pathname, /^\/api\/v1\/knowledge\/documents\/([^/]+)$/);
       if (request.method === "GET" && knowledgeDocumentId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const document = store.getKnowledgeDocument(knowledgeDocumentId, auth.projectId);
         if (!document) throw new HttpError(404, "Документ не найден или удалён");
         json(response, 200, document);
         return;
       }
       if (request.method === "DELETE" && knowledgeDocumentId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteKnowledgeDocument(knowledgeDocumentId, auth.projectId)) {
           throw new HttpError(404, "Knowledge document не найден");
         }
@@ -1811,7 +1973,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/knowledge/memory") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<SaveMemoryInput>(request);
         json(response, 201, store.saveMemory(body, auth.projectId));
         return;
@@ -1819,42 +1981,62 @@ export function createCoordinatorServer(
 
       const memoryId = routeParam(pathname, /^\/api\/v1\/knowledge\/memory\/([^/]+)$/);
       if (request.method === "DELETE" && memoryId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteMemory(memoryId, auth.projectId)) throw new HttpError(404, "Memory entry не найдена");
         noContent(response);
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/process-packs") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const manifest = getInternalReportPack();
-        json(response, 200, { packs: [{ ...manifest, installation: store.getProcessPackInstallation(manifest.id, auth.projectId) }] });
+        json(response, 200, {
+          // Existing qualification clients explicitly consume the v1 catalog shape.
+          packs: [{ ...manifest, installation: store.getProcessPackInstallation(manifest.id, auth.projectId, 1) }],
+          releases: getProcessPackReleases().map((release) => ({ ...release, installation: store.getProcessPackInstallation(release.id, auth.projectId, release.version) })),
+          activeInstallation: store.getProcessPackInstallation(manifest.id, auth.projectId),
+        });
         return;
       }
 
-      const packMatch = /^\/api\/v1\/process-packs\/([^/]+)\/(preflight|install)$/.exec(pathname);
+      const packHistoryMatch = /^\/api\/v1\/process-packs\/([^/]+)\/history$/.exec(pathname);
+      if (request.method === "GET" && packHistoryMatch) {
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
+        const id = decodeURIComponent(packHistoryMatch[1]!);
+        if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
+        json(response, 200, { history: store.getProcessPackHistory(id, auth.projectId), activeInstallation: store.getProcessPackInstallation(id, auth.projectId) });
+        return;
+      }
+
+      const packMatch = /^\/api\/v1\/process-packs\/([^/]+)\/(preflight|install|activate)$/.exec(pathname);
       if (request.method === "POST" && packMatch) {
         const installing = packMatch[2] === "install";
-        const auth = await authorize(request, config, oidcVerifier, installing ? ["admin", "designer"] : READ_ROLES, installing);
+        const activating = packMatch[2] === "activate";
+        const auth = await authorize(request, config, identityProvider, installing || activating ? ["admin", "designer"] : READ_ROLES, installing || activating);
         const id = decodeURIComponent(packMatch[1]!);
         if (id !== getInternalReportPack().id) throw new HttpError(404, "Пакет не найден");
-        const body = await readJson<ProcessPackInput>(request);
-        const alreadyInstalled = store.getProcessPackInstallation(id, auth.projectId);
         const context = scenarioContext(auth.projectId);
-        const result = installing ? store.installProcessPack(id, body, auth.projectId, context) : store.preflightProcessPack(id, body, auth.projectId, context);
-        json(response, installing && !alreadyInstalled ? 201 : 200, result);
+        if (activating) {
+          json(response, 200, store.activateProcessPack(id, await readJson<ProcessPackActivation>(request), auth.projectId, context));
+          return;
+        }
+        const body = await readJson<ProcessPackInput>(request);
+        if (installing) {
+          const result = store.installProcessPack(id, body, auth.projectId, context);
+          json(response, result.created ? 201 : 200, result);
+        } else json(response, 200, store.preflightProcessPack(id, body, auth.projectId, context));
         return;
       }
 
       if (request.method === "GET" && pathname === "/api/v1/process-templates") {
-        await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, getProcessTemplateCatalog());
         return;
       }
 
       const preflightMatch = /^\/api\/v1\/(processes|process-templates)\/([^/]+)\/preflight$/.exec(pathname);
       if (request.method === "POST" && preflightMatch) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const id = decodeURIComponent(preflightMatch[2]!);
         const body = await readJson<ScenarioPreflightInput & { catalogTemplateVersion?: number; templateBindings?: Record<string, string> }>(request);
         const trigger = scenarioTrigger(body.trigger);
@@ -1872,13 +2054,13 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/processes") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, { processes: store.listProcesses(auth.projectId) });
         return;
       }
 
       if (request.method === "POST" && pathname === "/api/v1/processes/import/bpmn") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const contentType = singleHeader(request.headers["content-type"])?.split(";", 1)[0]?.trim().toLowerCase();
         if (contentType && !["application/xml", "text/xml", "application/bpmn+xml"].includes(contentType)) {
           throw new HttpError(415, "BPMN import принимает application/xml, text/xml или application/bpmn+xml");
@@ -1893,7 +2075,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/processes") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateProcessInput>(request);
         json(response, 201, store.createProcess(body, auth.projectId));
         return;
@@ -1901,7 +2083,7 @@ export function createCoordinatorServer(
 
       const publishProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/publish$/);
       if (request.method === "POST" && publishProcessId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const published = store.publishProcess(publishProcessId, auth.projectId);
         if (!published) throw new HttpError(404, "Процесс не найден");
         json(response, 200, published);
@@ -1910,7 +2092,7 @@ export function createCoordinatorServer(
 
       const processVersionMatch = /^\/api\/v1\/processes\/([^/]+)\/versions\/([^/]+)$/.exec(pathname);
       if (request.method === "GET" && processVersionMatch?.[1] && processVersionMatch[2]) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const processId = decodeURIComponent(processVersionMatch[1]);
         const version = processVersion(decodeURIComponent(processVersionMatch[2]));
         const document = store.getProcessVersion(processId, version, auth.projectId);
@@ -1921,7 +2103,7 @@ export function createCoordinatorServer(
 
       const diffProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/diff$/);
       if (request.method === "GET" && diffProcessId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const from = processVersion(url.searchParams.get("from"));
         const to = processVersion(url.searchParams.get("to"), "draft");
         const diff = store.diffProcessVersions(diffProcessId, from, to, auth.projectId);
@@ -1932,7 +2114,7 @@ export function createCoordinatorServer(
 
       const exportBpmnProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/export\/bpmn$/);
       if (request.method === "GET" && exportBpmnProcessId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const version = processVersion(url.searchParams.get("version"));
         const document = store.exportProcessBpmn(exportBpmnProcessId, version, auth.projectId);
         if (!document) throw new HttpError(404, "Версия процесса не найдена");
@@ -1942,13 +2124,13 @@ export function createCoordinatorServer(
 
       const processWebhooksId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/webhooks$/);
       if (request.method === "GET" && processWebhooksId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         if (!store.getProcess(processWebhooksId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         json(response, 200, { webhooks: store.listProcessWebhooks(processWebhooksId, auth.projectId) });
         return;
       }
       if (request.method === "POST" && processWebhooksId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<CreateProcessWebhookInput>(request);
         json(response, 201, store.createProcessWebhook(processWebhooksId, body, auth.projectId));
         return;
@@ -1956,7 +2138,7 @@ export function createCoordinatorServer(
 
       const rotateProcessWebhookId = routeParam(pathname, /^\/api\/v1\/process-webhooks\/([^/]+)\/rotate$/);
       if (request.method === "POST" && rotateProcessWebhookId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const webhook = store.rotateProcessWebhook(rotateProcessWebhookId, auth.projectId);
         if (!webhook) throw new HttpError(404, "Process webhook не найден");
         json(response, 200, webhook);
@@ -1965,7 +2147,7 @@ export function createCoordinatorServer(
 
       const managedProcessWebhookId = routeParam(pathname, /^\/api\/v1\/process-webhooks\/([^/]+)$/);
       if (request.method === "DELETE" && managedProcessWebhookId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.deleteProcessWebhook(managedProcessWebhookId, auth.projectId)) {
           throw new HttpError(404, "Process webhook не найден");
         }
@@ -1975,7 +2157,7 @@ export function createCoordinatorServer(
 
       const processSignalMatch = /^\/api\/v1\/processes\/([^/]+)\/signals\/([^/]+)$/.exec(pathname);
       if (request.method === "POST" && processSignalMatch?.[1] && processSignalMatch[2]) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const processId = decodeURIComponent(processSignalMatch[1]);
         const signalName = decodeURIComponent(processSignalMatch[2]);
         const body = await readJson<{ instanceId?: string; correlationKey?: string; payload?: unknown }>(request);
@@ -1988,7 +2170,7 @@ export function createCoordinatorServer(
 
       const startProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/start$/);
       if (request.method === "POST" && startProcessId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<StartProcessInput>(request);
         const instance = store.startProcess(startProcessId, body, auth.projectId, scenarioContext(auth.projectId));
         if (!instance) throw new HttpError(404, "Процесс не найден");
@@ -2010,7 +2192,7 @@ export function createCoordinatorServer(
 
       const scheduleProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/schedule$/);
       if (scheduleProcessId && request.method === "GET") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         if (!store.getProcess(scheduleProcessId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         if (processRuntime.snapshot().mode !== "temporal") {
           throw new HttpError(503, "Расписания процессов требуют включённого Temporal runtime");
@@ -2021,8 +2203,9 @@ export function createCoordinatorServer(
         return;
       }
       if (scheduleProcessId && request.method === "PUT") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.getProcess(scheduleProcessId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
+        if (localIdentities) throw new HttpError(503, "Расписание требует квалифицированной индивидуальной service binding; используйте REST запуск");
         if (processRuntime.snapshot().mode !== "temporal") {
           throw new HttpError(503, "Расписания процессов требуют включённого Temporal runtime");
         }
@@ -2058,7 +2241,7 @@ export function createCoordinatorServer(
         return;
       }
       if (scheduleProcessId && request.method === "DELETE") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         if (!store.getProcess(scheduleProcessId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         if (processRuntime.snapshot().mode !== "temporal") {
           throw new HttpError(503, "Расписания процессов требуют включённого Temporal runtime");
@@ -2079,7 +2262,7 @@ export function createCoordinatorServer(
 
       const triggerScheduleProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/schedule\/trigger$/);
       if (triggerScheduleProcessId && request.method === "POST") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         if (!store.getProcess(triggerScheduleProcessId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         if (processRuntime.snapshot().mode !== "temporal") {
           throw new HttpError(503, "Расписания процессов требуют включённого Temporal runtime");
@@ -2102,23 +2285,39 @@ export function createCoordinatorServer(
 
       const testProcessNodeId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/test-node$/);
       if (request.method === "POST" && testProcessNodeId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         if (!store.getProcess(testProcessNodeId, auth.projectId)) throw new HttpError(404, "Процесс не найден");
         const body = await readJson<TestProcessNodeInput>(request);
         json(response, 201, store.testProcessNode(body, auth.projectId));
         return;
       }
 
+      const cohortProcessId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)\/decision-shadow-cohort$/);
+      if (request.method === "GET" && cohortProcessId) {
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
+        const fields = ["processVersion", "startAt", "endAt"];
+        if ([...url.searchParams.keys()].some(key => !fields.includes(key))
+            || fields.some(key => url.searchParams.getAll(key).length !== 1)
+            || !/^[1-9][0-9]*$/.test(url.searchParams.get("processVersion") ?? "")) {
+          throw new HttpError(400, "Укажите processVersion, startAt и endAt без дополнительных фильтров");
+        }
+        const cohort = store.getDecisionShadowCohort(cohortProcessId, { processVersion: Number(url.searchParams.get("processVersion")),
+          startAt: url.searchParams.get("startAt"), endAt: url.searchParams.get("endAt") }, auth.projectId);
+        if (!cohort) throw new HttpError(404, "Версия процесса не найдена");
+        json(response, 200, cohort);
+        return;
+      }
+
       const processId = routeParam(pathname, /^\/api\/v1\/processes\/([^/]+)$/);
       if (request.method === "GET" && processId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const process = store.getProcess(processId, auth.projectId);
         if (!process) throw new HttpError(404, "Процесс не найден");
         json(response, 200, process);
         return;
       }
       if (request.method === "PATCH" && processId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
         const body = await readJson<UpdateProcessInput>(request);
         const updated = store.updateProcess(processId, body, auth.projectId);
         if (!updated) throw new HttpError(404, "Процесс не найден");
@@ -2127,14 +2326,14 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/process-instances") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         json(response, 200, { instances: store.listProcessInstances(100, auth.projectId) });
         return;
       }
 
       const replayProcessInstanceId = routeParam(pathname, /^\/api\/v1\/process-instances\/([^/]+)\/replay$/);
       if (request.method === "POST" && replayProcessInstanceId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<ReplayProcessInstanceInput>(request);
         const instance = store.replayProcessInstance(replayProcessInstanceId, body, auth.projectId);
         if (!instance) throw new HttpError(404, "Экземпляр процесса не найден");
@@ -2158,7 +2357,7 @@ export function createCoordinatorServer(
 
       const cancelProcessInstanceId = routeParam(pathname, /^\/api\/v1\/process-instances\/([^/]+)\/cancel$/);
       if (request.method === "POST" && cancelProcessInstanceId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         if (!store.cancelProcessInstance(cancelProcessInstanceId, auth.projectId)) throw new HttpError(404, "Экземпляр процесса не найден");
         notifyProcessRuntime(processRuntime, store, cancelProcessInstanceId, "process.cancelled");
         noContent(response);
@@ -2167,7 +2366,7 @@ export function createCoordinatorServer(
 
       const processInstanceId = routeParam(pathname, /^\/api\/v1\/process-instances\/([^/]+)$/);
       if (request.method === "GET" && processInstanceId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const instance = store.getProcessInstance(processInstanceId, auth.projectId);
         if (!instance) throw new HttpError(404, "Экземпляр процесса не найден");
         json(response, 200, instance);
@@ -2175,8 +2374,9 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "GET" && pathname === "/api/v1/events") {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         trackEventStream(response);
+        if (localIdentities) localEventStreams.set(response, { request, projectId: auth.projectId });
         const afterFromQuery = Number.parseInt(url.searchParams.get("after") ?? "0", 10) || 0;
         const lastEventHeader = request.headers["last-event-id"];
         const lastEventId = Array.isArray(lastEventHeader) ? lastEventHeader[0] : lastEventHeader;
@@ -2191,6 +2391,9 @@ export function createCoordinatorServer(
 
         const flush = (): void => {
           if (response.destroyed || response.writableEnded) return;
+          if (localIdentities) {
+            try { localIdentities.assertCurrent(localIdentities.authenticate(request), auth.projectId, "read"); } catch { response.end(); return; }
+          }
           for (const event of store.listEvents(cursor, 200, auth.projectId)) {
             cursor = event.id;
             response.write(`id: ${event.id}\n`);
@@ -2210,7 +2413,7 @@ export function createCoordinatorServer(
 
       const runTraceId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/trace$/);
       if (request.method === "GET" && runTraceId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
         const trace = store.getRunTrace(runTraceId, auth.projectId);
         if (!trace) throw new HttpError(404, "Запуск не найден");
         json(response, 200, trace);
@@ -2219,7 +2422,7 @@ export function createCoordinatorServer(
 
       const replayRunId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/replay$/);
       if (request.method === "POST" && replayRunId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<ReplayRunInput>(request);
         json(response, 201, store.replayRun(replayRunId, body, auth.projectId));
         return;
@@ -2227,7 +2430,7 @@ export function createCoordinatorServer(
 
       const cancelRunId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/cancel$/);
       if (request.method === "POST" && cancelRunId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const run = store.getRun(cancelRunId, auth.projectId);
         if (!run || !store.cancelRun(cancelRunId, auth.projectId)) throw new HttpError(404, "Запуск не найден");
         const process = run.process;
@@ -2242,16 +2445,80 @@ export function createCoordinatorServer(
 
       const runId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)$/);
       if (request.method === "GET" && runId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, false);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, false);
         const run = store.getRun(runId, auth.projectId);
         if (!run) throw new HttpError(404, "Запуск не найден");
         json(response, 200, run);
         return;
       }
 
+      const artifactRunId = routeParam(pathname, /^\/api\/v1\/runs\/([^/]+)\/artifacts$/);
+      if (request.method === "GET" && artifactRunId) {
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
+        const result = store.getRunArtifacts(artifactRunId, auth.projectId);
+        if (!result) throw new HttpError(404, "Запуск не найден");
+        json(response, 200, result);
+        return;
+      }
+
+      const reportDecisionArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/decisions$/);
+      if ((request.method === "GET" || request.method === "POST") && reportDecisionArtifactId) {
+        const writing = request.method === "POST";
+        const auth = await authorize(request, config, identityProvider, writing ? ["admin", "operator"] : READ_ROLES, true);
+        const result = writing ? store.recordBusinessReportDecision(reportDecisionArtifactId, await readJson<unknown>(request), auth.projectId, auth.subject)
+          : store.getBusinessReportDecisions(reportDecisionArtifactId, auth.projectId, normalizeDecisionHistoryCursor(url.searchParams.get("beforeRevision")));
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        json(response, writing && "created" in result && result.created ? 201 : 200, result);
+        return;
+      }
+
+      const reportEvalArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/eval-candidate$/);
+      if (request.method === "POST" && reportEvalArtifactId) {
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
+        const result = store.prepareBusinessReportEvalCandidate(reportEvalArtifactId, await readJson<unknown>(request), auth.projectId);
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        response.setHeader("Cache-Control", "no-store");
+        json(response, 200, result);
+        return;
+      }
+
+      const reportDatasetArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/eval-dataset$/);
+      if (request.method === "POST" && reportDatasetArtifactId) {
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer"], true);
+        const result = store.createBusinessReportEvalDataset(reportDatasetArtifactId, await readJson<unknown>(request, KNOWLEDGE_JSON_LIMIT_BYTES), auth.projectId, auth.subject);
+        if (!result) throw new HttpError(404, "Отчёт не найден");
+        response.setHeader("Cache-Control", "no-store");
+        json(response, result.created ? 201 : 200, result);
+        return;
+      }
+
+      const reworkTaskId = routeParam(pathname, /^\/api\/v1\/report-rework-tasks\/([^/]+)$/);
+      if (request.method === "GET" && reworkTaskId) {
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
+        const result = store.getBusinessReportReworkTask(reworkTaskId, auth.projectId);
+        if (!result) throw new HttpError(404, "Задача исправления не найдена");
+        json(response, 200, result);
+        return;
+      }
+
+      const exportArtifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/export$/);
+      if (request.method === "POST" && exportArtifactId) {
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
+        const body = await readJson<{ format: unknown; expectedSha256: unknown; origin: unknown }>(request);
+        const origin = normalizeOfficeOrigin(body?.origin);
+        // Hash navigation in exported files must target this installation. The
+        // normalized origin is part of the persisted derivative identity.
+        const host = typeof request.headers.host === "string" ? request.headers.host : "";
+        if (!host || new URL(origin).host !== new URL(`${new URL(origin).protocol}//${host}`).host) throw new HttpError(400, "Ссылки экспорта должны вести на текущий адрес АГАТ");
+        const result = await store.exportBusinessReportArtifact(exportArtifactId, body, auth.projectId, auth.subject);
+        if (!result) throw new HttpError(404, "Артефакт не найден");
+        json(response, result.created ? 201 : 200, result);
+        return;
+      }
+
       const artifactId = routeParam(pathname, /^\/api\/v1\/artifacts\/([^/]+)\/download$/);
       if (request.method === "GET" && artifactId) {
-        const auth = await authorize(request, config, oidcVerifier, READ_ROLES, true);
+        const auth = await authorize(request, config, identityProvider, READ_ROLES, true);
         const download = store.getArtifactDownload(artifactId, auth.projectId);
         if (!download) throw new HttpError(404, "Артефакт не найден");
         const filename = String(download.artifact.name ?? "artifact");
@@ -2267,7 +2534,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "POST" && pathname === "/api/v1/runs") {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "designer", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "designer", "operator"], true);
         const body = await readJson<CreateRunInput>(request);
         const created = store.createRun(body, auth.projectId);
         json(response, 201, created);
@@ -2275,7 +2542,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "PATCH" && pathname === "/api/v1/settings/scheduler") {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ mode?: unknown; globalMaxConcurrency?: number }>(request);
         const mode = parseSchedulerMode(body.mode);
         runWithPostgresSystemScope(() => store.updateScheduler(mode, body.globalMaxConcurrency));
@@ -2284,7 +2551,7 @@ export function createCoordinatorServer(
       }
 
       if (request.method === "PATCH" && pathname === "/api/v1/settings/model-router") {
-        await authorize(request, config, oidcVerifier, ["admin"], true);
+        await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<Partial<ModelRouterPolicy>>(request);
         if (body.strategy !== undefined && !["balanced", "performance", "efficiency"].includes(body.strategy)) {
           throw new HttpError(400, "strategy должен быть balanced, performance или efficiency");
@@ -2306,7 +2573,7 @@ export function createCoordinatorServer(
 
       const approvalStageId = routeParam(pathname, /^\/api\/v1\/approvals\/([^/]+)$/);
       if (request.method === "POST" && approvalStageId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin", "operator"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin", "operator"], true);
         const body = approvalDecision(await readJson<unknown>(request));
         const currentApproval = overviewApprovalItems(store, auth.projectId)
           .find((item) => approvalMatches(item, "stage", "stageId", approvalStageId));
@@ -2428,7 +2695,7 @@ export function createCoordinatorServer(
 
       const remoteWipeNodeId = routeParam(pathname, /^\/api\/v1\/nodes\/([^/]+)\/remote-wipe$/);
       if (request.method === "POST" && remoteWipeNodeId) {
-        const auth = await authorize(request, config, oidcVerifier, ["admin"], true);
+        const auth = await authorize(request, config, identityProvider, ["admin"], true);
         const body = await readJson<{ reason?: string }>(request);
         if (!body.reason?.trim()) throw new HttpError(400, "Причина remote wipe обязательна");
         json(response, 202, store.requestEdgeRemoteWipe(remoteWipeNodeId, body.reason, auth.subject));
@@ -2677,6 +2944,14 @@ export function createCoordinatorServer(
         return;
       }
 
+      const shadowIntentLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/decision-shadow\/intent$/);
+      if (request.method === "POST" && shadowIntentLeaseId) {
+        const node = requireWorker(request, store);
+        const body = await readJson<unknown>(request);
+        json(response, 200, store.beginDecisionShadow(String(node.id), shadowIntentLeaseId, body));
+        return;
+      }
+
       const shadowLeaseId = routeParam(pathname, /^\/api\/v1\/leases\/([^/]+)\/decision-shadow$/);
       if (request.method === "POST" && shadowLeaseId) {
         const node = requireWorker(request, store);
@@ -2758,6 +3033,10 @@ export function createCoordinatorServer(
         return;
       }
       const status = error instanceof HttpError
+        || error instanceof KnowledgeParserBusyError
+        || error instanceof BusinessReportOfficeError
+        || error instanceof BusinessReportDecisionError
+        || error instanceof BusinessReportEvalError
         || error instanceof KnowledgeSearchExecutorError
         || error instanceof WorkerLauncherError
         || error instanceof AuthenticationError
@@ -2768,9 +3047,9 @@ export function createCoordinatorServer(
         : error instanceof Error && "code" in error && error.code === "AGAT_COMMIT_UNKNOWN"
           ? 503
         : 400;
-      json(response, status, { error: safeMessage(error) });
+      json(response, status, { error: safeMessage(error), ...(error instanceof BusinessReportEvalError ? { code: error.code } : {}) });
     }
-    });
+    }));
     void requestTask.catch((error) => {
       if (!response.headersSent) json(response, 500, { error: safeMessage(error) });
       else response.end();
@@ -2778,7 +3057,7 @@ export function createCoordinatorServer(
   });
   let pushPumpRunning = false;
   const pushTimer = setInterval(() => {
-    if (shutdownSignal?.aborted || !config.a2aEnabled || pushPumpRunning) return;
+    if (shutdownSignal?.aborted || !config.a2aEnabled || localIdentities || !deploymentStatus().controlPlaneAvailable || pushPumpRunning) return;
     pushPumpRunning = true;
     let deliveries: ReturnType<AgatStore["claimA2APushDeliveries"]>;
     try {

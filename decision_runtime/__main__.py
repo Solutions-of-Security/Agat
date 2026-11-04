@@ -37,6 +37,8 @@ def main() -> int:
         sub.add_argument("--policy", type=Path, help="Operator-owned policy JSON; never read from model input")
         sub.add_argument("--max-tokens", type=int, default=2048)
         sub.add_argument("--cache-limit-mib", type=int, help="MLX reusable-buffer cache limit, 0..4096 MiB; 0 disables cache")
+        sub.add_argument("--wired-limit-mib", type=int,
+                         help="Opt-in MLX per-process residency budget, 0..65536 MiB; macOS 15+; 0 disables wiring")
         sub.add_argument("--inference-timeout-ms", type=int,
                          help="Opt-in isolated inference process, 100..10000 ms; timeout stops it until restart")
         sub.add_argument("--calibration", type=Path, help="Fitted artifact bound to this exact model and question schema")
@@ -142,6 +144,8 @@ def main() -> int:
                                   "failedGates": [g for g in result.get("gates", []) if not g["passed"]]}))
             return 2 if result.get("status") == "not_qualified" else 0
         # Validate data/configuration before loading expensive weights.
+        from .mlx_backend import wired_limit_bytes
+        wired_limit_bytes(args.wired_limit_mib)
         if args.command == "serve" and args.exit_on_backend_unavailable and args.inference_timeout_ms is None:
             raise ValueError("--exit-on-backend-unavailable requires --inference-timeout-ms")
         policy = Policy.from_dict(parse_json(args.policy.read_bytes())) if args.policy else Policy()
@@ -167,10 +171,14 @@ def main() -> int:
                 raise KeyboardInterrupt
             old_sigterm = signal.signal(signal.SIGTERM, stop_runtime)
             backend = IsolatedBackend(mlx_factory, {"manifest": str(args.manifest.resolve()),
-                                      "max_tokens": args.max_tokens, "cache_limit_mib": args.cache_limit_mib},
+                                      "max_tokens": args.max_tokens, "cache_limit_mib": args.cache_limit_mib,
+                                      "wired_limit_mib": args.wired_limit_mib},
                                       timeout_ms=args.inference_timeout_ms)
         else:
-            backend = MlxBackend(args.manifest, args.max_tokens, cache_limit_mib=args.cache_limit_mib)
+            memory_options = {"cache_limit_mib": args.cache_limit_mib}
+            if args.wired_limit_mib is not None:
+                memory_options["wired_limit_mib"] = args.wired_limit_mib
+            backend = MlxBackend(args.manifest, args.max_tokens, **memory_options)
         calibration = Calibration(read_json(args.calibration)) if args.calibration else None
         engine = DecisionEngine(backend, policy, calibration)
         if args.command == "profile":

@@ -1,8 +1,21 @@
 # Локальный исполнитель типизированных решений
 
-Статус на 26.09.2026: экспериментальный runtime `0.12.0` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса и leases; наблюдения доступны в технических деталях запуска. Отдельного UI настройки и автоматической маршрутизации пока нет.
+Статус на 07.10.2026: экспериментальный runtime `0.12.3` по [плану локальной модели](./local-decision-model-plan-2026-09-21.md): локальное исполнение, инструменты калибровки, development-сравнение и [shadow-интеграция с worker/coordinator](./qualification/local-decisions/shadow/README.md). Код расположен в [decision_runtime](../decision_runtime/__main__.py). Профили Choice/Boolean/Score включаются явно в API процесса, leases и [редакторе shadow-проверки](./qualification/local-decisions/shadow/editor.md); наблюдения доступны в технических деталях запуска. Автоматическая маршрутизация не включена. [Постоянный resident переключён на 0.12.3 с wired budget 4096 МиБ](./qualification/local-decisions/shadow/observability/resident-wired-rollout-0.12.3.md); два собственных jobs работают, install/stop/reinstall и native audit прошли.
 
 Добавлены [экспертная разметка, калибровка и отдельная проверка holdout](./qualification/local-decisions/calibration/README.md). Реальные экспертные данные пока не предоставлены; инженерный прогон завершился `not_qualified`, обученная температура не назначена default.
+
+[Readonly приёмка boot/login](./qualification/local-decisions/shadow/observability/resident-boot-login.md)
+фиксирует baseline и требует настоящую смену OS/GUI session при неизменных
+package, profile, registration и dependency pins. Старый GUI session не
+закрывает этот gate; фактический reboot/login нового release пока открыт.
+
+[Однократный login collector](./qualification/local-decisions/shadow/observability/resident-login-observer.md)
+подготавливает baseline source и собственные Git objects в Application
+Support. Отдельный user job проверяет оба event при login и сохраняет
+pending observation без inference и без закрытия фактического event gate.
+Native check/install/status/stop/reinstall и отдельный audit прошли;
+observer зарегистрирован и idle до следующего user login. Старый resident
+сохранил PID/profile/counters, все шесть event receipts остаются pending.
 
 В `0.3.0` добавлены [экспорт утверждённой ассистентом разметки и предметное development-сравнение](./qualification/local-decisions/development/README.md). На 15 development-примерах decider выбрал 14 правильных меток, Qwen Base — 7; обратный порядок выявил ошибочное принятое решение decider. Девять отложенных случаев не оценивались. Результат — `diagnostic_only`, без квалификации и включения маршрутизации.
 
@@ -34,7 +47,11 @@
 
 В `0.12.1` [причина retirement](./qualification/local-decisions/performance/decision-exit-diagnostics.md) записывается в stderr после завершения HTTP-обработчиков и cleanup backend. Timeout, cancellation, смерть ребёнка и явный restart проверены на настоящих весах; новый fingerprint требует отдельной применимой qualification.
 
+В `0.12.2` [исправлено освобождение HTTP admission](./qualification/local-decisions/performance/http-admission-release.md): после завершения вычисления и cancellation watcher слот освобождается до записи ответа. Следующий последовательный запрос больше не получает `busy` из-за незавершённого response writer; настоящая конкуренция во время inference по-прежнему отвергается. Новый профиль закреплён отдельно; [полный двухчасовой повтор](./qualification/local-decisions/performance/continuous-soak-0.12.2.md) и [Temporal/PostgreSQL/RAG gate](./qualification/local-decisions/performance/temporal-runtime-0.12.2.md) прошли.
+
 Отдельный offline [baseline по заголовкам заявок](./qualification/local-decisions/baselines/rules.md) сравнили на тех же 15 development-входах: 2 правильные метки, один принятый ответ. Покрытие недостаточно; правила не подключены к serving.
+
+В `0.12.3` добавлен [явный per-process wired-memory budget](./qualification/local-decisions/performance/wired-memory-budget.md) с проверкой macOS/device bounds до загрузки модели. Default не вызывает setter; opt-in меняет serving fingerprint. Настоящий 30-call pilot с 4096 MiB сохранил решения/tokens прежнего baseline и deadline 5000 мс, затем восстановил resident 0.12.2. [Полный совместный Qwen/decider gate](./qualification/local-decisions/performance/wired-shared-soak-7200-0.12.3.md), [реальный Temporal/PostgreSQL/RAG](./qualification/local-decisions/performance/temporal-wired-runtime-0.12.3.md) и [постоянный rollout](./qualification/local-decisions/shadow/observability/resident-wired-rollout-0.12.3.md) прошли на том же профиле. [Bounded crash-loop](./qualification/local-decisions/shadow/observability/resident-crash-loop.md) также прошёл с тремя отказами, четырьмя поколениями, сохранением точного baseline и cleanup всех 13 временных PID. Следующие gates — boot/login и owner/SLO; причинность прежнего timeout и предметная qualification остаются открытыми.
 
 ## Что реализовано
 
@@ -191,6 +208,13 @@ npm run test:decision
 Методика и измеренные результаты первого этапа сохранены в [паспорте эксперимента](./qualification/local-decisions/README.md). Его dataset содержит 36 синтетических development-примеров трёх общих шаблонов. Он не является human-reviewed gold или независимым holdout. Ошибки backend входят в знаменатель общего accuracy и coverage; условные метрики по вычисленным распределениям отдельно названы `Scored`. Перестановки не увеличивают число независимых примеров. Отчёт `evaluate` содержит `qualityGate: not_configured`: квалификация выполняется отдельной командой `qualify`, описанной в [руководстве второго этапа](./qualification/local-decisions/calibration/README.md).
 
 ## Следующий этап
+
+[Caller timing и SLI](./qualification/local-decisions/shadow/observability/caller-sli.md)
+измеряют полный local HTTP boundary отдельно от scoring. Negotiation
+сохраняет совместимость со старыми leases/worker responses; offline CLI
+сверяет источники, profile/input bindings и deadline, учитывает ошибки,
+неизвестные legacy timing и replay. [Owner/SLO proposal](./qualification/local-decisions/shadow/observability/resident-service-acceptance.md)
+ещё не согласован; предоставленные trace не доказывают полноту реального потока.
 
 Собрать разрешённые реальные примеры с экспертными метками и группировкой по документам/шаблонам; зафиксировать допустимые ошибки и нужное покрытие. Провести предметное испытание через готовые команды разметки, фиксации плана, калибровки и квалификации. При недостаточном качестве меток сравнить более сильные checkpoints или дообучение. Loader dataset запрещает перенос одной группы, исходного документа или одинакового нормализованного текста между splits; перефразы и близкие шаблоны требуют предметной проверки.
 

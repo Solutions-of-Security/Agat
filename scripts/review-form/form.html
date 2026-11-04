@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="__CSP__">
+  <title>Экспертная оценка обращений — Агат</title>
+  <style>__CSS__</style>
+</head>
+<body>
+  <a class="skip-link" href="#question-title">К текущему вопросу</a>
+  <header class="header"><span class="wordmark">АГАТ</span><button id="load" class="text-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>Загрузить черновик</button></header>
+  <main class="page">
+    <h1>Экспертная оценка обращений</h1>
+    <p id="intro" class="subtitle"></p>
+    <div class="identity">
+      <label for="role">Участник</label>
+      <select id="role"><option value="first">Первый участник</option><option value="expert">Независимый эксперт</option></select>
+      <div class="name-field"><label class="sr-only" for="name">Ваше имя или псевдоним</label><input id="name" maxlength="100" placeholder="Ваше имя или псевдоним" autocomplete="off"><span class="field-hint">Имя потребуется для итогового файла.</span></div>
+    </div>
+    <details class="guide"><summary>Как заполнять опрос</summary><p id="instruction"></p><p>Оба участника заполняют форму самостоятельно. Не показывайте свои ответы второму участнику до завершения его опроса. Обоснования пишите на русском. Для переноса на другой компьютер скачайте черновик и загрузите его в такую же форму.</p><p>Вопросы переведены на русский. Названия программ, команды и точные журналы ошибок сохранены в исходном виде. Изображения, отсутствующие в исходном текстовом пакете, не добавлены.</p></details>
+    <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Навигация по вопросам">
+        <div class="rail-heading"><h2>Вопросы</h2><span id="count"></span></div>
+        <progress id="progress" aria-label="Прогресс опроса" max="49" value="0"></progress>
+        <details class="question-index" open><summary id="index-summary">Номера вопросов</summary><nav id="numbers" aria-label="Выберите вопрос"></nav></details>
+        <div class="legend"><span><i class="dot empty"></i>Без ответа</span><span><i class="dot answered"></i>Есть ответ</span></div>
+        <button id="next-empty" class="text-button" type="button">К первому без ответа</button>
+      </aside>
+      <section class="question-panel" aria-labelledby="question-title">
+        <p id="position" class="position"></p>
+        <h2 id="question-title" tabindex="-1">Какую помощь просит автор обращения?</h2>
+        <section class="source" aria-labelledby="source-title"><h3>Обращение</h3><h4 id="source-title"></h4><div id="source-body" class="source-body" tabindex="0" aria-label="Текст обращения"></div><button id="expand-source" class="text-button" type="button" aria-controls="source-body" aria-expanded="false" hidden>Развернуть весь текст</button><p id="attribution" class="attribution"></p></section>
+        <fieldset id="choices"><legend>Ваше решение</legend><div id="options"></div></fieldset>
+        <label class="rationale-label" for="rationale">Почему вы выбрали этот вариант?</label>
+        <textarea id="rationale" rows="3" maxlength="4000" placeholder="Кратко объясните решение своими словами" aria-describedby="rationale-hint question-error"></textarea>
+        <div class="rationale-meta"><span id="rationale-hint">На русском, до 4000 символов.</span><span id="characters">0 / 4000</span></div>
+        <p id="question-error" class="error" role="alert" hidden></p>
+        <div class="question-actions"><button id="back" class="secondary" type="button">Назад</button><button id="skip" class="secondary" type="button">Пропустить</button><button id="clear" class="text-button" type="button">Очистить ответ</button><button id="next" class="primary" type="button">Сохранить и дальше</button></div>
+      </section>
+    </div>
+    <footer class="footer"><div><p id="storage" role="status" aria-live="polite"></p><p id="finish-hint" class="field-hint"></p></div><div class="download-actions"><button id="download-draft" class="secondary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>Скачать черновик</button><button id="download-final" class="primary" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>Скачать итоговые ответы</button><button id="reopen" class="text-button" type="button" hidden>Вернуться к правке</button></div></footer>
+  </main>
+  <dialog id="confirm"><h2 id="confirm-title"></h2><p id="confirm-body"></p><div class="dialog-actions"><button id="cancel-confirm" class="secondary" type="button">Вернуться</button><button id="accept-confirm" class="primary" type="button">Подтвердить</button></div></dialog>
+  <input id="file" type="file" accept="application/json,.json" hidden aria-hidden="true">
+  <noscript>Для заполнения этой локальной формы включите JavaScript в браузере.</noscript>
+  <script id="form-data" type="application/json">__PAYLOAD__</script>
+  <script>__JS__</script>
+</body>
+</html>
