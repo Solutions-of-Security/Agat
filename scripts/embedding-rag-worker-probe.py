@@ -38,8 +38,13 @@ def main():
     done = threading.Event()
     calls, requests, retired, children, samples, errors = [], [], [], [], [], []
     active = {}
+    # The existing embedding-only evidence remains unchanged. This opt-in view
+    # measures every owned HTTP helper without recording URLs, headers or bodies.
+    all_http = os.environ.get('AGAT_HTTP_HELPER_PROBE') == '1'
+    http_calls, http_children, http_samples, http_errors = [], [], [], []
+    http_active = {}
     embed_code = agat_worker.LocalModelClient.embed.__code__
-    isolated_code = embedding_http.request_embedding_response.__code__
+    isolated_code = embedding_http._request_response.__code__
     session_code = embedding_transport.EmbeddingSession._exchange.__code__
     retire_code = embedding_transport.EmbeddingSession._retire.__code__
     spawn_code = subprocess.Popen.__init__.__code__
@@ -53,6 +58,44 @@ def main():
         thread = threading.get_native_id()
         now = time.monotonic_ns()
         with lock:
+            if all_http:
+                is_http = code is isolated_code or (code is session_code
+                    and frame.f_locals.get('envelope', {}).get('operation') == 'request')
+                if is_http:
+                    if event == 'call':
+                        kind = frame.f_locals.get('endpoint_name', 'Embedding')
+                        if kind not in {'Embedding', 'Model', 'Knowledge'} or thread in http_active:
+                            http_errors.append('invalid_or_nested_http_owner')
+                        else:
+                            row = {'id': len(http_calls) + 1, 'kind': kind, 'threadId': thread,
+                                   'transport': 'session' if code is session_code else 'isolated', 'startedNs': now}
+                            http_calls.append(row)
+                            http_active[thread] = row
+                    else:
+                        row = http_active.pop(thread, None)
+                        if row is None:
+                            http_errors.append('missing_http_owner')
+                        else:
+                            child = frame.f_locals.get('process')
+                            row.update(finishedNs=now, completed=isinstance(_result, bytes),
+                                       responseBytes=len(_result) if isinstance(_result, bytes) else None,
+                                       pid=child.pid if child is not None else None,
+                                       returncode=child.returncode if child is not None else None,
+                                       stdinClosed=child.stdin.closed if child is not None else None,
+                                       stdoutClosed=child.stdout.closed if child is not None else None)
+                elif code is spawn_code and event == 'return':
+                    child = frame.f_locals['self']
+                    command = frame.f_locals.get('args')
+                    if isinstance(command, list) and any(arg in paths for arg in command):
+                        owner = http_active.get(thread)
+                        if owner is None:
+                            http_errors.append('unbound_http_helper')
+                        else:
+                            http_children.append({'pid': child.pid, 'kind': owner['kind'],
+                                                  'transport': owner['transport'], 'createdByCallId': owner['id'],
+                                                  'startedNs': now, 'process': child})
+            if code is isolated_code and frame.f_locals.get('endpoint_name') != 'Embedding':
+                return
             if code is embed_code:
                 if event == 'call':
                     payload = {'model': frame.f_locals['model'], 'input': frame.f_locals['inputs']}
@@ -67,7 +110,7 @@ def main():
             elif code is spawn_code and event == 'return':
                 child = frame.f_locals['self']
                 command = frame.f_locals.get('args')
-                if isinstance(command, list) and any(arg in paths for arg in command):
+                if thread in active and isinstance(command, list) and any(arg in paths for arg in command):
                     children.append({'pid': child.pid, 'startedNs': now, 'process': child,
                                      'callerStartedNs': active.get(thread, {}).get('startedNs')})
             elif code in {isolated_code, session_code, retire_code} and event == 'return':
@@ -82,17 +125,24 @@ def main():
         while not done.is_set():
             with lock:
                 live = [row['pid'] for row in children if row['process'].poll() is None]
+                all_live = [row['pid'] for row in http_children if row['process'].poll() is None] if all_http else live
             try:
-                raw = subprocess.check_output(['ps', '-o', 'pid=,rss=', '-p', ','.join(map(str, [os.getpid(), *live]))], text=True, timeout=2)
+                raw = subprocess.check_output(['ps', '-o', 'pid=,rss=', '-p', ','.join(map(str, [os.getpid(), *all_live]))], text=True, timeout=2)
                 memory = {int(parts[0]): int(parts[1]) * 1024 for line in raw.splitlines() if len(parts := line.split()) == 2}
-                samples.append({'atNs': time.monotonic_ns(), 'workerRssBytes': memory.pop(os.getpid()),
-                                'helperRssBytes': {str(pid): value for pid, value in memory.items()}})
+                at = time.monotonic_ns()
+                worker_rss = memory.pop(os.getpid())
+                samples.append({'atNs': at, 'workerRssBytes': worker_rss,
+                                'helperRssBytes': {str(pid): value for pid, value in memory.items() if pid in live}})
+                if all_http:
+                    http_samples.append({'atNs': at, 'workerRssBytes': worker_rss,
+                                         'helperRssBytes': {str(pid): value for pid, value in memory.items()}})
             except Exception as error:
                 errors.append(type(error).__name__)
             done.wait(.1)
 
     # Sampling uses its own short-lived ps child; those are excluded from the
-    # helper inventory. Every transport helper is observed at Popen return.
+    # helper inventory. Embedding helpers are observed at Popen return inside
+    # their embed call; primary HTTP helpers are outside embedding resource totals.
     before = len(os.listdir('/dev/fd'))
     sampler = threading.Thread(target=sample, name='embedding-rag-rss')
     began = time.monotonic_ns()
@@ -122,6 +172,12 @@ def main():
                   'samples': samples, 'sampleErrors': errors, 'activeCalls': len(active),
                   'fdBefore': before, 'fdAfter': after,
                   'liveThreads': [thread.name for thread in threading.enumerate() if thread is not threading.main_thread()]}
+        if all_http:
+            report['ownedHttp'] = {'schema': 'agat.worker.owned-http.v1', 'calls': http_calls,
+                'children': [{key: value for key, value in row.items() if key != 'process'} | {
+                    'returncode': row['process'].poll(), 'stdinClosed': row['process'].stdin.closed,
+                    'stdoutClosed': row['process'].stdout.closed} for row in http_children],
+                'samples': http_samples, 'activeCalls': len(http_active), 'errors': http_errors}
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open('x') as stream:
             json.dump(report, stream, ensure_ascii=False, indent=2, allow_nan=False)

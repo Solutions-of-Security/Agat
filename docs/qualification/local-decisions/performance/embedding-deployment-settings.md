@@ -29,6 +29,8 @@ python3 scripts/qualify-embedding-deployment.py \
 
 ## Применение и откат
 
+Дополнение 28.09.2026: после восстановления Docker выполнена [отдельная Linux image-проверка](./linux-worker-deployment.md) — все 50 round trips, 143 worker tests и три сценария настоящего PID 1 прошли. Исходный неуспешный опыт выше сохранён.
+
 [Руководство Compose](../../../getting-started.md) описывает изменение `.env` и `up -d --no-deps worker`: обычный `restart` не перечитывает environment, как указано в [Docker CLI reference](https://docs.docker.com/reference/cli/docker/compose/restart/). [Руководство Kubernetes](../../../kubernetes-docker-desktop.md) описывает environment команды, общий ConfigMap и перезапуск нужных Deployment. Согласно [Kubernetes ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/), переменные из ConfigMap обновляются при новом запуске pod; существующий managed pool не переключается автоматически.
 
 Idle timeout 30 секунд в примерах не является выбранным production SLO. Откат — idle `0`, при необходимости transport `isolated`, затем применение конфигурации и перезапуск нужных worker. Изменение не управляет Ollama, не меняет deadline/grace period и не разрешает автоматические decision routes. Живой deployment в этом этапе не выполнялся.

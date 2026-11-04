@@ -90,5 +90,31 @@ class EnduranceTest(unittest.TestCase):
         self.assertEqual(report['summary']['attempts'], 0)
         self.assertEqual(fixture.calls, 1)
 
+    def test_cooperative_cancel_saves_completed_call_and_never_retries(self):
+        fixture = ClockFixture(); journal = []
+        report = run(fixture, cancel_requested=lambda: fixture.calls >= 1,
+                     observation=lambda row, phase: journal.append((row, phase)))
+        self.assertEqual(report['stoppedReason'], 'cancelled')
+        self.assertEqual(fixture.calls, 1)
+        self.assertEqual(journal, [(report['rows'][0], 'measured')])
+        verify_seal(report, SCHEMA)
+        fixture = ClockFixture()
+        report = run(fixture, cancel_requested=lambda: True)
+        self.assertEqual((fixture.calls, report['summary']['attempts']), (0, 0))
+
+    def test_pinned_profile_mismatch_prevents_warmup_and_measurement(self):
+        fixture = ClockFixture()
+        with self.assertRaisesRegex(ValueError, 'profile changed'):
+            run(fixture, expected_profile_sha='0' * 64)
+        self.assertEqual(fixture.calls, 0)
+
+    def test_journal_write_failure_propagates_after_one_call(self):
+        fixture = ClockFixture()
+        def full(_row, _phase):
+            raise OSError(28, 'No space left on device')
+        with self.assertRaises(OSError):
+            run(fixture, observation=full)
+        self.assertEqual(fixture.calls, 1)
+
 
 if __name__ == '__main__': unittest.main()

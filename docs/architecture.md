@@ -1,5 +1,7 @@
 # Архитектура АГАТ
 
+Deployment contract различает single-user/lite/durable/production-ha. В SQLite lite [локальные users/service principals](./local-identities.md) проходят общий `authorize` с OIDC, включая роли, проекты, scopes и отзыв; Keycloak/Kong/Temporal/PostgreSQL для этого среза не обязательны. Legacy остаётся одним local-admin. [ADR 023](./adr-023-deployment-identity-and-integration-contracts.md) и серверный preflight задают актуальные границы; схема полного OIDC/Temporal контура ниже не является обязательной топологией lite.
+
 ## Цели MVP
 
 1. На слабой машине одновременно выполняется не больше одного этапа.

@@ -17,7 +17,11 @@ import { migratePostgresSchemaAndAdmit } from "../src/postgres-schema-migrator.j
 import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
 import { KnowledgeSearchExecutor, type KnowledgeSearchStoreOptions } from "../src/knowledge-search-executor.js";
 import type { ProcessGraph } from "../src/types.js";
-import { interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
+import { interceptCallerAccountingCommit, interceptEmbeddingCommit, interceptRetrievalCommit, interceptScheduledStartCommit } from "./postgres-commit-proxy.js";
+import { DECISION_CALLER_ACCOUNTING } from "../src/decision-caller-accounting.js";
+import { getInternalReportPack, type ProcessPackPreview } from "../src/process-packs.js";
+import { pdfFile, fixtureExtractionReview } from "./knowledge-file-fixtures.js";
+import { completedOfficeReport } from "./business-report-office-fixtures.js";
 import {
   enterPostgresTenantScope,
   PostgresDatabaseSync,
@@ -71,7 +75,11 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
     const finished = await Promise.race([closed.then(() => true), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), 5_000); })]);
     clearTimeout(timer);
     if (!finished) child.kill("SIGKILL");
-    return closed;
+    const result = await closed;
+    if (process.env.AGAT_CALLER_POSTGRES_EVIDENCE_DIR) {
+      console.log(`AGAT_POSTGRES_COORDINATOR_EXIT ${JSON.stringify({ pid: child.pid, ...result })}`);
+    }
+    return result;
   };
   try {
     const port = await new Promise<number>((resolve, reject) => {
@@ -86,7 +94,7 @@ async function startCoordinatorProcess(env: NodeJS.ProcessEnv) {
       });
     });
     assert.ok(port > 0);
-    return { port, stop, closed, signal: () => child.kill("SIGTERM"),
+    return { port, pid: child.pid, stop, closed, signal: () => child.kill("SIGTERM"),
       diagnostic: () => diagnostic.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "<redacted>") };
   } catch (error) { await stop(); throw error; }
 }
@@ -147,6 +155,40 @@ function startObservedEmbeddingWorker(input: { coordinator: string; artifacts: s
       catch (error) { child.kill("SIGKILL"); await closed; throw error; }
     } };
 }
+
+type CallerWorkerObservation = {
+  pid: number; python: string; completed: string[]; primaryCalls: string[]; liveThreads: string[];
+  requests: Array<{ method: string; path: string; status: number | null; responseReceived: boolean;
+    startedNs: number; finishedNs: number; threadId: number }>;
+};
+function startObservedCallerWorker(input: { coordinator: string; token: string; model: string;
+  decisionUrl: string; operation: "intent" | "return" }) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("AGAT_") && !name.startsWith("OTEL_")));
+  const child = spawn("python3", [fileURLToPath(new URL("./decision-caller-worker-probe.py", import.meta.url))], {
+    env: { ...env, AGAT_OTEL_ENABLED: "false", PYTHONDONTWRITEBYTECODE: "1" }, stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "", diagnostic = "";
+  const closed = new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
+    child.once("close", (code, signal) => resolve({ code, signal })); child.once("error", reject);
+  });
+  void closed.catch(() => {});
+  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (data: string) => { output = (output + data).slice(-128 * 1024); });
+  child.stderr.on("data", (data: string) => { diagnostic = (diagnostic + data).slice(-8192); });
+  const send = (value: unknown) => child.stdin.write(JSON.stringify(value) + "\n"); send(input);
+  const records = (prefix: string) => output.split("\n").slice(0, -1).filter(line => line.startsWith(prefix + " "))
+    .map(line => JSON.parse(line.slice(prefix.length + 1)));
+  return { closed, send, pid: child.pid, diagnostic: () => `${diagnostic}\n${output}`,
+    checkpoints: () => records("AGAT_CALLER_WORKER_CHECKPOINT") as Array<{ pid: number; phase: string }>,
+    completed: () => records("AGAT_CALLER_WORKER_COMPLETED") as Array<{ leaseId: string; liveThreads: string[] }>,
+    result: () => { const values = records("AGAT_CALLER_WORKER_PROBE"); assert.equal(values.length, 1); return values[0] as CallerWorkerObservation; },
+    stop: async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      try { return await within(closed, 5_000, "Caller worker did not exit"); }
+      catch (error) { child.kill("SIGKILL"); await closed; throw error; }
+    } };
+}
+
 
 async function eventually(check: () => Promise<boolean>, message: string): Promise<void> {
   const deadline = performance.now() + 5_000;
@@ -345,6 +387,292 @@ async function embeddingLeaseFixture(replicas = 1, options: { content?: string; 
 describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl || !tenantUrl }, () => {
   before(async () => {
     await migratePostgresSchemaAndAdmit();
+  });
+
+  it("serializes report pack installs and extraction reviews across real coordinator replicas with tenant RLS", async () => {
+    const suffix = randomUUID().slice(0, 8), project = `pack-${suffix}`, foreign = `pack-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-pack-history-"));
+    const first = store(`pack-history-${suffix}`, artifacts);
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    let fixtureWorkerId: string | undefined;
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const pack = getInternalReportPack(2), legacy = getInternalReportPack();
+      const collection = String(first.createKnowledgeCollection({ name: "User sources", embeddingModel: pack.defaults.embeddingModel }, project).id);
+      first.ingestKnowledgeDocument(collection, { name: "Source", content: "Synthetic replica test: 100 then 120 requests." }, project);
+      const options = { version: 2, manifestSha256: pack.manifestSha256, model: pack.defaults.model, knowledgeCollectionIds: [collection] };
+      const token = `pack-test-${suffix}`;
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`pack-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const post = (index: number, action: string, body: unknown, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/process-packs/internal-report/${action}`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index, "install", options)));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201]);
+      const previews = await Promise.all(responses.map(response => response.json() as Promise<ProcessPackPreview>));
+      const installed = previews[0]!.installation!;
+      for (const preview of previews) assert.deepEqual(preview.installation, installed);
+      assert.equal(first.listProcesses(project).length, 1); assert.equal(first.getProcessPackHistory(pack.id, project).length, 1);
+      assert.equal((await post(1, "install", options, foreign)).status, 400, "foreign collection cannot be bound");
+      const oldResponse = await post(1, "install", { version: 1, manifestSha256: legacy.manifestSha256, model: legacy.defaults.model });
+      assert.equal(oldResponse.status, 201);
+      assert.equal(first.getProcessPackInstallation(pack.id, project)!.version, 2, "install does not switch the active version");
+      const rollback = await post(0, "activate", { version: 1, manifestSha256: legacy.manifestSha256, expectedActiveManifestSha256: installed.manifestSha256 });
+      assert.equal(rollback.status, 200); await rollback.arrayBuffer();
+      assert.equal(first.getProcessPackInstallation(pack.id, project)!.version, 1);
+      assert.equal(first.getProcessPackHistory(pack.id, project).length, 2);
+      const fileCollection = String(first.createKnowledgeCollection({ name: "Coverage", embeddingModel: project }, project).id);
+      const document = await first.uploadKnowledgeDocument(fileCollection, { name: "Mixed.pdf", mediaType: "application/pdf", contentBase64: pdfFile(["Evidence", "", "Other evidence"]).toString("base64") }, project);
+      assert.equal(document.status, "review_required");
+      const review = fixtureExtractionReview(document);
+      const reviewRequest = (index: number, tenant = project, body = review) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/knowledge/documents/${document.id}/review-extraction`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      assert.equal((await reviewRequest(0, foreign)).status, 404);
+      const acknowledgements = await Promise.all([0, 1, 0, 1].map(index => reviewRequest(index)));
+      for (const response of acknowledgements) { assert.equal(response.status, 200); await response.arrayBuffer(); }
+      assert.equal(Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(document.id))!.count), 1);
+      assert.equal(first.listEvents(0, 200, project).filter(event => event.type === "knowledge.extraction.reviewed").length, 1);
+      assert.equal((first.getKnowledgeDocument(String(document.id), project)!.extraction as { state: string }).state, "accepted_text");
+      const current = (await first.reindexKnowledgeDocument(String(document.id), project))!;
+      assert.equal((await reviewRequest(1)).status, 400, "same bytes with a new extraction revision cannot reuse a prior review");
+      const barrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
+      try {
+        await barrier.connect(); await barrier.query("BEGIN");
+        await barrier.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+        await barrier.query("SELECT id FROM knowledge_documents WHERE id = $1 FOR UPDATE", [document.id]);
+        const waitForDocumentLock = (index: number) => eventually(async () => {
+          await barrier.query("SELECT pg_stat_clear_snapshot()");
+          const rows = await barrier.query("SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [`agat-pack-${suffix}-${index}-tenant`]);
+          return rows.rows.some(row => /knowledge_documents|knowledge_collections/.test(String(row.query)));
+        }, "independent replica must reach the document or parent collection barrier");
+        const accepting = reviewRequest(0, project, fixtureExtractionReview(current));
+        await waitForDocumentLock(0);
+        const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
+          method: "POST", headers: { "x-agat-admin-token": token, "x-agat-project-id": project }, signal: AbortSignal.timeout(20_000),
+        });
+        await waitForDocumentLock(1);
+        await barrier.query("COMMIT");
+        const [accepted, reindexed] = await Promise.all([accepting, reindexing]);
+        assert.equal(accepted.status, 200); await accepted.arrayBuffer();
+        const latest = first.getKnowledgeDocument(String(document.id), project)!;
+        const jobCount = Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(document.id))!.count);
+        if (reindexed.status === 200) {
+          assert.equal(latest.status, "review_required"); assert.equal(jobCount, 0, "no review from an older revision may queue a new one");
+        } else {
+          assert.equal(reindexed.status, 400, await reindexed.text());
+          assert.equal(latest.status, "pending"); assert.equal(jobCount, 1, "a stale reindex must preserve the reviewed revision");
+          assert.equal((latest.extraction as { revision: string }).revision, (current.extraction as { revision: string }).revision);
+        }
+      } finally { await barrier.query("ROLLBACK").catch(() => {}); await barrier.end(); }
+      const fresh = (await first.reindexKnowledgeDocument(String(document.id), project))!;
+      first.reviewKnowledgeExtraction(String(document.id), fixtureExtractionReview(fresh), project, "fixture-reviewer");
+      const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
+        embeddingModels: [project], region: cellRegion, residencyDomain: cellResidencyDomain });
+      fixtureWorkerId = worker.id;
+      const lease = first.leaseKnowledgeEmbedding(worker.id)!; assert.equal(lease.document.id, document.id);
+      const collectionBarrier = new pg.Client({ connectionString: tenantUrl, ssl: false });
+      try {
+        await collectionBarrier.connect(); await collectionBarrier.query("BEGIN");
+        await collectionBarrier.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+        await collectionBarrier.query("SELECT id FROM knowledge_collections WHERE id = $1 FOR NO KEY UPDATE", [fileCollection]);
+        const waitForLock = (name: string) => eventually(async () => {
+          await collectionBarrier.query("SELECT pg_stat_clear_snapshot()");
+          const result = await collectionBarrier.query(`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE a.application_name = $1 AND NOT l.granted`, [name]);
+          return result.rows.length > 0;
+        }, "both completion and reindex must wait at the collection barrier");
+        const completing = fetch(`http://127.0.0.1:${children[0]!.port}/api/v1/workers/knowledge/leases/${lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ embeddings: lease.chunks.map(chunk => ({ chunkId: chunk.id, embedding: [1, 0] })) }), signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-0-system`);
+        const reindexing = fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/knowledge/documents/${document.id}/reindex`, {
+          method: "POST", headers: { "x-agat-admin-token": token, "x-agat-project-id": project }, signal: AbortSignal.timeout(20_000),
+        });
+        await waitForLock(`agat-pack-${suffix}-1-tenant`);
+        await collectionBarrier.query("COMMIT");
+        const completed = await completing;
+        assert.equal(completed.status, 200, await completed.text());
+        const stale = await reindexing;
+        assert.equal(stale.status, 400); assert.match(await stale.text(), /Документ изменился/);
+        assert.equal(first.getKnowledgeDocument(String(document.id), project)!.status, "ready");
+      } finally { await collectionBarrier.query("ROLLBACK").catch(() => {}); await collectionBarrier.end(); }
+      const csv = Buffer.from("period,total\n2026-09,240\n").toString("base64");
+      const uploads = await Promise.all([0, 1, 0, 1].map((index, attempt) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/knowledge/collections/${fileCollection}/documents/upload`, {
+        method: "POST", headers: { "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": project },
+        body: JSON.stringify({ name: `Renamed ${attempt}.csv`, mediaType: "text/csv", contentBase64: csv }), signal: AbortSignal.timeout(20_000),
+      })));
+      assert.deepEqual(uploads.map(response => response.status).sort(), [200, 200, 200, 201]);
+      const reused = await Promise.all(uploads.map(response => response.json() as Promise<Record<string, unknown>>));
+      assert.equal(new Set(reused.map(document => document.id)).size, 1);
+      assert.equal(Number(first.db.prepare("SELECT COUNT(*) AS count FROM knowledge_embedding_jobs WHERE document_id = ?").get(String(reused[0]!.id))!.count), 1);
+      assert.equal(first.listEvents(0, 200, project).filter(event => event.type === "knowledge.document.queued" && JSON.stringify(event.data).includes(String(reused[0]!.id))).length, 1);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT * FROM process_pack_history WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("UPDATE process_pack_installations SET installation_json = installation_json WHERE project_id = ?").run(project).changes, 0);
+    } finally {
+      await Promise.all(children.map(child => child.stop()));
+      // The last assertions intentionally enter a tenant scope. Replica shutdown
+      // updates a global table and must release the migration gate as system.
+      runWithPostgresSystemScope(() => {
+        // Empty model advertisements are a legacy wildcard in the router. This
+        // synthetic embedder must never attract another fixture's pinned model.
+        if (fixtureWorkerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(fixtureWorkerId);
+        first.close();
+      });
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes frozen office exports across real replicas and keeps bytes and receipts behind tenant RLS", async context => {
+    const suffix = randomUUID().slice(0, 8), project = `office-${suffix}`, foreign = `office-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-office-"));
+    const first = store(`office-store-${suffix}`, artifacts);
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    let workerId: string | undefined;
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const { canonical, runId, worker } = completedOfficeReport(first, project); workerId = worker.id;
+      const token = `office-fixture-${suffix}`, origin = "https://office.agat.example";
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`office-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const headers = (tenant = project) => ({ "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant, host: new URL(origin).host });
+      // A reverse proxy presents the same external Host to both replicas. Node's
+      // fetch may replace a supplied Host, so exercise that transport with http.
+      const post = (index: number, format = "docx", tenant = project) => new Promise<Response>((resolve, reject) => {
+        const request = http.request(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${canonical.id}/export`, {
+          method: "POST", headers: headers(tenant),
+        }, response => {
+          const chunks: Buffer[] = [];
+          response.on("data", chunk => chunks.push(Buffer.from(chunk)));
+          response.once("error", reject);
+          response.once("end", () => resolve(new Response(Buffer.concat(chunks), { status: response.statusCode })));
+        });
+        request.setTimeout(30_000, () => request.destroy(new Error("Office export HTTP deadline")));
+        request.once("error", reject);
+        request.end(JSON.stringify({ format, origin, expectedSha256: canonical.sha256 }));
+      });
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index)));
+      const bodies = await Promise.all(responses.map(response => response.json() as Promise<{ artifact: Record<string, unknown> }>));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(bodies));
+      const exported = bodies[0]!.artifact;
+      for (const body of bodies) assert.deepEqual(body.artifact, exported);
+      const pdfResponse = await post(1, "pdf"); assert.equal(pdfResponse.status, 201, await pdfResponse.clone().text());
+      const pdf = (await pdfResponse.json() as { artifact: Record<string, unknown> }).artifact;
+      assert.equal((exported.rendering as Record<string, unknown>).documentSha256, (pdf.rendering as Record<string, unknown>).documentSha256);
+      for (const artifact of [exported, pdf]) {
+        const download = await fetch(`http://127.0.0.1:${children[0]!.port}/api/v1/artifacts/${artifact.id}/download`, { headers: headers() });
+        assert.equal(download.status, 200);
+        assert.equal(createHash("sha256").update(Buffer.from(await download.arrayBuffer())).digest("hex"), artifact.sha256);
+        assert.equal(artifact.sourceArtifactId, canonical.id);
+        assert.equal((await fetch(`http://127.0.0.1:${children[1]!.port}/api/v1/artifacts/${artifact.id}/download`, { headers: headers(foreign) })).status, 404);
+      }
+      assert.equal((await post(0)).status, 200); assert.equal((await post(1, "pdf")).status, 200);
+      assert.equal((await post(0, "pdf", foreign)).status, 404);
+      assert.equal(first.listRunArtifacts(runId).filter(row => row.kind === "business_report_export").length, 2);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.exported").length, 2);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT rendering_json, content_blob FROM artifacts WHERE run_id = ?").all(runId).length, 0);
+      assert.equal(first.db.prepare("UPDATE artifacts SET rendering_json = rendering_json WHERE run_id = ?").run(runId).changes, 0);
+      context.diagnostic("Four requests / two coordinator processes: one DOCX, one PDF, exact download hashes, shared presentation hash and tenant RLS");
+    } finally {
+      await Promise.all(children.map(child => child.stop()));
+      runWithPostgresSystemScope(() => {
+        if (workerId) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(workerId);
+        first.close();
+      });
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes report decisions and request IDs across replicas without duplicating rework tasks or granting ledger edits", async context => {
+    const suffix = randomUUID().slice(0, 8), project = `review-${suffix}`, foreign = `review-other-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-report-review-"));
+    const first = store(`review-store-${suffix}`, artifacts), workers: string[] = [];
+    const children: Array<Awaited<ReturnType<typeof startCoordinatorProcess>>> = [];
+    try {
+      first.createProject({ id: project, name: project }); first.createProject({ id: foreign, name: foreign });
+      const reports = [completedOfficeReport(first, project), completedOfficeReport(first, project)];
+      workers.push(...reports.map(report => report.worker.id));
+      const token = `review-fixture-${suffix}`;
+      for (let index = 0; index < 2; index++) children.push(await startCoordinatorProcess(coordinatorProcessEnvironment(`review-${suffix}-${index}`, artifacts, { AGAT_ADMIN_TOKEN: token })));
+      const headers = (tenant = project) => ({ "content-type": "application/json", "x-agat-admin-token": token, "x-agat-project-id": tenant });
+      const post = (index: number, body: Record<string, unknown>, report = reports[0]!, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${report.canonical.id}/decisions`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const input = { requestId: randomUUID(), expectedSha256: reports[0]!.canonical.sha256, expectedRevision: 0, decision: "rework_requested", reason: "Synthetic replica feedback" };
+      const responses = await Promise.all([0, 1, 0, 1].map(index => post(index, input)));
+      const receipts = await Promise.all(responses.map(response => response.json() as Promise<{ decision: { id: string }; reworkTask: { id: string } }>));
+      assert.deepEqual(responses.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(receipts));
+      assert.equal(new Set(receipts.map(receipt => receipt.decision.id)).size, 1);
+      assert.equal(new Set(receipts.map(receipt => receipt.reworkTask.id)).size, 1);
+      const candidate = (index: number, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${reports[0]!.canonical.id}/eval-candidate`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify({ expectedSha256: input.expectedSha256, expectedRevision: 1 }), signal: AbortSignal.timeout(20_000),
+      });
+      const candidates = await Promise.all([candidate(0), candidate(1)]);
+      const packets = await Promise.all(candidates.map(response => response.json() as Promise<Record<string, unknown>>));
+      assert.deepEqual(candidates.map(response => response.status), [200, 200], JSON.stringify(packets));
+      assert.deepEqual(packets[0], packets[1], "both replicas prepare the same read-only development candidate");
+      assert.equal(packets[0]!.purpose, "development"); assert.equal(packets[0]!.holdoutEligible, false);
+      assert.equal((packets[0]!.example as { referenceOutput: string }).referenceOutput, "");
+      assert.equal((await candidate(1, foreign)).status, 404);
+      const importBody = { requestId: randomUUID(), expectedSha256: input.expectedSha256, expectedRevision: 1,
+        expectedCandidateSha256: packets[0]!.contentSha256, name: `Development import ${suffix}`, referenceOutput: packets[0]!.observedOutput,
+        rubric: [{ label: "Источники и числа", weight: 1 }], reviewConfirmed: true };
+      const importExample = (index: number, body = importBody, tenant = project) => fetch(`http://127.0.0.1:${children[index]!.port}/api/v1/artifacts/${reports[0]!.canonical.id}/eval-dataset`, {
+        method: "POST", headers: headers(tenant), body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
+      const imports = await Promise.all([0, 1, 0, 1].map(index => importExample(index)));
+      const imported = await Promise.all(imports.map(response => response.json() as Promise<{ datasetId: string; datasetContentSha256: string }>));
+      assert.deepEqual(imports.map(response => response.status).sort(), [200, 200, 200, 201], JSON.stringify(imported));
+      assert.equal(new Set(imported.map(receipt => receipt.datasetId)).size, 1); assert.equal(new Set(imported.map(receipt => receipt.datasetContentSha256)).size, 1);
+      assert.equal((await importExample(1, { ...importBody, name: "Changed import intent" })).status, 409);
+      assert.equal((await importExample(1, importBody, foreign)).status, 404);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.eval.dataset.created").length, 1);
+      const competing = await Promise.all(["accepted", "rework_requested"].map((decision, index) => post(index, { ...input, requestId: randomUUID(), expectedRevision: 1, decision })));
+      const competingBodies = await Promise.all(competing.map(response => response.text()));
+      assert.deepEqual(competing.map(response => response.status).sort(), [201, 409], competingBodies.join("\n"));
+      const sharedRequest = randomUUID();
+      const acrossArtifacts = await Promise.all(reports.map((report, index) => post(index, { ...input, requestId: sharedRequest, expectedSha256: report.canonical.sha256,
+        expectedRevision: index === 0 ? 2 : 0, decision: "accepted" }, report)));
+      assert.deepEqual(acrossArtifacts.map(response => response.status).sort(), [201, 409], (await Promise.all(acrossArtifacts.map(response => response.text()))).join("\n"));
+      assert.equal((await post(1, input, reports[0], foreign)).status, 404);
+      const task = `http://127.0.0.1:${children[1]!.port}/api/v1/report-rework-tasks/${receipts[0]!.reworkTask.id}`;
+      assert.equal((await fetch(task, { headers: headers(foreign) })).status, 404);
+      assert.equal(first.listEvents(0, 1000, project).filter(event => event.type === "business.report.decision.recorded").length, 3);
+      enterPostgresTenantScope(foreign);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_decisions WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_rework_tasks WHERE project_id = ?").all(project).length, 0);
+      assert.equal((await importExample(1)).status, 200, "a durable dataset receipt survives source-run purge");
+      enterPostgresTenantScope(project);
+      assert.throws(() => first.db.prepare("UPDATE business_report_decisions SET reason = reason WHERE project_id = ?").run(project), /permission denied/i);
+      assert.throws(() => first.db.prepare("DELETE FROM business_report_decisions WHERE project_id = ?").run(project), /permission denied/i);
+      for (const report of reports) assert.equal(first.db.prepare("DELETE FROM runs WHERE id = ?").run(report.runId).changes, 1);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_decisions WHERE project_id = ?").all(project).length, 0);
+      assert.equal(first.db.prepare("SELECT id FROM business_report_rework_tasks WHERE project_id = ?").all(project).length, 0);
+      await Promise.all(children.map(child => child.stop()));
+      const runtimeRole = runWithPostgresSystemScope(() => String(first.db.prepare("SELECT current_user AS role").get()!.role));
+      const tenantRole = decodeURIComponent(new URL(tenantUrl).username);
+      const migration = new pg.Client({ connectionString: migrationUrl, ssl: false });
+      await migration.connect();
+      try {
+        for (const role of [runtimeRole, tenantRole]) {
+          assert.match(role, /^[a-z_][a-z0-9_]*$/);
+          await migration.query(`GRANT UPDATE ON business_report_decisions TO "${role}"`);
+          let unexpected: AgatStore | undefined;
+          try {
+            assert.throws(() => { unexpected = runWithPostgresSystemScope(() => store(`review-grants-${randomUUID().slice(0, 8)}`, artifacts)); }, /runtime grants/);
+          } finally {
+            runWithPostgresSystemScope(() => unexpected?.close());
+            await migration.query(`REVOKE UPDATE ON business_report_decisions FROM "${role}"`);
+          }
+        }
+      } finally { await migration.end(); }
+      context.diagnostic("Concurrent decisions/imports retry 201/200; changed intents 409; identical candidate and one versioned dataset across replicas; immutable grants, tenant isolation and authorized source purge with durable import receipt");
+    } finally {
+      await Promise.all(children.map(child => child.stop()));
+      runWithPostgresSystemScope(() => { for (const id of workers) first.db.prepare("UPDATE nodes SET status = 'offline' WHERE id = ?").run(id); first.close(); });
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
   });
 
   it("backfills scheduled workflow ownership from the schema 28 column layout with project isolation", async () => {
@@ -1206,6 +1534,7 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
       const entered = new Promise<void>(resolve => { enteredSecond = resolve; });
       const modelInputs: string[][] = [], modelErrors: unknown[] = [];
       let secondClosed = false;
+      let testFailed = false;
       const model = http.createServer((request, response) => {
         void (async () => {
           assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/embeddings");
@@ -1291,11 +1620,22 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         assert.deepEqual(snapshot(), saved); assert.equal(modelInputs.length, 2);
         context.diagnostic(`idle=${idleTimeout}: two exact vectors/leases, ${expectedHelpers} helpers reaped, SIGTERM drain and restart without replay`);
         assert.deepEqual(await child.stop(), { code: 0, signal: null });
-      } catch (error) { context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}`); throw error; }
+      } catch (error) {
+        testFailed = true;
+        context.diagnostic(`${child?.diagnostic() ?? "Main did not start"}\n${worker?.diagnostic() ?? "Worker did not start"}\n${successor?.diagnostic() ?? "Successor did not start"}`);
+        throw error;
+      }
       finally {
-        releaseSecond(); await worker?.stop(); await successor?.stop(); await child?.stop(); model.closeAllConnections();
-        await new Promise<void>(resolve => model.close(() => resolve()));
-        f.first.deleteKnowledgeCollection(collection, f.project); await f.close();
+        releaseSecond();
+        const errors: unknown[] = [];
+        const cleanup = [() => worker?.stop(), () => successor?.stop(), () => child?.stop(),
+          () => { model.closeAllConnections(); return new Promise<void>(resolve => model.close(() => resolve())); },
+          () => f.first.deleteKnowledgeCollection(collection, f.project), () => f.close()];
+        for (const release of cleanup) { try { await release(); } catch (error) { errors.push(error); } }
+        if (errors.length) {
+          context.diagnostic(`Idle worker cleanup errors: ${errors.map(error => String(error)).join("; ")}`);
+          if (!testFailed) throw new AggregateError(errors, "Idle worker cleanup failed");
+        }
       }
     });
   });
@@ -2874,6 +3214,275 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
     });
   }
 
+  function processEnvCallerEvidence(): string | undefined {
+    const raw = process.env.AGAT_CALLER_POSTGRES_EVIDENCE_DIR;
+    if (!raw) return undefined;
+    const base = fileURLToPath(new URL("../../../docs/private/", import.meta.url));
+    const directory = path.resolve(raw), relative = path.relative(base, directory);
+    assert.ok(relative && !relative.startsWith("..") && !path.isAbsolute(relative), "Caller evidence must be private under docs/private");
+    assert.ok(fs.lstatSync(directory).isDirectory() && !fs.lstatSync(directory).isSymbolicLink());
+    return directory;
+  }
+
+  function callerFixture() {
+    const suffix = randomUUID().slice(0, 8), project = `caller-${suffix}`;
+    const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-caller-"));
+    const first = store(`caller-parent-${suffix}`, artifacts);
+    try {
+    first.updateScheduler("parallel", 10);
+    first.createProject({ id: project, name: project, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const foreign = `${project}-other`;
+    first.createProject({ id: foreign, name: foreign, homeRegion: cellRegion,
+      allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+    const agent = first.createAgent({ name: "Primary", role: "Test", systemPrompt: "Fixture", model: project }, project);
+    const worker = first.registerNode({ enrollmentToken: "test", name: project, platform: "test", models: [project],
+      maxConcurrency: 1, region: cellRegion, residencyDomain: cellResidencyDomain,
+      labels: { decisionShadow: "local_decision_shadow_v2", decisionCallerAccounting: DECISION_CALLER_ACCOUNTING, pool: project } });
+    const shadow = normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
+      kind: "boolean", question: "Confirmed?", options: [
+        { id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] });
+    const graph: ProcessGraph = { nodes: [
+      { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+      { id: "agent", name: "Agent", type: "agent", position: { x: 200, y: 0 }, config: { agentId: String(agent.id), decisionShadow: shadow } },
+      { id: "end", name: "End", type: "end", position: { x: 400, y: 0 }, config: {} },
+    ], edges: [{ id: "a", source: "start", target: "agent", branch: "default" }, { id: "b", source: "agent", target: "end", branch: "default" }] };
+    const process = first.createProcess({ name: `Caller accounting PostgreSQL ${suffix}`, graph }, project);
+    first.publishProcess(String(process.id), project);
+    const run = first.startProcess(String(process.id), { input: "Controlled caller fixture", priority: 100 }, project)!;
+    const lease = first.leaseNext(worker.id)!; assert.ok(lease?.decisionShadow); assert.equal(lease.run.id, String(run.runId));
+    const intent = { schemaVersion: DECISION_CALLER_ACCOUNTING, assignmentId: lease.decisionShadow.assignmentId };
+    const payload = { status: "unavailable", reason: "timeout", callerTiming: {
+      schemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call", durationMs: 1000 } };
+    const activity = () => JSON.parse(String(first.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(lease.stage.id)!.activity_json));
+    const events = () => first.db.prepare("SELECT id FROM events WHERE run_id=? AND type='decision.shadow'").all(String(run.runId));
+    const children: Awaited<ReturnType<typeof startCoordinatorProcess>>[] = [];
+    return { first, project, foreign, worker, lease, intent, payload, activity, events, artifacts, suffix, runId: String(run.runId),
+      nextLease: () => {
+        const following = first.startProcess(String(process.id), { input: "Following caller fixture", priority: 100 }, project)!;
+        const next = first.leaseNext(worker.id)!;
+        assert.ok(next?.decisionShadow); assert.equal(next.run.id, String(following.runId));
+        return { runId: String(following.runId), lease: next };
+      },
+      persist: (name: string, details: Record<string, unknown>) => {
+        const raw = processEnvCallerEvidence();
+        if (!raw) return;
+        const file = path.join(raw, `${name}.json`);
+        fs.writeFileSync(file, JSON.stringify({ name, capturedAt: new Date().toISOString(), details, project, foreignProject: foreign,
+          stage: first.db.prepare("SELECT id,run_id,status,attempt,node_id,lease_id,lease_expires_at,activity_json FROM stages WHERE id=?").get(lease.stage.id),
+          trace: first.getRunTrace(String(run.runId), project), shadowEvents: events() }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      },
+      child: async (instance: string, overrides: NodeJS.ProcessEnv = {}) => {
+        const child = await startCoordinatorProcess(coordinatorProcessEnvironment(instance, artifacts,
+          { AGAT_KNOWLEDGE_SEARCH_EXECUTION: "sync", AGAT_DECISION_SHADOW_ENABLED: "true", ...overrides }));
+        children.push(child); return child;
+      },
+      post: (child: { port: number }, operation: "intent" | "return", body = operation === "intent" ? intent : payload) =>
+        fetch(`http://127.0.0.1:${child.port}/api/v1/leases/${lease.leaseId}/decision-shadow${operation === "intent" ? "/intent" : ""}`, {
+          method: "POST", headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+        }).then(async response => ({ status: response.status, body: await response.json() as Record<string, unknown> })),
+      close: async () => { for (const child of children) assert.deepEqual(await child.stop(), { code: 0, signal: null });
+        console.log(`AGAT_CALLER_POSTGRES_CLEANUP ${JSON.stringify({ pids: children.map(child => child.pid), closed: true })}`);
+        first.cancelRun(String(run.runId), project);
+        first.markWorkerPoolOffline(project); first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); },
+    };
+    } catch (error) { first.close(); fs.rmSync(artifacts, { recursive: true, force: true }); throw error; }
+  }
+
+  for (const operation of ["intent", "return"] as const) for (const fault of ["disconnect", "withhold"] as const) {
+    it(`real Python caller worker preserves primary and resumes after unknown ${operation} COMMIT (${fault})`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), instance = `caller-worker-${f.suffix}`;
+        const proxy = await interceptCallerAccountingCommit(systemUrl, `agat-${instance}-system`, false);
+        let worker: ReturnType<typeof startObservedCallerWorker> | undefined;
+        const backendCalls: Array<{ id: string; profileSha256: string }> = [], backendErrors: unknown[] = [];
+        const backend = http.createServer((request, response) => {
+          void (async () => {
+            assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/decisions");
+            const parts: Buffer[] = []; for await (const chunk of request) parts.push(Buffer.from(chunk));
+            const body = JSON.parse(Buffer.concat(parts).toString("utf8"));
+            backendCalls.push({ id: body.id, profileSha256: String(request.headers["x-agat-decision-profile"]) });
+            assert.ok(backendCalls.length <= 2, "Actual HTTP caller must not replay after an uncertain transaction");
+            response.writeHead(503, { "content-type": "application/json" }); response.end(JSON.stringify({ error: "Controlled busy fixture" }));
+          })().catch(error => { backendErrors.push(error); response.writeHead(500); response.end(); });
+        });
+        try {
+          await new Promise<void>(resolve => backend.listen(0, "127.0.0.1", resolve));
+          const address = backend.address(); assert.ok(address && typeof address === "object");
+          const child = await f.child(instance, { AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl),
+            ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) });
+          worker = startObservedCallerWorker({ coordinator: `http://127.0.0.1:${child.port}`, token: f.worker.token,
+            model: f.project, decisionUrl: `http://127.0.0.1:${address.port}`, operation });
+          worker.send({ lease: f.lease });
+          await eventually(async () => worker!.checkpoints().length === 1,
+            `Actual caller did not reach its ${operation} checkpoint: ${worker.diagnostic()}`);
+          assert.equal(worker.checkpoints()[0]!.phase, operation); proxy.arm(); worker.send({ continue: true });
+          await within(Promise.race([proxy.committed, worker.closed.then(result => {
+            throw new Error(`Caller worker exited before real COMMIT: ${JSON.stringify(result)} ${worker!.diagnostic()}`);
+          })]), 5_000, "Actual Python caller did not reach the selected real COMMIT");
+          const committed = f.activity();
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].intent, true);
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].returned !== null, operation === "return");
+          assert.equal(backendCalls.length, operation === "return" ? 1 : 0);
+          f.persist(`worker-${operation}-${fault}-before-ack`, { realSuccessfulCommitObserved: true, activityAtCommit: committed,
+            workerPid: worker.pid, backendCalls: [...backendCalls] });
+          if (fault === "disconnect") proxy.disconnect();
+          await eventually(async () => worker!.completed().length === 1,
+            `Caller did not preserve primary after its unknown COMMIT: ${worker.diagnostic()}`);
+          const firstTrace = f.first.getRunTrace(f.runId, f.project)!;
+          assert.equal(firstTrace.run && (firstTrace.run as any).stages[0].output, `PRIMARY ${f.runId}`);
+          assert.equal((firstTrace.decisionCallerAccounting as any).stages[0].assignments[0].outcome,
+            operation === "return" ? "returned" : "return_missing");
+          const following = f.nextLease(); worker.send({ lease: following.lease });
+          await eventually(async () => worker!.completed().length === 2,
+            `Same caller process did not execute the following lease: ${worker.diagnostic()}`);
+          worker.send({ stop: true }); assert.deepEqual(await worker.closed, { code: 0, signal: null });
+          const observed = worker.result(); const leases = [f.lease.leaseId, following.lease.leaseId];
+          assert.deepEqual(observed.completed, leases); assert.deepEqual(observed.primaryCalls, leases); assert.deepEqual(observed.liveThreads, []);
+          const byLease = (id: string) => observed.requests.filter(r => r.path.startsWith(`/api/v1/leases/${id}/`));
+          const firstRequests = byLease(f.lease.leaseId), nextRequests = byLease(following.lease.leaseId);
+          assert.equal(firstRequests.filter(r => r.path.endsWith(operation === "intent" ? "/decision-shadow/intent" : "/decision-shadow") && r.status === 503).length, 1);
+          assert.equal(firstRequests.filter(r => r.path.endsWith("/decision-shadow/intent")).length, 1);
+          assert.equal(firstRequests.filter(r => r.path.endsWith("/decision-shadow")).length, operation === "return" ? 1 : 0);
+          assert.ok([...firstRequests, ...nextRequests].every(r => !r.path.endsWith("/fail")));
+          assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow/intent") && r.status === 200).length, 1);
+          assert.equal(nextRequests.filter(r => r.path.endsWith("/decision-shadow") && r.status === 200).length, 1);
+        assert.equal(observed.requests.filter(r => r.path.endsWith("/complete") && r.status === 200).length, 2);
+        const renewals = observed.requests.filter(r => r.path.endsWith("/renew"));
+        assert.ok(renewals.length >= 2);
+        assert.ok(renewals.every(r => r.status === 204 && r.responseReceived), "Observe actual renewal HTTP 204 rather than a default success status");
+        assert.ok(observed.requests.every(r => r.responseReceived && r.status !== null));
+          const nextTrace = f.first.getRunTrace(following.runId, f.project)!;
+          assert.equal((nextTrace.run as any).status, "completed"); assert.equal((nextTrace.run as any).stages[0].output, `PRIMARY ${following.runId}`);
+          const returned = (nextTrace.decisionCallerAccounting as any).stages[0].assignments[0];
+          assert.equal(returned.outcome, "returned"); assert.equal(returned.returned.reason, "busy");
+          assert.ok(returned.returned.callerTiming.durationMs >= 0); assert.equal(backendCalls.length, operation === "return" ? 2 : 1);
+          assert.equal(backendCalls.at(-1)!.id, following.lease.decisionShadow!.request.id);
+          assert.ok(backendCalls.every(call => call.profileSha256 === f.lease.decisionShadow!.profileSha256));
+          assert.deepEqual(proxy.errors, []); assert.deepEqual(backendErrors, []);
+          f.persist(`worker-${operation}-${fault}-final`, { worker: observed, backendCalls, followingTrace: nextTrace,
+            followingStage: f.first.db.prepare("SELECT id,run_id,status,attempt,node_id,lease_id,lease_expires_at,activity_json FROM stages WHERE id=?").get(following.lease.stage.id),
+            primaryPreserved: true, followingLeaseCompleted: true, renewersAndWatchdogJoined: true });
+          context.diagnostic(`Python caller ${operation}/${fault}: one HTTP 503, both primary completions HTTP 200, following caller returned, no duplicate backend calls or worker threads`);
+        } finally {
+          await worker?.stop(); await proxy.close(); await f.close(); backend.closeAllConnections();
+          await new Promise<void>(resolve => backend.close(() => resolve()));
+        }
+      });
+    });
+  }
+
+  it("caller accounting concurrent replicas allow one invocation and preserve return, restart and tenant RLS", async context => {
+    await runWithPostgresSystemScope(async () => {
+      const f = callerFixture(); let reopened: AgatStore | undefined;
+      try {
+        const a = await f.child(`caller-a-${f.suffix}`), b = await f.child(`caller-b-${f.suffix}`);
+        const receipts = await Promise.all([f.post(a, "intent"), f.post(b, "intent")]);
+        assert.deepEqual(receipts.map(r => r.status), [200, 200]);
+        assert.deepEqual(receipts.map(r => r.body.mayInvoke).sort(), [false, true]);
+        assert.equal(f.activity().decisionShadowCallerAccounting.assignments.length, 1);
+        assert.equal(f.activity().decisionShadowCallerAccounting.assignments[0].intent, true);
+        const observed = await f.post(b, "return"); assert.equal(observed.status, 200);
+        assert.deepEqual(await f.post(a, "return"), observed); assert.equal(f.events().length, 1);
+        const complete = await fetch(`http://127.0.0.1:${a.port}/api/v1/leases/${f.lease.leaseId}/complete`, {
+          method: "POST", headers: { authorization: `Bearer ${f.worker.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ output: "PRIMARY caller accounting" }), signal: AbortSignal.timeout(15_000) });
+        assert.equal(complete.status, 200); await complete.json();
+        reopened = store(`caller-reopened-${f.suffix}`, f.artifacts);
+        const trace = reopened.getRunTrace(f.runId, f.project)!;
+        const ledger = (trace.decisionCallerAccounting as any).stages[0];
+        assert.equal(ledger.coverage, "complete"); assert.equal(ledger.assignments[0].outcome, "returned");
+        assert.deepEqual(ledger.assignments[0].returned.callerTiming, f.payload.callerTiming);
+        assert.equal((reopened.getRun(f.runId, f.project)!.stages as any[])[0].output, "PRIMARY caller accounting");
+        assert.deepEqual(reopened.getRunTrace(f.runId, f.project), f.first.getRunTrace(f.runId, f.project));
+        assert.equal(reopened.getRunTrace(f.runId, f.foreign), null);
+        enterPostgresTenantScope(f.foreign);
+        assert.equal(reopened.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(f.lease.stage.id), undefined);
+        enterPostgresTenantScope(f.project);
+        assert.equal(JSON.parse(String(reopened.db.prepare("SELECT activity_json FROM stages WHERE id=?").get(f.lease.stage.id)!.activity_json)).decisionShadowCallerAccounting.assignments[0].returned.status, "unavailable");
+        f.persist("concurrent", { receipts, restartVerified: true, tenantIsolationVerified: true, primaryPreserved: true });
+        context.diagnostic("Concurrent HTTP begin: permissions=false,true; one intent/return/event; restart and tenant RLS pass");
+      } finally { await runWithPostgresSystemScope(async () => { reopened?.close(); await f.close(); }); }
+    });
+  });
+
+  for (const boundary of ["stage lock", "duplicate intent", "return event insert"] as const) {
+    it(`caller accounting rejects expiry during ${boundary} and rolls back caller state`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), writer = new pg.Client({ connectionString: systemUrl, statement_timeout: 10_000 });
+        const instance = `caller-expiry-${f.suffix}`; const pending: Promise<unknown>[] = [];
+        try {
+          await writer.connect(); const child = await f.child(instance);
+          if (boundary !== "stage lock") f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent);
+          const before = f.activity(); const expires = Date.now() + 5000;
+          f.first.db.prepare("UPDATE stages SET lease_expires_at=? WHERE id=?").run(new Date(expires).toISOString(), f.lease.stage.id);
+          await writer.query("BEGIN");
+          if (boundary === "return event insert") await writer.query("LOCK TABLE events IN SHARE MODE");
+          else await writer.query("SELECT id FROM stages WHERE id=$1 FOR UPDATE", [f.lease.stage.id]);
+          const response = f.post(child, boundary === "return event insert" ? "return" : "intent"); pending.push(response);
+          await eventually(async () => {
+            await writer.query("SELECT pg_stat_clear_snapshot()");
+            const waiting = await writer.query("SELECT query FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type='Lock'", [`agat-${instance}-system`]);
+            if (!waiting.rows.length) return false;
+            assert.match(waiting.rows[0].query, boundary === "return event insert" ? /INSERT INTO events/ : /FOR UPDATE OF s/); return true;
+          }, "Caller accounting HTTP request did not reach the real row/event lock");
+          assert.ok(Date.now() < expires); await delay(Math.max(0, expires - Date.now() + 50)); await writer.query("ROLLBACK");
+          const result = await within(response, 5000, "Caller accounting request did not finish after releasing the lock");
+          assert.equal(result.status, 400); assert.match(String(result.body.error), /Активная аренда не найдена/);
+          assert.deepEqual(f.activity(), before); assert.equal(f.events().length, 0);
+          assert.equal(f.first.renewLease(f.worker.id, f.lease.leaseId), false);
+          const expiredTrace = f.first.getRunTrace(f.runId, f.project)!;
+          assert.equal((expiredTrace.run as any).stages[0].status, "running");
+          assert.equal((expiredTrace.decisionAssignmentHistory as any).stages[0].assignments[0].outcome, "ended_without_observation");
+          assert.equal((expiredTrace.decisionCallerAccounting as any).stages[0].assignments[0].outcome,
+            boundary === "stage lock" ? "no_intent_recorded" : "return_missing");
+          assert.deepEqual(f.activity(), before);
+          f.persist(`expiry-${boundary.replaceAll(" ", "-")}`, { http: result, activityBefore: before, activityUnchanged: true,
+            sqlWaitPastExpiryVerified: true, readonlyExpiredOwnershipVerified: true });
+          context.diagnostic(`Caller ${boundary}: real SQL wait past expiry; HTTP 400; caller history/observation/event unchanged`);
+        } finally { await writer.query("ROLLBACK").catch(() => {}); await f.close(); await Promise.allSettled(pending); await writer.end(); }
+      });
+    });
+  }
+
+  for (const operation of ["intent", "return"] as const) for (const fault of ["disconnect", "withhold"] as const) {
+    it(`caller accounting preserves committed ${operation} after lost COMMIT acknowledgement (${fault})`, async context => {
+      await runWithPostgresSystemScope(async () => {
+        const f = callerFixture(), instance = `caller-commit-${f.suffix}`;
+        if (operation === "return") f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent);
+        const proxy = await interceptCallerAccountingCommit(systemUrl, `agat-${instance}-system`);
+        const pending: Promise<unknown>[] = [];
+        try {
+          const child = await f.child(instance, { AGAT_POSTGRES_URL: proxy.route(systemUrl), AGAT_POSTGRES_TENANT_URL: proxy.route(tenantUrl),
+            ...(fault === "withhold" ? { AGAT_POSTGRES_CONNECT_TIMEOUT_MS: "500", AGAT_POSTGRES_STATEMENT_TIMEOUT_MS: "1000" } : {}) });
+          const response = f.post(child, operation); pending.push(response);
+          await within(Promise.race([proxy.committed, response.then(r => { throw new Error(`Caller HTTP ${r.status} returned before real COMMIT`); })]), 5000,
+            "Caller fault fixture did not retain a real successful COMMIT acknowledgement");
+          const committed = f.activity(); assert.equal(committed.decisionShadowCallerAccounting.assignments[0].intent, true);
+          assert.equal(committed.decisionShadowCallerAccounting.assignments[0].returned !== null, operation === "return");
+          assert.equal(f.events().length, operation === "return" ? 1 : 0);
+          f.persist(`commit-${operation}-${fault}-before-ack`, { realSuccessfulCommitObserved: true, activityAtCommit: committed });
+          if (fault === "disconnect") proxy.disconnect();
+          const result = await within(response, fault === "withhold" ? 5000 : 2500, "Lost caller COMMIT acknowledgement did not yield a bounded response");
+          assert.equal(result.status, 503); assert.match(String(result.body.error), /COMMIT/);
+          assert.deepEqual(f.activity(), committed);
+          if (operation === "intent") assert.equal(f.first.beginDecisionShadow(f.worker.id, f.lease.leaseId, f.intent).mayInvoke, false);
+          else assert.deepEqual(f.first.recordDecisionShadow(f.worker.id, f.lease.leaseId, f.payload), committed.decisionShadowObservation);
+          assert.deepEqual(f.activity(), committed); assert.equal(f.events().length, operation === "return" ? 1 : 0);
+          f.first.completeLease(f.worker.id, f.lease.leaseId, "PRIMARY after unknown COMMIT");
+          assert.equal((f.first.getRun(f.runId, f.project)!.stages as any[])[0].output, "PRIMARY after unknown COMMIT");
+          const ledger = (f.first.getRunTrace(f.runId, f.project)!.decisionCallerAccounting as any).stages[0];
+          assert.equal(ledger.assignments[0].outcome, operation === "return" ? "returned" : "return_missing");
+          assert.deepEqual(proxy.errors, []);
+          f.persist(`commit-${operation}-${fault}-final`, { http: result, activityAtCommit: committed, primaryPreserved: true, noDuplicateVerified: true });
+          context.diagnostic(`Caller ${operation}/${fault}: successful COMMIT independently visible; HTTP 503; no duplicate; primary preserved`);
+        } catch (error) { context.diagnostic(`Caller accounting COMMIT scenario ${operation}/${fault} failed`); throw error; }
+        finally { await proxy.close(); await f.close(); await Promise.allSettled(pending); }
+      });
+    });
+  }
+
   it("persists one shadow observation across replicas and restart with tenant RLS and unchanged primary output", () => {
     runWithPostgresSystemScope(() => {
       const suffix = randomUUID().slice(0, 8);
@@ -2944,6 +3553,62 @@ describe("PostgreSQL Fleet/HA integration", { skip: !migrationUrl || !systemUrl 
         const row = second.db.prepare("SELECT activity_json FROM stages WHERE id = ?").get(lease.stage.id)!;
         assert.equal(JSON.parse(String(row.activity_json)).decisionShadowObservation.status, "ok");
       } finally {
+        runWithPostgresSystemScope(() => { first.close(); second.close(); });
+        fs.rmSync(artifacts, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("decision cohort preserves one repeatable read snapshot across replica changes and tenant RLS", () => {
+    runWithPostgresSystemScope(() => {
+      const suffix = randomUUID().slice(0, 8);
+      const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "agat-pg-cohort-"));
+      const first = store(`cohort-a-${suffix}`, artifacts); const second = store(`cohort-b-${suffix}`, artifacts);
+      const prepare = first.db.prepare.bind(first.db);
+      try {
+        const project = `cohort-${suffix}`; const foreign = `cohort-other-${suffix}`;
+        for (const id of [project, foreign]) first.createProject({ id, name: id, homeRegion: cellRegion,
+          allowedRegions: [cellRegion], residencyDomain: cellResidencyDomain });
+        const agent = first.createAgent({ name: "Snapshot fixture", role: "Test", systemPrompt: "PRIVATE_PROMPT", model: `cohort-${suffix}` }, project);
+        const graph: ProcessGraph = { nodes: [
+          { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+          { id: "work", name: "Agent", type: "agent", position: { x: 100, y: 0 }, config: { agentId: String(agent.id),
+            decisionShadow: normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decisionProfileJson, timeoutMs: 1000,
+              kind: "boolean", question: "PRIVATE_QUESTION", options: [{ id: "no", description: "No", value: false }, { id: "yes", description: "Yes", value: true }] }) } },
+          { id: "end", name: "End", type: "end", position: { x: 200, y: 0 }, config: {} },
+        ], edges: [{ id: "a", source: "start", target: "work", branch: "default" }, { id: "b", source: "work", target: "end", branch: "default" }] };
+        const process = String(first.createProcess({ name: "Snapshot", graph }, project).id); first.publishProcess(process, project);
+        const instance = first.startProcess(process, { input: "PRIVATE_INPUT" }, project)!;
+        const scope = { processVersion: 1, startAt: "2026-09-29T00:00:00.000Z", endAt: "2026-09-30T00:00:00.000Z" };
+        first.db.prepare("UPDATE process_instances SET created_at = ? WHERE id = ?").run(scope.startAt, String(instance.id));
+        const stage = first.db.prepare("SELECT id, status FROM stages WHERE run_id = ?").get(String(instance.runId))!;
+        enterPostgresTenantScope(project);
+        first.db.exec("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        try {
+          const settings = first.db.prepare("SELECT current_setting('transaction_isolation') AS isolation, current_setting('transaction_read_only') AS read_only").get()!;
+          assert.equal(settings.isolation, "repeatable read"); assert.equal(settings.read_only, "on");
+          assert.throws(() => first.db.prepare("UPDATE stages SET status = 'failed' WHERE id = ?").run(String(stage.id)), /read.only/i);
+        } finally { first.db.exec("ROLLBACK"); }
+        let changed = false;
+        first.db.prepare = sql => {
+          if (sql.includes("FROM stages s JOIN process_instances")) {
+            assert.equal(changed, false); changed = true;
+            second.db.prepare("UPDATE stages SET status = 'failed' WHERE id = ?").run(String(stage.id));
+            second.db.prepare("UPDATE process_instances SET created_at = ? WHERE id = ?").run(scope.endAt, String(instance.id));
+          }
+          return prepare(sql);
+        };
+        const snapshot = first.getDecisionShadowCohort(process, scope, project)!;
+        first.db.prepare = prepare;
+        assert.equal(changed, true); assert.equal(snapshot.counts.instances, 1); assert.equal(snapshot.counts.storedStages, 1);
+        assert.equal(snapshot.traces[0]!.decisionStageInventory.stages[0]!.stageStatus, stage.status);
+        assert.equal(second.db.prepare("SELECT status FROM stages WHERE id = ?").get(String(stage.id))!.status, "failed");
+        assert.equal(first.getDecisionShadowCohort(process, scope, project)!.counts.instances, 0);
+        assert.ok(!JSON.stringify(snapshot).includes("PRIVATE_INPUT") && !JSON.stringify(snapshot).includes("PRIVATE_QUESTION"));
+        enterPostgresTenantScope(foreign);
+        assert.equal(first.getDecisionShadowCohort(process, scope, project), null);
+      } finally {
+        first.db.prepare = prepare;
         runWithPostgresSystemScope(() => { first.close(); second.close(); });
         fs.rmSync(artifacts, { recursive: true, force: true });
       }

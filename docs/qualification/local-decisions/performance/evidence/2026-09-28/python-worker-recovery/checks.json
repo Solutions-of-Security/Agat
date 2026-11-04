@@ -1,0 +1,100 @@
+{
+  "schema": "agat.python-worker-recovery-checks.v1",
+  "baseCommit": "6ccefd72f21b3724457c2893c743d2c47fa7d2cb",
+  "databaseSchema": 30,
+  "productionBehaviorChanged": false,
+  "workflowCommandsChanged": false,
+  "temporalSdk": "1.24.0",
+  "sourceSha256": {
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "8a72d58ddd436b31fba91ecf6b9cae02e73dff0ac03d73c0674ae5608aae718a",
+    "apps/coordinator/test/decision-rag-workflow.test.ts": "76a7e2b0573eed47c4361d3fd0230573e67c4b11e91c7fc7ba3d892dd427ff7b",
+    "scripts/lib/decision-rag.ts": "33cca125706f391d1933f923a005bd400fa0544d6dd6d0f75a7e5925594cd21e",
+    "workers/agat_worker.py": "2435dc80140611fbd045575401b75030d5297479bc2c9bcb5b42592b265a310e",
+    "workers/embedding_http.py": "df29bd156de19369e990b221585c49592d6dc55e2baf7f8f44a31eaa49116c5c",
+    "workers/embedding_transport.py": "dd795245b0f2da130a6b4f730be5368fab2492ca5d21154d29fa7ea1928d7e88",
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434"
+  },
+  "checks": {
+    "firstCrash": {
+      "pass": 1,
+      "nonMatchingFileEntries": 6,
+      "log": "first.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 22,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 34,
+      "configurationTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedTestsStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "test-typecheck.log"
+      ]
+    },
+    "sqliteTemporal": {
+      "pass": 22,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "postgresRag": {
+      "scenarios": 12,
+      "pass": 12,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "docs": {
+      "status": "pass",
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinkTargets": 1945,
+      "markdownFiles": 216,
+      "log": "docs.log"
+    }
+  },
+  "scope": "Synthetic RAG model, real Python SIGKILL, Unix helper lifetime, 30-second test lease TTL, real expiry/reassignment and stale completion fencing. SQLite/PostgreSQL, both embedding transports. Default lease TTL stays 180 seconds. No backend compute cancellation or business qualification claim.",
+  "evidenceSha256": {
+    "first/isolated-worker-crash.json": "61b2d3041d8453b0fb0f1a71674c90a5eefad090549f649b2f70b91b455a53e9",
+    "postgres/isolated-worker-crash.json": "bf184488c836694d33925d556ed9f1d92605b281b1d52723744cb0d7de64a2c4",
+    "postgres/session-worker-crash.json": "987664ecdd1836a345ff2f3a9cb44aa0f3cfdea97d341006b11917c6046b6d43",
+    "sqlite/isolated-worker-crash.json": "1f2d808f33c4134df219fd5d9f007609006840c9e6417c78a3779330365dddca",
+    "sqlite/session-worker-crash.json": "16716606878d6b357d8a9a5dc86b0a5f2d99178053a76601d119bc3f35519cc3"
+  },
+  "measurements": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "helpersObserved": 1,
+      "helpersExitedAfterMs": 79.14891600000556
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "helpersObserved": 2,
+      "helpersExitedAfterMs": 74.37729199999012
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "helpersObserved": 1,
+      "helpersExitedAfterMs": 51.536707999999635
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "helpersObserved": 2,
+      "helpersExitedAfterMs": 74.2860000000801
+    }
+  ],
+  "measurementCaveat": "Polling and ps observations, not latency SLO; exited zombies are left to the OS init/subreaper."
+}

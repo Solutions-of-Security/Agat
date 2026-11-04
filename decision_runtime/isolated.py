@@ -127,7 +127,10 @@ def _child(sock, factory, config, owner_pid):
 
 def mlx_factory(config):
     from .mlx_backend import MlxBackend
-    return MlxBackend(Path(config["manifest"]), config["max_tokens"], cache_limit_mib=config["cache_limit_mib"])
+    options = {"cache_limit_mib": config["cache_limit_mib"]}
+    if config.get("wired_limit_mib") is not None:
+        options["wired_limit_mib"] = config["wired_limit_mib"]
+    return MlxBackend(Path(config["manifest"]), config["max_tokens"], **options)
 
 
 class IsolatedBackend:

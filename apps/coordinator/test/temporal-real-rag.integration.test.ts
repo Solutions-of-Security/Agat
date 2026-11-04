@@ -1,0 +1,460 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { Client, Connection } from "@temporalio/client";
+import { historyToJSON } from "@temporalio/common/lib/proto-utils.js";
+import { Worker } from "@temporalio/worker";
+import pg from "pg";
+import { root, cleanEnv, processChild, within, eventually, listen, close } from "./helpers/temporal.js";
+import { AgatStore } from "../src/database.js";
+import type { ProcessGraph } from "../src/types.js";
+import { normalizeDecisionShadowConfig } from "../src/local-decisions.js";
+import { DECISION_CALLER_INVENTORY } from "../src/decision-caller-accounting.js";
+import { decisionProfile, digest, generation, json, origin, primaryIdentity, type Fixture } from "../../../scripts/lib/decision-primary-workflow.js";
+import { embeddingIdentity, forwardEmbedding, verifyIngestion, verifyRetrieval } from "../../../scripts/lib/decision-rag.js";
+import { forwardDecisionRequest } from "../../../scripts/lib/decision-shadow-proxy.js";
+
+const address = process.env.AGAT_TEST_TEMPORAL_ADDRESS;
+const modelUrl = process.env.AGAT_TEMPORAL_REAL_MODEL_URL;
+const planPath = process.env.AGAT_TEMPORAL_REAL_RAG_PLAN;
+const selectedTransport = process.env.AGAT_TEMPORAL_REAL_RAG_TRANSPORT;
+const decisionUrl = process.env.AGAT_TEMPORAL_REAL_DECISION_URL;
+const shadowEnabled = Boolean(decisionUrl);
+const controlDirectory = process.env.AGAT_TEMPORAL_SHADOW_CONTROL;
+const shadowRecoveryEnabled = Boolean(controlDirectory);
+const shadowResourcesEnabled = process.env.AGAT_TEMPORAL_SHADOW_RESOURCES === "true";
+const callerAccountingEnabled = process.env.AGAT_TEMPORAL_SHADOW_CALLER_ACCOUNTING === "true";
+const schemaVersion = callerAccountingEnabled ? 5 : shadowResourcesEnabled ? 4 : shadowRecoveryEnabled ? 3 : shadowEnabled ? 2 : 1;
+const enabled = Boolean(modelUrl && planPath && address);
+if (modelUrl || planPath || decisionUrl || controlDirectory || shadowResourcesEnabled || callerAccountingEnabled) {
+  assert.ok(enabled, "Real-model qualification requires a model URL, frozen plan and Temporal address");
+  assert.equal(process.env.AGAT_TEST_TEMPORAL_STATE_STORE, "postgresql");
+  assert.ok(selectedTransport === "isolated" || selectedTransport === "session", "Each transport requires its own database/server");
+  if (controlDirectory) {
+    assert.ok(shadowEnabled && path.basename(path.dirname(controlDirectory)).startsWith("agat-temporal-real-rag-"));
+    assert.equal(fs.statSync(controlDirectory).mode & 0o777, 0o700);
+  }
+  if (shadowResourcesEnabled) assert.ok(shadowRecoveryEnabled);
+  if (callerAccountingEnabled) assert.ok(shadowResourcesEnabled);
+}
+const fixturePath = "docs/qualification/local-decisions/performance/rag-workflow.fixture.json";
+const fixture = JSON.parse(fs.readFileSync(path.join(root, fixturePath), "utf8")) as Fixture;
+const workflowBundle = { codePath: path.join(root, "apps/temporal-worker/dist/workflow-bundle.js") };
+const primaryName = "qwen3:8b";
+
+async function body(req: http.IncomingMessage) {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; assert.ok(size <= 131072); chunks.push(chunk); }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+for (const transport of ["isolated", "session"] as const) {
+  test(`Temporal RAG real-model ${transport}${shadowEnabled ? " shadow" : ""}: preserves real outputs across retry, worker restart and native replay`,
+    { skip: !enabled || selectedTransport !== transport, timeout: 240_000 }, async () => {
+    const target = origin(modelUrl!), planFile = path.resolve(planPath!);
+    assert.ok(planFile.startsWith(path.join(root, "docs") + path.sep));
+    const directory = path.dirname(planFile), output = path.join(directory, `${transport}.json`);
+    assert.ok(!fs.existsSync(output));
+    const shadowJournal = path.join(directory, `${transport}.shadow.jsonl`);
+    if (shadowRecoveryEnabled) fs.writeFileSync(shadowJournal, "", { flag: "wx", mode: 0o600 });
+    const planBytes = fs.readFileSync(planFile), plan = JSON.parse(planBytes.toString());
+    assert.equal(plan.schema, `agat.temporal.real-rag-plan.v${schemaVersion}`);
+    assert.equal(plan.sourceSha256[fixturePath], digest(fs.readFileSync(path.join(root, fixturePath))));
+    assert.deepEqual(plan.fixture, fixture);
+    assert.equal(plan.shadow, shadowEnabled); assert.deepEqual(plan.transports, ["isolated", "session"]);
+    if (callerAccountingEnabled) assert.deepEqual(plan.callerAccounting, { capability: "agat.decision.caller-accounting.v1",
+      timingSchemaVersion: "agat.decision.caller-timing.v1", clock: "monotonic", boundary: "local_http_call", profileIdentity: "coordinator_json_bytes" });
+    if (shadowRecoveryEnabled) assert.deepEqual(plan.shadowRecovery, { protocol: "private-files-v1", signal: "SIGKILL",
+      actions: ["isolated/kill", "isolated/restart", "session/kill", "session/restart"] });
+    const primary = await primaryIdentity(target, primaryName, plan.models[primaryName]);
+    const embedding = await embeddingIdentity(target, fixture.rag!.embeddingModel, plan.models[fixture.rag!.embeddingModel], json);
+    const decision = shadowEnabled ? await decisionProfile(origin(decisionUrl!)) : undefined;
+    if (decision) assert.deepEqual(decision, plan.decision.profile);
+    const shadow = decision ? normalizeDecisionShadowConfig({ mode: "shadow", profileJson: decision.profileJson,
+      timeoutMs: 10_000, ...fixture.shadow }) : undefined;
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "agat-temporal-real-rag-"));
+    const dbPath = path.join(temporary, "state.sqlite"), artifacts = path.join(temporary, "artifacts");
+    const taskQueue = `real-rag-${randomUUID()}`;
+    const store = new AgatStore(dbPath, { seedDemo: false, temporalProcesses: true, decisionShadowEnabled: shadowEnabled, artifactsDir: artifacts,
+      stateStoreDriver: "postgresql", region: "eu-test-1", residencyDomain: "eu-test", postgresSchemaMode: "runtime",
+      coordinatorInstanceId: `${taskQueue}-observer`, postgres: {
+        systemUrl: process.env.AGAT_POSTGRES_URL!, tenantUrl: process.env.AGAT_POSTGRES_TENANT_URL!, roleMode: "runtime",
+        applicationName: "temporal-real-rag-observer", poolMax: 1, connectTimeoutMs: 5_000, idleTimeoutMs: 30_000,
+        statementTimeoutMs: 30_000, sslMode: "disable" } });
+    const children: ReturnType<typeof processChild>[] = [];
+    const primaryCalls: Array<Record<string, any>> = [], embeddingCalls: Array<Record<string, any>> = [];
+    const decisionCalls: Array<Record<string, any>> = [];
+    const controlCalls: Array<Record<string, any>> = [];
+    const ticks: Array<{ path: string; response: unknown; dropped: boolean }> = [];
+    const serverErrors: string[] = [], cancelled = new AbortController();
+    const started = performance.now(), clock = () => Number((performance.now() - started).toFixed(3));
+    let coordinatorUrl = "", dropNextTick = true, release: (() => void) | undefined, releaseThird: (() => void) | undefined;
+    let runtimeDown = false;
+    let fallbackSnapshot: Record<string, any> | undefined;
+    let connection: Connection | undefined, result: Record<string, unknown> | undefined;
+    let failure: string | undefined;
+    const modelProxy = http.createServer(async (req, res) => {
+      if (serverErrors.length) { req.resume(); res.writeHead(503).end(); return; }
+      const row: Record<string, any> = { startedMs: clock() };
+      try {
+        assert.equal(req.method, "POST");
+        const input = JSON.parse(await body(req));
+        if (req.url === "/v1/embeddings") {
+          embeddingCalls.push(row); assert.ok(embeddingCalls.length <= 5);
+          const forwarded = await forwardEmbedding(input, embedding.name, target, json, cancelled.signal);
+          Object.assign(row, forwarded.evidence, { status: "completed", finishedMs: clock() });
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(forwarded.body));
+          return;
+        }
+        assert.equal(req.url, "/v1/chat/completions");
+        primaryCalls.push(row); assert.ok(primaryCalls.length <= 3);
+        assert.equal(input.model, primaryName); assert.equal(input.stream, false);
+        assert.ok(Array.isArray(input.messages) && !input.tools && input.temperature === .2);
+        const prompt = input.messages.map((message: any) => message.content).join("\n");
+        row.messagesSha256 = digest(JSON.stringify(input.messages));
+        row.retrievedSourceIds = fixture.rag!.sources.filter(source => prompt.includes(source.content)).map(source => source.id);
+        assert.equal(row.retrievedSourceIds.length, 2);
+        const answer = await json(`${target}/api/chat`, { model: primaryName, messages: input.messages,
+          stream: false, keep_alive: "5m", ...generation }, 45_000, cancelled.signal);
+        assert.ok(answer.done && answer.done_reason === "stop" && answer.model === primaryName);
+        assert.ok(typeof answer.message?.content === "string" && answer.message.content.trim()
+          && !answer.message.tool_calls?.length && !answer.message.thinking?.trim());
+        assert.ok(Number.isInteger(answer.prompt_eval_count) && answer.prompt_eval_count > 0);
+        assert.ok(Number.isInteger(answer.eval_count) && answer.eval_count > 0);
+        Object.assign(row, { output: answer.message.content.trim(), outputSha256: digest(answer.message.content.trim()),
+          inputTokens: answer.prompt_eval_count, outputTokens: answer.eval_count, nativeTotalMs: answer.total_duration / 1e6,
+          modelFinishedMs: clock(), doneReason: answer.done_reason });
+        // Keep a real completed response at the HTTP boundary during Temporal
+        // restart. The Python worker and model result stay unchanged.
+        if (primaryCalls.length === 2) await new Promise<void>(resolve => { release = resolve; });
+        if (primaryCalls.length === 3 && shadowRecoveryEnabled) await new Promise<void>(resolve => { releaseThird = resolve; });
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+          choices: [{ message: { role: "assistant", content: answer.message.content }, finish_reason: "stop" }],
+          usage: { prompt_tokens: answer.prompt_eval_count, completion_tokens: answer.eval_count } }));
+        Object.assign(row, { status: "completed", finishedMs: clock() });
+      } catch (error) {
+        serverErrors.push(error instanceof Error ? error.name : "proxy_failure");
+        Object.assign(row, { status: "failed", finishedMs: clock() });
+        if (!res.destroyed) res.writeHead(502).end();
+      }
+    });
+    const tickProxy = http.createServer(async (req, res) => {
+      try {
+        assert.equal(req.method, "POST");
+        assert.match(req.url!, /^\/api\/v1\/internal\/processes\/[a-z0-9-]+\/tick$/);
+        assert.equal(req.headers["x-agat-temporal-token"], "real-rag-internal");
+        const raw = await body(req); assert.deepEqual(JSON.parse(raw), { projectId: "default" });
+        const response = await fetch(`${coordinatorUrl}${req.url}`, { method: "POST", body: raw,
+          headers: { "content-type": "application/json", "x-agat-temporal-token": "real-rag-internal" },
+          signal: AbortSignal.timeout(5_000) });
+        assert.equal(response.status, 200); const text = await response.text();
+        const dropped = dropNextTick; dropNextTick = false;
+        ticks.push({ path: req.url!, response: JSON.parse(text), dropped });
+        if (dropped) res.destroy(); else res.writeHead(200, { "content-type": "application/json" }).end(text);
+      } catch (error) {
+        serverErrors.push(error instanceof Error ? error.name : "tick_proxy_failure");
+        if (!res.destroyed) res.writeHead(502).end();
+      }
+    });
+    const shadowProxy = http.createServer(async (req, res) => {
+      const row: Record<string, any> = { startedMs: clock() };
+      try {
+        assert.ok(decisionUrl && decision);
+        const raw = req.method === "POST" ? await body(req) : undefined;
+        if (raw) {
+          const request = JSON.parse(raw); Object.assign(row, { stageId: request.id, request });
+          decisionCalls.push(row); assert.ok(decisionCalls.length <= 3);
+          assert.equal(req.headers["x-agat-decision-profile"], decision.profileSha256);
+        }
+        const upstream = await forwardDecisionRequest(req, res, decisionUrl!, raw, cancelled.signal);
+        Object.assign(row, { httpStatus: upstream.httpStatus, result: JSON.parse(upstream.text), finishedMs: clock() });
+        assert.equal(upstream.httpStatus, 200);
+        res.writeHead(upstream.httpStatus, { "content-type": "application/json" }).end(upstream.text);
+      } catch (error) {
+        if (shadowRecoveryEnabled && runtimeDown && req.method === "POST" && decisionCalls.length === 2
+          && error instanceof TypeError && (error.cause as any)?.code === "ECONNREFUSED") {
+          Object.assign(row, { status: "unavailable", transportError: "ECONNREFUSED", finishedMs: clock() });
+          res.destroy(); return;
+        }
+        serverErrors.push(error instanceof Error ? error.name : "shadow_proxy_failure");
+        if (!res.destroyed) res.writeHead(502).end();
+      } finally {
+        // Preserve the typed response even if the supervising launcher sees
+        // exit 75 and stops this test before its final trace is written.
+        if (shadowRecoveryEnabled && decisionCalls.includes(row)) {
+          fs.appendFileSync(shadowJournal, JSON.stringify(row) + "\n");
+        }
+      }
+    });
+    const control = async (action: "kill" | "restart", instanceId: string) => {
+      assert.ok(controlDirectory && shadowRecoveryEnabled);
+      const name = `${transport}-${action}`, responsePath = path.join(controlDirectory, `${name}.response.json`);
+      assert.ok(!fs.existsSync(responsePath));
+      const row: Record<string, any> = { action, startedMs: clock() }; controlCalls.push(row);
+      fs.writeFileSync(path.join(controlDirectory, `${name}.request.json`), JSON.stringify({
+        schema: "agat.shadow.control.v1", transport, action, instanceId }), { flag: "wx", mode: 0o600 });
+      await eventually(() => fs.existsSync(responsePath), "Owned shadow control did not acknowledge", 50_000);
+      const response = JSON.parse(fs.readFileSync(responsePath, "utf8"));
+      Object.assign(row, { response, finishedMs: clock() });
+      assert.equal(response.status, "pass", JSON.stringify(response.failure));
+      assert.equal(response.instanceId, instanceId); assert.equal(response.transport, transport); assert.equal(response.action, action);
+      return response;
+    };
+    try {
+      const collection = store.createKnowledgeCollection({ name: "real_temporal_rag sources", embeddingModel: embedding.name,
+        chunkSize: 4000, chunkOverlap: 0, topK: 2 });
+      for (const source of fixture.rag!.sources) store.ingestKnowledgeDocument(String(collection.id),
+        { name: source.name, sourceUri: source.sourceUri, mediaType: "text/markdown", content: source.content });
+      const agents = fixture.roles.map(role => store.createAgent({ name: role.name, role: role.id, systemPrompt: role.instruction,
+        model: primaryName, runtime: "single", runtimeConfig: { profile: "tool_loop_v1", maxIterations: 1 } }));
+      const ids = ["start", "recovery-wait", ...fixture.roles.map(role => role.id), "end"];
+      const graph: ProcessGraph = { nodes: [
+        { id: "start", name: "Start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { id: "recovery-wait", name: "Durable timer", type: "wait", position: { x: 100, y: 100 }, config: { waitSeconds: 5 } },
+        ...fixture.roles.map((role, index) => ({ id: role.id, name: role.name, type: "agent" as const,
+          position: { x: 200 * (index + 1), y: 0 }, config: { agentId: String(agents[index]!.id), ...(shadow ? { decisionShadow: shadow } : {}) } })),
+        { id: "end", name: "End", type: "end", position: { x: 800, y: 0 }, config: {} },
+      ], edges: ids.slice(1).map((id, index) => ({ id: `edge-${index}`, source: ids[index]!, target: id, branch: "default" })),
+      requiredKnowledgeCollectionIds: [String(collection.id)] };
+      const processDefinition = store.createProcess({ name: "Primary workflow real_temporal_rag", graph });
+      store.publishProcess(String(processDefinition.id));
+      const env = { ...cleanEnv(), AGAT_HOST: "127.0.0.1", AGAT_PORT: "0", AGAT_DB_PATH: dbPath,
+        AGAT_ARTIFACTS_DIR: artifacts, AGAT_SEED_DEMO: "false", AGAT_SERVE_WEB: "false", AGAT_MCP_ENABLED: "false",
+        AGAT_A2A_ENABLED: "false", AGAT_SANDBOX_ENABLED: "false", AGAT_LOCAL_WORKER_LAUNCHER: "false",
+        AGAT_ADMIN_TOKEN: "real-rag-admin", AGAT_ENROLLMENT_TOKEN: "real-rag-enroll",
+        AGAT_REQUIRE_SIGNED_WORKER_RELEASES: "false", AGAT_REQUIRE_WORKER_PROVENANCE: "false",
+        AGAT_REQUIRE_WORKER_RUNTIME_ATTESTATION: "false", AGAT_DECISION_SHADOW_ENABLED: String(shadowEnabled),
+        AGAT_TEMPORAL_ENABLED: "true", AGAT_TEMPORAL_ADDRESS: address!, AGAT_TEMPORAL_NAMESPACE: "default",
+        AGAT_TEMPORAL_TASK_QUEUE: taskQueue, AGAT_TEMPORAL_INTERNAL_TOKEN: "real-rag-internal",
+        AGAT_STATE_STORE_DRIVER: "postgresql", AGAT_ARTIFACT_STORE_DRIVER: "postgresql",
+        AGAT_POSTGRES_URL: globalThis.process.env.AGAT_POSTGRES_URL, AGAT_POSTGRES_TENANT_URL: globalThis.process.env.AGAT_POSTGRES_TENANT_URL,
+        AGAT_POSTGRES_SSL_MODE: "disable", AGAT_POSTGRES_POOL_MAX: "2", AGAT_REGION: "eu-test-1", AGAT_RESIDENCY_DOMAIN: "eu-test",
+        AGAT_COORDINATOR_INSTANCE_ID: `${taskQueue}-coordinator`, AGAT_KNOWLEDGE_SEARCH_EXECUTION: "isolated",
+        AGAT_KNOWLEDGE_SEARCH_MAX_PENDING: "4", AGAT_KNOWLEDGE_SEARCH_TIMEOUT_MS: "1000" };
+      const coordinator = processChild(globalThis.process.execPath, ["apps/coordinator/dist/server.js"], env);
+      children.push(coordinator);
+      coordinatorUrl = `http://127.0.0.1:${(await coordinator.ready(/АГАТ слушает http:\/\/127\.0\.0\.1:(\d+)/))[1]}`;
+      const tickUrl = await listen(tickProxy), proxyUrl = await listen(modelProxy);
+      const shadowProxyUrl = shadowEnabled ? await listen(shadowProxy) : undefined;
+      const startTemporal = async (identity: string) => {
+        const child = processChild(globalThis.process.execPath, ["apps/temporal-worker/dist/worker.js"], {
+          ...env, AGAT_COORDINATOR_INTERNAL_URL: tickUrl, AGAT_TEMPORAL_METRICS_ADDRESS: "127.0.0.1:0", AGAT_TEMPORAL_WORKER_ID: identity });
+        children.push(child); await child.ready(/Temporal worker слушает/); return child;
+      };
+      const firstIdentity = `${taskQueue}-before`, secondIdentity = `${taskQueue}-after`;
+      const first = await startTemporal(firstIdentity);
+      connection = await Connection.connect({ address, connectTimeout: 5_000 });
+      const client = new Client({ connection, namespace: "default" });
+      const python = processChild("python3", ["workers/agat_worker.py", "--coordinator", coordinatorUrl,
+        "--enrollment-token", "real-rag-enroll", "--credentials", path.join(temporary, "worker.json"),
+        "--name", "real-temporal-rag-worker", "--models", primaryName, "--embedding-models", embedding.name,
+        "--region", "eu-test-1", "--residency-domain", "eu-test", "--model-url", `${proxyUrl}/v1`, "--model-api-key", "local-probe",
+        "--model-discovery", "off", "--no-web", "--poll-interval", "0.2", "--concurrency", "1", "--embedding-transport", transport,
+        ...(shadowProxyUrl ? ["--decision-url", shadowProxyUrl] : [])],
+        { ...cleanEnv(), AGAT_EMBEDDING_IDLE_TIMEOUT: "0", AGAT_OTEL_ENABLED: "false", OTEL_SDK_DISABLED: "true", NO_PROXY: "127.0.0.1,localhost" });
+      children.push(python);
+      await eventually(() => {
+        assert.equal(python.child.exitCode, null, python.log()); assert.equal(python.child.signalCode, null, python.log());
+        const docs = (store.exportKnowledge() as any).collections.find((row: any) => row.id === collection.id)?.documents;
+        return docs?.length === 2 && docs.every((doc: any) => doc.status === "ready");
+      }, "Real embedding ingestion did not finish", 60_000);
+      const ingestion = verifyIngestion(store.exportKnowledge(), String(collection.id), fixture.rag!);
+      assert.equal(ingestion.dimensions, 768);
+      const readiness = await fetch(`${coordinatorUrl}/api/v1/processes/${processDefinition.id}/preflight`, { method: "POST",
+        headers: { "x-agat-admin-token": "real-rag-admin", "content-type": "application/json" }, body: JSON.stringify({ version: 1 }),
+        signal: AbortSignal.timeout(5_000) });
+      assert.equal(readiness.status, 200); assert.equal((await readiness.json() as any).runnableNow, true);
+      const start = await fetch(`${coordinatorUrl}/api/v1/processes/${processDefinition.id}/start`, { method: "POST",
+        headers: { "x-agat-admin-token": "real-rag-admin", "content-type": "application/json" }, body: JSON.stringify({ input: fixture.input }),
+        signal: AbortSignal.timeout(5_000) });
+      assert.equal(start.status, 201, await start.clone().text());
+      const instance = await start.json() as { id: string; runId: string };
+      assert.equal(store.getProcessInstance(instance.id)!.runtime, "temporal");
+      const workflowId = `agat-process-${instance.id}`, handle = client.workflow.getHandle(workflowId);
+      const workflowRunId = (await handle.describe()).runId;
+      await eventually(() => { assert.deepEqual(serverErrors, []); return Boolean(release); }, "Second real model response did not reach the hold", 90_000);
+      await eventually(async () => Boolean((await handle.fetchHistory()).events?.some(event =>
+        Number(event.activityTaskStartedEventAttributes?.attempt) >= 2)), "Lost tick reply did not cause a real Activity retry");
+      assert.equal(ticks.filter(row => row.dropped).length, 1); assert.equal(primaryCalls.length, 2);
+      const acceptedFirst = (store.getRunTrace(instance.runId)! as any).run.stages.find((stage: any) => stage.processNodeId === fixture.roles[0]!.id);
+      assert.equal(acceptedFirst.status, "completed"); const firstSnapshot = JSON.stringify(acceptedFirst);
+      const recovery = { firstAcceptedStageSha256: digest(firstSnapshot), heldResponseAtMs: clock(), killedAtMs: 0,
+        restoredAtMs: 0, releasedAtMs: 0, firstIdentity, secondIdentity, primaryCallsBeforeRelease: 0 };
+      const firstObservation = shadowEnabled ? (store.getRunTrace(instance.runId)! as any).decisionObservations
+        .find((row: any) => row.stageId === acceptedFirst.id) : undefined;
+      if (shadowEnabled) { assert.ok(firstObservation); assert.equal(decisionCalls.length, 1); }
+      const observationSnapshot = shadowEnabled ? JSON.stringify(firstObservation) : undefined;
+      assert.deepEqual(await first.stop("SIGKILL"), { code: null, signal: "SIGKILL" });
+      recovery.killedAtMs = clock();
+      const second = await startTemporal(secondIdentity);
+      await within(handle.query("processState"), "Replacement Temporal worker could not restore the workflow", 30_000);
+      recovery.restoredAtMs = clock(); recovery.primaryCallsBeforeRelease = primaryCalls.length;
+      assert.equal(primaryCalls.length, 2); assert.equal((await handle.describe()).runId, workflowRunId);
+      if (shadowEnabled) assert.equal(decisionCalls.length, 1);
+      if (shadowRecoveryEnabled) { await control("kill", instance.id); runtimeDown = true; }
+      recovery.releasedAtMs = clock();
+      release!(); release = undefined;
+      if (shadowRecoveryEnabled) {
+        await eventually(() => { assert.deepEqual(serverErrors, []); return Boolean(releaseThird); }, "Third model response did not reach recovery hold", 60_000);
+        assert.equal(decisionCalls.length, 2); assert.equal(decisionCalls[1]!.transportError, "ECONNREFUSED");
+        const beforeRestart = store.getRunTrace(instance.runId)! as any;
+        const stage = beforeRestart.run.stages.find((row: any) => row.processNodeId === fixture.roles[1]!.id);
+        const observation = beforeRestart.decisionObservations.find((row: any) => row.stageId === stage.id);
+        assert.equal(stage.status, "completed"); assert.equal(stage.output, primaryCalls[1]!.output);
+        const { callerTiming: fallbackTiming, ...fallbackObservation } = observation.observation;
+        assert.deepEqual(fallbackObservation, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+        if (callerAccountingEnabled) assert.ok(fallbackTiming);
+        fallbackSnapshot = { stageId: stage.id, stageSha256: digest(JSON.stringify(stage)), observationSha256: digest(JSON.stringify(observation)),
+          recordedMs: clock(), restartFinishedMs: 0, thirdResponseReleasedMs: 0 };
+        await control("restart", instance.id); runtimeDown = false;
+        fallbackSnapshot.restartFinishedMs = clock(); assert.equal(decisionCalls.length, 2);
+        fallbackSnapshot.thirdResponseReleasedMs = clock(); releaseThird!(); releaseThird = undefined;
+      }
+      assert.equal((await within(handle.result(), "Real RAG did not finish after recovery", 60_000) as any).status, "completed");
+      assert.deepEqual(await python.stop(), { code: 0, signal: null }, python.log());
+      assert.deepEqual(await second.stop(), { code: 0, signal: null }, second.log());
+      const trace = store.getRunTrace(instance.runId)! as any;
+      assert.equal(trace.truncated, false); assert.equal(trace.run.status, "completed");
+      const stages = trace.run.stages.filter((stage: any) => fixture.roles.some(role => role.id === stage.processNodeId));
+      assert.equal(stages.length, 3); assert.equal(primaryCalls.length, 3);
+      assert.equal(embeddingCalls.reduce((sum, call) => sum + call.items, 0), 5);
+      assert.equal(JSON.stringify(stages[0]), firstSnapshot); assert.equal(trace.decisionObservations.length, shadowEnabled ? 3 : 0);
+      assert.equal(decisionCalls.length, shadowEnabled ? 3 : 0);
+      if (shadowEnabled) {
+        assert.equal(JSON.stringify(trace.decisionObservations.find((row: any) => row.stageId === stages[0].id)), observationSnapshot);
+        const expectedProfile = JSON.parse(decision!.profileJson);
+        for (const stage of stages) {
+          const rows = trace.decisionObservations.filter((row: any) => row.stageId === stage.id);
+          const calls = decisionCalls.filter(row => row.stageId === stage.id);
+          assert.equal(rows.length, 1); assert.equal(calls.length, 1);
+          const observation = rows[0].observation;
+          assert.equal(observation.mode, "shadow"); assert.equal(observation.fallback, "primary");
+          const { callerTiming, ...withoutTiming } = observation;
+          if (callerAccountingEnabled || callerTiming !== undefined) {
+            assert.deepEqual(Object.keys(callerTiming).sort(), ["boundary", "clock", "durationMs", "schemaVersion"]);
+            assert.equal(callerTiming.schemaVersion, "agat.decision.caller-timing.v1"); assert.equal(callerTiming.clock, "monotonic");
+            assert.equal(callerTiming.boundary, "local_http_call"); assert.equal(typeof callerTiming.durationMs, "number");
+            assert.ok(Number.isFinite(callerTiming.durationMs) && callerTiming.durationMs >= 0 && callerTiming.durationMs <= rows[0].callerTimeoutMs);
+          }
+          if (shadowRecoveryEnabled && stage.processNodeId === fixture.roles[1]!.id) {
+            assert.deepEqual(withoutTiming, { mode: "shadow", fallback: "primary", status: "unavailable", reason: "unreachable" });
+            assert.equal(calls[0]!.transportError, "ECONNREFUSED");
+            assert.equal(digest(JSON.stringify(stage)), fallbackSnapshot!.stageSha256);
+            assert.equal(digest(JSON.stringify(rows[0])), fallbackSnapshot!.observationSha256);
+            continue;
+          }
+          assert.ok(["ok", "abstain"].includes(observation.status));
+          assert.deepEqual(observation.result, calls[0]!.result);
+          for (const field of ["model", "policy", "calibration", "runtimeVersion", "schemaVersion", "inputFingerprintVersions"])
+            assert.deepEqual(observation.result[field], expectedProfile[field]);
+          assert.equal(observation.result.generatedTokens, 0);
+          assert.equal(calls[0]!.request.state, stage.input ?? fixture.input);
+        }
+        if (callerAccountingEnabled) {
+          assert.equal(trace.decisionCallerAccounting.schemaVersion, DECISION_CALLER_INVENTORY);
+          assert.equal(trace.decisionCallerAccounting.scope, "caller_operation_intents");
+          assert.equal(trace.decisionCallerAccounting.stages.length, 3);
+          assert.equal(trace.events.filter((row: any) => row.type === "decision.shadow").length, 3);
+          for (const stage of stages) {
+            const activity = JSON.parse(store.db.prepare("SELECT activity_json FROM stages WHERE id = ?").get(stage.id)!.activity_json as string);
+            const history = activity.decisionShadowAssignmentHistory, ledger = activity.decisionShadowCallerAccounting;
+            assert.equal(history.coverage, "complete"); assert.equal(ledger.coverage, "complete");
+            assert.equal(history.assignments.length, 1); assert.equal(ledger.assignments.length, 1);
+            const assignment = history.assignments[0], caller = ledger.assignments[0];
+            const observation = trace.decisionObservations.find((row: any) => row.stageId === stage.id).observation;
+            assert.equal(caller.assignmentId, assignment.assignmentId); assert.equal(caller.stageAttempt, stage.attempt);
+            assert.equal(caller.negotiated, true); assert.equal(caller.intent, true);
+            assert.equal(activity.decisionShadowLease.assignmentId, assignment.assignmentId);
+            assert.equal(activity.decisionShadowLease.callerAccountingVersion, "agat.decision.caller-accounting.v1");
+            assert.equal(activity.decisionShadowLease.callerTimingVersion, "agat.decision.caller-timing.v1");
+            assert.equal(assignment.profileSha256, decision!.profileSha256);
+            assert.equal(activity.decisionShadowConfig.profileJson, decision!.profileJson);
+            assert.deepEqual(assignment.observation, observation); assert.deepEqual(activity.decisionShadowObservation, observation);
+            assert.deepEqual(caller.returned, { status: observation.status, reason: observation.reason, callerTiming: observation.callerTiming });
+            const inventory = trace.decisionCallerAccounting.stages.find((row: any) => row.stageId === stage.id);
+            assert.equal(inventory.coverage, "complete");
+            assert.deepEqual(inventory.assignments, [{ ...caller, outcome: "returned" }]);
+          }
+        }
+      }
+      const retrieval = stages.map((stage: any, index: number) => {
+        assert.equal(stage.status, "completed"); assert.equal(stage.attempt, 1);
+        assert.equal(stage.output, primaryCalls[index]!.output); assert.equal(stage.metrics.modelCalls, 1);
+        const value = verifyRetrieval(trace, stage, ingestion);
+        assert.ok(value.bothSourcesCited); assert.deepEqual(value.unknownMarkers, []); return value;
+      });
+      assert.equal(store.getRunKnowledgeSources(instance.runId)!.length, 6);
+      assert.equal(store.db.prepare("SELECT current_user AS role").get()!.role, "agat_system");
+      const foreign = `real-rag-foreign-${randomUUID()}`; store.createProject({ id: foreign, name: foreign });
+      const tenant = new pg.Client({ connectionString: globalThis.process.env.AGAT_POSTGRES_TENANT_URL, ssl: false });
+      const visibility: Record<string, number[]> = {};
+      try {
+        await tenant.connect();
+        assert.deepEqual((await tenant.query("SELECT current_user AS role, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows[0],
+          { role: "agat_tenant", rolsuper: false, rolbypassrls: false });
+        await assert.rejects(tenant.query("SELECT id FROM worker_releases"), { code: "42501" });
+        for (const project of ["default", foreign]) {
+          await tenant.query("BEGIN"); await tenant.query("SELECT set_config('agat.current_project_id', $1, true)", [project]);
+          visibility[project === "default" ? "own" : "foreign"] = [
+            (await tenant.query("SELECT id FROM runs WHERE id = $1", [instance.runId])).rowCount!,
+            (await tenant.query("SELECT id FROM knowledge_retrievals WHERE run_id = $1", [instance.runId])).rowCount!,
+            (await tenant.query("SELECT id FROM knowledge_chunks WHERE collection_id = $1", [collection.id])).rowCount!];
+          await tenant.query("ROLLBACK");
+        }
+        assert.deepEqual(visibility, { own: [1, 3, 2], foreign: [0, 0, 0] });
+      } finally { await tenant.end(); }
+      const history = await handle.fetchHistory();
+      assert.ok(history.events?.some(event => event.timerFiredEventAttributes));
+      const identities = new Set(history.events?.map(event => event.workflowTaskStartedEventAttributes?.identity).filter(Boolean));
+      assert.ok(identities.has(firstIdentity) && identities.has(secondIdentity));
+      const serializedHistory = JSON.parse(historyToJSON(history), (key, value) => key === "identity" && typeof value === "string"
+        && value !== firstIdentity && value !== secondIdentity ? "fixture-client" : value);
+      const checkpoint = { primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length, controls: controlCalls.length,
+        ticks: ticks.length, trace: JSON.stringify(trace) };
+      await Worker.runReplayHistory({ workflowBundle }, serializedHistory, workflowId);
+      assert.deepEqual({ primary: primaryCalls.length, embedding: embeddingCalls.length, decision: decisionCalls.length, controls: controlCalls.length, ticks: ticks.length,
+        trace: JSON.stringify(store.getRunTrace(instance.runId)) }, checkpoint);
+      assert.deepEqual(serverErrors, []);
+      assert.deepEqual(await primaryIdentity(target, primaryName, plan.models[primaryName]), primary);
+      assert.deepEqual(await embeddingIdentity(target, embedding.name, plan.models[embedding.name], json), embedding);
+      if (decision) assert.deepEqual(await decisionProfile(decisionUrl!), decision);
+      assert.deepEqual(await coordinator.stop(), { code: 0, signal: null }, coordinator.log());
+      result = { workflowId, workflowRunId, instanceId: instance.id, primary, embedding, ingestion, primaryCalls, embeddingCalls,
+        ticks, trace, retrieval, recovery, history: serializedHistory,
+        ...(callerAccountingEnabled ? { callerAccountingSql: stages.map((stage: any) => store.db.prepare(
+          "SELECT id, status, attempt, activity_json FROM stages WHERE id = ?").get(stage.id)) } : {}),
+        ...(decision ? { decision, decisionCalls, shadowRecovery: { firstAcceptedObservationSha256: digest(observationSnapshot!),
+          decisionCallsBeforeRelease: 1, primaryFallbackPreserved: true } } : {}),
+        ...(shadowRecoveryEnabled ? { runtimeRecovery: { controlCalls, fallbackSnapshot } } : {}),
+        workflowBundleSha256: digest(fs.readFileSync(workflowBundle.codePath)),
+        children: children.map(child => ({ pid: child.child.pid, exitCode: child.child.exitCode, signal: child.child.signalCode })),
+        database: { driver: "postgresql", runtimeRole: "agat_system",
+          tenantRole: "agat_tenant", visibility, releaseRegistryDenied: true, retrievalExecution: "isolated" },
+        checks: { activityRetried: true, temporalWorkerKilledAndReplaced: true, sameWorkflowRun: true,
+          firstAcceptedStageUnchanged: true, realModelOutputsPreserved: true, durableTimerFired: true, nativeReplayWithoutSideEffects: true,
+          ...(shadowEnabled ? { shadowObservationsPreserved: true } : { shadowDisabled: true }),
+          ...(shadowRecoveryEnabled ? { shadowRuntimeFailureAndRecovery: true } : {}), childrenDrained: true }, qualification: "not_assessed" };
+    } catch (error) {
+      failure = error instanceof Error ? error.name : "qualification_failed";
+      throw error;
+    } finally {
+      release?.(); releaseThird?.(); cancelled.abort();
+      for (const child of children.reverse()) await child.stop();
+      await close(modelProxy); await close(tickProxy); await close(shadowProxy); await connection?.close(); store.close();
+      fs.rmSync(temporary, { recursive: true, force: true });
+      // Keep bounded child output after failures such as ingestion timeout.
+      // Raw logs may include local paths; they never enter public evidence.
+      const privateLogs = path.join(root, "docs/private/temporal-real-rag", path.relative(path.join(root, "docs"), directory));
+      fs.mkdirSync(privateLogs, { recursive: true, mode: 0o700 });
+      children.forEach((child, index) => fs.writeFileSync(path.join(privateLogs, `${transport}-child-${index}.log`),
+        child.log(), { flag: "wx", mode: 0o600 }));
+      fs.writeFileSync(output, JSON.stringify({ schema: `agat.temporal.real-rag.v${schemaVersion}`, status: result ? "pass" : "fail", failure: failure ?? null,
+        transport, planSha256: digest(planBytes), elapsedMs: clock(), ...result,
+        ...(result ? {} : { primaryCalls, embeddingCalls, decisionCalls, controlCalls, ticks, serverErrors }) }, null, 2) + "\n", { flag: "wx" });
+    }
+  });
+}

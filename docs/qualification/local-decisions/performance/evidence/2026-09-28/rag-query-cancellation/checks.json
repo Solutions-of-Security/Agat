@@ -1,0 +1,121 @@
+{
+  "schema": "agat.rag-query-cancellation-checks.v1",
+  "baseCommit": "3ff9d51288515e54cde43f68215b3e6226fcfac8",
+  "databaseSchema": 30,
+  "workflowCommandsChanged": false,
+  "temporalSdk": "1.24.0",
+  "langgraph": "1.2.11",
+  "sourceSha256": {
+    "workers/agat_worker.py": "4a31083e84b9c5d57e6dbe49cb2f92c56b2f8cf0569b7a1f3ea2539baee99b01",
+    "workers/embedding_http.py": "25efa9eda3a2109902c61b6080801905c737b417b4823413f1bdd4561e13d007",
+    "workers/embedding_transport.py": "dd795245b0f2da130a6b4f730be5368fab2492ca5d21154d29fa7ea1928d7e88",
+    "workers/test_rag_query_cancellation.py": "e5e4631301d7f5012fc8fae72770fc815e9e0b7abfeb6a831899f437f7ac25b7",
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "51236c1b4af6913063d74a7953815c53a18b9a61aae65f8399624a45edf7827e",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434"
+  },
+  "evidenceSha256": {
+    "first-fixed/isolated-query-interrupt.json": "ed4656c17bb5a1c734089c69047a91b8b5b8f992da1e7153f7115a3f6d77bf79",
+    "postgres/isolated-cancel.json": "61d22ad11b239008ef96ed4fec66ac23e56694b3f634cf2a72de34acb5fbfa04",
+    "postgres/isolated-interrupt.json": "a0402a73b025fc8259ab9c6bda58a8a1f41adad90a60ea45f1e657150ac91129",
+    "postgres/isolated-query-interrupt.json": "cfa7d202c82158f37b189ad628a03b41efb90b490f045366b5d5c3b933801796",
+    "postgres/isolated.json": "44b8893e7318507843e8b1d6a8d448b71a9dd7a5e50376c7b0b68f02d62bd100",
+    "postgres/session-cancel.json": "8c2f5c8ecadb7b269960f040406bcabfef2a1754aed30cf78124ab70bf0cdbce",
+    "postgres/session-interrupt.json": "6408a0871ccb471b22b74238a81c2408e823ebd5cccadc848cbfcb97e982bad1",
+    "postgres/session-query-interrupt.json": "8ae39659c473de71f637bd9b925c531500834bc8d5f30ee29c277794a040e339",
+    "postgres/session.json": "a3c7602683e4b5e636d7aec7a98d4a5017a5c89f28f5826998ac997dabfc3d61",
+    "sqlite/isolated-cancel.json": "90956e4bf665a2671185b2365c3789be74c62141464a94316145aba92e508219",
+    "sqlite/isolated-interrupt.json": "3075ca44722dfea207816adb4918c040b7dab51a2806477f1e18068b43471cac",
+    "sqlite/isolated-query-interrupt.json": "c22b5544a6523730b74492bbf5739bb86401284de8c8d98dc4b8d9632f744631",
+    "sqlite/isolated.json": "540a8d881695f575161e22f62570fc69fe60309f1d8438527a166d4f0acc9bee",
+    "sqlite/session-cancel.json": "dcd80d9139de63e8cccf0fdcf6345c2f0525f177e050c1856a087352834c2afc",
+    "sqlite/session-interrupt.json": "4ceff5259c39f6b4802da9cd7effaf7b8e78ff9614517e39c6f6021a1ce88890",
+    "sqlite/session-query-interrupt.json": "40c06f768d26cb83701b342de07d4d0726e1d809b7fb79a5da9f233e1dbfc944",
+    "sqlite/session.json": "2a669a1e88dc0944f924d27bc0ddf1fac60eb402f5ae246caaf135a518d42450"
+  },
+  "baseline": {
+    "result": "expected_failure",
+    "diagnostic": "Query embedding HTTP remained open after lease renewal rejection",
+    "log": "baseline.log"
+  },
+  "checks": {
+    "targeted": {
+      "pass": 15,
+      "fail": 0,
+      "log": "query-tests.log"
+    },
+    "worker": {
+      "pass": 137,
+      "fail": 0,
+      "skip": 0,
+      "log": "worker.log"
+    },
+    "postgresRag": {
+      "scenarios": 8,
+      "pass": 8,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "sqliteTemporal": {
+      "pass": 18,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 18,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 34,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedFixtureStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "test-typecheck.log"
+      ]
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1898,
+      "markdownFiles": 214,
+      "log": "docs.log"
+    }
+  },
+  "measurements": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33299.927708,
+      "clientDisconnectedAfterRejectionMs": 26.345084000000497
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33428.872875,
+      "clientDisconnectedAfterRejectionMs": 0.10645800002384931
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33212.30908399999,
+      "clientDisconnectedAfterRejectionMs": 52.88712500000838
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33344.62608299998,
+      "clientDisconnectedAfterRejectionMs": 0.041167000017594546
+    }
+  ],
+  "measurementCaveat": "Polling observations only; near-zero delay means disconnect was already observed when the renewal log was observed. No latency SLO claim.",
+  "scope": "Synthetic model, real ordinary lease renewal and Temporal/SQLite/PostgreSQL; query HTTP interruption, no primary call from cancelled stage and same worker reuse. Coordinator search HTTP interruption remains a separate gate."
+}

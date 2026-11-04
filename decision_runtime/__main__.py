@@ -16,6 +16,7 @@ from .development import compare_development, prepare_development
 from .engine import DecisionEngine
 from .evaluation import evaluate, load_dataset
 from .evaluation_guard import validate_evaluation_profile, validate_evaluation_start
+from .lifecycle import log_retirement
 from .model_store import DEFAULT_STORE, download
 from .qualification import qualify
 from .server import make_server
@@ -24,6 +25,7 @@ from .server import make_server
 def main() -> int:
     backend = None
     old_sigterm = None
+    retired_profile = None
     parser = argparse.ArgumentParser(description="Agat local typed decisions (experimental shadow runtime)")
     commands = parser.add_subparsers(dest="command", required=True)
     fetch = commands.add_parser("download", help="Download pinned weights; the only network model operation")
@@ -35,6 +37,8 @@ def main() -> int:
         sub.add_argument("--policy", type=Path, help="Operator-owned policy JSON; never read from model input")
         sub.add_argument("--max-tokens", type=int, default=2048)
         sub.add_argument("--cache-limit-mib", type=int, help="MLX reusable-buffer cache limit, 0..4096 MiB; 0 disables cache")
+        sub.add_argument("--wired-limit-mib", type=int,
+                         help="Opt-in MLX per-process residency budget, 0..65536 MiB; macOS 15+; 0 disables wiring")
         sub.add_argument("--inference-timeout-ms", type=int,
                          help="Opt-in isolated inference process, 100..10000 ms; timeout stops it until restart")
         sub.add_argument("--calibration", type=Path, help="Fitted artifact bound to this exact model and question schema")
@@ -140,6 +144,8 @@ def main() -> int:
                                   "failedGates": [g for g in result.get("gates", []) if not g["passed"]]}))
             return 2 if result.get("status") == "not_qualified" else 0
         # Validate data/configuration before loading expensive weights.
+        from .mlx_backend import wired_limit_bytes
+        wired_limit_bytes(args.wired_limit_mib)
         if args.command == "serve" and args.exit_on_backend_unavailable and args.inference_timeout_ms is None:
             raise ValueError("--exit-on-backend-unavailable requires --inference-timeout-ms")
         policy = Policy.from_dict(parse_json(args.policy.read_bytes())) if args.policy else Policy()
@@ -165,10 +171,14 @@ def main() -> int:
                 raise KeyboardInterrupt
             old_sigterm = signal.signal(signal.SIGTERM, stop_runtime)
             backend = IsolatedBackend(mlx_factory, {"manifest": str(args.manifest.resolve()),
-                                      "max_tokens": args.max_tokens, "cache_limit_mib": args.cache_limit_mib},
+                                      "max_tokens": args.max_tokens, "cache_limit_mib": args.cache_limit_mib,
+                                      "wired_limit_mib": args.wired_limit_mib},
                                       timeout_ms=args.inference_timeout_ms)
         else:
-            backend = MlxBackend(args.manifest, args.max_tokens, cache_limit_mib=args.cache_limit_mib)
+            memory_options = {"cache_limit_mib": args.cache_limit_mib}
+            if args.wired_limit_mib is not None:
+                memory_options["wired_limit_mib"] = args.wired_limit_mib
+            backend = MlxBackend(args.manifest, args.max_tokens, **memory_options)
         calibration = Calibration(read_json(args.calibration)) if args.calibration else None
         engine = DecisionEngine(backend, policy, calibration)
         if args.command == "profile":
@@ -192,8 +202,11 @@ def main() -> int:
         with make_server(engine, args.port, exit_on_backend_unavailable=args.exit_on_backend_unavailable) as server:
             print(f"Agat decision runtime: http://127.0.0.1:{server.server_port} (shadow)", flush=True)
             server.serve_forever()
-            if args.exit_on_backend_unavailable and server.backend_failed.is_set():
-                return 75
+            backend_failed = args.exit_on_backend_unavailable and server.backend_failed.is_set()
+        # The context has drained accepted handlers before retirement is recorded.
+        if backend_failed:
+            retired_profile = fingerprint(engine.profile())
+            return 75
     except KeyboardInterrupt:
         return 130
     except (DecisionError, ValueError, OSError, ImportError, RuntimeError) as exc:
@@ -205,6 +218,8 @@ def main() -> int:
             backend.close()
         if old_sigterm is not None:
             signal.signal(signal.SIGTERM, old_sigterm)
+        if retired_profile is not None:
+            log_retirement(backend, retired_profile)
     return 0
 
 

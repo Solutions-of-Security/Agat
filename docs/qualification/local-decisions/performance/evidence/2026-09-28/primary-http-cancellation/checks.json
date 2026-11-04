@@ -1,0 +1,138 @@
+{
+  "schema": "agat.primary-http-cancellation-checks.v1",
+  "baseCommit": "0b395a0af85d369b8a58d3965f3168802be0a6f0",
+  "databaseSchema": 30,
+  "workflowCommandsChanged": false,
+  "temporalSdk": "1.24.0",
+  "langgraph": "1.2.11",
+  "sourceSha256": {
+    "workers/agat_worker.py": "e159f9dc392a53aa40d3cad0dc789af3ef5e0af489ae740f76be0558fa097aa9",
+    "workers/embedding_http.py": "25efa9eda3a2109902c61b6080801905c737b417b4823413f1bdd4561e13d007",
+    "workers/test_primary_http_cancellation.py": "28ed9c5060cb2990ca99d48386a73e798adcba6800e9abab560ead4ab3af4d33",
+    "workers/test_web_tools.py": "b66dbb9c8d7ddf512d171e4e9e153a856397d1cb94f7b4588cb497c72d4b87c4",
+    "apps/coordinator/test/helpers/temporal.ts": "00691ac2c6a31d939a504c011649570e3d73261f1ff531b7c58efdba5ef3e367",
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "f8267ebbbc931dffc270b1102e000b9b8977dd9efaabcd39185071206a7975bf",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "apps/coordinator/test/embedding-worker-probe.py": "4b672efc332f3b55f75099ee610e2a14153508234d17a6925056b3de765a4b11",
+    "scripts/embedding-rag-worker-probe.py": "c0c2823b941e4c08d76c25411ef6ad3d298f1695e4417597c6c6f7052dfd3d52",
+    "scripts/test/test_embedding_worker_probe_tracking.py": "764ff2c7503141ac83931d23aee83ced715e55c62ff606b39ecd67aa147535df"
+  },
+  "evidenceSha256": {
+    "first-fixed/isolated-interrupt.json": "e2a255822a7dee9c6f09b10f2d273e588155bc28e6a46da741218bfeaf49c516",
+    "postgres/isolated-cancel.json": "dcccc43acbdb97809161c05696bf77d256b029fc33121f9f99ba8a51d4e916f8",
+    "postgres/isolated-interrupt.json": "7f61f6308a49cfe8e8de7af5653f4d6fee7012c7f1ca5efe2fab7ad042adb77f",
+    "postgres/isolated.json": "de949acf79bae029cb15bd4ded09723789640c4fa1065361c35d6d56a6e96ee9",
+    "postgres/session-cancel.json": "1ef8b66ff7dd76ca858cda34f37ad3c0b643a747e79d203bf7aaae28e7d62ce7",
+    "postgres/session-interrupt.json": "c1a1575d1cd494c7cbbbe2d2138b94fda258c3591a1bc3ed05da53b5dcd1b835",
+    "postgres/session.json": "fb2825badb2b5f07ac7359c6b3b8a7c3d4fcb1743d6974e61bf25956dce510c1",
+    "sqlite/isolated-cancel.json": "744db09278e1b9f9f47863c20853df34a0007612b6fdb9a38fd2d8acb479e31d",
+    "sqlite/isolated-interrupt.json": "954f947ea914afa11f1ef093ab4670b89b7980ee1bcb10fdac3ba2c73639569b",
+    "sqlite/isolated.json": "bdb9049f2adfd3f158faa05da5c766469816359635bfa039aea2c42faa99a599",
+    "sqlite/session-cancel.json": "6a18f82a7f714ed8275b86d163b3487117af090534a6aaf7f4a236e898f970a0",
+    "sqlite/session-interrupt.json": "2d51dd6fe8a426c0e53a594d7a939753dbec9373720e0d3c9d3aa04bda4e87d5",
+    "sqlite/session.json": "d953efdf91ef851a808b3e8e92d42b1c7bce904e56d5b4394913ebe39498cb2c"
+  },
+  "baseline": {
+    "result": "expected_failure",
+    "diagnostic": "Primary HTTP remained open after lease renewal rejection",
+    "log": "baseline.log"
+  },
+  "checks": {
+    "worker": {
+      "pass": 132,
+      "fail": 0,
+      "skip": 0,
+      "log": "worker.log"
+    },
+    "postgresRag": {
+      "scenarios": 6,
+      "pass": 6,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "sqliteTemporal": {
+      "pass": 16,
+      "fail": 0,
+      "log": "sqlite.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 16,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "replay": {
+      "histories": 34,
+      "configTests": 3,
+      "fail": 0,
+      "log": "replay.log"
+    },
+    "typecheck": {
+      "workspace": "pass",
+      "changedFixtureStrict": "pass",
+      "logs": [
+        "typecheck.log",
+        "test-typecheck.log"
+      ]
+    },
+    "docs": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 316,
+      "localLinks": 1878,
+      "markdownFiles": 213,
+      "log": "docs.log"
+    },
+    "probeTracking": {
+      "pass": 2,
+      "fail": 0,
+      "log": "probe-tracking.log"
+    },
+    "haProbeRecheck": {
+      "pass": 12,
+      "fail": 0,
+      "log": "ha-probe-recheck.log"
+    },
+    "docsProbeRecheck": {
+      "pass": true,
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinks": 1883,
+      "markdownFiles": 213,
+      "log": "docs-probe-recheck.log"
+    }
+  },
+  "measurements": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33253.102625,
+      "clientDisconnectedAfterRejectionMs": 61.51425000000745
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33335.32941599999,
+      "clientDisconnectedAfterRejectionMs": 52.67191699999967
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "renewalRejectedAfterMs": 33222.602833,
+      "clientDisconnectedAfterRejectionMs": 25.6744580000086
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "renewalRejectedAfterMs": 33283.451709000015,
+      "clientDisconnectedAfterRejectionMs": 27.384499999985565
+    }
+  ],
+  "scope": "Synthetic model, real lease renewal and Temporal/SQLite/PostgreSQL. HTTP disconnect and same worker reuse; no backend compute cancellation or latency SLO claim.",
+  "probeRepair": {
+    "initialCi": "https://github.com/Solutions-of-Security/Agat/actions/runs/36372002743/job/108770117950",
+    "initialLog": "ci-ha-initial.log",
+    "cause": "Both embedding probes observed a wrapper after subprocess ownership moved to the shared HTTP function. Updated owner code binding and excluded primary helpers from embedding counters."
+  }
+}

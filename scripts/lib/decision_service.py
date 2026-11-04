@@ -10,7 +10,7 @@ from pathlib import Path
 
 def launch_agent(*, root, python, manifest, policy, log_dir, port=8766, max_tokens=2048,
                  cache_limit_mib=128, inference_timeout_ms=2000, throttle_s=30,
-                 label='org.agat.decision-shadow', calibration=None):
+                 label='org.agat.decision-shadow', calibration=None, wired_limit_mib=None):
     root = Path(root).absolute()
     if not (root / 'decision_runtime' / '__main__.py').is_file():
         raise ValueError('Root must contain the decision_runtime package')
@@ -35,10 +35,14 @@ def launch_agent(*, root, python, manifest, policy, log_dir, port=8766, max_toke
             raise ValueError('Invalid service port, inference limit, or restart interval')
     if not isinstance(label, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{1,127}', label):
         raise ValueError('Invalid LaunchAgent label')
+    if wired_limit_mib is not None and (type(wired_limit_mib) is not int or not 0 <= wired_limit_mib <= 65536):
+        raise ValueError('Invalid service wired memory limit')
     arguments = [str(python), '-m', 'decision_runtime', 'serve', '--manifest', str(manifest),
                  '--policy', str(policy), '--port', str(port), '--max-tokens', str(max_tokens),
                  '--cache-limit-mib', str(cache_limit_mib), '--inference-timeout-ms', str(inference_timeout_ms),
                  '--exit-on-backend-unavailable']
+    if wired_limit_mib is not None:
+        arguments += ['--wired-limit-mib', str(wired_limit_mib)]
     if calibration is not None:
         calibration = local_path(calibration)
         if not calibration.is_file():

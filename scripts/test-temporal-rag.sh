@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 temporal_container="agat-temporal-rag-${$}-$(date +%s)"
 cleanup() {
-  docker rm --force "${temporal_container}" >/dev/null 2>&1 || true
+  docker rm --force --volumes "${temporal_container}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 

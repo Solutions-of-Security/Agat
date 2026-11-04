@@ -59,7 +59,7 @@ docker run --detach \
   --publish 127.0.0.1::9000 \
   --env MINIO_ROOT_USER="${minio_user}" \
   --env MINIO_ROOT_PASSWORD="${minio_password}" \
-  "${minio_image}" server /data >/dev/null
+  "${minio_image}" server /data --console-address ":9001" >/dev/null
 
 postgres_port="$(docker port "${postgres_container}" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
 minio_port="$(docker port "${minio_container}" 9000/tcp | sed -E 's/.*:([0-9]+)$/\1/')"

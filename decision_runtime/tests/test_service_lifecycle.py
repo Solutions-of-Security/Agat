@@ -119,7 +119,8 @@ class ServiceLifecycleTest(unittest.TestCase):
         with patch.object(sys,'argv',['decision_runtime','serve','--manifest','fixture','--inference-timeout-ms','100',
                                       '--exit-on-backend-unavailable']), \
              patch('decision_runtime.isolated.IsolatedBackend',return_value=backend), \
-             patch('decision_runtime.__main__.make_server',return_value=Stopped()), contextlib.redirect_stdout(io.StringIO()):
+             patch('decision_runtime.__main__.make_server',return_value=Stopped()), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(),75)
 
 

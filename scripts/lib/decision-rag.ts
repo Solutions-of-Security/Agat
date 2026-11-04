@@ -86,16 +86,10 @@ export function verifyIngestion(exported: any, collectionId: string, rag: RagFix
   return { collectionId, embeddingModel: rag.embeddingModel, dimensions: sources[0]!.dimensions, sources };
 }
 
-export function verifyRetrieval(trace: any, stage: any, ingestion: ReturnType<typeof verifyIngestion>) {
+export function verifyRetrieval(trace: any, stage: any, ingestion: ReturnType<typeof verifyIngestion>, expectedEvents = 1) {
   const events = trace.events.filter((event: any) => event.type === "knowledge.retrieved" && event.stageId === stage.id);
-  assert.equal(events.length, 1, "Exactly one retrieval event per stage required");
-  const data = events[0].data;
-  assert.ok(Array.isArray(data.queries) && data.queries.length === 1);
-  const query = data.queries[0];
-  assert.ok(!Object.hasOwn(query, "vector") && /^[a-f0-9]{64}$/.test(query.vectorSha256)
-    && query.dimensions === ingestion.dimensions && query.embeddingModel === ingestion.embeddingModel);
-  assert.deepEqual(query.collectionIds, [ingestion.collectionId]);
-  assert.ok(Array.isArray(data.hits) && data.hits.length === 2, "Both source chunks must be retrieved");
+  assert.ok(Number.isInteger(expectedEvents) && expectedEvents > 0);
+  assert.equal(events.length, expectedEvents, "Unexpected retrieval event count for stage");
   const verifyHit = (hit: any) => {
     const source = ingestion.sources.find(item => item.chunkId === hit.provenance.chunkId);
     assert.ok(source && hit.provenance.collectionId === ingestion.collectionId && source.sourceUri === hit.provenance.sourceUri
@@ -103,9 +97,21 @@ export function verifyRetrieval(trace: any, stage: any, ingestion: ReturnType<ty
       && digest(hit.content) === source.chunkSha256 && /^K[0-9]+$/.test(hit.marker) && Number.isFinite(hit.score), "Retrieval provenance mismatch");
     return { sourceId: source.id, marker: hit.marker, chunkSha256: source.chunkSha256, score: hit.score };
   };
-  const hits = data.hits.map(verifyHit);
-  assert.equal(new Set(hits.map((hit: any) => hit.sourceId)).size, 2);
-  assert.equal(new Set(hits.map((hit: any) => hit.marker)).size, 2);
+  // A recovery fixture may expect multiple attempts. Every attempt must retain
+  // valid query and source provenance; the ordinary benchmark still requires one.
+  const retrievals = events.map((event: any) => {
+    const data = event.data;
+    assert.ok(Array.isArray(data.queries) && data.queries.length === 1);
+    const query = data.queries[0];
+    assert.ok(!Object.hasOwn(query, "vector") && /^[a-f0-9]{64}$/.test(query.vectorSha256)
+      && query.dimensions === ingestion.dimensions && query.embeddingModel === ingestion.embeddingModel);
+    assert.deepEqual(query.collectionIds, [ingestion.collectionId]);
+    assert.ok(Array.isArray(data.hits) && data.hits.length === 2, "Both source chunks must be retrieved");
+    const hits = data.hits.map(verifyHit);
+    assert.equal(new Set(hits.map((hit: any) => hit.sourceId)).size, 2);
+    assert.equal(new Set(hits.map((hit: any) => hit.marker)).size, 2);
+    return { query: { vectorSha256: query.vectorSha256, dimensions: query.dimensions }, hits };
+  });
   // A later stage can legitimately retain a citation from an earlier stage.
   // Coordinator allocates fresh K markers per retrieval, including the same
   // source chunk. Only earlier/current stages of this run authorize aliases.
@@ -123,7 +129,7 @@ export function verifyRetrieval(trace: any, stage: any, ingestion: ReturnType<ty
   }
   const markers: string[] = [...new Set<string>([...String(stage.output).matchAll(/\[(K[0-9]+)\]/g)].map(match => match[1]!))];
   const citedSourceIds = [...new Set(markers.flatMap(marker => known.has(marker) ? [known.get(marker)!.sourceId] : []))];
-  return { queries: [{ vectorSha256: query.vectorSha256, dimensions: query.dimensions }], hits,
+  return { queries: retrievals.map((retrieval: any) => retrieval.query), hits: retrievals.flatMap((retrieval: any) => retrieval.hits),
     knownCitations: [...known.values()], outputMarkers: markers, unknownMarkers: markers.filter(marker => !known.has(marker)),
     citedSourceIds,
     // Citation presence is measured separately from transport completion; it is

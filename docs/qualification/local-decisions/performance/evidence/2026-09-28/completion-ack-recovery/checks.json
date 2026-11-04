@@ -1,0 +1,100 @@
+{
+  "schema": "agat.completion-ack-recovery-checks.v1",
+  "baseCommit": "ba47a8a209a06660fb37e2a29fe92e5f54d6da07",
+  "databaseSchema": 30,
+  "productionBehaviorChanged": false,
+  "workflowCommandsChanged": false,
+  "sourceSha256": {
+    "apps/coordinator/test/temporal-rag.integration.test.ts": "361978c72d6c41de5717b67a33d592d31160fa6a02988a58e93908b6f00b1414",
+    "scripts/lib/decision-rag.ts": "33cca125706f391d1933f923a005bd400fa0544d6dd6d0f75a7e5925594cd21e",
+    "workers/agat_worker.py": "2435dc80140611fbd045575401b75030d5297479bc2c9bcb5b42592b265a310e",
+    "workers/embedding_http.py": "df29bd156de19369e990b221585c49592d6dc55e2baf7f8f44a31eaa49116c5c",
+    "apps/coordinator/src/database.ts": "be144a00589f403791cd96e7df103df65b79a8c443e183b1fdec6635753d6e2b",
+    "apps/temporal-worker/src/workflows.ts": "fb48c39233a0755add18c6a46d1f280464cfe59b68ff1cbf2b90f04d7d061434",
+    "apps/coordinator/test/decision-primary-workflow.test.ts": "71224592cb180540ff0d26f3c8ec54df0212ab701024084bc4c9d61a9e2b09c8"
+  },
+  "checks": {
+    "firstCrash": {
+      "pass": 1,
+      "nonMatchingFileEntries": 6,
+      "log": "first.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "fail": 0,
+      "skip": 24,
+      "log": "coordinator.log",
+      "initialFailure": "coordinator-initial.log",
+      "initialRootCause": "not_observed; timing-dependent concurrency fixture replaced by an explicit barrier",
+      "diagnosticRerun": "primary-diagnostic.log"
+    },
+    "sqliteCrashMatrix": {
+      "scenarios": 4,
+      "pass": 4,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "sqlite.log"
+    },
+    "postgresCrashMatrix": {
+      "actualScope": "full PostgreSQL RAG matrix; repeated Node name patterns combine with OR",
+      "scenarios": 14,
+      "pass": 14,
+      "fail": 0,
+      "nonMatchingFileEntries": 6,
+      "log": "postgres.log"
+    },
+    "docs": {
+      "status": "pass",
+      "nodeTests": 12,
+      "pythonTests": 318,
+      "localLinkTargets": 1960,
+      "markdownFiles": 217,
+      "scriptTestsLog": "docs-initial.log",
+      "linksAndProcessCatalogLog": "docs.log",
+      "initialLinkFailure": "Coordinator log was rotated to preserve the initial failure before the rerun log existed; final links and catalog passed."
+    },
+    "typecheck": {
+      "status": "pass",
+      "log": "test-typecheck.log"
+    }
+  },
+  "scope": "Synthetic model responses; completion accepted before lost acknowledgement and Python SIGKILL. Same Temporal Run ID, no repeated accepted stage or shadow. Both databases and embedding transports; no production behavior change.",
+  "evidenceSha256": {
+    "first/isolated-completion-crash.json": "415d65d48f4023939f8513d8edc34037c04c3f564ba4f91af143d37cae831197",
+    "postgres/isolated-completion-crash.json": "d24120e6694c0e2e4048c5a52a0d3bc686d4db65cc138cdc7b848c7cef8af836",
+    "postgres/isolated-worker-crash.json": "df79200e2577f760773d4070bd91be4ec6e797494bea7fdb2ff6b133c340fa66",
+    "postgres/session-completion-crash.json": "417eafc21bdf80718c8d4d8d1c98301f9f5a56f924dd43022710fd0505b5f4a3",
+    "postgres/session-worker-crash.json": "235b15255d81601c99578d89f0a268ecaefd84e0ce62109971e4a1547779338a",
+    "sqlite/isolated-completion-crash.json": "ae4d83571053011b4c68a980d85e5975572e7bab316a2e983caa1af28f5f4265",
+    "sqlite/isolated-worker-crash.json": "b18255ab2d2904e6d005ee326d53d6fcc9fa919226f7e663ec12706a451df741",
+    "sqlite/session-completion-crash.json": "61f3f5d6bd934e257e12065a23a1d46333bef4608fe13cc045275e4249861b55",
+    "sqlite/session-worker-crash.json": "734fa7c4e3b62b8c4f5bb9c2f9d699151c35c77f34ce92df2d81e3682f48db24"
+  },
+  "measurements": [
+    {
+      "database": "sqlite",
+      "transport": "isolated",
+      "helpersObserved": 0,
+      "closedAfterMs": 47.417458000003535
+    },
+    {
+      "database": "sqlite",
+      "transport": "session",
+      "helpersObserved": 1,
+      "closedAfterMs": 67.52637500000128
+    },
+    {
+      "database": "postgres",
+      "transport": "isolated",
+      "helpersObserved": 0,
+      "closedAfterMs": 48.587750000006054
+    },
+    {
+      "database": "postgres",
+      "transport": "session",
+      "helpersObserved": 1,
+      "closedAfterMs": 68.48562500008848
+    }
+  ],
+  "measurementCaveat": "Observed socket/remaining-helper termination delay, not latency SLO. Isolated helpers already exited before completion; session keeps one idle helper until owner death."
+}
