@@ -138,36 +138,42 @@ def make_server(engine: DecisionEngine, port: int = 8766, *, exit_on_backend_una
             if not inference_lock.acquire(blocking=False):
                 return self.reply(503, engine.error("busy"))
             try:
-                try:
-                    raw = self.rfile.read(length)
-                    if len(raw) != length:
-                        return self.reply(400, engine.error("invalid_content_length"))
-                    body = parse_json(raw)
-                except socket.timeout:
-                    return self.reply(408, engine.error("read_timeout"))
-                except DecisionError:
-                    return self.reply(400, engine.error("invalid_request"))
-                if cancellation == ["1"] and callable(getattr(engine.backend, "score_with_cancellation", None)):
-                    done, cancelled = threading.Event(), threading.Event()
-                    watcher = threading.Thread(target=_watch_opted_in_peer, args=(self.connection, done, cancelled),
-                                               name="decision-peer-cancellation", daemon=True)
-                    watcher.start()
-                    try:
-                        result = engine.decide(body, cancelled=cancelled)
-                    finally:
-                        # Scope this signal to the current request before releasing
-                        # the inference lock; it must never cancel a later lease.
-                        done.set()
-                        watcher.join(timeout=0.1)
-                else:
-                    result = engine.decide(body)
-                status = 200
-                if result["status"] == "error":
-                    status = (504 if result["reason"] == "inference_timeout" else 400 if result["reason"] == "invalid_request" else 422
-                              if result["reason"] in {"context_too_long", "calibration_out_of_scope"} else 500)
-                self.reply(status, result)
+                status, result = self._admitted_decision(length, cancellation)
             finally:
                 inference_lock.release()
+            # Completed computation frees the slot before transport can expose
+            # the response to a client that immediately starts its next request.
+            self.reply(status, result)
+
+        def _admitted_decision(self, length, cancellation):
+            try:
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    return 400, engine.error("invalid_content_length")
+                body = parse_json(raw)
+            except socket.timeout:
+                return 408, engine.error("read_timeout")
+            except DecisionError:
+                return 400, engine.error("invalid_request")
+            if cancellation == ["1"] and callable(getattr(engine.backend, "score_with_cancellation", None)):
+                done, cancelled = threading.Event(), threading.Event()
+                watcher = threading.Thread(target=_watch_opted_in_peer, args=(self.connection, done, cancelled),
+                                           name="decision-peer-cancellation", daemon=True)
+                watcher.start()
+                try:
+                    result = engine.decide(body, cancelled=cancelled)
+                finally:
+                    # Scope this signal to the current request before releasing
+                    # the inference lock; it must never cancel a later lease.
+                    done.set()
+                    watcher.join(timeout=0.1)
+            else:
+                result = engine.decide(body)
+            status = 200
+            if result["status"] == "error":
+                status = (504 if result["reason"] == "inference_timeout" else 400 if result["reason"] == "invalid_request" else 422
+                          if result["reason"] in {"context_too_long", "calibration_out_of_scope"} else 500)
+            return status, result
 
     server = DecisionHTTPServer(("127.0.0.1", port), Handler)
     server.backend_failed = backend_failed

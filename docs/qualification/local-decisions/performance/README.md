@@ -1,8 +1,110 @@
 # Задержка локальных решений и отказ при перегрузке
 
+[Постоянный wired resident 0.12.3](../shadow/observability/resident-wired-rollout-0.12.3.md),
+07.10 MSK: после полного shared soak и native Temporal/PostgreSQL/RAG
+два собственных jobs переключены на точный профиль с wired budget 4096 МиБ.
+Два installs, status/stop/reinstall и отдельный native audit прошли:
+два диагностических ответа совпали с baseline, counters 0 → 1,
+восемь прежних PID отсутствуют, четыре новых работают. 0.12.2 сохранён
+для rollback; boot/login, bounded crash-loop, owner/SLO и предметная
+qualification остаются открытыми.
+
 26.09.2026. На Apple M1 Max с 32 ГиБ памяти выполнен ограниченный HTTP-прогон `Mapika/decider-2b` (runtime `0.4.0`) через настоящий `workers.local_decisions.LocalDecisionClient`. [Свидетельство](./evidence/2026-09-26/decider-http.json) фиксирует профиль модели, SHA инструментов, все измерения и план нагрузки. Результат — `observed`, качество модели и производственный SLO этим прогоном не квалифицируются. Позже измерены [загрузка, память и cache runtime 0.5/0.6](./resources.md), [совместная нагрузка с Qwen3 8B](./shared-load.md) [синтетический контекст до 4096 токенов](./context.md) и [600 секунд непрерывных HTTP-вызовов](./endurance.md).
 
 Отдельная [диагностика противоречий и команд внутри текста](./robustness.md) выявила ошибочное принятое решение при перестановке вариантов. Она не меняет результаты нагрузочных измерений и подтверждает необходимость сохранять shadow без routing.
+
+[Resident совместная нагрузка на 0.12.2](./resident-shared-load-0.12.2.md),
+05.10 MSK: два прогона Qwen/decider завершили 480 measured calls и восемь
+warmup без ошибок или смены решений. 95 supervisor/metric samples подтвердили
+стабильные parent/child, полный профиль и computed counter 1 → 245. Временные
+процессы остановлены, две постоянные службы работают. Короткий опыт не
+объясняет прежний exit 75; следующий gate — длительный совместный soak.
+
+[Инструмент длительного совместного soak](./shared-soak.md), 05.10 MSK:
+добавлены checkpoint каждого блока, немедленный pair journal, остановка после
+первого отказа и независимый offline verifier. Настоящий 180-секундный smoke
+завершил 295 measured calls, 30 overlapping pairs и проверенный counter
+245 → 399; ошибки и смена decider отсутствуют, temporary cleanup подтверждён.
+564 Python / 12 Node checks прошли. В том этапе полный совместный gate
+не запускался; работа была остановлена по тогдашнему указанию пользователя.
+
+[Полная попытка после возобновления работы](./shared-soak-warmup-failure.md)
+05.10 MSK остановилась на decider warmup `inference_timeout` до measured
+нагрузки. Failed plan, journal и checkpoints сохранены; поздний event
+подтвердил текущий exit 75 и recovery с тем же профилем. Контроллер исправлен,
+чтобы последующая недоступность health не подменяла первичный request fault.
+
+[Воспроизводимый export shared soak](./shared-soak-summary.md), 05.10 MSK:
+committed анализ повторяет verifier и публикует allowlist counts/timings/pins,
+с pooled p95 по всем measured rows и отдельным warmup. Шесть новых tests и
+повторная проверка прежнего реального 180-секундного smoke прошли; новый
+export не является новым модельным опытом или выполнением полного gate.
+
+[Полный resident повтор 0.12.2](./resident-shared-soak-failure-0.12.2.md),
+05.10 MSK: gate failed после 3 773 806,379 measured milliseconds и 8176
+attempts. 34 блока прошли; в блоке 35 decider timeout завершил нагрузку.
+140 отдельных warmup успешны, retirement/recovery и cleanup перепроверены.
+Причинность системных memory observations не установлена; следующий этап —
+отдельный opt-in memory profile и новые native gates.
+
+[Opt-in wired-memory budget 0.12.3](./wired-memory-budget.md) проверен до
+model loading и в настоящем 30-call decider pilot. Оба новых профиля
+экспортированы; результаты/tokens совпали с baseline, resident 0.12.2
+восстановлен. Это короткий отдельный опыт; следующий этап — новый resident
+recipe и совместные Qwen/decider gates.
+
+[Выбор resident profile и подготовка 0.12.3](./resident-profile-selection.md)
+закрепляют selected source и matching wired argv. Новый отдельный bundle
+прошёл offline preparation и независимую проверку всех bytes/pins; прежние
+jobs 0.12.2 продолжают работать. Постоянный rollout и полный shared gate
+ещё впереди; отдельный native package gate приведён ниже.
+
+[Native gate нового wired package](./resident-wired-package-0.12.3.md)
+подтвердил два запуска, совпадающие решения, exit 75, restart и настоящий
+scrape/alert cycle. Все семь временных PID отсутствуют, прежний resident
+восстановлен. Новый постоянный rollout ещё не завершён.
+
+[Совместный wired package опыт](./wired-package-shared-load-0.12.3.md)
+после исправления collector завершил два повтора: 480 measured calls,
+60 HTTP-overlapping pairs, прежние signatures/tokens, counter 0 → 244 и
+полный cleanup. Первый failed collector protocol сохранён отдельно.
+Результат последующего [полного 7200-секундного gate](./wired-shared-soak-7200-0.12.3.md)
+приведён отдельно.
+
+[Timeout collector в полном wired soak](./wired-soak-collector-timeout-0.12.3.md),
+06.10 MSK: исходный gate failed после 291,894 с; все 668 сохранённых
+calls успешны, но metadata `ps` не получены за 2 с. Audit подтвердил
+partial rows/journal, отказ полного verifier и восстановление старого
+resident. Inspection budget теперь можно закрепить отдельно от inference
+deadline; следующий полный опыт сохраняет собственный исходный plan.
+
+[Wired profile в Temporal/RAG launcher](./temporal-wired-profile.md),
+06.10 MSK: explicit budget связывается с committed public profile,
+initial/recovery argv и archived-source verifier. 58 профильных и mutation
+checks прошли. Реальный wired Temporal/RAG gate с fallback/replay
+[завершён отдельно](./temporal-wired-runtime-0.12.3.md).
+
+[Управляемая остановка Temporal launcher](./temporal-launcher-cancellation.md),
+06.10: SIGTERM/SIGINT кооперативно завершают owned process groups и сохраняют
+failed report. Четыре OS signal regression и handler restoration прошли;
+повторный сигнал не прерывает cleanup. GPU/profile и Workflow Commands не меняются.
+
+[Полный wired shared soak 0.12.3](./wired-shared-soak-7200-0.12.3.md),
+06.10 MSK: исходные 7200 measured seconds пройдены — 7226,882 с,
+16 353 measured и 276 warmup calls без failures, 2040 overlapping pairs.
+Полный verifier и native audit сверили 12 405 journal records, 3321
+observations, counter 0 → 8304 и отсутствие всех шести временных PID.
+Старый resident 0.12.2 восстановлен с прежним scraper; новый release
+не зарегистрирован.
+
+[Реальный wired Temporal/PostgreSQL/RAG 0.12.3](./temporal-wired-runtime-0.12.3.md),
+06.10 MSK: оба embedding transport прошли с 4096 МиБ wired и прежним deadline
+5000 мс. Выполнены 6 primary calls, 10 embedding items, 4 shadow inference и
+2 unavailable fallback. Отдельный replay двух histories после cleanup,
+source-bound verifier и независимый baseline/model/binary audit прошли.
+Все 81 собственный PID и четыре контейнера отсутствуют; прежний resident
+сохранил PID/profile/fresh scrape. Следующий этап — permanent rollout wired
+package; boot/login и предметная qualification остаются открытыми.
 
 [Трёхэтапный primary workflow с Qwen3 8B](./workflow.md) проверен через реальные worker/coordinator: 12 workflows, 36 primary-вызовов, 18 shadow-решений и фактическая конкурентность 2. Отдельный неполный прогон подтвердил сохранение primary после server timeout. Сгенерированные итоговые отчёты содержали арифметические ошибки; качество primary этим измерением не принято.
 
@@ -159,3 +261,14 @@ python3 -m unittest scripts.test.test_decision_performance -v
 [Production idle opt-in на настоящей модели](./embedding-worker-idle-model.md): 528 точных сохранённых векторов, 32 lease/completion, 12 reaped helpers, отдельный холодный запрос и общий lifecycle обычного worker.
 
 [Настройки deployment](./embedding-deployment-settings.md): три параметра доставляются через Compose, общий Kubernetes ConfigMap и `k8s:up`; 50 проверок с production parser, сохранённые defaults и инструкции отката.
+
+[Temporal/PostgreSQL/RAG 0.12.3 с caller accounting](./temporal-caller-runtime-0.12.3.md):
+v5 gate прошёл оба transports, recovery и независимый replay 137 events.
+Шесть SQL intents/returns, caller latency и прежние model signatures
+подтверждены; owner/SLO, actual boot/login и human qualification открыты.
+
+[Fixed arrivals wired 4096 МиБ](./arrival-rate-4096.md): два native repeats, 264 scheduled / 216 computed, 24 client drops / 24 busy. На 2048 tokens при 1 arrival/с — 24/24 и caller p95 874.733 мс, при 2 arrivals/с — 50%. Это diagnostic capacity без owner/SLO или customer-population acceptance.
+
+[Arrivals при работе primary](./arrival-primary-4096.md): два native repeats, 144 scheduled / 132 computed. На 2048 tokens при 1 decision arrival/с active дал 12/24, p95 1116.329 мс; idle дал 48/48. Следующая диагностическая проверка — 0.5 arrival/с с тем же primary; owner/SLO не согласован.
+
+[0.5 arrivals/с при работе primary](./arrival-primary-half-4096.md): два native repeats, 72/72 computed без drops, long active 12/12 и caller p95/max 1110.362 мс. Inputs/runtime/primary и computed signatures совпали с опытом 1/s. Draft planning envelope уточнён; owner/SLO и customer population не приняты.

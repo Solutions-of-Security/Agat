@@ -1,0 +1,44 @@
+{
+  "schema": "agat.rag-transport-profile-checks.v1",
+  "sourceSha256": {
+    "apps/coordinator/test/decision-rag-workflow.test.ts": "f068c66318ad67febdc8219033360bdecffd539aa92a341d637a78c20b7f10fd",
+    "scripts/benchmark-decision-workflow.ts": "12d9742dbcb096d62bdbde6e4c26c078c150ac3a49efd9d87fca48ee2bd5b7d2",
+    "scripts/lib/decision-primary-workflow.ts": "d82588dd8ecff9233cac4654ac71f9835907dce27322e8e16209d53dc8c67eda",
+    "scripts/run-decision-rag-workflow.py": "6603389d4b6ba7b05888c40e11e96d9edceac2ae6a131b4c801e849c5e212397",
+    "scripts/verify-decision-rag-workflow.py": "daca3b878e48462e62c05ea156352cb35cefb22110d3355875283e3867a7e56e",
+    "scripts/test/test_decision_rag_transport_profile.py": "d9ec29c8c601e56329b2efcb25d1c6b64b6f876fe0ed495cd5c3540671a70bf4"
+  },
+  "checks": {
+    "profileVerifier": {
+      "pass": 5,
+      "log": "profile-tests.log"
+    },
+    "workflow": {
+      "pass": 5,
+      "log": "workflow-tests.log"
+    },
+    "coordinator": {
+      "pass": 293,
+      "skip": 26,
+      "fail": 0,
+      "log": "coordinator.log"
+    },
+    "documentation": {
+      "nodePass": 12,
+      "pythonPass": 323,
+      "log": "docs-tests.log"
+    },
+    "strictTypes": {
+      "status": "pass",
+      "log": "final-typecheck.log"
+    }
+  },
+  "logsSha256": {
+    "profile-tests.log": "6273232de4d3ef7acd4ecafa5c86beeeb974f56586b21089a2990b3f72facbe6",
+    "workflow-tests.log": "9079ec40f82f329a2ee826d6382af9a4cc8f88d78f52473ce0f8e30251be99ff",
+    "coordinator.log": "4f5b18b7d1bc3b8850a40512efd1630ba462023cede974da44453b4728f89742",
+    "docs-tests.log": "49e346e5cd813def22d4ea28a6e4475119c98f52ef76ef10effc978b012f4bb1",
+    "final-typecheck.log": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "scope": "Harness protocol and synthetic loopback tests only; real model measurements are a separate stage."
+}

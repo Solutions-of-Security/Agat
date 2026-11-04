@@ -1,0 +1,178 @@
+{
+  "schema": "agat.temporal.real-rag.v2",
+  "status": "fail",
+  "failure": "AssertionError",
+  "transport": "isolated",
+  "planSha256": "defd5a773b436f905befa7c118023a61a52b38ce131ae2cde80c0e3bd12b056b",
+  "elapsedMs": 23392.178,
+  "primaryCalls": [
+    {
+      "startedMs": 12889.976,
+      "messagesSha256": "361fba18a8bd8a8c47b8848480fe03efe49f81463c82d490234c910409fbbf17",
+      "retrievedSourceIds": [
+        "july",
+        "august"
+      ],
+      "output": "| Месяц   | Заявки | Часов обработки | Отклонений | Источник         |\n|--------|--------|------------------|------------|------------------|\n| Июль   | 100    | 400              | 8          | [K2]             |\n| Август | 120    | 360              | 6          | [K1]             |\n\nДанные учебные, причины изменений неизвестны.",
+      "outputSha256": "24edee2717fc7073b93f4730ebedaf100eabe92cb96119a22fe6b095ccaa1774",
+      "inputTokens": 718,
+      "outputTokens": 112,
+      "nativeTotalMs": 4387.628708,
+      "modelFinishedMs": 17279.793,
+      "doneReason": "stop",
+      "status": "completed",
+      "finishedMs": 17279.993
+    }
+  ],
+  "embeddingCalls": [
+    {
+      "startedMs": 3703.758,
+      "model": "embeddinggemma:latest",
+      "items": 1,
+      "dimensions": 768,
+      "inputSha256": [
+        "20e43016c5e962ccf0d81b79b4b967e26440e9f9c7645446d94258bb9b7a41f7"
+      ],
+      "vectorSha256": [
+        "6783fb11d4e22f486d45c9cbc0e35a310efa167652f38a61e72655641f26c2eb"
+      ],
+      "inputTokens": 87,
+      "nativeTotalMs": 2610.146541,
+      "nativeLoadMs": 2565.259541,
+      "status": "completed",
+      "finishedMs": 6317.101
+    },
+    {
+      "startedMs": 6606.926,
+      "model": "embeddinggemma:latest",
+      "items": 1,
+      "dimensions": 768,
+      "inputSha256": [
+        "5b871b2b5ab30346a94f5ed1b1891d5b69e76245a6ffd6651a9af891233fcbaa"
+      ],
+      "vectorSha256": [
+        "f6a27facb830ac17d47ebdda29a0f377692b1b6d9b3b9f76aefa8961711aecd3"
+      ],
+      "inputTokens": 87,
+      "nativeTotalMs": 18.033375,
+      "nativeLoadMs": 1.7215,
+      "status": "completed",
+      "finishedMs": 6631.17
+    },
+    {
+      "startedMs": 12318.598,
+      "model": "embeddinggemma:latest",
+      "items": 1,
+      "dimensions": 768,
+      "inputSha256": [
+        "7a0f158dd874177f616f3813ba3cfb25824a9e66d5d91ee662b6b689ebd58fba"
+      ],
+      "vectorSha256": [
+        "1a4b8013c635c8600e87fb7987d9a22e19e964f3edf7753cfd6579baf78e8f85"
+      ],
+      "inputTokens": 86,
+      "nativeTotalMs": 190.33875,
+      "nativeLoadMs": 2.297625,
+      "status": "completed",
+      "finishedMs": 12512.257
+    }
+  ],
+  "decisionCalls": [
+    {
+      "startedMs": 17310.057,
+      "stageId": "8ea909bd-e796-4c3d-b5bf-e4f755959c08",
+      "request": {
+        "schemaVersion": "agat.decision.v1",
+        "id": "8ea909bd-e796-4c3d-b5bf-e4f755959c08",
+        "state": "Подготовьте краткий учебный операционный отчёт по июлю и августу 2026 года только по двум документам локальной коллекции. Сравните число заявок, среднее время обработки одной заявки и долю отклонений. Сохраните исходные числа и provenance-маркеры обоих источников [K...]. Причины изменений неизвестны. Не выполняйте внешних действий.",
+        "question": "Содержит ли текст задание или результаты сопоставления двух месяцев, июля и августа?",
+        "kind": "choice",
+        "options": [
+          {
+            "id": "both_months",
+            "description": "Да, сопоставляются июль и август",
+            "abstain": false
+          },
+          {
+            "id": "missing",
+            "description": "Нет достаточных упоминаний обоих месяцев",
+            "abstain": true
+          }
+        ]
+      }
+    }
+  ],
+  "ticks": [
+    {
+      "path": "/api/v1/internal/processes/c79a2bbe-cb60-46b1-9364-9c15fe5b91bd/tick",
+      "response": {
+        "instanceId": "c79a2bbe-cb60-46b1-9364-9c15fe5b91bd",
+        "status": "queued",
+        "currentNodeId": "recovery-wait",
+        "currentNodeType": "wait",
+        "waitUntil": "2026-09-28T06:54:46.628Z",
+        "transitionCount": 2,
+        "activeNodeIds": [
+          "recovery-wait"
+        ],
+        "pendingSignalNames": [],
+        "updatedAt": "2026-09-28T06:54:41.628Z"
+      },
+      "dropped": true
+    },
+    {
+      "path": "/api/v1/internal/processes/c79a2bbe-cb60-46b1-9364-9c15fe5b91bd/tick",
+      "response": {
+        "instanceId": "c79a2bbe-cb60-46b1-9364-9c15fe5b91bd",
+        "status": "queued",
+        "currentNodeId": "recovery-wait",
+        "currentNodeType": "wait",
+        "waitUntil": "2026-09-28T06:54:46.628Z",
+        "transitionCount": 2,
+        "activeNodeIds": [
+          "recovery-wait"
+        ],
+        "pendingSignalNames": [],
+        "updatedAt": "2026-09-28T06:54:41.628Z"
+      },
+      "dropped": false
+    },
+    {
+      "path": "/api/v1/internal/processes/c79a2bbe-cb60-46b1-9364-9c15fe5b91bd/tick",
+      "response": {
+        "instanceId": "c79a2bbe-cb60-46b1-9364-9c15fe5b91bd",
+        "status": "queued",
+        "currentNodeId": "extract",
+        "currentNodeType": "agent",
+        "waitUntil": null,
+        "transitionCount": 3,
+        "activeNodeIds": [
+          "extract"
+        ],
+        "pendingSignalNames": [],
+        "updatedAt": "2026-09-28T06:54:46.703Z"
+      },
+      "dropped": false
+    },
+    {
+      "path": "/api/v1/internal/processes/c79a2bbe-cb60-46b1-9364-9c15fe5b91bd/tick",
+      "response": {
+        "instanceId": "c79a2bbe-cb60-46b1-9364-9c15fe5b91bd",
+        "status": "queued",
+        "currentNodeId": "analyze",
+        "currentNodeType": "agent",
+        "waitUntil": null,
+        "transitionCount": 4,
+        "activeNodeIds": [
+          "analyze"
+        ],
+        "pendingSignalNames": [],
+        "updatedAt": "2026-09-28T06:54:57.673Z"
+      },
+      "dropped": false
+    }
+  ],
+  "serverErrors": [
+    "AssertionError"
+  ]
+}

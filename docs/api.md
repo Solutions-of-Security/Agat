@@ -4,14 +4,17 @@
 
 ## Авторизация
 
+- SQLite lite: индивидуальный `Authorization: Bearer <personal/API credential>` либо защищённая UI cookie session; roles/projects/scopes проверяются по актуальному principal. Bootstrap, CSRF, rotation/revoke и auth API описаны в [локальных идентичностях](./local-identities.md).
 - Kubernetes dashboard: `Authorization: Bearer <Keycloak access token>`; поддерживается только проверенный RS256 JWT для issuer/client АГАТ.
-- Активный проект: `X-Agat-Project-Id`; backend проверяет роль и claim `agat_projects`.
+- Активный проект: `X-Agat-Project-Id`; backend проверяет роль и OIDC claim `agat_projects` либо local membership/credential scope.
 - Legacy local mode без OIDC: чувствительные/mutating запросы используют `X-Agat-Admin-Token`.
 - Обычная worker registration: `enrollmentToken` в JSON body.
 - Native edge enrollment: тот же bootstrap token только для одноразового challenge, затем Play Integrity/App Attest evidence; raw evidence не сохраняется.
 - Worker calls: `Authorization: Bearer <node token>`.
 - Public process webhook: отдельный `Authorization: Bearer <webhook token>`; start также требует `Idempotency-Key`.
 - Temporal Activity: отдельный `X-Agat-Temporal-Token` только внутри ClusterIP-контура.
+
+В local identity режиме общий admin header не принимается; endpoint-token process webhooks/A2A и автоматические schedule identities остаются blocked до квалификации service binding. Индивидуальные UI/REST runs доступны. Неверные credentials не переключаются на local-admin. Административный identity audit доступен global admin через `/auth/audit`.
 
 Node token возвращается один раз при регистрации и хранится worker локально. В базе хранится только SHA-256 hash.
 
@@ -63,10 +66,11 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/knowledge/collections` | Создать project-scoped collection (`admin/designer`) |
 | `DELETE` | `/knowledge/collections/:id` | Каскадно удалить collection (`admin/designer`) |
 | `POST` | `/knowledge/collections/:id/documents` | Добавить `text/*` document (`admin/designer`) |
-| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX в `contentBase64` до 5 МиБ (`admin/designer`); parse error возвращается в сохранённом документе |
+| `POST` | `/knowledge/collections/:id/documents/upload` | PDF/DOCX/CSV/XLSX в `contentBase64` до 5 МиБ (`admin/designer`); 201 новый / 200 существующий файл, parser busy 503; [контракт повторной загрузки](./knowledge-file-deduplication.md) |
 | `GET` | `/knowledge/documents/:id` | Предпросмотр: текст, страницы, chunks, hashes и parse error |
 | `GET` | `/knowledge/documents/:id/file` | Исходный PDF/DOCX (attachment, no-store) |
 | `POST` | `/knowledge/documents/:id/reindex` | Повторный разбор/индексация сохранённого документа (`admin/designer`) |
+| `POST` | `/knowledge/documents/:id/review-extraction` | Решение об использовании только текущего извлечённого текста; exact hashes/revision и причина (`admin/designer`), [контракт](./document-extraction-review.md) |
 | `GET` | `/runs/:id/knowledge` | Сохранённые цитаты/provenance результата, project-scoped `{ sources: [...] }` |
 | `DELETE` | `/knowledge/documents/:id` | Удалить document/chunks (`admin/designer`) |
 | `POST` | `/knowledge/memory` | Явно сохранить working/episodic memory (`admin/designer/operator`) |
@@ -100,9 +104,14 @@ Node token возвращается один раз при регистраци�
 | `POST` | `/process-instances/:id/cancel` | Отменить активный экземпляр и его run |
 | `GET` | `/runs/:id` | Один запуск и его этапы |
 | `GET` | `/runs/:id/trace` | Trace, outputs, artifacts, execution manifest и eval comparison |
+| `GET` | `/runs/:id/artifacts` | Project-scoped metadata файлов без содержимого и технической трассировки |
 | `POST` | `/runs/:id/replay` | Создать один replay либо два A/B-кандидата (`admin/designer/operator`) |
 | `POST` | `/runs` | Создать запуск |
 | `GET` | `/artifacts/:id/download` | Скачать authenticated артефакт по ID |
+| `POST` | `/artifacts/:id/export` | DOCX/PDF из сохранённого проверенного Markdown; `{ format, expectedSha256, origin }`, 201 новый / 200 существующий файл; read-roles и legacy admin token, [контракт](./business-report-office-export.md) |
+| `GET` | `/artifacts/:id/decisions` | История решений о точной версии отчёта; cursor `beforeRevision`, read-roles |
+| `POST` | `/artifacts/:id/decisions` | Append-only accept/rework, `admin/operator`; expected SHA/revision и caller request ID, 201 новый / 200 повтор, [контракт](./report-result-decisions.md) |
+| `GET` | `/report-rework-tasks/:id` | Project-scoped ручная задача исправления с frozen source binding |
 | `PATCH` | `/settings/scheduler` | Изменить глобальный режим |
 | `PATCH` | `/settings/model-router` | Изменить глобальную Model Router policy (`admin`) |
 | `POST` | `/approvals/:stageId` | `approve` с ответами формы или `reject` с причиной |

@@ -1,0 +1,36 @@
+{
+  "schema": "agat.http-helper.measurement-intent.v1",
+  "recordedAt": "2026-09-28T05:45:42.334022+00:00",
+  "scope": "ordinary worker, local RAG, all owned Embedding/Model/Knowledge HTTP helper requests",
+  "design": [
+    "isolated",
+    "session",
+    "session",
+    "isolated"
+  ],
+  "workflowsPerBlock": 3,
+  "concurrency": 2,
+  "shadow": false,
+  "routingEnabled": false,
+  "resourceProbe": "agat.worker.owned-http.v1",
+  "sampleWaitMs": 100,
+  "comparison": "descriptive ABBA; identical model-visible metadata; no causal whole-workflow overhead estimate",
+  "metrics": [
+    "request owner duration including serialization/spawn/IPC/backend/reap",
+    "proxy duration for embedding and primary, separately",
+    "RSS snapshots for every observed helper kind, with unsampled helper counts",
+    "closed pipes and reaped children, final owned-process absence"
+  ],
+  "preRunChecks": {
+    "realHttpProbeTests": 5,
+    "historicalReplayAndMutationTests": 14,
+    "strictTypeScript": "pass"
+  },
+  "limitations": [
+    "RSS samples can miss short helper lifetimes",
+    "RSS sum is not unique physical memory or GPU peak",
+    "owner minus proxy time is not pure process spawn cost",
+    "observer overhead included in every block",
+    "synthetic source documents; no independent business qualification"
+  ]
+}

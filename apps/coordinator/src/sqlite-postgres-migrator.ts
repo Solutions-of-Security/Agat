@@ -229,6 +229,9 @@ function sourceCell(database: DatabaseSync): { region: string; residencyDomain: 
 }
 
 function sourcePreflight(database: DatabaseSync): number {
+  if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_identity_schema'").get()) {
+    throw new Error("Local identity SQLite schema требует отдельной квалифицированной миграции subjects/credentials; автоматический перенос в PostgreSQL запрещён");
+  }
   const version = Number((database.prepare("PRAGMA user_version").get() as { user_version?: unknown }).user_version ?? 0);
   if (version !== REQUIRED_SQLITE_SCHEMA_VERSION) {
     throw new Error(`SQLite schema v${version} не поддерживается; нужен v${REQUIRED_SQLITE_SCHEMA_VERSION}`);
@@ -544,7 +547,10 @@ async function importTable(
     }
   }
   await insertBatch(client, table, batch);
-  if (requiresDependencyOrder) return digestSourceTable(database, table);
+  // Dependency order is only for insertion; reconciliation uses primary-key
+  // order after the same filesystem -> BYTEA transformation as the import.
+  // Keep the second pass's verification counters out of the import totals.
+  if (requiresDependencyOrder) return digestSourceTable(database, table, options, { verified: 0, backfilledFromFilesystem: 0, bytes: 0 });
   return finishDigest(hash, count);
 }
 

@@ -1,4 +1,5 @@
 import type { DecisionShadowConfig, DecisionShadowLease } from "./local-decisions.js";
+import type { KnowledgeExtractionProvenance } from "./knowledge-extraction.js";
 
 export type SchedulerMode = "sequential" | "parallel" | "auto";
 export type ResultDestination = "history" | "artifacts";
@@ -108,6 +109,10 @@ export interface ProcessGraphNode {
     agentId?: string;
     approvalRequired?: boolean;
     decisionShadow?: DecisionShadowConfig;
+    /** Fixed server-side schema selected by an immutable process version. */
+    outputContract?: import("./business-contracts.js").BusinessOutputContract;
+    /** Validated before creating a run, including subprocess and replay entry points. */
+    inputContract?: import("./business-contracts.js").BusinessInputContract;
     condition?: ProcessCondition;
     maxIterations?: number;
     inputTemplate?: string;
@@ -125,6 +130,7 @@ export interface ProcessGraphNode {
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;
+    reportFormat?: import("./business-report-markdown.js").BusinessReportFormat;
     /** Fork paired with this converging gateway. */
     forkId?: string;
     /** Stable public signal name. Correlation is rendered from process input/context. */
@@ -1213,7 +1219,7 @@ export interface KnowledgePageLocation {
   charEnd: number;
 }
 
-export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed";
+export type KnowledgeDocumentStatus = "pending" | "indexing" | "ready" | "failed" | "review_required";
 export type MemoryKind = "working" | "episodic";
 
 export interface SaveMemoryInput {
@@ -1274,6 +1280,7 @@ export interface KnowledgeProvenance {
   chunkSha256: string;
   pageNumber: number | null;
   originalSha256: string | null;
+  extraction?: KnowledgeExtractionProvenance;
 }
 
 export interface KnowledgeSearchHit {

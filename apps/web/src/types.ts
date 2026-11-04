@@ -137,6 +137,7 @@ export interface ProcessGraphNode {
     artifactName?: string;
     artifactMediaType?: string;
     artifactContent?: string;
+    reportFormat?: "business-report-markdown.v1";
     forkId?: string;
     signalName?: string;
     signalCorrelationKey?: string;
@@ -410,7 +411,13 @@ export interface KnowledgeDocument {
   sourceUri: string | null;
   mediaType: string;
   contentSha256: string;
-  status: "pending" | "indexing" | "ready" | "failed";
+  status: "pending" | "indexing" | "ready" | "failed" | "review_required";
+  extraction?: {
+    state: string; revision: string | null; reportSha256: string | null;
+    report: { schemaVersion: "document-extraction.v1"; profile: string; textCharacters: number; totalPages: number | null;
+      emptyPages: number[]; omittedParts: string[]; features: string[]; reviewRequired: boolean; fidelity: "not_assessed" } | null;
+    review: { actor: string; reviewedAt: string; decision: "use_extracted_text_only"; reason: string } | null;
+  };
   error: string | null;
   parseError?: string | null;
   originalSha256?: string | null;
@@ -442,6 +449,8 @@ export interface KnowledgeSource {
     sourceUri: string | null; originalSha256?: string | null;
     chunkId: string; chunkOrdinal: number; charStart: number; charEnd: number; chunkSha256: string;
     pageNumber?: number | null;
+    extraction?: { profile: string; reportSha256: string; extractionRevision: string; reviewSha256: string | null;
+      decision: "use_extracted_text_only" | null; emptyPageCount: number | null; omittedPartsCount: number | null; features: string[]; fidelity: "not_assessed" };
   };
 }
 
@@ -598,6 +607,10 @@ export interface AuthUser {
   projectIds: string[];
   activeProjectId: string;
   local: boolean;
+  authenticationMode?: "legacy" | "local" | "oidc";
+  principalKind?: "user" | "service";
+  globalProjectAccess?: boolean;
+  scopes?: string[];
 }
 
 export interface ProjectSummary {
@@ -1095,11 +1108,72 @@ export interface Artifact {
   sizeBytes: number;
   sha256: string;
   createdAt: string;
+  rendering?: { format?: string; profile?: string; contentSha256?: string; sourceArtifactId?: string; sourceSha256?: string;
+    documentSha256?: string; rendererSha256?: string; origin?: string } | null;
+  sourceArtifactId?: string | null;
+}
+
+export type ReportDecisionKind = "accepted" | "rework_requested";
+export interface ReportDecisionBinding {
+  artifactId: string; sourceSha256: string; runId: string; stageId: string;
+  processInstanceId: string; processId: string; processVersion: number;
+  graphSha256: string; inputSha256: string; schemaSha256: string;
+}
+export interface ReportDecisionRecord {
+  id: string; profile: "business-report-decision.v1"; artifactId: string; sourceSha256: string;
+  runId: string; revision: number; decision: ReportDecisionKind; reason: string; actor: string;
+  binding: ReportDecisionBinding; reworkTaskId: string | null; createdAt: string;
+}
+export interface ReportDecisionHistory {
+  artifactId: string; sourceSha256: string; sourceReady: boolean; revision: number;
+  decisions: ReportDecisionRecord[]; nextBeforeRevision: number | null;
+}
+export interface ReportReworkTask {
+  id: string; kind: "business_report_rework"; execution: "manual"; title: string;
+  state: "open" | "superseded"; decisionId: string; artifactId: string; sourceSha256: string;
+  runId: string; sourceAvailable: boolean; reason: string; requestedBy: string;
+  binding: ReportDecisionBinding; createdAt: string;
+}
+export interface RecordReportDecisionRequest {
+  requestId: string; expectedSha256: string; expectedRevision: number; decision: ReportDecisionKind; reason: string;
+}
+export interface RecordReportDecisionResponse {
+  decision: ReportDecisionRecord; reworkTask: ReportReworkTask | null; created: boolean;
+}
+
+export interface ReportEvalCandidateSource extends Omit<ReportDecisionBinding, "stageId"> {
+  projectId: string; reportStageId: string; decisionId: string; decisionRevision: number;
+  decision: ReportDecisionKind; reason: string; agentStageId: string; agentId: string;
+  promptSha256: string; definitionSha256: string; requestedModel: string | null;
+  runtime: string; runtimeProfile: string; observedOutputSha256: string;
+}
+export interface ReportEvalCandidate {
+  profile: "business-report-eval-candidate.v1"; purpose: "development"; holdoutEligible: false; referenceReviewRequired: true;
+  replay: { automatic: false; scope: "single_agent"; context: "requires_review" };
+  source: ReportEvalCandidateSource;
+  example: { name: string; input: string; referenceOutput: ""; requiredTerms: string[]; forbiddenTerms: string[]; knowledgeCollectionIds: string[] };
+  observedOutput: string;
+  currentKnowledgeSnapshot: { schemaVersion: number; collectionIds: string[]; missingCollectionIds: string[]; fingerprint: string };
+  contentSha256: string;
+}
+export interface ReportEvalImportRequest {
+  requestId: string; expectedSha256: string; expectedRevision: number; expectedCandidateSha256: string;
+  name: string; description: string; referenceOutput: string; rubric: EvalRubricCriterion[]; reviewConfirmed: true;
+}
+export interface ReportEvalImportReceipt {
+  datasetId: string; datasetVersion: 1; datasetContentSha256: string; candidateSha256: string; created: boolean;
+}
+export interface ReportEvalImportLineage {
+  profile: "business-report-eval-import.v1"; purpose: "development"; holdoutEligible: false; reviewConfirmed: true;
+  source: Omit<ReportEvalCandidateSource, "reason">; candidateSha256: string; referenceSha256: string;
+  actorSha256: string; requestSha256: string;
 }
 
 export interface RunDecisionObservation {
   stageId: string;
   profileSha256: string | null;
+  inputSha256?: string | null;
+  callerTimeoutMs?: number | null;
   context?: {
     kind: "choice" | "boolean" | "score";
     question: string;
@@ -1111,6 +1185,8 @@ export interface RunDecisionObservation {
     status: "ok" | "abstain" | "error" | "unavailable";
     reason: string;
     reusedFromStageId?: string;
+    callerTiming?: { schemaVersion: "agat.decision.caller-timing.v1"; clock: "monotonic";
+      boundary: "local_http_call"; durationMs: number };
     result?: {
       value?: string | boolean | number | null;
       selectedOptionId?: string | null;
@@ -1148,6 +1224,29 @@ export interface RunTrace {
     gates: GoldenEvalGates;
   } | null;
   decisionObservations?: RunDecisionObservation[];
+  decisionCallerAccounting?: {
+    schemaVersion: "agat.decision.caller-inventory.v1";
+    scope: "caller_operation_intents";
+    stages: Array<{ stageId: string; coverage: "complete" | "legacy_gap" | "replay";
+      assignments: Array<{ assignmentId: string; stageAttempt: number; negotiated: boolean; intent: boolean;
+        returned: { callerTiming: NonNullable<RunDecisionObservation["observation"]["callerTiming"]>;
+          status: RunDecisionObservation["observation"]["status"]; reason: string } | null;
+        outcome: "returned" | "unnegotiated" | "no_intent_recorded" | "intent_pending" | "return_missing" | "data_gap" }> }>;
+  };
+  decisionAssignmentHistory?: {
+    schemaVersion: "agat.decision.shadow-assignment-inventory.v1";
+    scope: "coordinator_shadow_assignments";
+    stages: Array<{ stageId: string; coverage: "complete" | "legacy_gap" | "replay";
+      assignments: Array<{ assignmentId: string; stageAttempt: number; profileSha256: string; inputSha256: string;
+        callerTimeoutMs: number; observation: RunDecisionObservation["observation"] | null;
+        outcome: "recorded" | "pending" | "ended_without_observation" }> }>;
+  };
+  decisionStageInventory?: {
+    schemaVersion: "agat.decision.shadow-stage-inventory.v1";
+    scope: "stored_shadow_stages";
+    stages: Array<{ stageId: string; stageStatus: StageStatus; assigned: boolean;
+      observationRecorded: boolean; profileSha256: string | null; inputSha256: string | null; callerTimeoutMs: number | null }>;
+  };
   truncated: boolean;
   tracePolicy: {
     rawReasoningStored: false;
@@ -1309,6 +1408,7 @@ export interface GoldenDatasetVersion {
     collectionIds?: string[];
     missingCollectionIds?: string[];
     fingerprint?: string;
+    reportImport?: ReportEvalImportLineage;
   };
   contentSha256: string;
   createdBy: string;
@@ -1450,6 +1550,7 @@ export interface CreateEvalExperimentRequest {
 }
 
 export interface Overview {
+  deployment?: import("../../coordinator/src/deployment-contract").DeploymentSnapshot;
   generatedAt: string;
   project: ProjectSummary | null;
   processRuntime: {

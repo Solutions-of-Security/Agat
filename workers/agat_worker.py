@@ -22,12 +22,13 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from contextlib import ExitStack
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 
-from embedding_http import request_embedding_response, validate_timeout as validate_embedding_timeout
+from embedding_http import HttpResponseError, request_coordinator_response, request_knowledge_response, request_model_response, request_embedding_response, validate_timeout as validate_embedding_timeout
 from embedding_transport import validate_idle_timeout as validate_embedding_idle_timeout
 from local_decisions import LocalDecisionClient, PROFILE as DECISION_SHADOW_PROFILE, unavailable as decision_unavailable, validate_decision_url
 
@@ -48,9 +49,26 @@ from web_tools import (
 
 VERSION = "1.7.0"
 TOOL_SCHEMA_VERSION = "agat.tools.v2"
+DECISION_CALLER_ACCOUNTING = "agat.decision.caller-accounting.v1"
+# Observe lease revocation while a short shadow HTTP call is blocked. Primary
+# execution keeps its ordinary 45s renewal interval.
+SHADOW_LEASE_RENEWAL_INTERVAL = 0.5
+SHADOW_LEASE_RENEWAL_TIMEOUT = 1.0
+MAX_LEASE_RENEWAL_RESPONSE_BYTES = 4096
 # Covers the supported 32 x 4096 finite-float batch with JSON overhead.
 MAX_EMBEDDING_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_EMBEDDING_ERROR_BYTES = 4096
+# Non-streaming primary JSON includes both content and function-call arguments.
+MAX_MODEL_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_MODEL_ERROR_BYTES = 4096
+MODEL_HTTP_TIMEOUT = 900
+KNOWLEDGE_HTTP_TIMEOUT = 120
+# Coordinator returns at most 20 hits, each with at most 4000 content characters.
+MAX_KNOWLEDGE_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_KNOWLEDGE_ERROR_BYTES = 4096
+# LangGraph copies context into its node execution; thread-local state alone
+# would lose cancellation when a graph runs a node on another thread.
+_PRIMARY_CANCELLED: ContextVar[threading.Event | None] = ContextVar("agat_primary_cancelled", default=None)
 
 WEB_SYSTEM_PROMPT = """
 У тебя есть управляемые инструменты web_search и web_fetch. Используй их, когда
@@ -394,8 +412,36 @@ class CoordinatorClient:
     def lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/lease", {"workerVersion": VERSION})
 
-    def renew(self, lease_id: str, *, timeout: float = 30) -> None:
-        self.request("POST", f"/api/v1/leases/{lease_id}/renew", {}, timeout=timeout)
+    def renew(self, lease_id: str, *, timeout: float = 30,
+              cancelled: threading.Event | None = None) -> None:
+        if cancelled is None:
+            self.request("POST", f"/api/v1/leases/{lease_id}/renew", {}, timeout=timeout)
+            return
+        if not self.node_token:
+            raise ApiError(401, "Worker is not registered")
+        headers = {"Accept": "application/json", "Content-Type": "application/json",
+                   "User-Agent": f"agat-worker/{VERSION}", "Authorization": f"Bearer {self.node_token}"}
+        self.telemetry.inject(headers)
+        try:
+            # The disposable transport bounds DNS, headers and error-body reads,
+            # and is reaped when this shadow watcher stops. Socket timeout alone
+            # would leave a thread alive under a trickling coordinator response.
+            request_coordinator_response(
+                f"{self.base_url}/api/v1/leases/{lease_id}/renew", {}, headers,
+                timeout=timeout, cancelled=cancelled,
+                max_response_bytes=MAX_LEASE_RENEWAL_RESPONSE_BYTES,
+                max_error_bytes=MAX_LEASE_RENEWAL_RESPONSE_BYTES,
+            )
+        except HttpResponseError as error:
+            try:
+                parsed = json.loads(error.detail)
+                message = parsed.get("error", error.detail) if isinstance(parsed, dict) else error.detail
+            except json.JSONDecodeError:
+                message = error.detail or str(error)
+            raise ApiError(error.status, str(message)) from error
+        except RuntimeError as error:
+            if not cancelled.is_set():
+                raise ApiError(0, str(error)) from error
 
     def knowledge_lease(self) -> dict[str, Any] | None:
         return self.request("POST", "/api/v1/workers/knowledge/lease", {})
@@ -427,14 +473,31 @@ class CoordinatorClient:
         return result
 
     def knowledge_search(
-        self, lease_id: str, queries: list[dict[str, Any]]
+        self, lease_id: str, queries: list[dict[str, Any]], *, cancelled: threading.Event | None = None,
     ) -> dict[str, Any]:
-        result = self.request(
-            "POST",
-            f"/api/v1/leases/{lease_id}/knowledge/search",
-            {"queries": queries},
-            timeout=120,
-        )
+        if not self.node_token:
+            raise ApiError(401, "Worker is not registered")
+        headers = {"Accept": "application/json", "Content-Type": "application/json",
+                   "User-Agent": f"agat-worker/{VERSION}", "Authorization": f"Bearer {self.node_token}"}
+        self.telemetry.inject(headers)
+        try:
+            payload = request_knowledge_response(
+                f"{self.base_url}/api/v1/leases/{lease_id}/knowledge/search", {"queries": queries}, headers,
+                timeout=KNOWLEDGE_HTTP_TIMEOUT, cancelled=cancelled,
+                max_response_bytes=MAX_KNOWLEDGE_RESPONSE_BYTES, max_error_bytes=MAX_KNOWLEDGE_ERROR_BYTES,
+            )
+        except HttpResponseError as error:
+            try:
+                parsed = json.loads(error.detail)
+                message = parsed.get("error", error.detail) if isinstance(parsed, dict) else error.detail
+            except json.JSONDecodeError:
+                message = error.detail or str(error)
+            raise ApiError(error.status, str(message)) from error
+        except RuntimeError as error:
+            if cancelled is not None and cancelled.is_set():
+                raise
+            raise ApiError(0, str(error)) from error
+        result = json.loads(payload.decode("utf-8")) if payload else None
         if not isinstance(result, dict):
             raise RuntimeError("Coordinator returned an invalid knowledge search response")
         return result
@@ -471,6 +534,15 @@ class CoordinatorClient:
 
     def record_decision_shadow(self, lease_id: str, observation: dict[str, Any]) -> None:
         self.request("POST", f"/api/v1/leases/{lease_id}/decision-shadow", observation, timeout=5)
+
+    def begin_decision_shadow(self, lease_id: str, assignment_id: str) -> bool:
+        receipt = self.request("POST", f"/api/v1/leases/{lease_id}/decision-shadow/intent",
+                               {"schemaVersion": DECISION_CALLER_ACCOUNTING, "assignmentId": assignment_id}, timeout=5)
+        if (not isinstance(receipt, dict) or set(receipt) != {"schemaVersion", "assignmentId", "mayInvoke"}
+                or receipt["schemaVersion"] != DECISION_CALLER_ACCOUNTING or receipt["assignmentId"] != assignment_id
+                or type(receipt["mayInvoke"]) is not bool):
+            raise ValueError("Invalid decision caller intent receipt")
+        return receipt["mayInvoke"]
 
     def mcp_call(
         self,
@@ -588,10 +660,17 @@ class LocalModelClient:
         digest = hashlib.sha256(value.encode("utf-8")).digest()
         return [(byte - 127.5) / 127.5 for byte in digest]
 
-    def retrieve_knowledge(self, lease: dict[str, Any], *, dry_run: bool = False) -> str:
+    def retrieve_knowledge(self, lease: dict[str, Any], *, dry_run: bool = False,
+                           cancelled: threading.Event | None = None) -> str:
         knowledge = lease.get("knowledge")
         if not isinstance(knowledge, dict):
             return ""
+
+        def check_cancelled() -> None:
+            if cancelled is not None and cancelled.is_set():
+                raise RuntimeError("Knowledge retrieval cancelled")
+
+        check_cancelled()
         raw_groups = knowledge.get("groups")
         groups = raw_groups if isinstance(raw_groups, list) else []
         raw_memory = knowledge.get("memory")
@@ -612,6 +691,7 @@ class LocalModelClient:
                 query_text = str(run.get("name", "AGAT knowledge retrieval"))[:50_000]
             queries: list[dict[str, Any]] = []
             for raw_group in groups[:8]:
+                check_cancelled()
                 if not isinstance(raw_group, dict):
                     raise RuntimeError("Knowledge lease contains a malformed group")
                 embedding_model = raw_group.get("embeddingModel")
@@ -629,7 +709,7 @@ class LocalModelClient:
                 vector = (
                     self.dry_run_embedding(query_text)
                     if dry_run
-                    else self.embed(embedding_model, [query_text])[0]
+                    else self.embed(embedding_model, [query_text], cancelled=cancelled)[0]
                 )
                 queries.append(
                     {
@@ -639,7 +719,9 @@ class LocalModelClient:
                         "vector": vector,
                     }
                 )
-            result = self.coordinator_client.knowledge_search(str(lease["leaseId"]), queries)
+            check_cancelled()
+            result = self.coordinator_client.knowledge_search(str(lease["leaseId"]), queries, cancelled=cancelled)
+            check_cancelled()
             raw_hits = result.get("hits")
             if not isinstance(raw_hits, list):
                 raise RuntimeError("Coordinator returned malformed knowledge hits")
@@ -656,7 +738,18 @@ class LocalModelClient:
                 document_name = str(provenance.get("documentName") or "Локальный документ")
                 source_uri = provenance.get("sourceUri")
                 source = f" · {source_uri}" if isinstance(source_uri, str) and source_uri else ""
-                snippet = f"[{marker}] {document_name}{source}\n{content[:8_000]}".strip()
+                coverage = provenance.get("extraction")
+                extraction_notice = ""
+                if isinstance(coverage, dict):
+                    empty_pages = coverage.get("emptyPageCount")
+                    omitted_parts = coverage.get("omittedPartsCount")
+                    extraction_notice = (
+                        "\nОграничения источника: это только извлечённый текст; визуальная полнота не подтверждена. "
+                        f"Страниц без текста: {empty_pages if empty_pages is not None else 'не оценивалось'}; "
+                        f"дополнительных текстовых частей вне извлечения: {omitted_parts if omitted_parts is not None else 'не оценивалось'}. "
+                        "Не делай выводов о пропущенных страницах, изображениях или частях документа."
+                    )
+                snippet = f"[{marker}] {document_name}{source}{extraction_notice}\n{content[:8_000]}".strip()
                 if total_characters + len(snippet) > 50_000:
                     break
                 formatted_hits.append(snippet)
@@ -686,6 +779,21 @@ class LocalModelClient:
         fallback_model: str,
         tool_observer: ToolObserver | None = None,
         knowledge_context: str | None = None,
+        *,
+        cancelled: threading.Event | None = None,
+    ) -> str:
+        token = _PRIMARY_CANCELLED.set(cancelled)
+        try:
+            return self._complete(lease, fallback_model, tool_observer, knowledge_context)
+        finally:
+            _PRIMARY_CANCELLED.reset(token)
+
+    def _complete(
+        self,
+        lease: dict[str, Any],
+        fallback_model: str,
+        tool_observer: ToolObserver | None,
+        knowledge_context: str | None,
     ) -> str:
         agent = lease["agent"]
         run = lease["run"]
@@ -719,7 +827,7 @@ class LocalModelClient:
         if context_text:
             user_message += f"\n\nКонтекст предыдущих этапов:\n{context_text}"
         knowledge_text = (
-            self.retrieve_knowledge(lease)
+            self.retrieve_knowledge(lease, cancelled=_PRIMARY_CANCELLED.get())
             if knowledge_context is None
             else knowledge_context
         )
@@ -1767,29 +1875,22 @@ class LocalModelClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         with self.telemetry.model_span(model, self.base_url) as model_span:
             self.telemetry.inject(headers)
-            request = urllib.request.Request(
-                f"{self.base_url}/chat/completions",
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
             model_started_at = time.monotonic()
             try:
-                with urllib.request.urlopen(request, timeout=900) as response:
-                    result = json.loads(response.read().decode("utf-8"))
-            except urllib.error.HTTPError as error:
-                detail = error.read().decode("utf-8", errors="replace")
-                if with_tools and error.code in {400, 404, 422}:
+                response = request_model_response(
+                    f"{self.base_url}/chat/completions", payload, headers,
+                    timeout=MODEL_HTTP_TIMEOUT, cancelled=_PRIMARY_CANCELLED.get(),
+                    max_response_bytes=MAX_MODEL_RESPONSE_BYTES, max_error_bytes=MAX_MODEL_ERROR_BYTES,
+                )
+                result = json.loads(response.decode("utf-8"))
+            except HttpResponseError as error:
+                if with_tools and error.status in {400, 404, 422}:
                     raise RuntimeError(
                         "Model endpoint rejected OpenAI-compatible tools. "
                         "Выберите модель/server с function calling либо отключите tools. "
-                        f"HTTP {error.code}: {detail[:700]}"
+                        f"HTTP {error.status}: {error.detail[:700]}"
                     ) from error
-                raise RuntimeError(
-                    f"Model endpoint returned HTTP {error.code}: {detail[:1000]}"
-                ) from error
-            except urllib.error.URLError as error:
-                raise RuntimeError(f"Model endpoint unavailable: {error.reason}") from error
+                raise RuntimeError(str(error)) from error
 
             try:
                 message = result["choices"][0]["message"]
@@ -2128,8 +2229,10 @@ def worker_labels(config: WorkerConfig) -> dict[str, str]:
         labels["tools"] = "mcp_gateway"
     labels["toolSchemaVersion"] = TOOL_SCHEMA_VERSION
     labels.pop("decisionShadow", None)
+    labels.pop("decisionCallerAccounting", None)
     if config.decision_url:
         labels["decisionShadow"] = DECISION_SHADOW_PROFILE
+        labels["decisionCallerAccounting"] = DECISION_CALLER_ACCOUNTING
     return labels
 
 
@@ -2521,15 +2624,40 @@ def heartbeat_loop(
 
 
 def lease_renewer(client: CoordinatorClient, lease_id: str, stop: threading.Event,
-                  cancelled: threading.Event | None = None) -> None:
-    while not stop.wait(45):
+                  cancelled: threading.Event | None = None, *, interval: float = 45,
+                  timeout: float | None = None) -> None:
+    while not stop.wait(interval):
         try:
-            client.renew(lease_id)
+            if timeout is None:
+                client.renew(lease_id)
+            else:
+                client.renew(lease_id, timeout=timeout, cancelled=stop)
         except ApiError as error:
             print(f"Lease renewal failed for {lease_id}: {error}", file=sys.stderr, flush=True)
             if error.status in (401, 403, 404, 409) and cancelled is not None:
-                cancelled.set()
+                if not stop.is_set():
+                    cancelled.set()
                 return
+
+
+def _decide_with_lease_renewal(
+    client: CoordinatorClient, decision_client: LocalDecisionClient, lease_id: str,
+    shadow: dict[str, Any], cancelled: threading.Event,
+) -> dict[str, Any]:
+    if cancelled.is_set():
+        return decision_client.decide(shadow, cancelled)
+    stop = threading.Event()
+    watcher = threading.Thread(
+        target=lease_renewer, args=(client, lease_id, stop, cancelled),
+        kwargs={"interval": SHADOW_LEASE_RENEWAL_INTERVAL, "timeout": SHADOW_LEASE_RENEWAL_TIMEOUT},
+        name="agat-shadow-lease", daemon=True,
+    )
+    watcher.start()
+    try:
+        return decision_client.decide(shadow, cancelled)
+    finally:
+        stop.set()
+        watcher.join(timeout=SHADOW_LEASE_RENEWAL_TIMEOUT + 0.25)
 
 
 def knowledge_lease_renewer(
@@ -2752,13 +2880,13 @@ def _execute_lease_body(
                 data={"kind": "tool_call", "phase": "completed", **audit},
             )
         elif dry_run:
-            knowledge_context = model_client.retrieve_knowledge(lease, dry_run=True)
+            knowledge_context = model_client.retrieve_knowledge(lease, dry_run=True, cancelled=cancelled)
             time.sleep(0.1)
             output = f"Тестовый результат этапа «{agent_name}» для запуска «{run_name}»."
             if knowledge_context:
                 output += " Локальный knowledge-контекст получен и проверен."
         else:
-            knowledge_context = model_client.retrieve_knowledge(lease)
+            knowledge_context = model_client.retrieve_knowledge(lease, cancelled=cancelled)
             client.event(
                 lease_id,
                 f"Вызвана локальная модель {model_name}",
@@ -2836,6 +2964,7 @@ def _execute_lease_body(
                 fallback_model,
                 report_tool,
                 knowledge_context=knowledge_context,
+                cancelled=cancelled,
             )
             current_metrics = metrics.payload()
             client.event(
@@ -2862,8 +2991,13 @@ def _execute_lease_body(
                 else:
                     # Refresh ownership before extra work after a potentially long primary call.
                     client.renew(lease_id, timeout=5)
-                    observation = model_client.decision_client.decide(shadow, cancelled)
-                client.record_decision_shadow(lease_id, observation)
+                    may_invoke = (shadow.get("callerAccountingVersion") != DECISION_CALLER_ACCOUNTING
+                                  or client.begin_decision_shadow(lease_id, shadow.get("assignmentId")))
+                    observation = _decide_with_lease_renewal(
+                        client, model_client.decision_client, lease_id, shadow, cancelled,
+                    ) if may_invoke else None
+                if observation is not None:
+                    client.record_decision_shadow(lease_id, observation)
             except Exception:
                 # No shadow exception, source text or raw model response enters the primary error path.
                 print(f"[{lease_id[:8]}] shadow observation unavailable", file=sys.stderr, flush=True)
@@ -2962,9 +3096,13 @@ def _worker_loop_with_telemetry(
         embedding_request=embedding_request,
     )
     stop = threading.Event()
+    signal_stop_requested = False
 
     def request_stop(_signum: int, _frame: Any) -> None:
-        stop.set()
+        # Event.set acquires a nonreentrant Condition. A handler may interrupt
+        # Event.wait while that same main thread owns it, so only set a flag here.
+        nonlocal signal_stop_requested
+        signal_stop_requested = True
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
@@ -2988,7 +3126,7 @@ def _worker_loop_with_telemetry(
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=config.concurrency, thread_name_prefix="agat-work"
         ) as executor:
-            while not stop.is_set():
+            while not signal_stop_requested and not stop.is_set():
                 if check_embedding_transport is not None:
                     check_embedding_transport()
                 done = {future for future in futures if future.done()}
@@ -2997,7 +3135,7 @@ def _worker_loop_with_telemetry(
                 futures -= done
 
                 leased_any = False
-                while len(futures) < config.concurrency and not stop.is_set():
+                while len(futures) < config.concurrency and not signal_stop_requested and not stop.is_set():
                     if check_embedding_transport is not None:
                         check_embedding_transport()
                     try:
@@ -3022,7 +3160,7 @@ def _worker_loop_with_telemetry(
                                 telemetry,
                             )
                         )
-                    elif config.embedding_models:
+                    elif config.embedding_models and not signal_stop_requested and not stop.is_set():
                         try:
                             knowledge_lease = client.knowledge_lease()
                         except ApiError as error:
@@ -3054,10 +3192,17 @@ def _worker_loop_with_telemetry(
                         stop.set()
                         break
 
-                if stop.is_set():
+                if signal_stop_requested or stop.is_set():
                     break
-                stop.wait(0.2 if leased_any else config.poll_interval)
+                # Check the signal flag promptly without increasing lease polling.
+                poll_until = time.monotonic() + (0.2 if leased_any else config.poll_interval)
+                while not signal_stop_requested and not stop.is_set():
+                    remaining = poll_until - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    stop.wait(min(remaining, 0.2))
 
+            stop.set()
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         if check_embedding_transport is not None:

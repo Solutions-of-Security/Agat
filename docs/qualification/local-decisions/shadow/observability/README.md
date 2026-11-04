@@ -1,5 +1,16 @@
 # Метрики локального decision runtime
 
+[План реального shadow-пилота](./shadow-pilot-plan.md) закрепляет workflow,
+окно наблюдения и предлагаемые targets до сбора полного cohort.
+
+[Экспорт полного сохранённого cohort](./shadow-pilot-cohort.md) читает одну
+process/version/window популяцию из SQLite/PostgreSQL snapshot и сохраняет
+failed/cancelled/pending/replay и caller ledgers без task/primary текста.
+
+[Сверка pilot SLI](./shadow-pilot-evaluation.md) связывает весь cohort с
+prospective plan и профилем, сохраняет неизвестные returns и сравнивает
+диапазоны с draft targets без принятия SLO.
+
 26.09.2026. Runtime **0.12.0** экспортирует Prometheus-метрики через `GET /metrics` на прежнем loopback-порту. Реальный MLX-прогон, официальный парсер и проверки правил прошли. Конфигурация подготовлена для оператора; постоянный scraper, Alertmanager и получатели уведомлений не устанавливались. Автоматическая маршрутизация остаётся выключенной.
 
 ## Контракт экспорта
@@ -76,6 +87,71 @@ sum by(instance) (rate(agat_decision_requests_total{job="agat-decision"}[5m]))
 
 ## Воспроизведение
 
+[Native Prometheus 3.13.4](./native-prometheus.md) прошёл 04.10 реальный
+scrape/recovery опыт: loopback, полный профиль 0.12.2, counters/reset,
+pending/cleared alert и owned cleanup. [Resident bundle](./resident-deployment.md)
+подготовлен и прошёл отдельный native gate; manager прошёл ownership/cleanup
+tests. [Первый install/status/stop](./resident-port-reuse.md) прошёл, повторный
+preflight выявил и воспроизвёл ошибку address reuse; fix проверен.
+[Полный повтор постоянного rollout](./resident-rollout.md) прошёл: два user
+LaunchAgents работают из resident bundle, scrape и counters проверены.
+07.10 MSK [постоянный wired rollout 0.12.3](./resident-wired-rollout-0.12.3.md)
+переключил оба jobs на профиль с wired budget 4096 МиБ; два installs,
+stop/reinstall и отдельный native audit прошли. Boot/login и согласование owner/SLO остаются открытыми.
+
+[Bounded crash-loop gate](./resident-crash-loop.md) выполняется отдельным
+временным job с тремя отказами, четырьмя поколениями и 30-секундным stable
+окном. Native wired gate и отдельный audit прошли: 30/30/30 секунд между
+стартами, точный baseline, все 13 временных PID/job очищены; постоянный
+resident сохранил PID/profile/counters и свежий scrape.
+
+[Приёмка boot/login](./resident-boot-login.md) имеет отдельный
+readonly CLI: baseline file SHA, реальная OS/GUI session identity, времена
+начала процессов, точный environment и прежняя registration привязка.
+Требуемый event должен наблюдаться фактически; прежняя сессия возвращает
+`awaiting_event` с exit 2.
+
+[Однократный login collector](./resident-login-observer.md) подготавливает
+frozen baseline source в Application Support и проверяет boot/login из
+отдельного `RunAtLoad`, `KeepAlive=false` job. Pending observation остаётся
+pending; snapshot и его Git objects не зависят от временного checkout.
+
+[Caller timing/SLI](./caller-sli.md) добавляет negotiated monotonic timing
+локального HTTP call и pinned offline анализ сохранённых coordinator traces.
+Ошибки, late/missing результаты, legacy gaps и replay имеют явное accounting.
+[Owner/SLO proposal](./resident-service-acceptance.md) остаётся draft;
+диагностические ratios не подтверждают пользовательский SLO.
+
+[История assignments](./assignment-history.md) сохраняет shadow dispatch
+leases при retry, validated observations и coverage/legacy gap.
+Assignment не считается доказанным HTTP send; record-once и primary path
+сохраняются.
+
+[Caller accounting](./caller-accounting.md) сохраняет negotiated intent/return
+receipts, unknown outcomes после worker death и отдельный caller denominator.
+[PostgreSQL caller gate](./caller-postgres.md) проверяет concurrent begin,
+row/event-lock expiry, retained COMMIT ACK, idempotency, restart и tenant RLS;
+readonly inventory учитывает фактический expiry до maintenance.
+
+[Actual Python caller recovery](./caller-worker-postgres.md) проверил четыре
+unknown-COMMIT сценария и следующую lease в том же worker/coordinator.
+Два native прогона прошли по 12 targeted / 112 Fleet/HA tests; actual
+renewal HTTP 204 измеряется без подстановки success code. Следующий gate —
+явная идентичность configured JSON bytes при offline SLI accounting.
+
+[Configured profile identity](./caller-profile-identity.md) добавляет
+explicit JSON bytes mode. Native SQL traces дают восемь intents, шесть
+returns и два unknown без profile mismatch; historical default latency
+и ratios сохранены. Следующий gate — актуальный Temporal/PostgreSQL/RAG.
+
+[Latest Temporal/PostgreSQL/RAG caller gate](../../performance/temporal-caller-runtime-0.12.3.md)
+прошёл actual recovery обоих transports, SQL binding шести intents/returns
+и независимый replay 137 events. Диагностические latency и ratios опубликованы.
+
+[Stage inventory](./stage-inventory.md) показывает assigned pending и
+terminal stages без observation; отдельный census не подменяет ими HTTP
+latency. Legacy inventory gaps и safe replay имеют явное accounting.
+
 ```bash
 .venv/decision/bin/python scripts/check-decision-metrics.py \
   --manifest .local-models/decisions/decider-2b.json \
@@ -89,6 +165,6 @@ promtool check config docs/qualification/local-decisions/shadow/observability/pr
 promtool test rules docs/qualification/local-decisions/shadow/observability/alerts.test.yml
 ```
 
-Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. Нативное восстановление на этом Mac по-прежнему не подтверждено из-за Documents/TCC; данный опыт его не заменяет.
+Артефакты создаются эксклюзивно. Проверка сохранённых результатов требует версии runtime и harness, записанной в плане. На целевом сервере нужно отдельно проверить выбранную версию Prometheus, подключить scraper и определить владельца реакций. [Нативное восстановление 0.12.2](../native-launchd-0.12.2.md) подтверждено 04.10 из resident checkout вне Documents; настоящий scraper и постоянная регистрация затем проверены на этом Mac. Владелец реакций и production SLO пока не согласованы.
 
 Решения опираются на официальные рекомендации [instrumentation](https://prometheus.io/docs/practices/instrumentation/), [naming](https://prometheus.io/docs/practices/naming/), [формат экспорта](https://prometheus.io/docs/instrumenting/exposition_formats/), [Python parser](https://prometheus.github.io/client_python/parser/) и [unit testing rules](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/), проверенные 26.09.2026. Ограничение labels и раздельная latency отклонённых запросов выбраны по фактическому устройству этого runtime.

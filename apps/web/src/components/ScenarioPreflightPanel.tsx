@@ -2,6 +2,7 @@ import React, { useState, type MouseEvent } from "react";
 import type { ScenarioPreflight } from "../scenarioPreflight";
 import type { AgatRole } from "../types";
 import { canAccessView, parseAppRoute } from "../navigation";
+import { DeploymentStatus } from "./DeploymentStatus";
 
 export function ScenarioPreflightPanel({ result, error, onRefresh, onRecover, roles }: {
   result: ScenarioPreflight | null;
@@ -35,6 +36,7 @@ export function ScenarioPreflightPanel({ result, error, onRefresh, onRecover, ro
       {result.verification ? <p>Сценарий завершён на этой версии и конфигурации. <a href={result.verification.href} onClick={(event) => onRecover?.(event, result.verification!.href)}>Открыть подтверждающий запуск</a></p>
         : <p>Сценарий ещё не проверен: нужен полный успешный запуск с текущими агентами, знаниями и инструментами, включая предусмотренные согласования.</p>}
       {result.notices.map((notice) => <p key={notice}>{notice}</p>)}
+      <DeploymentStatus deployment={result.deployment} />
       {copyMessage ? <p role="status">{copyMessage}</p> : null}
       <p className="muted">Доступность и policy повторно проверяются при выполнении.</p>
     </>}

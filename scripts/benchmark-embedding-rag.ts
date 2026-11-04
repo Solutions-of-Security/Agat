@@ -11,6 +11,8 @@ assert.ok(values.plan && values["primary-url"]);
 const directory = path.dirname(path.resolve(values.plan)), frozen = fs.readFileSync(values.plan);
 const plan = JSON.parse(frozen.toString()), primaryUrl = origin(values["primary-url"]!);
 assert.equal(plan.schema, "agat.embedding.rag-plan.v1");
+assert.ok(plan.ownedHttpProbe === undefined || plan.ownedHttpProbe === "agat.worker.owned-http.v1");
+process.env.AGAT_HTTP_HELPER_PROBE = plan.ownedHttpProbe ? "1" : "0";
 assert.deepEqual(plan.blocks.map((block: any) => block.transport), ["isolated", "session", "session", "isolated"]);
 const fixture = plan.fixture as Fixture;
 validatePlan(fixture, plan.blocks.map((block: any) => block.phase));
@@ -56,6 +58,11 @@ try {
     assert.equal(probe?.transport, block.transport);
     assert.equal(probe?.exitCode, 0);
     assert.equal(probe?.failure, null);
+    if (plan.ownedHttpProbe) {
+      assert.equal(probe?.ownedHttp?.schema, plan.ownedHttpProbe);
+      assert.equal(probe.ownedHttp.activeCalls, 0);
+      assert.deepEqual(probe.ownedHttp.errors, []);
+    }
     console.log(`block ${step}: completed, primary=${workflow.primaryCalls.length}, embedding=${workflow.embeddingCalls!.length}`);
   }
   step = "final_identity";

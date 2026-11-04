@@ -50,6 +50,7 @@ class FrozenProfileTest(unittest.TestCase):
     def test_fit_rejects_consistently_changed_execution_metadata_and_per_row_version(self):
         data, plan, scores, _, _ = pipeline()
         for key, value in (("maxInputTokens", 4096), ("allocatorCacheLimitBytes", 0),
+                           ("allocatorWiredLimitBytes", 4294967296),
                            ("implementationSha256", "f" * 64), ("inferenceExecution", {"deadlineMs": 1})):
             changed = copy.deepcopy(scores)
             changed["model"][key] = value

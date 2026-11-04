@@ -1,0 +1,508 @@
+
+> agat-platform@1.7.0 test:coordinator
+> npm run test --workspace @agat/coordinator
+
+
+> @agat/coordinator@1.7.0 test
+> node --import tsx --test test/*.test.ts
+
+(node:437) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ A2A 1.4 interoperability
+  ✔ persists bounded inline files and publishes binary worker artifacts without URL dereference (103.237334ms)
+  ✔ keeps push credentials encrypted and advances a durable retry outbox by task state (83.668958ms)
+  ✔ stores outbound peer secrets project-scoped and mirrors only redacted task metadata (34.972583ms)
+  ✔ discovers a loopback peer and exchanges the caller token without persisting it (26.625917ms)
+  ✔ rejects private and IPv4-mapped IPv6 targets while normalizing bracketed loopback (2.550459ms)
+  ✔ rejects malformed peer states, server messages and artifacts before persistence (0.642375ms)
+  ✔ advertises opt-in streaming, push and file modes in the Agent Card (46.548625ms)
+  ✔ reserves delegated OAuth and isolated MCP executable profiles for admins (187.6545ms)
+  ✔ exercises dashboard outbound discovery/invoke and authenticated push delivery over HTTP+JSON (571.045417ms)
+✔ A2A 1.4 interoperability (1057.9875ms)
+(node:438) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ A2A adapter
+  ✔ ends event streams before store closure and stops their delayed reads (1238.830208ms)
+  ✔ publishes a minimal 1.0 Agent Card without internal prompts, tools or memory (36.130583ms)
+  ✔ accepts only declared inline text or JSON and rejects files, follow-ups and push config (0.623042ms)
+  ✔ maps a task to the scheduler, preserves idempotency and inherits W3C trace context (44.312458ms)
+  ✔ hashes and rotates endpoint tokens and keeps endpoints project-scoped (31.689291ms)
+  ✔ exposes approval as AUTH_REQUIRED, enforces active-task limits and supports cancellation and cursors (32.359166ms)
+  ✔ serves the HTTP+JSON 1.0 contract with scoped bearer authentication (340.372625ms)
+✔ A2A adapter (1725.425667ms)
+✔ approve допускает комментарий, но не сохраняет rejection reason (1.621333ms)
+✔ reject требует непустую причину и ограничивает длину (0.26025ms)
+✔ MCP deadline следует bounded TTL, stage не получает вымышленный срок (9.319541ms)
+✔ audit payload сохраняет actor, note и только redacted snapshot (0.404084ms)
+✔ финальный MCP approve отражает нового approver в resolved snapshot (0.14325ms)
+(node:441) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ S3-compatible Artifact Store integration (0.552ms) # SKIP
+(node:442) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ OIDC authentication
+  ✔ verifies Keycloak RS256 claims, merges roles and caches JWKS (23.212208ms)
+  ✔ rejects expired, wrong-client and tampered tokens (2.520625ms)
+  ✔ requires an AGAT role (0.962083ms)
+✔ OIDC authentication (27.427417ms)
+▶ project isolation
+  ✔ keeps agents, processes, runs, credentials and events inside the active project (145.977292ms)
+✔ project isolation (146.066833ms)
+(node:443) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ workflow workload limits and explicit loopback URLs are enforced before workers (30.592ms)
+✔ real worker completes three stages with primary outputs preserved through observed shadow HTTP (3824.199417ms)
+(node:444) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ citation aliases are bound to earlier/current stages of the same trace and reject changed provenance (16.991333ms)
+✔ RAG rejects cloud identities, source truncation and invalid vectors before claiming retrieval (2.209125ms)
+✔ real workers index both documents, retrieve every stage and preserve primary outputs with shadow (4706.793583ms)
+(node:445) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ disabled shadow is a read-only notice and cannot block or qualify the primary scenario (110.549208ms)
+✔ readiness uses the same Choice/Boolean/Score capability contract as actual leases (781.797709ms)
+✔ partial capability is explicit; shadow does not steer dispatch away from the primary worker (64.253792ms)
+✔ ineligible and stale capable workers cannot make shadow readiness look available (190.290958ms)
+✔ model-router selection controls which capability is relevant without changing the primary route (45.809875ms)
+✔ no free worker remains queueable; shadow adds advice, never a new blocker (45.093083ms)
+✔ notices follow the published pin, include nested steps and do not leak across projects (48.680666ms)
+✔ observer forwards exact body/profile/opt-in and does not cancel after a completed body or response (204.173959ms)
+✔ an opted-in caller disconnect closes the pending upstream and is recorded as client cancellation (21.406916ms)
+✔ legacy callers without opt-in may disconnect while the upstream computation completes (76.124ms)
+✔ owner cancellation closes upstream independently of peer opt-in (52.161625ms)
+✔ busy status is preserved and the response byte bound is enforced while reading (13.729375ms)
+(node:448) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ native edge enrollment and credential lifecycle
+  ✔ consumes a bound challenge once and protects an attested name from shared-token takeover (73.408917ms)
+  ✔ blocks scheduling immediately, limits the pending token to control, and revokes it after wipe ack (36.142334ms)
+✔ native edge enrollment and credential lifecycle (110.261666ms)
+▶ edge attestation boundary
+  ✔ accepts only a fresh broker verdict bound to challenge, app and hardware policy (2.848875ms)
+  ✔ exposes the wipe command only to the attested node control channel (87.011958ms)
+✔ edge attestation boundary (90.030208ms)
+(node:449) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ embedding renew rejects an invalid lease (before request) without changing the index (80.558959ms)
+ℹ renew/before request: accepted=false, job=running, document=indexing
+✔ embedding renew rejects an invalid lease (invalid expiry) without changing the index (31.469333ms)
+ℹ renew/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (before request) without changing the index (43.558958ms)
+ℹ complete/before request: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (invalid expiry) without changing the index (55.50175ms)
+ℹ complete/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding complete rejects an invalid lease (during job read) without changing the index (31.259ms)
+ℹ complete/during job read: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (before request) without changing the index (31.026458ms)
+ℹ fail/before request: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (invalid expiry) without changing the index (42.782542ms)
+ℹ fail/invalid expiry: accepted=false, job=running, document=indexing
+✔ embedding fail rejects an invalid lease (during job read) without changing the index (135.3115ms)
+ℹ fail/during job read: accepted=false, job=running, document=indexing
+✔ embedding complete rolls back its index and event if persistence outlasts the lease (31.507125ms)
+✔ embedding fail rolls back its index and event if persistence outlasts the lease (31.301291ms)
+✔ embedding maintenance rolls back retry if the document update fails (32.2235ms)
+✔ embedding maintenance rolls back terminal failure if the document update fails (34.227916ms)
+(node:450) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ golden eval and prompt registry
+  ✔ pins a prompt version across a batch and promotes prompt/model only after a passing gate (54.37875ms)
+  ✔ keeps human rubric reviews append-only and uses the latest human score (51.643334ms)
+  ✔ runs an optional local model judge and audits its parsed score (82.433041ms)
+  ✔ detects knowledge drift instead of silently running a stale golden dataset (67.0655ms)
+  ✔ keeps prompt registries, datasets and experiment details project-scoped (42.986958ms)
+✔ golden eval and prompt registry (299.345417ms)
+(node:451) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ PostgreSQL Fleet/HA integration (0.562542ms) # SKIP
+(node:513) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ Fleet and HA policy
+  ✔ enforces regional queue quotas and exports redacted audit events (45.175916ms)
+  ✔ verifies Ed25519 releases, stages a rollout and fail-closes revoked workers (39.833125ms)
+  ✔ rejects one key reused across release, provenance and runtime trust boundaries (0.515709ms)
+  ✔ binds OCI provenance to a fresh runtime-attested workload and rejects replay (34.231917ms)
+  ✔ dead-letters poison SIEM events, preserves redaction and requires controlled replay (35.273416ms)
+✔ Fleet and HA policy (155.868584ms)
+(node:574) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ knowledge HTTP uploads and previews DOCX, persists parse errors, authorizes reindex and isolates files/sources (567.279833ms)
+(node:575) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ PDF extraction retains physical page numbers, DOCX paragraphs, tables and Unicode (2486.415292ms)
+✔ parser rejects corrupt, empty and oversized documents and XML entities (2518.946167ms)
+✔ upload, failed parse, preview, reindex leases and project boundaries persist correctly (3235.675542ms)
+✔ retrieval and reports preserve auditable page/fragment snapshots through reindex and deletion (1403.117291ms)
+✔ process result artifacts contain sources and failed embedding jobs can be restarted (182.137292ms)
+✔ existing text-only SQLite databases migrate without losing document content (82.601875ms)
+✔ shared ranker keeps stable unrounded topK and sends only selected metadata (1.901917ms)
+✔ shared ranker validates late candidates outside topK and closes the input iterator on failure (0.400125ms)
+✔ invalid ranker options fail before opening a cursor (0.14775ms)
+(node:597) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ full candidate boundary preserves an old exact match, rejects truncation across collections, and rolls back multi-query search (959.37225ms)
+✔ topK ranks close cosine scores before display rounding (35.844875ms)
+✔ bounded topK retains both ends of a monotonic vector sequence across queries (41.004209ms)
+✔ topK preserves a float64 winner when float32 conversion would collapse the candidate pool (43.605334ms)
+(node:599) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ expired retrieval leases fail before maintenance and stay invalid after reassignment (46.46425ms)
+✔ SQLite rechecks lease expiry after consuming candidates and rolls back before storing sources (36.395416ms)
+✔ SQLite rolls back retrieval and its event when the lease expires during event persistence (35.468416ms)
+✔ wrong retrieval model or query dimensions fail explicitly without a success trace, and a corrected query succeeds (33.66925ms)
+✔ every selected collection is validated and one incompatible query rolls the whole retrieval back (42.210334ms)
+✔ a selected empty optional collection remains a valid empty search, but not for the wrong model (32.344375ms)
+✔ damaged stored vectors are reported as an index error instead of discarded as missing evidence (34.450583ms)
+(node:601) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ real worker stops before primary/shadow on incompatible or unavailable query embeddings, then recovers with a valid index (4353.317584ms)
+(node:629) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ operator candidate limit is strict, defaults to 5000 and cannot exceed 10000 (3.37225ms)
+✔ shared scorer accepts its exact hard boundary and rejects the next candidate without truncation (11.080791ms)
+✔ SQLite uses only the operator budget, preserves an old match above 5000 and records the applied limit (821.294458ms)
+✔ isolated retrieval is an explicit PostgreSQL opt-in with a reserved pool budget (3.123125ms)
+✔ retrieval queue and deadline settings reject malformed values and enforce their hard bounds (1.9815ms)
+✔ coordinator and retrieval pools together fit the already admitted per-role capacity (0.19625ms)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ isolated HTTP retrieval returns committed provenance and distinct markers for overlapping requests (524.868459ms)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ queued retrieval rechecks credentials and expiry, enforces admission, and rolls back a malformed later query (564.1105ms)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ executor shutdown finishes its active transaction, rejects queued work and never retries it (510.358542ms)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ an active deadline closes admission without replaying queued transactions (625.495667ms)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:651) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ an executor retains the supplied signed-release policy instead of trusting HTTP admission (895.913708ms)
+(node:654) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ local knowledge and memory
+  ✔ indexes locally, retrieves with provenance and records an auditable trace (65.90775ms)
+  ✔ enforces project snapshots and embedding dimensions (32.072542ms)
+  ✔ accounts embedding work in the same global scheduler budget (31.985ms)
+  ✔ chunks at readable boundaries and rejects unsafe vectors (0.270667ms)
+✔ local knowledge and memory (132.441333ms)
+(node:685) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ stage renewal rolls back its UPDATE on expiry (51.395958ms)
+✔ stage renewal rolls back its UPDATE on storage error (31.162583ms)
+✔ embedding renewal rolls back its UPDATE on expiry (31.68725ms)
+✔ embedding renewal rolls back its UPDATE on storage error (72.271125ms)
+(node:694) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ real Python worker carries a pinned decision through lease, loopback inference and coordinator HTTP (1097.676167ms)
+(node:695) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Python and TypeScript agree on Unicode request identity and Boolean false (82.847584ms)
+✔ coordinator recomputes abstention and rejects identity, probability, candidate and policy tampering (274.14ms)
+✔ isolated inference timeout and unavailable errors stay bound to the lease and preserve primary fallback (79.226417ms)
+✔ process publication rejects invalid contracts and routing mode (1.281833ms)
+✔ Score uses the same binary64 fingerprint across Python and JavaScript numeric encodings (423.459667ms)
+✔ Score validates the weighted mean, numeric zero, abstention and fingerprint version (276.219208ms)
+✔ legacy runtime profiles and Choice/Boolean input fingerprints remain accepted (66.345166ms)
+✔ Score requires pinned runtime support, finite unique numeric levels and v2 worker capability (160.585708ms)
+✔ opt-in shadow stores once, survives retry and preserves primary output, ACL and process replay guard (124.978541ms)
+✔ feature flag, old workers, malformed responses and missing observations always retain the primary path (191.927958ms)
+✔ cancelled and expired leases cannot append a shadow result or revive ownership (93.726667ms)
+✔ shadow rejects lease expiry during stage read and preserves only previously committed observations (67.102875ms)
+ℹ After expiry at stage read: observation=false, events=0
+✔ shadow rejects lease expiry during event insert and preserves only previously committed observations (37.611333ms)
+ℹ After expiry at event insert: observation=false, events=0
+✔ shadow rejects lease expiry during idempotent retry and preserves only previously committed observations (37.978792ms)
+ℹ After expiry at idempotent retry: observation=true, events=1
+✔ shadow never bypasses stage approval (96.422125ms)
+✔ safe replay reuses the recorded shadow with provenance; live replay starts a new observation (160.448458ms)
+✔ safe replay does not substitute a recorded observation for a changed upstream output (234.724583ms)
+✔ a recorded decision survives coordinator restart without recomputation (174.663333ms)
+▶ local worker launcher
+  ✔ builds an isolated, non-root worker deployment with a fixed model (0.960042ms)
+  ✔ launches several independent workers and stops or starts the whole pool (3.758959ms)
+  ✔ rejects unsafe model names and excessive local worker counts (0.436667ms)
+✔ local worker launcher (6.299791ms)
+▶ MCP policy as code
+  ✔ maps risk labels to tiers and enforces four-eyes despite a legacy allow (1.49275ms)
+  ✔ uses the first matching rule and keeps legacy deny as a hard floor (0.481ms)
+  ✔ rejects policy code that weakens critical effects below two people (0.233166ms)
+  ✔ builds a redacted before/after preview diff (0.293708ms)
+✔ MCP policy as code (3.268958ms)
+(node:700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ MCP gateway and risk policy
+  ✔ migrates legacy MCP calls to risk-tier policy snapshots (145.070708ms)
+  ✔ rejects endpoint secrets and transport-owned credential headers (37.971959ms)
+  ✔ uses the pinned 2026 Streamable HTTP wire contract through the official SDK (40.760375ms)
+  ✔ syncs a deterministic catalog and auto-runs only trusted read tools (46.547417ms)
+  ✔ treats untrusted annotations as unknown and executes only after operator approval (40.538916ms)
+  ✔ rejects an approval without contacting the upstream (32.85125ms)
+  ✔ cancels an orphaned approval and prevents any later operator execution (41.1935ms)
+  ✔ will not complete a lease while an approved MCP call is still executing (33.747333ms)
+  ✔ keeps servers project-scoped and never exposes upstream credentials in a lease (34.810541ms)
+  ✔ disables stage retry after a non-read MCP call with an uncertain side effect (34.681292ms)
+  ✔ requires two distinct identities for destructive side effects and stores a redacted preview diff (110.300875ms)
+  ✔ previews and activates immutable project policy versions with optimistic concurrency (125.314667ms)
+  ✔ central emergency deny rejects pending and stale-lease calls without contacting upstream (35.068417ms)
+  ✔ rechecks emergency deny in the final preflight immediately before the upstream tool call (48.250083ms)
+  ✔ enforces MCP credential scopes at binding and before an upstream call (67.835333ms)
+  ✔ routes an encrypted WASI profile through the same critical four-eyes policy boundary (123.27375ms)
+✔ MCP gateway and risk policy (999.5905ms)
+▶ PostgreSQL connection admission
+  ✔ admits both system and tenant pools with explicit operational headroom (0.592458ms)
+  ✔ rejects aggregate oversubscription even when each individual role limit fits (0.132958ms)
+  ✔ rejects a role CONNECTION LIMIT below replica pool demand (0.071625ms)
+✔ PostgreSQL connection admission (1.534541ms)
+(node:736) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ managed PostgreSQL resilience contract
+  ✔ keeps the deployed production policy parseable and fail-closed (5.077ms)
+  ✔ accepts fresh multi-AZ/PITR evidence with distinct SLO approvers (17.102ms)
+  ✔ fails closed for stale, single-zone and incorrectly approved evidence (0.325459ms)
+  ✔ detects tampering in HMAC-sealed operational evidence (0.707ms)
+  ✔ evaluates a measured monthly SLO only with fresh passing DR reports (0.302208ms)
+✔ managed PostgreSQL resilience contract (24.359042ms)
+✔ one shared allocation serves repeated large/small responses without corrupting previous results (302.137667ms)
+✔ notification without a ready flag does not expose the previous response (52.062833ms)
+✔ already-published responses, timeout and corrupted length remain explicit (8.920625ms)
+(node:942) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ process activities
+  ✔ renders only bounded declarative expressions (1.5385ms)
+  ✔ encrypts credentials and executes HTTP, approval, wait and artifact stages in one durable run (102.178125ms)
+  ✔ rejects MCP-scoped credentials in HTTP process steps (81.706167ms)
+  ✔ tests transform and HTTP draft nodes without publishing a process (60.5595ms)
+  ✔ lets a Temporal workflow own durable wait timers without polling them from overview or workers (57.054042ms)
+✔ process activities (303.852917ms)
+(node:1135) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ process builder 1.2
+  ✔ forks deterministic tokens, joins every branch once and preserves branch order (99.858417ms)
+  ✔ rejects a fork branch that can reach end without its paired join (38.790542ms)
+  ✔ waits on a separately addressable external signal and exposes an idempotent webhook trigger (33.151625ms)
+  ✔ starts webhook instances exactly once for one Idempotency-Key (110.768125ms)
+  ✔ pins subprocess versions and clones reusable templates (33.789792ms)
+  ✔ resolves embedded subprocess events to the root runtime owner (74.456458ms)
+  ✔ cancels pending signals and embedded subprocesses without allowing late resurrection (33.784541ms)
+  ✔ diffs immutable versions and round-trips BPMN 2.0 extensions (41.142208ms)
+  ✔ imports a standard BPMN parallel gateway without AGAT extensions (29.890542ms)
+  ✔ rejects ambiguous multi-process BPMN instead of merging definitions (29.088292ms)
+  ✔ reuses recorded side effects in safe instance replay and sends deterministic idempotency keys (54.46825ms)
+  ✔ runs compensations in reverse order and keeps their calls idempotent (36.615625ms)
+  ✔ does not compensate an HTTP side effect that never completed (53.825333ms)
+  ✔ normalizes interval, cron and calendar schedule specs without accepting invalid timezone input (36.584208ms)
+✔ process builder 1.2 (707.367042ms)
+(node:1146) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ catalog HTTP route and create endpoint preserve admin checks, project isolation and version validation (192.067292ms)
+(node:1175) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ every catalog graph can be published after explicit project agent binding (159.811208ms)
+✔ unassigned roles stay draft; project template copies preserve independence and cannot run unpublished (34.650334ms)
+✔ catalog instantiation rejects stale versions, ambiguous input and invalid or foreign bindings before creating anything (38.349375ms)
+✔ catalog reads and instances do not mutate canonical definitions (1.03125ms)
+✔ all 13 templates reach human review and persist their artifact on approval using simulated worker output (499.044833ms)
+✔ all 13 templates reach human review and stop without final artifact on rejection using simulated worker output (603.798125ms)
+(node:1197) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ human forms HTTP validates before advancing, respects project scope and audits the submitted answers (203.765583ms)
+(node:1198) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ form schema survives draft, publication and BPMN round trip; malformed published schemas are rejected (20.324875ms)
+✔ server validates required fields, scalar types, choices, real dates, size and unexpected keys (12.244042ms)
+✔ answers resume a pinned form after a restart, preserve input, reach templates and cannot be submitted twice (98.152084ms)
+✔ each loop visit gets a new human task and a JSON answer exits the cycle early (87.879708ms)
+✔ loop limit exits even when the answer keeps requesting rework, rejection needs no form (43.037542ms)
+✔ an agent approval passes validated answers to its worker input (38.823917ms)
+✔ a legacy approval without a form preserves the original input for the first agent (40.775166ms)
+✔ fifty immediate repeats complete beyond the old 128-transition ceiling; original context stays bounded (63.737583ms)
+✔ publication rejects cycles bypassing a bounded repeat and repeat branches that never return (0.551542ms)
+(node:1226) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ input templates are optional, literal text and limited in both drafts and published graphs (2.625584ms)
+✔ saved templates survive versions, cloning and BPMN without changing actual run input (80.726042ms)
+(node:1291) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ region-loss DR PostgreSQL activation (0.570041ms) # SKIP
+(node:1294) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ residency-aware region-loss DR
+  ✔ accepts only a fenced active/passive transition with aligned recovery points (51.509375ms)
+  ✔ fails closed for cross-residency, active writers, stale evidence and unsafe replication (0.484959ms)
+  ✔ binds the sealed plan to the exact restored project and artifact snapshots (0.53675ms)
+✔ residency-aware region-loss DR (53.263459ms)
+▶ isolated MCP tool sandbox
+  ✔ validates immutable artifacts and exact public-IP egress (5.399333ms)
+  ✔ builds a one-shot non-root Job, immutable invocation Secret and default-deny policy (1.360833ms)
+  ✔ executes through Kubernetes API, rechecks the kill switch and cleans every ephemeral object (0.53825ms)
+  ✔ retains the network boundary until an emergency-aborted Pod is confirmed gone (0.448416ms)
+  ✔ fails closed for native containers without confirmed NetworkPolicy enforcement (0.209666ms)
+✔ isolated MCP tool sandbox (8.730083ms)
+(node:1296) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ preflight HTTP is project-scoped and read-only; start returns actionable conflicts and preserves the reviewed pin (264.204583ms)
+(node:1300) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fleet readiness snapshot is project-bound and remains advisory when worker capacity changes (77.228666ms)
+✔ template preview, saved draft, queueable, runnable and verified are distinct; blockers have exact recovery targets (43.49375ms)
+✔ start uses the reviewed version even after another publication and rejects missing or invalid pins (92.060583ms)
+✔ runtime profile and all specialist models must be available on the same worker (112.340875ms)
+✔ selected knowledge waits for complete embeddings and retrieval support on the agent worker (99.507708ms)
+✔ required tool catalog, gateway, policies and credential scopes are checked without exposing secrets (114.534792ms)
+✔ availability is rechecked on start; busy workers remain queueable (36.559333ms)
+✔ required isolated tools wait for sandbox availability and container network enforcement (165.157042ms)
+✔ trigger readiness distinguishes manual, disabled runtime, missing/paused schedule and project-owned start webhook (37.15625ms)
+✔ verification requires a full completed scenario, survives a worker outage and is invalidated by agent or version changes (42.528584ms)
+✔ trigger preflight checks the knowledge actually configured for scheduled and webhook starts (33.082875ms)
+✔ required tools survive save, publication, project-template copy and schema validation (54.266625ms)
+✔ expired scopes are precise blockers, not exceptions; an unrelated expired credential does not block a scenario (37.65ms)
+✔ human rejection and unfinished approval cannot verify a scenario; completed approval can (44.848709ms)
+✔ verification is bound to the actual trigger; latest-version triggers reject older pins (41.18775ms)
+(node:1304) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ scheduled cancellation survives schema 29 upgrade, restart and retained or absent creation receipts (166.306708ms)
+✔ scheduled cancellation atomically rolls back the intent if application cleanup fails (93.425916ms)
+✔ scheduled-cancel HTTP validates auth and key, fences late creates, and preserves project boundaries (124.096583ms)
+(node:1305) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ scheduled-start receipt survives restart, publication, capacity changes and run retention (139.912875ms)
+✔ scheduled-start rolls back all process writes if receipt persistence fails and leaves rejected starts retryable (78.168667ms)
+✔ schema 28 receipts restore scheduled ownership without taking over manual or foreign-project instances (134.610125ms)
+✔ scheduled-start HTTP requires a bounded key and internal auth, rejects mismatches and isolates projects (107.401167ms)
+(node:1306) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ scheduler
+  ✔ globally serializes work in sequential mode (56.147042ms)
+  ✔ uses independent nodes in parallel mode (95.594166ms)
+  ✔ respects node load in auto mode (35.207625ms)
+  ✔ refreshes worker models and limits through heartbeat capabilities (32.333125ms)
+  ✔ removes only stale nodes that belonged to deleted managed worker pools (90.457ms)
+  ✔ runs a chain in order and waits for the approval gate (59.570917ms)
+  ✔ persists a full run trace with exact input and observable worker calls (112.861291ms)
+  ✔ propagates W3C trace context and persists execution metrics (42.348708ms)
+  ✔ pins agent snapshots and creates safe side-by-side replay runs (38.523625ms)
+  ✔ rejects replay when a run contains a side-effecting stage (31.427083ms)
+  ✔ stores stage output, final result and agent artifacts under the configured root (102.47875ms)
+  ✔ rejects artifact paths that can escape the configured store (29.619583ms)
+  ✔ returns expired work to the queue (32.098292ms)
+  ✔ fails an endlessly expiring lease after the configured attempt budget (51.983167ms)
+  ✔ timestamps a run when the final worker attempt fails (33.34925ms)
+  ✔ creates, updates and reports real agent usage (32.689084ms)
+  ✔ routes a model-pinned agent only to a compatible node (36.642167ms)
+  ✔ selects the smallest profiled model that passes balanced policy constraints (36.863958ms)
+  ✔ learns passive throughput benchmarks and performance-routes to the fastest node (36.531375ms)
+  ✔ falls back to the next node after a routed attempt fails (104.051625ms)
+  ✔ routes a LangGraph agent only to a worker that advertises the runtime (52.099042ms)
+  ✔ pins ordered specialist subgraphs and requires every member model on one worker (37.045875ms)
+  ✔ rejects unsafe or recursive specialist team definitions (44.880042ms)
+  ✔ rejects unknown or unbounded agent runtime configuration (28.997166ms)
+  ✔ requires approval before a single-agent final stage (39.514708ms)
+  ✔ removes only known demo fixtures when live mode opens an existing database (107.572041ms)
+  ✔ migrates existing agents and nodes to safe single-runtime defaults (137.034875ms)
+  ✔ adds trace and evaluation columns before creating their index on a legacy runs table (81.537708ms)
+  ✔ executes a published process snapshot through the existing worker queue (37.9745ms)
+  ✔ bounds a loop and records every repeated agent visit (40.749334ms)
+  ✔ pins running instances to immutable published versions (36.992167ms)
+  ✔ supports approval gates on visual agent steps (35.256292ms)
+  ✔ rejects an unsafe loop without an explicit exit branch (28.983833ms)
+  ✔ stores an incomplete draft but rejects it on publish (32.805291ms)
+  ✔ tests a draft node and can start a published process from a selected step (41.459959ms)
+✔ scheduler (1875.425792ms)
+✔ Bearer parsing preserves supported separators and rejects malformed schemes or token line breaks (1.002292ms)
+✔ long whitespace prefixes and malformed token suffixes do not need overlapping regex scans (0.654833ms)
+▶ SIEM sink conformance
+  ✔ requires an exact acknowledgement for a successful batch (1.279875ms)
+  ✔ retries transient responses and dead-letters permanent responses (0.082417ms)
+✔ SIEM sink conformance (2.071875ms)
+(node:1310) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ prepared aggregate report survives publication, review and byte-exact downloads; rejection and partial start cannot create artifacts (396.118375ms)
+✔ prepared requests report survives publication, review and byte-exact downloads; rejection and partial start cannot create artifacts (303.650625ms)
+(node:1311) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ SQLite to PostgreSQL migration integration (0.539666ms) # SKIP
+(node:1312) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ SQLite to PostgreSQL migration contract
+  ✔ canonicalizes integer and binary representations across drivers (0.766917ms)
+  ✔ orders parent tables before dependent tables deterministically (0.992ms)
+  ✔ fails closed on cross-table dependency cycles (0.267292ms)
+  ✔ accepts historical SQLite column order but rejects actual shape drift (0.086167ms)
+✔ SQLite to PostgreSQL migration contract (2.91825ms)
+(node:1313) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ complete rejects an invalid lease at admission (before request) before state or artifact writes (71.061416ms)
+ℹ After complete (before request): stage=running, artifacts=0
+✔ complete rejects an invalid lease at admission (during stage read) before state or artifact writes (81.841791ms)
+ℹ After complete (during stage read): stage=running, artifacts=0
+✔ complete rejects an invalid lease at admission (invalid expiry) before state or artifact writes (38.253833ms)
+ℹ After complete (invalid expiry): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (before request) before state or artifact writes (86.055667ms)
+ℹ After fail (before request): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (during stage read) before state or artifact writes (38.012708ms)
+ℹ After fail (during stage read): stage=running, artifacts=0
+✔ fail rejects an invalid lease at admission (invalid expiry) before state or artifact writes (58.060792ms)
+ℹ After fail (invalid expiry): stage=running, artifacts=0
+✔ maintenance rolls back stage and run changes if its retry event cannot persist (37.382667ms)
+✔ maintenance rolls back stage and run changes if its failure event cannot persist (48.96375ms)
+✔ stage renewal rejects exact boundary without reviving the old owner (41.692583ms)
+ℹ Stage renewal/exact boundary: renewed=false
+✔ stage renewal rejects invalid date without reviving the old owner (37.100958ms)
+ℹ Stage renewal/invalid date: renewed=false
+▶ OpenTelemetry export
+  ✔ exports a connected run and dispatch trace without prompt content (6.157375ms)
+✔ OpenTelemetry export (6.873417ms)
+(node:1315) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal parent cancellation settles application state (1.036625ms) # SKIP
+﹣ Temporal parent cancellation settles application state after compensation and worker restart (0.078042ms) # SKIP
+(node:1316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Temporal cancellation endpoint requires internal auth, project ownership and Temporal runtime; retry preserves terminal state (111.637917ms)
+▶ Temporal production hardening
+  ✔ rejects malformed Temporal environment values before startup (1.663542ms)
+  ✔ fails closed for incomplete production transport and unsafe PostgreSQL roles (0.994709ms)
+  ✔ fails closed for incomplete worker trust chains and remote SIEM credentials (0.269458ms)
+  ✔ builds a secret-bearing connection descriptor without leaking it into the runtime snapshot (1.048167ms)
+  ✔ normalizes bounded project-scoped schedules and stable Temporal IDs (23.642875ms)
+✔ Temporal production hardening (28.391417ms)
+(node:1332) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal process tick survives a long outage with recover (1.023ms) # SKIP
+﹣ Temporal process tick survives a long outage with cancel (0.073792ms) # SKIP
+(node:1351) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal RAG sqlite/isolated/recover: retries a lost tick reply, restores a killed worker and replays without model calls (1.070625ms) # SKIP
+﹣ Temporal RAG sqlite/isolated/cancel: cancels an active primary call and rejects its late output (0.078125ms) # SKIP
+﹣ Temporal RAG sqlite/isolated/interrupt: interrupts blocked primary HTTP after lease rejection and reuses the worker slot (0.062292ms) # SKIP
+﹣ Temporal RAG sqlite/session/recover: retries a lost tick reply, restores a killed worker and replays without model calls (0.052125ms) # SKIP
+﹣ Temporal RAG sqlite/session/cancel: cancels an active primary call and rejects its late output (0.055458ms) # SKIP
+﹣ Temporal RAG sqlite/session/interrupt: interrupts blocked primary HTTP after lease rejection and reuses the worker slot (0.048167ms) # SKIP
+(node:1352) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal scheduled cancellation fences creation before-commit (1.016792ms) # SKIP
+﹣ Temporal scheduled cancellation fences creation after-commit (0.07425ms) # SKIP
+﹣ Temporal scheduled cancellation fences creation after-commit-compensating (0.056042ms) # SKIP
+(node:1353) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal scheduled child keeps its parent ownership across coordinator restart before and after child start (1.073458ms) # SKIP
+(node:1354) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal scheduled-start retains a committed instance through an outage beyond its former retry budget (1.006708ms) # SKIP
+(node:1355) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+﹣ Temporal scheduled-start retries a lost response with one durable instance and independent subsequent occurrences (1.009708ms) # SKIP
+ℹ tests 309
+ℹ suites 27
+ℹ pass 293
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 16
+ℹ todo 0
+ℹ duration_ms 12069.053208

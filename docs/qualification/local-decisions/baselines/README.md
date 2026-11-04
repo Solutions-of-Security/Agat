@@ -1,5 +1,29 @@
 # Генеративный baseline на тех же development-входах
 
+[DaNetQA: внешний русский Boolean corpus](../external/danetqa-development.md) импортирован целиком: 821 published references / 779 groups, duplicate rows сохранены, 0 model calls. Native comparison следует отдельным этапом.
+
+[Внешний русский TERRa development corpus](../external/README.md) импортирован
+полностью: 307 published references / 282 normalized premise groups.
+[Native comparison всех четырёх кандидатов](../external/terra-native-baselines.md) завершён: 2456 forwards, accuracy/калибровка/selective risk и обе перестановки на исходных опубликованных references. Локальная human/routing qualification остаётся открытой.
+
+[decider и Qwen Base на всех 49 публичных development-входах](./public-mlx-inputs.md)
+измерены исходным MLX scorer: 184 native forwards, raw tokenizer/logit replay,
+memory observations и standalone archive. Base изменил argmax на 46/46
+computed inputs при reversed order; reference quality не измерена.
+
+[GLiClass и NanoJev на всех 49 публичных unlabelled development-входах](./public-native-inputs.md)
+измерены без context prefilter другой модели: 166 native forwards,
+явные context refusals, полный tokenizer replay и переносимый архив.
+Human quality/routing qualification остаётся false/not_assessed.
+
+[Закреплённый NanoJev CPU reference](./nanojev.md) фиксирует native decision
+heads и полные candidate paths: 72 actual forward на прежних 36 synthetic
+development cases, отдельный Score/Boolean/Choice contract smoke и memory
+profile. Human/routing qualification остаётся false/not_assessed.
+
+[Закреплённый GLiClass baseline](./gliclass.md) реализован отдельно для лёгкого
+классификатора из плана: полный вход, native logits и явный context refusal.
+
 26.09.2026. Добавлен локальный label-based baseline `qwen3:8b` и проверяемое сравнение с ранее измеренными decider/Qwen Base. Результат — **`diagnostic_only`**, обучение и автоматическая маршрутизация не включены.
 
 Используются те же 15 случаев из [утверждённого development-экспорта](../development/evidence/2026-09-26/dataset.json), два источниковых кластера и исходные метки `assistant-reviewed`. Девять отложенных случаев в этот набор не входят. Для каждого входа выполнены исходный и обратный порядок вариантов, всего 30 реальных генераций.
@@ -65,3 +89,7 @@ CLI требует sealed dataset с `usage: development-only`; calibration/hold
 [Baseline по явному заголовку заявки](./rules.md) проверен: 2/15 правильных меток, только 1/15 принято. Его покрытие недостаточно; развитие по увиденным меткам остановлено. [Арифметический baseline](../performance/arithmetic.md) теперь вычисляет показатели из двух явных записей. Открыты mappings реальных источников, расширение независимых development/calibration-групп, отсутствующий класс `access` и два человеческих review. Порог decider, исходные метки и split seed по результатам этого сравнения не менялись. Следующее предметное сравнение должно включать новые независимые источники до решения о fine-tuning.
 
 На [отдельных синтетических длинных входах](../performance/robustness.md#сравнение-с-генеративным-qwen3) Qwen3 также последовал вложенной команде во всех 18 вариантах. Сравнение сохраняет публичные поля задачи и использует непрозрачные ID; это диагностика, не qualification.
+
+[Native DaNetQA Boolean comparison](../external/danetqa-native-baselines.md): все 821 cases в обоих порядках, 6568 forwards, typed bool, сохранённые duplicate rows; реальные errors/coverage и order sensitivity. Полный 1520-test suite PASS, independent audit и restored copied CLI replay. External references не открывают human/holdout/routing qualification.
+
+[RuSTSBenchmark numeric Score import](../external/ru-stsb-development.md): все 1336 исходных float ratings, 943 дробных; dependencies/duplicates/conflicts и CC-BY-SA attribution сохранены. Actual copied CLI и closed original-copy replay PASS, inference ещё не выполнялся.

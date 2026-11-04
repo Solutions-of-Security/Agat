@@ -1,0 +1,44 @@
+
+> agat-platform@1.7.0 fleet:test-ha-postgres
+> bash scripts/test-fleet-ha-postgres.sh --test-name-pattern=real Python embedding.*isolated
+
+
+> @agat/coordinator@1.7.0 build
+> tsc -p tsconfig.json
+
+(node:23485) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ PostgreSQL Fleet/HA integration
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (oversized-success, isolated) (1348.182416ms)
+  ℹ oversized-success/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (unfinished-error, isolated) (1269.591959ms)
+  ℹ unfinished-error/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-headers, isolated) (1884.707625ms)
+  ℹ slow-headers/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-success, isolated) (1876.135916ms)
+  ℹ slow-success/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker bounds model HTTP and recovers on a new lease (slow-error, isolated) (1874.718875ms)
+  ℹ slow-error/isolated: model calls=2, failed lease HTTP 200, replacement completion HTTP 200, failures=1, only replacement vector saved, both renewers exited, all transport subprocesses reaped
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (renew-complete, isolated) (46802.995584ms)
+  ℹ renew-complete/isolated: SIGTERM stopped admission; active terminal HTTP 200 after signal; real renewal HTTP 204 during drain; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding worker drains active model HTTP on SIGTERM and resumes pending work (deadline, isolated) (5035.988291ms)
+  ℹ deadline/isolated: SIGTERM stopped admission; active terminal HTTP 200 after signal; deadline killed and reaped helper; restart preserved settled data and completed only pending leases; all helper pipes/renewers closed
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (headers, isolated) (1384.879417ms)
+  ℹ headers/isolated: worker SIGKILL; model HTTP closed after 43.9 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding helper exits when its worker is killed during model HTTP (body, isolated) (1397.612334ms)
+  ℹ body/isolated: worker SIGKILL; model HTTP closed after 64.8 ms; no stale terminal POST; lease recovered through maintenance; exactly one replacement vector and ready event
+  ✔ real Python embedding worker suppresses obsolete replies after renewal rejects ownership during model HTTP (isolated) (46372.313709ms)
+  ℹ Renewal HTTP 404; obsolete terminal HTTP attempts=none; model calls=1
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (disconnect, isolated) (1686.734042ms)
+  ℹ Python 3.14.3/disconnect/isolated: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+  ✔ real Python embedding worker releases its slot and renewer after lost COMMIT acknowledgement (withhold, isolated) (2726.680791ms)
+  ℹ Python 3.14.3/withhold/isolated: completion HTTP 503/200/200, 34 exact vectors, 3 events, 3 renewers exited, no live worker threads
+✔ PostgreSQL Fleet/HA integration (115037.416917ms)
+ℹ tests 12
+ℹ suites 1
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 115479.848083
